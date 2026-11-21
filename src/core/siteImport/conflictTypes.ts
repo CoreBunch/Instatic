@@ -14,7 +14,7 @@ export interface ConflictResolution {
   resolvedName?: string
   /**
    * Resolved CSS custom-property name without leading `--` (for token conflicts;
-   * defined when action is `auto-rename` or `custom-rename`).
+   * a default overwrite can also carry the target of a later rename choice).
    */
   resolvedVariable?: string
 }
@@ -49,28 +49,28 @@ export interface RuleConflict {
 }
 
 /**
- * One divergent cross-sheet definition of a class name among CONVERTED
- * stylesheets: two page cascades define the same class with different
- * effective declarations. The first-encountered definition keeps the bare
- * name; each later distinct definition raises one conflict.
+ * One cross-sheet class conflict among CONVERTED stylesheets (see
+ * `classCascades.ts`). `kind: 'leak'`: a sheet (`sources[0]`) styles a
+ * class another imported page uses without loading it. `kind: 'divergent'`:
+ * pages load the defining sheets in orders no global order satisfies; the
+ * first definition keeps the bare name.
  *
  * Resolutions (applied by `applyCrossSheetClassResolutions`):
- * - `auto-rename` / `custom-rename` (default): this definition moves to
- *   `resolvedName` — its pages' class tokens and its cascade's selectors
- *   follow, so every page keeps rendering with its own styles.
- * - `skip`: drop this definition; its pages bind to the first definition.
- * - `overwrite`: this definition wins the bare name; the other definitions'
- *   class fragments are dropped and their pages bind to this one.
+ * - `auto-rename` / `custom-rename` (default): leak — the sheet's fragments
+ *   move to `resolvedName`, which its pages carry next to the bare class, so
+ *   each page keeps its own cascade; divergent — this definition moves to
+ *   `resolvedName` with its pages' class tokens.
+ * - `skip`: drop the sheet's rules naming the class (leak) or this definition.
+ * - `overwrite`: keep the sheet global (leak), or this definition wins the
+ *   bare name (divergent).
  */
 export interface CrossSheetClassConflict {
+  kind: 'divergent' | 'leak'
   /** The colliding class name as authored in the source CSS. */
   desiredName: string
-  /** Stable id of this divergent definition (hash of its effective declarations). */
+  /** Stable id of this row (hash of the definition, or of the leaking sheet). */
   definitionId: string
-  /**
-   * CSS file paths whose class fragments produce this definition and are not
-   * shared with the kept (first) definition's cascades.
-   */
+  /** CSS file paths whose class fragments this row moves. */
   sources: string[]
   /** HTML page sources rendered with this definition. */
   pageSources: string[]

@@ -18,6 +18,7 @@ import type { ImportPlan, ConflictResolution, FileConflict } from '@core/siteImp
 import { Button } from '@ui/components/Button'
 import { ConflictRow } from '../shared/ConflictRow'
 import {
+  classRowKey,
   crossSheetConflictKey,
   fileConflictKey,
   tokenConflictKey,
@@ -28,12 +29,11 @@ import styles from './ConflictsStep.module.css'
 
 type BulkResolutionAction = Extract<ConflictResolution['action'], 'auto-rename' | 'overwrite' | 'skip'>
 
-function resolutionForAction(
-  action: BulkResolutionAction,
+function withRenameTarget(
+  choice: ConflictResolution,
   conflict: { defaultResolution: ConflictResolution },
 ): ConflictResolution {
-  if (action === 'auto-rename') return conflict.defaultResolution
-  return { action }
+  return choice.action === 'auto-rename' ? { ...conflict.defaultResolution, action: choice.action } : choice
 }
 
 const FILE_STATE_LABEL: Record<FileConflict['state'], string> = {
@@ -90,11 +90,12 @@ function ConflictSection({ heading, count, bulkLegend, bulkActions, hint, childr
 
 interface ConflictsStepProps {
   plan: ImportPlan
+  classNameProblems: Map<string, string>
   resolutions: ConflictResolutionMaps
   onResolutionChange: (category: ConflictCategory, key: string, resolution: ConflictResolution) => void
 }
 
-export function ConflictsStep({ plan, resolutions, onResolutionChange }: ConflictsStepProps) {
+export function ConflictsStep({ plan, classNameProblems, resolutions, onResolutionChange }: ConflictsStepProps) {
   const {
     pages: pageConflicts,
     rules: ruleConflicts,
@@ -118,25 +119,25 @@ export function ConflictsStep({ plan, resolutions, onResolutionChange }: Conflic
 
   function applyPageResolutionToAll(action: BulkResolutionAction) {
     for (const conflict of pageConflicts) {
-      onResolutionChange('pages', conflict.source, resolutionForAction(action, conflict))
+      onResolutionChange('pages', conflict.source, withRenameTarget({ action }, conflict))
     }
   }
 
   function applyRuleResolutionToAll(action: BulkResolutionAction) {
     for (const conflict of ruleConflicts) {
-      onResolutionChange('rules', conflict.desiredName, resolutionForAction(action, conflict))
+      onResolutionChange('rules', conflict.desiredName, withRenameTarget({ action }, conflict))
     }
   }
 
   function applyTokenResolutionToAll(action: BulkResolutionAction) {
     for (const conflict of tokenConflicts) {
-      onResolutionChange('tokens', tokenConflictKey(conflict), resolutionForAction(action, conflict))
+      onResolutionChange('tokens', tokenConflictKey(conflict), withRenameTarget({ action }, conflict))
     }
   }
 
   function applyCrossSheetResolutionToAll(action: BulkResolutionAction) {
     for (const conflict of crossSheetConflicts) {
-      onResolutionChange('crossSheetClasses', crossSheetConflictKey(conflict), resolutionForAction(action, conflict))
+      onResolutionChange('crossSheetClasses', crossSheetConflictKey(conflict), withRenameTarget({ action }, conflict))
     }
   }
 
@@ -173,7 +174,7 @@ export function ConflictsStep({ plan, resolutions, onResolutionChange }: Conflic
               current={resolutions.pages.get(conflict.source) ?? conflict.defaultResolution}
               // No existing page id ⇒ intra-batch collision; nothing to overwrite.
               canOverwrite={conflict.existingPageId !== ''}
-              onChange={(next) => onResolutionChange('pages', conflict.source, next)}
+              onChange={(next) => onResolutionChange('pages', conflict.source, withRenameTarget(next, conflict))}
             />
           ))}
         </ConflictSection>
@@ -198,7 +199,8 @@ export function ConflictsStep({ plan, resolutions, onResolutionChange }: Conflic
               source={conflict.source}
               desired={conflict.desiredName}
               current={resolutions.rules.get(conflict.desiredName) ?? conflict.defaultResolution}
-              onChange={(next) => onResolutionChange('rules', conflict.desiredName, next)}
+              error={classNameProblems.get(classRowKey('rule', conflict.desiredName))}
+              onChange={(next) => onResolutionChange('rules', conflict.desiredName, withRenameTarget(next, conflict))}
             />
           ))}
         </ConflictSection>
@@ -217,7 +219,7 @@ export function ConflictsStep({ plan, resolutions, onResolutionChange }: Conflic
               onClick: () => applyCrossSheetResolutionToAll('skip'),
             },
           ]}
-          hint="Two imported stylesheets define the same class differently. Rename keeps each page faithful to its own stylesheet (the listed pages move to the new name); skip uses the first definition everywhere; overwrite makes this definition win the original name."
+          hint="Imported classes are shared across pages. Rename confines the rules to the listed pages. Skip leaves the rules out. Overwrite applies them on every page."
         >
           {crossSheetConflicts.map((conflict) => {
             const key = crossSheetConflictKey(conflict)
@@ -225,10 +227,11 @@ export function ConflictsStep({ plan, resolutions, onResolutionChange }: Conflic
               <ConflictRow
                 key={key}
                 kind="rule"
-                source={`${conflict.sources.join(', ') || 'imported stylesheets'} · ${conflict.pageSources.join(', ')}`}
+                source={conflict.kind === 'leak' ? `${conflict.sources[0]} would also style pages that do not load it · ${conflict.pageSources.join(', ')}` : `${conflict.sources.join(', ') || 'imported stylesheets'} · ${conflict.pageSources.join(', ')}`}
                 desired={conflict.desiredName}
                 current={resolutions.crossSheetClasses.get(key) ?? conflict.defaultResolution}
-                onChange={(next) => onResolutionChange('crossSheetClasses', key, next)}
+                error={classNameProblems.get(classRowKey('cross-sheet', key))}
+                onChange={(next) => onResolutionChange('crossSheetClasses', key, withRenameTarget(next, conflict))}
               />
             )
           })}
@@ -264,7 +267,7 @@ export function ConflictsStep({ plan, resolutions, onResolutionChange }: Conflic
                 source={`${label} · --${conflict.desiredVariable}`}
                 desired={conflict.desiredVariable}
                 current={resolutions.tokens.get(key) ?? conflict.defaultResolution}
-                onChange={(next) => onResolutionChange('tokens', key, next)}
+                onChange={(next) => onResolutionChange('tokens', key, withRenameTarget(next, conflict))}
               />
             )
           })}

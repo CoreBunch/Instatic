@@ -10,6 +10,8 @@
 
 import {
   applyConflictResolutions,
+  importClassNames,
+  pageClassUsage,
   detectMediaConflicts,
   hashImportAssets,
   type ImportGoogleFont,
@@ -27,7 +29,7 @@ import {
   TooManyFilesError,
   PathTraversalError,
 } from '@core/siteImport'
-import type { SiteDocument } from '@core/page-tree'
+import { validateCssClassName, type SiteDocument } from '@core/page-tree'
 import { cmsAdapter } from '@core/persistence/cms'
 import { requestCmsSiteReload } from '@admin/state/adminEvents'
 import { useEditorStore } from '@site/store/store'
@@ -46,6 +48,64 @@ export function crossSheetConflictKey(
   conflict: Pick<CrossSheetClassConflict, 'desiredName' | 'definitionId'>,
 ): string {
   return `${conflict.desiredName}:${conflict.definitionId}`
+}
+
+/** Stable key for a class-name row (site-vs-import or cross-sheet) in rename validation. */
+export function classRowKey(kind: 'rule' | 'cross-sheet', key: string): string {
+  return `${kind}:${key}`
+}
+
+/** The site's class names, which rename targets must keep clear of. */
+export function siteClassNameSet(site: Pick<SiteDocument, 'styleRules'>): ReadonlySet<string> {
+  return new Set(Object.values(site.styleRules).filter((rule) => rule.kind === 'class').map((rule) => rule.name))
+}
+
+/**
+ * Field-local problems with the class names the Conflicts step would rename
+ * to, keyed by `classRowKey`. Every rename target (site-vs-import class rows
+ * and cross-sheet rows alike) must be a valid class name that no other row
+ * targets, that is not already a class in the site, and that the import does
+ * not bring in under that name itself. The one allowed reuse is a cross-sheet
+ * row's own default: it names the class an earlier import of the same sheet
+ * created, which the commit reconciles in place.
+ */
+export function classRenameProblems(
+  plan: ImportPlan,
+  siteClassNames: ReadonlySet<string>,
+  ruleResMap: Map<string, ConflictResolution>,
+  crossSheetResMap: Map<string, ConflictResolution>,
+): Map<string, string> {
+  const targets: Array<{ key: string; name: string; reusesSite: boolean }> = []
+  const renameTarget = (res: ConflictResolution) =>
+    (res.action === 'auto-rename' || res.action === 'custom-rename') ? res.resolvedName ?? null : null
+  for (const conflict of plan.conflicts.rules) {
+    const name = renameTarget(ruleResMap.get(conflict.desiredName) ?? conflict.defaultResolution)
+    if (name !== null) targets.push({ key: classRowKey('rule', conflict.desiredName), name, reusesSite: false })
+  }
+  for (const conflict of plan.conflicts.crossSheetClasses) {
+    const res = crossSheetResMap.get(crossSheetConflictKey(conflict)) ?? conflict.defaultResolution
+    const name = renameTarget(res)
+    if (name === null) continue
+    const reusesSite = conflict.defaultResolution.resolvedName === name && siteClassNames.has(name)
+    targets.push({ key: classRowKey('cross-sheet', crossSheetConflictKey(conflict)), name, reusesSite })
+  }
+
+  const importedNames = importClassNames(pageClassUsage(plan.pages, plan.scripts), plan.styleRules)
+  const counts = new Map<string, number>()
+  for (const { name } of targets) counts.set(name, (counts.get(name) ?? 0) + 1)
+  const problems = new Map<string, string>()
+  for (const target of targets) {
+    if (validateCssClassName(target.name)) {
+      problems.set(target.key, `"${target.name}" is not a valid class name`)
+    } else if ((counts.get(target.name) ?? 0) > 1) {
+      problems.set(target.key, `Another conflict also renames to "${target.name}"`)
+    } else if (siteClassNames.has(target.name) && !target.reusesSite) {
+      problems.set(target.key, `"${target.name}" is already a class in this site`)
+    } else if (importedNames.has(target.name)) {
+      problems.set(target.key, `The import already brings a "${target.name}" class`)
+    }
+  }
+  return problems
 }
 
 /** Stable map key for a file conflict — a script and a stylesheet may share a path. */

@@ -81,6 +81,8 @@ import {
   type ConflictResolutionMaps,
   defaultConflictResolutions,
   emptyConflictResolutionMaps,
+  classRenameProblems,
+  siteClassNameSet,
   makeDefaultSelection,
   filterPlanBySelection,
   buildResolvedPlan,
@@ -114,10 +116,7 @@ interface SiteImportModalProps {
 
 export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalProps = {}) {
   const navigate = useAdminNavigate()
-  const closeAdminSiteImportModal = useAdminUi((s) => s.closeSiteImport)
-  function closeModal() {
-    closeAdminSiteImportModal()
-  }
+  const closeModal = useAdminUi((s) => s.closeSiteImport)
 
   const {
     cmsBundleState,
@@ -141,6 +140,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   const [selection, setSelection] = useState<ImportSelection | null>(null)
   // The user's choice per static-import conflict, one map per category.
   const [resolutions, setResolutions] = useState<ConflictResolutionMaps>(emptyConflictResolutionMaps)
+  const [siteClassNames, setSiteClassNames] = useState<ReadonlySet<string>>(new Set())
   const [cmsRowResolutions, setCmsRowResolutions] = useState<Map<string, ConflictResolution>>(new Map())
   // Per-sheet import modes. Only plan builds read them, and a build must use
   // the latest modes whenever it starts, so they live in a ref, not state.
@@ -188,21 +188,26 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
 
   // ── Ingest + plan-build (triggered from DropStep callbacks) ───────────────
 
+  function reviewCmsBundle() {
+    planBuildRef.current?.abort()
+    latestFileMapRef.current = null
+    shownFileMapRef.current = null
+    setFileMap(null)
+    setPlan(null)
+    setSelection(null)
+    setCmsRowResolutions(new Map())
+    setCmsResult(null)
+    setBusy(false)
+    setStep('analyze')
+  }
+
   async function handleFilesReady(files: File[]) {
     setBusy(true)
     setErrorMsg(null)
     setPluginPackage(null)
     try {
       if (files.length === 1 && await loadCmsBundleFile(files[0])) {
-        latestFileMapRef.current = null
-        shownFileMapRef.current = null
-        setFileMap(null)
-        setPlan(null)
-        setSelection(null)
-        setCmsRowResolutions(new Map())
-        setCmsResult(null)
-        setBusy(false)
-        setStep('analyze')
+        reviewCmsBundle()
         return
       }
 
@@ -223,15 +228,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     setPluginPackage(null)
     try {
       if (await loadCmsBundleArchiveFile(file)) {
-        latestFileMapRef.current = null
-        shownFileMapRef.current = null
-        setFileMap(null)
-        setPlan(null)
-        setSelection(null)
-        setCmsRowResolutions(new Map())
-        setCmsResult(null)
-        setBusy(false)
-        setStep('analyze')
+        reviewCmsBundle()
         return
       }
 
@@ -287,6 +284,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
         currentSite,
         options: { mediaTolerance: 10, stylesheetModes: stylesheetModesRef.current },
       }), build.signal)
+      if (!build.signal.aborted) setSiteClassNames(siteClassNameSet(currentSite))
     } catch (err) {
       // A failed build must not leave its files as the base for the next drop.
       if (build.signal.aborted) return
@@ -575,6 +573,8 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   const isCmsImporting = step === 'analyze' && cmsBundleState?.importing === true
 
   // ── Render ────────────────────────────────────────────────────────────────
+  const classNameProblems = step === 'conflicts' && plan && !cmsBundleState
+    ? classRenameProblems(plan, siteClassNames, resolutions.rules, resolutions.crossSheetClasses) : new Map<string, string>()
 
   return (
     <Dialog
@@ -601,6 +601,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
           onAnalyzeNext={handleAnalyzeNext}
           onCmsAnalyzeNext={handleCmsAnalyzeNext}
           onConflictsImport={handleConflictsImport}
+          classNameProblemCount={classNameProblems.size}
           onRunCancel={handleRunCancel}
           onToggleLog={() => setLogOpen((o) => !o)}
           onOpenSite={handleOpenSite}
@@ -678,6 +679,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
             onResolutionChange={(category, key, resolution) => {
               setResolutions((prev) => ({ ...prev, [category]: new Map(prev[category]).set(key, resolution) }))
             }}
+            classNameProblems={classNameProblems}
           />
         )}
 

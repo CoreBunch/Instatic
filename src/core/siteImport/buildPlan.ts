@@ -23,7 +23,7 @@ import { classifyFiles } from './classifyFiles'
 import { makeHtmlPagePlan } from './htmlPagePlan'
 import { buildAssetPlan, type CssFileResult } from './assetPlan'
 import { collectUnlinkedStylesheets, partitionLinkedStylesheets } from './stylesheetPlan'
-import { detectCrossSheetClassConflicts } from './classCascades'
+import { crossSheetRenameTargets, detectCrossSheetClassConflicts } from './classCascades'
 import { detectConflicts, rewriteImportVarRefs } from './conflicts'
 import { declaredCustomProperties } from './varRefs'
 import { normalizeImportedTokens } from './tokenNames'
@@ -156,19 +156,19 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
   warnings.push(...cssPlan.warnings)
   droppedAtRules.push(...cssPlan.droppedAtRules)
 
-  // 4b. Detect divergent cross-sheet class definitions among the CONVERTED
-  //     stylesheets. Converted sheets merge CSS-natively into the one global
-  //     cascade; when two page cascades define the same class differently,
-  //     that becomes an explicit conflict (default: rename with a suffix) for
-  //     the wizard's Conflicts step — applied by
+  // 4b. Detect cross-sheet class conflicts among the CONVERTED stylesheets.
+  //     Converted sheets merge CSS-natively into the one global cascade; when
+  //     two page cascades define the same class differently (unrelated
+  //     definitions, or a page sheet restyling a shared one that another page
+  //     does not load) that becomes an explicit conflict (default: rename,
+  //     lossless) for the wizard's Conflicts step — applied by
   //     `applyCrossSheetClassResolutions`, never silently here.
-  const existingClassNames = Object.values(currentSite.styleRules)
-    .filter((rule) => rule.kind === 'class')
-    .map((rule) => rule.name)
+  const existingClassRules = Object.values(currentSite.styleRules).filter((rule) => rule.kind === 'class')
   const crossSheetClasses = detectCrossSheetClassConflicts(
     rawPagePlans,
     cssPlan.cssFileResults,
-    existingClassNames,
+    existingClassRules,
+    scripts,
   )
   const publishableCssFileResults = addSelectorDependencyClasses(
     cssPlan.cssFileResults,
@@ -206,6 +206,7 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
     fontTokens,
     scripts,
     stylesheets,
+    crossSheetRenameTargets(crossSheetClasses),
   )
 
   return {

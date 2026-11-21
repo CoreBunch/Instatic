@@ -193,6 +193,7 @@ export {
 } from './selectors'
 
 export {
+  validateCssClassName,
   assertValidCssClassName,
   styleRuleSelector,
   classNamesForClassIds,

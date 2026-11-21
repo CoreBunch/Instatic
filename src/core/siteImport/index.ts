@@ -36,6 +36,8 @@ export type { CssFileResult } from './assetPlan'
 
 // ── Phase 2 — cross-stylesheet class semantics ───────────────────────────────
 
+export { pageClassUsage, importClassNames } from './classUsage'
+
 // ── Phase 2 — internal link rewriting (→ dynamic page refs) ──────────────────
 
 export { rewriteInternalLinks } from './linkRewrite'
