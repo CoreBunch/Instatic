@@ -1,0 +1,102 @@
+# docker-compose.coolify.yml
+# Instatic on Coolify — bundled Postgres.
+#
+# Coolify treats one Compose file as the single source of truth: there are no
+# `-f a.yml -f b.yml` overlays, so this file is standalone rather than a layer on
+# top of compose.prod.yml. For the single-container SQLite stack, use
+# docker-compose.coolify.sqlite.yml instead. Trade-offs between the two, plus the
+# full setup walkthrough: docs/deployment/coolify.md.
+#
+# Coolify setup:
+#   Resource:      Docker Compose (Git repository, or Empty + paste this file)
+#   Compose file:  docker-compose.coolify.yml     (the extension must match exactly)
+#   Base directory: /
+#   Domain:        set it on the `instatic` service. Coolify issues the TLS
+#                  certificate and routes :443 to container port 3001.
+#
+# Conventions this file deliberately follows:
+#   - No `networks:`. Coolify creates an isolated bridge network per stack.
+#     Declaring one puts containers on two networks at once and makes Traefik
+#     route non-deterministically — Coolify documents this as a cause of
+#     intermittent HTTPS outages.
+#   - No `ports:`. Publishing a host port bypasses the proxy and would expose
+#     both the app and Postgres directly on the VPS. Routing comes solely from
+#     the SERVICE_URL_INSTATIC_3001 magic variable below.
+#   - No `container_name:`, `restart:`, or top-level `name:`. Coolify owns all
+#     three and renames services with a UUID suffix.
+
+services:
+  instatic:
+    # Service name matters: it becomes the auto-generated subdomain, and the
+    # SERVICE_URL_INSTATIC_* variables below are keyed to it.
+    image: ${INSTATIC_IMAGE:-ghcr.io/corebunch/instatic:latest}
+    environment:
+      # Declares the public route. Coolify assigns this service a domain and
+      # points Traefik at container port 3001.
+      - SERVICE_URL_INSTATIC_3001
+      - PORT=3001
+      - DATABASE_URL=postgres://${POSTGRES_USER:-instatic}:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/${POSTGRES_DB:-instatic}
+      - UPLOADS_DIR=/app/uploads
+      - STATIC_DIR=/app/dist
+      # The one setting that must not be omitted. Coolify's Traefik terminates
+      # TLS and forwards plain HTTP, and server/auth/security.ts deliberately
+      # never trusts X-Forwarded-Proto/Host. Without this the server believes it
+      # is http:// and four things break or silently degrade: the session cookie
+      # loses its Secure flag, the CSRF origin check compares the wrong origin,
+      # the real-time co-editing WebSocket is rejected by the same origin guard,
+      # and MCP connector URLs resolve local-only instead of public-https.
+      # ${SERVICE_URL_INSTATIC} resolves to the domain assigned above, scheme
+      # included, and follows a custom domain set later in the UI.
+      - PUBLIC_ORIGIN=${SERVICE_URL_INSTATIC}
+      # Base64 32-byte AES key for reversible server secrets (AI provider
+      # credentials, plugin secret settings, TOTP seeds). The image runs with
+      # NODE_ENV=production, where boot FAILS outright if this is unset.
+      # REALBASE64_32 produces base64 of 32 random bytes — exactly the shape
+      # server/secrets/masterKey.ts validates. Coolify generates it once and
+      # keeps it stable across redeploys; changing it strands every value
+      # already encrypted under the old key.
+      - INSTATIC_SECRET_KEY=${SERVICE_REALBASE64_32_INSTATIC}
+      # Client-IP attribution for audit logs and rate-limit keys only — NOT
+      # CSRF, which is driven entirely by PUBLIC_ORIGIN. Trusting the Docker
+      # bridge range is safe here precisely because no host port is published,
+      # so only Coolify's proxy can reach this container.
+      - TRUSTED_PROXY_CIDRS=${TRUSTED_PROXY_CIDRS:-172.16.0.0/12}
+    volumes:
+      - instatic-uploads:/app/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # The oven/bun base image ships neither curl nor wget, so the probe is a
+      # Bun script that fetches GET /health — see server/healthcheck.ts.
+      #
+      # start_period is longer than compose.prod.yml's 20s because Coolify gates
+      # both the deploy and Traefik routing on this check, and the first boot
+      # runs every migration against an empty database before /health answers.
+      test: ['CMD', 'bun', 'run', 'server/healthcheck.ts']
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 5
+
+  postgres:
+    # Pinned to the same major as compose.prod.yml so the two stacks stay
+    # data-compatible — a dump from one restores into the other.
+    image: postgres:16
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-instatic}
+      - POSTGRES_USER=${POSTGRES_USER:-instatic}
+      # Coolify generates this once and persists it. It is symbol-free, so it is
+      # safe to embed unescaped in the DATABASE_URL above.
+      - POSTGRES_PASSWORD=${SERVICE_PASSWORD_POSTGRES}
+    volumes:
+      - instatic-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  instatic-uploads:
+  instatic-postgres-data:
