@@ -18,8 +18,8 @@
  * The design rests on three rules that keep it bounded on any input (it runs
  * on every paste and agent insert, not only Site Import):
  *
- *   1. Sources are immutable. `#id` resolves against a snapshot of the page
- *      taken before any expansion, `file.svg#id` against the sprite file as
+ *   1. Sources are immutable. `#id` resolves against the original page
+ *      before any instance is replaced, `file.svg#id` against the sprite file as
  *      loaded. An expansion never feeds a later one.
  *   2. All work is charged to one counter, `MAX_WORK` per call: every node
  *      created (counted while cloning, so a huge target is never cloned past
@@ -90,14 +90,10 @@ export type SvgSpriteLoader = (path: string) => string | null
 interface InlineState {
   doc: Document
   loadSvgSprite: SvgSpriteLoader | undefined
-  /** The page as parsed, when a rendered use references this document. */
-  pageSnapshot: Element | null
   /** Parsed sprite files by canonical path. */
   sprites: Map<string, Element | null>
-  /** One id → element index per source, built on first lookup. */
-  indexes: Map<Element, Map<string, Element>>
   work: number
-  /** Every id on the page or handed to a copy, so new suffixes never collide. */
+  /** IDs reserved by copies that are waiting to be inserted into the page. */
   takenIds: Set<string>
   /** Symbols (path#id) whose `<style>` already reached the page. */
   styledSymbols: Set<string>
@@ -128,25 +124,22 @@ export function inlineSvgSpriteReferences(doc: Document, loadSvgSprite?: SvgSpri
   const state: InlineState = {
     doc,
     loadSvgSprite,
-    pageSnapshot: rendered.some((use) => {
-      const href = referenceOf(use)
-      const hash = href.indexOf('#')
-      return hash >= 0 && canonicalSpritePath(href.slice(0, hash), '') === ''
-    })
-      ? doc.documentElement.cloneNode(true) as Element
-      : null,
     sprites: new Map(),
-    indexes: new Map(),
     work: MAX_WORK,
-    takenIds: new Set(Array.from(doc.querySelectorAll('[id]'), (el) => el.getAttribute('id')!)),
+    takenIds: new Set(),
     styledSymbols: new Set(),
     unresolved: new Set(),
   }
+  // Resolve against the original DOM, then apply the replacements. An early
+  // instance can never modify a later instance's source, and a single icon
+  // does not require cloning the page around it.
+  const replacements: Array<[Element, Element]> = []
   for (const use of rendered) {
     const copy = expandUse(use, '', [], state)
-    if (copy) use.replaceWith(copy)
+    if (copy) replacements.push([use, copy])
     else state.unresolved.add(referenceOf(use))
   }
+  for (const [use, copy] of replacements) use.replaceWith(copy)
   state.unresolved.delete('')
   return [...state.unresolved]
 }
@@ -165,8 +158,8 @@ function expandUse(use: Element, spritePath: string, chain: readonly string[], s
   const id = decodeFragment(href.slice(hashIndex + 1))
   const key = `${path}#${id}`
   if (!id || chain.includes(key) || chain.length >= MAX_DEPTH) return null
-  const source = path === '' ? state.pageSnapshot : spriteRoot(path, state)
-  const target = source ? lookup(source, id, state) : null
+  const source = path === '' ? state.doc.documentElement : spriteRoot(path, state)
+  const target = source?.ownerDocument.getElementById(id)
   if (!target || target.namespaceURI !== SVG_NS) return null
 
   const shapeOnly = use.parentElement?.localName === 'clipPath'
@@ -235,20 +228,6 @@ function spriteRoot(path: string, state: InlineState): Element | null {
   }
   state.sprites.set(path, root)
   return root
-}
-
-/** The element with this id in a source; the first one wins, as in a browser. */
-function lookup(source: Element, id: string, state: InlineState): Element | null {
-  let index = state.indexes.get(source)
-  if (!index) {
-    index = new Map()
-    for (const el of Array.from(source.querySelectorAll('[id]'))) {
-      const elId = el.getAttribute('id')!
-      if (!index.has(elId)) index.set(elId, el)
-    }
-    state.indexes.set(source, index)
-  }
-  return index.get(id) ?? null
 }
 
 function referenceOf(el: Element): string {
@@ -400,7 +379,7 @@ function copyReferencedDefinitions(copy: Element, source: Element, out: Collecte
     if (present.has(id)) continue
     present.add(id)
     if (!charge(state, 1)) return false
-    const definition = lookup(source, id, state)
+    const definition = source.ownerDocument.getElementById(id)
     if (!definition || definition.namespaceURI !== SVG_NS || !REFERENCE_KINDS[kind].has(definition.localName)) continue
     const before = out.references.length
     const clone = cloneTracked(definition, out, state)
@@ -445,7 +424,10 @@ function randomSuffix(): string {
 function makeIdsUnique(out: Collected, state: InlineState): void {
   if (out.idOwners.length === 0) return
   let suffix = randomSuffix()
-  while (out.idOwners.some((owner) => state.takenIds.has(`${owner.getAttribute('id')}-${suffix}`))) suffix = randomSuffix()
+  while (out.idOwners.some((owner) => {
+    const next = `${owner.getAttribute('id')}-${suffix}`
+    return state.takenIds.has(next) || state.doc.getElementById(next) !== null
+  })) suffix = randomSuffix()
   const renamed = new Map<string, string>()
   for (const owner of out.idOwners) {
     const id = owner.getAttribute('id')!

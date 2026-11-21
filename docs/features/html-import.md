@@ -178,7 +178,7 @@ After insert, `ImportHtmlModal` builds a toast body from the added-selector coun
 
 The inliner runs on every paste and agent insert, so three rules keep it bounded on any input:
 
-1. **Immutable sources.** `#id` resolves against a snapshot of the page taken before any expansion; sprite files are never modified. An expansion never feeds a later one.
+1. **Immutable sources.** `#id` resolves against the original page taken before any expansion; sprite files are never modified. An expansion never feeds a later one.
 2. **One work counter per call** (20 000 units): every node created is counted while it is cloned (so a huge target is never cloned past the limit), plus every attribute scanned and every `<use>` and definition lookup. When it runs out, expansion stops and every remaining `<use>` is reported.
 3. **One scan per node.** Cloning collects the copy's nested `<use>`s, ids and references. Definitions it references but does not contain (paint servers, clip paths, masks, markers and filters through `url(#…)` in attributes or `<style>`; gradient templates; the shape a `<textPath>` or `<mpath>` follows; an `<feImage>` or animation target) are copied in as `<defs>` through a worklist that only looks at what it just appended. Each reference kind may only name its own element kinds, so an `<a href="#pricing">` never pulls page markup in.
 
