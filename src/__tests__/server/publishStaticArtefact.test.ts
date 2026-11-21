@@ -25,6 +25,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { mkdtemp, readFile, rm, readlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import type { SiteFile } from '@core/files/schemas'
 import type { DbResult } from '../../../server/db'
 import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
 import { handleServerRequest } from '../../../server/router'
@@ -63,8 +64,10 @@ function makeSnapshot(page: ReturnType<typeof makePage>): PublishedPageSnapshot 
 function buildFakeDb(
   staticPage: ReturnType<typeof makePage>,
   dynamicPage: ReturnType<typeof makePage>,
+  files: SiteFile[] = [],
 ) {
   const staticSnapshot = makeSnapshot(staticPage)
+  staticSnapshot.site.files = files
   const dynamicSnapshot = makeSnapshot(dynamicPage)
 
   /** Row shape the snapshot getters' 3-way join returns. */
@@ -115,7 +118,7 @@ function buildFakeDb(
             metaTitle: 'Test Site',
             shortcuts: {},
           },
-          files_json: [],
+          files_json: files,
           classes_json: {},
           breakpoints_json: [
             { id: 'desktop', label: 'Desktop', width: 1440, icon: 'monitor' },
@@ -372,6 +375,30 @@ describe('publishDraftSite — Layer A static artefacts', () => {
     expect(cssRes.status).toBe(200)
     expect(cssRes.headers.get('content-type')).toContain('text/css')
     expect(snapshotLookupCalled).toBe(false)
+  })
+
+  it('publishes the root guide as plain text, including on snapshot-only servers', async () => {
+    const page = makePage({ root: { moduleId: 'base.body', props: {}, children: [] } })
+    const files: SiteFile[] = [
+      { id: 'guide', type: 'doc', path: 'llms.txt', content: '# Guide\n', createdAt: 1, updatedAt: 1 },
+      { id: 'private', type: 'doc', path: 'notes.txt', content: 'Private', createdAt: 1, updatedAt: 1 },
+    ]
+    const db = buildFakeDb(page, { ...page, id: 'second', slug: 'second' }, files)
+    const { publishDraftSite } = await import('../../../server/publish/publishSite')
+    await publishDraftSite(db, 'user-1', uploadsDir)
+    for (const runtime of [{ db, uploadsDir }, { db }]) {
+      const res = await handleServerRequest(new Request('http://localhost/llms.txt'), runtime)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('content-type')).toBe('text/plain; charset=utf-8')
+      expect(await res.text()).toBe('# Guide\n')
+    }
+    expect(await readStaticAsset(uploadsDir, '/notes.txt')).toBeNull()
+    files.length = 0
+    await publishDraftSite(db, 'user-1', uploadsDir)
+    expect(await readStaticAsset(uploadsDir, '/llms.txt')).toBeNull()
+    const emptyDb = createFakeDb(async () => ({ rows: [], rowCount: 0 }))
+    const removed = await handleServerRequest(new Request('http://localhost/llms.txt'), { db: emptyDb, uploadsDir })
+    expect(removed.status).toBe(404)
   })
 
   it('does NOT write disk artefact when uploadsDir is not provided', async () => {

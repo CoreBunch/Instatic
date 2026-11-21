@@ -26,6 +26,7 @@
  * uploaded media URL.
  */
 
+import { LLMS_DOCUMENT_PATH } from '@core/files/llmsDocument'
 import {
   PAGE_HEAD_LINK_RELS,
   PAGE_HEAD_PRELOAD_AS,
@@ -228,10 +229,11 @@ function readLink(el: Element, rel: PageHeadLinkRel, href: string): PageHeadLink
  *
  * A file the media library can store becomes its FileMap key (uploaded, then
  * rewritten to the media URL by `applyAssetRewrites`). A file in the archive
- * the media library cannot store (`llms.txt`, a web manifest, a stylesheet)
+ * the media library cannot store (a web manifest, a stylesheet)
  * keeps its link, re-pointed at the file's root-relative path so it means the
  * same on every page, and reports `head-file-not-hosted` (as does a non-media
- * file the archive does not contain). A URL naming another imported page is
+ * file the archive does not contain). The bundled root llms.txt is hosted
+ * at its canonical public path. A URL naming another imported page is
  * left for `rewriteInternalLinks`, which turns it into a `cms:page:<id>`
  * reference at commit. External URLs and origins (`preconnect`,
  * `dns-prefetch`) pass through as authored.
@@ -266,6 +268,7 @@ function normalizeHeadFileUrl(rawUrl: string, htmlFilePath: string, resolver: As
   const resolvedPath = resolveRelativePath(rawUrl, htmlFilePath)
   if (!resolvedPath) return rawUrl
   const entry = resolver.fileMap.files[resolvedPath]
+  if (entry && resolvedPath === LLMS_DOCUMENT_PATH) return `/${LLMS_DOCUMENT_PATH}`
   const mimeType = entry?.mimeType || guessMimeType(resolvedPath)
   // Another imported page: `rewriteInternalLinks` turns it into a page reference.
   if (entry && mimeType.toLowerCase().startsWith('text/html')) return rawUrl

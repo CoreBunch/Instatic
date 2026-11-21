@@ -421,6 +421,8 @@ export interface PagePlan {
  * so that `applyAssetRewrites` can replace them with new media URLs.
  */
 export interface ImportPlan {
+  /** Optional root crawler guide to publish with the site. */
+  llmsDocument?: string
   pages: PagePlan[]
   styleRules: NewStyleRule[]
   /**
