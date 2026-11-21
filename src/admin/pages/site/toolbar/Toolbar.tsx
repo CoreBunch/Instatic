@@ -177,7 +177,7 @@ export function Toolbar({
   return (
     <>
       {overlay}
-      <BranchContextStrip />
+      <BranchContextStrip mobile={mobile} />
       <header
         aria-label="Editor toolbar"
         data-testid="toolbar"
