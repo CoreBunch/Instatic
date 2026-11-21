@@ -268,17 +268,12 @@ export function prependStep(steps: string): string {
 }
 
 /**
- * Insert `step` into a comma-separated step list at its canonical position on
- * the t-shirt-size ring (`3xs,2xs,xs,s,m,l,xl,2xl,…`), keeping the step that
- * `baseScaleIndex` points at as the base: inserting before it shifts the index
- * by one so the scale's base size, ratio and every existing step's value stay
- * exactly as they were.
- *
- * Returns the list unchanged when it already holds `step`, and `null` when the
- * position is undefined — `step` is not on the ring, or the list holds a
- * custom step the ring cannot order against.
+ * Extend a scale to include a step on the canonical size ring. Include the
+ * intervening labels so separate imports reach the same sizes in either order.
+ * Inserting into an internal gap would change existing sizes, which are
+ * calculated from each label's distance from the base index.
  */
-export function insertScaleStep(
+export function extendScaleToStep(
   steps: string,
   baseScaleIndex: number,
   step: string,
@@ -286,20 +281,17 @@ export function insertScaleStep(
   const labels = steps.split(',').map((label) => label.trim()).filter(Boolean)
   if (labels.includes(step)) return { steps: labels.join(','), baseScaleIndex }
   const rank = SIZE_RING.indexOf(step)
-  if (rank === -1) return null
-
-  let insertAt = labels.length
-  for (let index = 0; index < labels.length; index += 1) {
-    const labelRank = SIZE_RING.indexOf(labels[index])
-    if (labelRank === -1) return null
-    if (labelRank > rank) {
-      insertAt = index
-      break
-    }
+  const ranks = labels.map(label => SIZE_RING.indexOf(label))
+  if (rank < 0 || ranks.length === 0 || ranks.some((value, index) => value < 0 || (index > 0 && value <= ranks[index - 1]))) {
+    return null
   }
-  labels.splice(insertAt, 0, step)
-  return {
-    steps: labels.join(','),
-    baseScaleIndex: insertAt <= baseScaleIndex ? baseScaleIndex + 1 : baseScaleIndex,
+  if (rank < ranks[0]) {
+    const added = SIZE_RING.slice(rank, ranks[0])
+    return { steps: [...added, ...labels].join(','), baseScaleIndex: baseScaleIndex + added.length }
   }
+  const lastRank = ranks[ranks.length - 1]
+  if (rank > lastRank) {
+    return { steps: [...labels, ...SIZE_RING.slice(lastRank + 1, rank + 1)].join(','), baseScaleIndex }
+  }
+  return null
 }

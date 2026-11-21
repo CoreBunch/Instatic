@@ -51,6 +51,12 @@ export function applyResolvedFragment(
     const slugs = new Set(tokens.map((t) => normalizeFrameworkColorSlug(t.slug)))
     for (const token of plan.colorTokens) if (!slugs.has(token.slug)) tokens.push(token)
   }
+  const { typography, spacing } = plan.scaleGroups
+  if (typography.length || spacing.length) {
+    const framework = site.settings.framework ??= { colors: { tokens: [] } }
+    if (typography.length) addMissingScaleGroups(framework.typography ??= { groups: [] }, typography)
+    if (spacing.length) addMissingScaleGroups(framework.spacing ??= { groups: [] }, spacing)
+  }
   for (const update of plan.scaleSteps) {
     const groups = update.family === 'typography'
       ? site.settings.framework?.typography?.groups
@@ -141,7 +147,17 @@ export function applyResolvedFragment(
   }
 
   if (plan.components.length > 0 || plan.page) reconcileSiteExplorerInPlace(site)
-  return { ...result, frameworkChanged: plan.colorTokens.length > 0 || plan.scaleSteps.length > 0 }
+  const frameworkChanged = [plan.colorTokens, typography, spacing, plan.scaleSteps].some(items => items.length > 0)
+  return { ...result, frameworkChanged }
+}
+
+function addMissingScaleGroups<Group extends { namingConvention: string }>(
+  settings: { groups: Group[]; isDisabled?: boolean },
+  additions: Group[],
+): void {
+  if (settings.isDisabled) return
+  const conventions = new Set(settings.groups.map(group => group.namingConvention))
+  for (const group of additions) if (!conventions.has(group.namingConvention)) settings.groups.push(group)
 }
 
 /**
