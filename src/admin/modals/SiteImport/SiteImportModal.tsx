@@ -116,10 +116,7 @@ interface SiteImportModalProps {
 
 export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalProps = {}) {
   const navigate = useAdminNavigate()
-  const closeAdminSiteImportModal = useAdminUi((s) => s.closeSiteImport)
-  function closeModal() {
-    closeAdminSiteImportModal()
-  }
+  const closeModal = useAdminUi((s) => s.closeSiteImport)
 
   const {
     cmsBundleState,
@@ -191,21 +188,26 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
 
   // ── Ingest + plan-build (triggered from DropStep callbacks) ───────────────
 
+  function reviewCmsBundle() {
+    planBuildRef.current?.abort()
+    latestFileMapRef.current = null
+    shownFileMapRef.current = null
+    setFileMap(null)
+    setPlan(null)
+    setSelection(null)
+    setCmsRowResolutions(new Map())
+    setCmsResult(null)
+    setBusy(false)
+    setStep('analyze')
+  }
+
   async function handleFilesReady(files: File[]) {
     setBusy(true)
     setErrorMsg(null)
     setPluginPackage(null)
     try {
       if (files.length === 1 && await loadCmsBundleFile(files[0])) {
-        latestFileMapRef.current = null
-        shownFileMapRef.current = null
-        setFileMap(null)
-        setPlan(null)
-        setSelection(null)
-        setCmsRowResolutions(new Map())
-        setCmsResult(null)
-        setBusy(false)
-        setStep('analyze')
+        reviewCmsBundle()
         return
       }
 
@@ -226,15 +228,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     setPluginPackage(null)
     try {
       if (await loadCmsBundleArchiveFile(file)) {
-        latestFileMapRef.current = null
-        shownFileMapRef.current = null
-        setFileMap(null)
-        setPlan(null)
-        setSelection(null)
-        setCmsRowResolutions(new Map())
-        setCmsResult(null)
-        setBusy(false)
-        setStep('analyze')
+        reviewCmsBundle()
         return
       }
 
