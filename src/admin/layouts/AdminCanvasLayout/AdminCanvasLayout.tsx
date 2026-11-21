@@ -55,7 +55,6 @@ import { cmsAdapter } from '@core/persistence/cms'
 import { useAdminUi } from '@admin/state/adminUi'
 import { useInstalledEditorPlugins } from '@admin/pages/plugins/hooks/useInstalledEditorPlugins'
 import { usePluginEventBridge } from '@admin/pages/plugins/hooks/usePluginEventBridge'
-import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
 import {
   CanvasFrameSkeletonFrame,
   DEFAULT_CANVAS_FRAME_SKELETON_BREAKPOINTS,
@@ -209,9 +208,6 @@ export function AdminCanvasLayout() {
           siteName={siteName}
           faviconUrl={faviconUrl}
           section="site"
-          adminNavigationSlot={(
-            <AdminSectionNavigation section="site" currentUser={currentUser} />
-          )}
           overlay={previewOpen && (
             <Suspense fallback={null}>
               <PreviewOverlay />

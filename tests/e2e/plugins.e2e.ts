@@ -533,6 +533,13 @@ test.describe.serial('packaged plugin surfaces', () => {
       const menu = page.getByRole('menu', { name: 'More admin sections' })
       await menu.getByRole('menuitem', { name: 'Approvals' }).click()
       await expect(page).toHaveURL(new RegExp(`/admin/plugins/${escapeRegExp(pluginId)}/approvals$`))
+
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.getByRole('button', { name: 'Switch workspace, current workspace: Approvals' }).click()
+      const sheet = page.getByRole('dialog', { name: 'Workspaces' })
+      await expect(sheet.locator('a[aria-current="page"]')).toHaveText('Approvals')
+      await sheet.getByRole('link', { name: 'Site', exact: true }).click()
+      await expect(page).toHaveURL(/\/admin\/site$/)
     })
   })
 })

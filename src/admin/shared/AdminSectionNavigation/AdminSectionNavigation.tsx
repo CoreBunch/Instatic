@@ -1,14 +1,8 @@
 /**
- * AdminSectionNavigation — the row of section links shown inside the
- * editor toolbar (Site · Content · Plugins · Users · …plugin pages).
- *
- * Lives next to the toolbar styles it consumes so both the heavy
- * AdminCanvasLayout (Site), AdminWorkspaceCanvasLayout (Content / Data /
- * Media), and the lightweight AdminPageLayout (Plugins / Users / Account /
- * plugin pages) can share it without one layout pulling another layout's
- * module graph in.
+ * Shared workspace destinations for the desktop navigation and mobile sheet.
+ * Both consume the signed-in user's grants and installed plugin pages.
  */
-import { useEffect, useRef, useState, useSyncExternalStore, type MouseEvent } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ArticleSolidIcon } from 'pixel-art-icons/icons/article-solid'
 import { AiBoxSolidIcon } from 'pixel-art-icons/icons/ai-box-solid'
 import { MailSolidIcon } from 'pixel-art-icons/icons/mail-solid'
@@ -19,9 +13,8 @@ import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { PackageSolidIcon } from 'pixel-art-icons/icons/package-solid'
 import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
 import { listCmsPlugins } from '@core/persistence/cmsPlugins'
-import type { CmsCurrentUser } from '@core/persistence'
 import type { PluginAdminPageRoute } from '@core/plugin-sdk'
-import { Link } from '@admin/lib/routing'
+import { useLocation } from '@admin/lib/routing'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import { canAccessWorkspace } from '@admin/access'
 import {
@@ -31,6 +24,8 @@ import {
 import { CMS_PLUGINS_CHANGED_EVENT } from '@admin/pages/plugins/utils/pluginEvents'
 import type { AdminWorkspace } from '@admin/workspace'
 import { cn } from '@ui/cn'
+import { MobileWorkspaceSheet } from './MobileWorkspaceSheet'
+import { AdminNavLink } from './AdminNavLink'
 import { AdminNavMoreMenu } from './AdminNavMoreMenu'
 import { useAdminRouteNavigation } from './useAdminRouteNavigation'
 import { useFittingEntryCount } from './useFittingEntryCount'
@@ -46,7 +41,7 @@ const NAV_ICON_SIZE = 13
 
 interface AdminSectionNavigationProps {
   section: AdminWorkspace
-  currentUser?: CmsCurrentUser | null
+  mobile?: { siteName: string | null; pluginActions: ReactNode }
   onWorkspaceNavigateStart?: () => unknown
 }
 
@@ -71,7 +66,7 @@ function setCachedPluginPages(next: PluginAdminPageRoute[]): void {
 
 export function AdminSectionNavigation({
   section,
-  currentUser,
+  mobile,
   onWorkspaceNavigateStart,
 }: AdminSectionNavigationProps) {
   // Hydrate from the session cache so the nav links don't flash empty
@@ -79,8 +74,7 @@ export function AdminSectionNavigation({
   const [pluginPages, setPluginPages] = useState<PluginAdminPageRoute[]>(
     () => cachedPluginPages,
   )
-  const sessionUser = useCurrentAdminUser()
-  const effectiveUser = currentUser ?? sessionUser ?? null
+  const effectiveUser = useCurrentAdminUser()
   const unrestricted = !effectiveUser
   const canAccess = (workspace: AdminWorkspace) => unrestricted || canAccessWorkspace(effectiveUser, workspace)
   const canAccessPlugins = canAccess('plugins')
@@ -134,8 +128,7 @@ export function AdminSectionNavigation({
     getPluginsInErrorCount,
     getPluginsInErrorCount,
   )
-  const rowRef = useRef<HTMLElement>(null)
-  const moreRef = useRef<HTMLButtonElement>(null)
+  const { pathname } = useLocation()
   const navigateTo = useAdminRouteNavigation(onWorkspaceNavigateStart)
 
   const firstPartyEntries: Array<AdminNavEntry & { workspace: AdminWorkspace }> = [
@@ -161,12 +154,28 @@ export function AdminSectionNavigation({
       to: page.route,
       label: page.navLabel ?? page.title,
       icon: <PackageSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />,
-      // A plugin page has no workspace of its own; it is never the "current
-      // section" label, only a link.
-      active: false,
+      active: pathname === page.route,
     })),
   ]
 
+  if (mobile) {
+    return (
+      <MobileWorkspaceSheet
+        key={pathname}
+        entries={entries}
+        activeLabel={entries.find((entry) => entry.active)?.label ?? (section === 'account' ? 'Account' : 'Workspaces')}
+        siteName={mobile.siteName}
+        pluginActions={mobile.pluginActions}
+        onNavigate={navigateTo}
+      />
+    )
+  }
+  return <DesktopNavigation entries={entries} navigateTo={navigateTo} />
+}
+
+function DesktopNavigation({ entries, navigateTo }: { entries: AdminNavEntry[]; navigateTo: (to: string) => void }) {
+  const rowRef = useRef<HTMLElement>(null)
+  const moreRef = useRef<HTMLButtonElement>(null)
   // Plugins add entries, so the row has no upper bound. Whatever does not fit
   // moves into a trailing "More" menu; the row itself never widens the toolbar.
   const fit = useFittingEntryCount(rowRef, moreRef, entries.length)
@@ -211,30 +220,12 @@ function NavItem({ entry, onNavigate }: { entry: AdminNavEntry; onNavigate: (to:
     )
   }
 
-  function followLink(event: MouseEvent<HTMLAnchorElement>) {
-    // Modifier keys / non-primary buttons / target=_blank → let the native
-    // <a> behaviour run (open-in-new-tab, etc.).
-    if (
-      event.defaultPrevented ||
-      event.button !== 0 ||
-      event.metaKey ||
-      event.altKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.currentTarget.target
-    ) {
-      return
-    }
-    event.preventDefault()
-    onNavigate(entry.to)
-  }
-
   return (
-    <Link className={toolbarStyles.adminLink} to={entry.to} onClick={followLink}>
+    <AdminNavLink entry={entry} className={toolbarStyles.adminLink} onNavigate={onNavigate}>
       {entry.icon}
       <span>{entry.label}</span>
       {entry.badge}
-    </Link>
+    </AdminNavLink>
   )
 }
 

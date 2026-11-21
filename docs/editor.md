@@ -244,7 +244,7 @@ src/admin/
 ### Cross-page primitives
 
 - **`SpotlightRoot`** — Cmd+K command palette. Owns its own command registry (`spotlight/commands/`), provider runner (`providers/`), scopes, keybindings, recents, telemetry. Available from every workspace.
-- **`AdminSectionNavigation`** — top-of-screen workspace switcher. Plugins add entries to it, so the row has no upper bound: `useFittingEntryCount` measures how many entries fit in the space the toolbar leaves, and the rest move into a trailing "More" menu (`AdminNavMoreMenu`). The right-hand toolbar controls never shrink, so the toolbar never grows wider than the window.
+- **`AdminSectionNavigation`** — top-of-screen workspace switcher. At widths up to 760px, tapping the site/workspace label opens a modal bottom sheet. Every permitted workspace and plugin page gets a labeled tile, with the current route checked. Settings, Account, Branches and View live sit in the footer. Workspace actions such as Publish stay in the header. At wider widths, plugins add entries to it, so the row has no upper bound: `useFittingEntryCount` measures how many entries fit in the space the toolbar leaves, and the rest move into a trailing "More" menu (`AdminNavMoreMenu`). The right-hand toolbar controls never shrink, so the toolbar never grows wider than the window.
 - **`AccountMenuButton`** — top-right avatar / account menu.
 - **`Panel`, `PanelHeader`, `SidebarResizeHandle`** — generic floating-panel chrome reused across the editor, content, and data workspaces.
 - **`StepUp`** — re-auth dialog gating sensitive actions.
