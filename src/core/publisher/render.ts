@@ -43,7 +43,7 @@ import type { PublishedPageRuntimeAssets } from '@core/site-runtime/schemas'
 import { hasPublishedRuntimeScripts, scriptTagsForRuntimeAssets } from '@core/site-runtime'
 import { renderNode } from './renderNode'
 import { findDynamicNodeIds } from './dynamicDetection'
-import { collectHoleSubtreeModuleIds } from './holeSubtreeModules'
+import { collectHoleSubtreeAssets } from './holeSubtreeModules'
 import type {
   RenderConfig,
   RenderAccumulators,
@@ -541,10 +541,12 @@ export function publishPage(
   // Per-page module-JS candidates: render-emitted ids ∪ static hole-subtree
   // ids. Hole subtrees are NOT rendered here, so the static walk is the only
   // way to know what their request-time fragments will need.
+  const deferred = collectHoleSubtreeAssets(page, site, acc.holeNodeIds)
+  for (const id of deferred.infiniteLoopIds) acc.infiniteLoopIds.add(id)
   const jsModuleIds = [
     ...new Set([
       ...acc.jsMap.keys(),
-      ...collectHoleSubtreeModuleIds(page, site, dynamicNodeIds),
+      ...deferred.moduleIds,
     ]),
   ].sort()
 

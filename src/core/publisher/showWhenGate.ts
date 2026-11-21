@@ -51,7 +51,7 @@ export function showWhenPathsTo(
   page: Page,
   site: SiteDocument,
   nodeId: string,
-  options: { includeSelf: boolean },
+  options: { includeSelf: boolean; composed?: boolean },
 ): Rule[][] {
   const paths: Rule[][] = []
 
@@ -105,7 +105,10 @@ export function showWhenPathsTo(
     for (const childId of node.children) visit(nodes, childId, withOwn, seenComponents, outlets)
   }
 
-  visit(page.nodes as Record<string, WalkNode>, page.rootNodeId, layoutRulesAbove(page, site), new Set(), null)
+  // A composed tree already contains the enclosing layouts, including chrome
+  // outside the outlet. Only an authored tree needs the external ancestor rules.
+  const above = options.composed ? [] : layoutRulesAbove(page, site)
+  visit(page.nodes as Record<string, WalkNode>, page.rootNodeId, above, new Set(), null)
   return paths
 }
 

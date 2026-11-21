@@ -12,7 +12,7 @@ export { serializeJsonLd } from './headTags'
 
 export { isHiddenFromRender, renderNode, resolveSpecialRenderer, getSpecialRendererModuleIds } from './renderNode'
 
-export { collectHoleSubtreeModuleIds } from './holeSubtreeModules'
+export { collectHoleSubtreeAssets } from './holeSubtreeModules'
 export { findDynamicNodeIds, subtreeDependsOnMember } from './dynamicDetection'
 export { showWhenPathsAllow, showWhenPathsAreGated, showWhenPathsTo } from './showWhenGate'
 

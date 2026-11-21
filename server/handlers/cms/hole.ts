@@ -34,11 +34,11 @@
  * module-JS channel's static hole-subtree walk.
  */
 
-import { composeTemplateChain, isComposedNodeId, resolveNotFoundTemplate, resolveTemplateChain } from '@core/templates'
-import { resolvePublicRoute } from '../../publish/publicRouter'
+import { isComposedNodeId, isTemplatePage } from '@core/templates'
+import { composedRouteForPath } from '../../publish/composedRoute'
 import type { DbClient } from '../../db/client'
 import type { Page, SiteDocument } from '@core/page-tree'
-import type { ClosedContent } from '@core/loops/types'
+import type { ClosedContent, LoopItem } from '@core/loops/types'
 import { registry } from '@core/module-engine'
 import {
   findDynamicNodeIds,
@@ -59,7 +59,7 @@ import {
   type LoopRequestScope,
 } from '../../publish/loopSourceRequest'
 import { getOrRender, peek } from '../../publish/renderCache'
-import { getPublishedNodeIndexForVersion, getPublishedSnapshotHash } from '../../publish/publishedSnapshotCache'
+import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS, HOLE_RUNTIME_VERSION } from '../../publish/holeRuntime'
 import { serveVersionedScript } from '../../publish/assetVersion'
@@ -127,6 +127,7 @@ async function renderHoleFragment(
   closed: ClosedContent,
   /** The visitor's member frame (null when signed out); undefined for a shared render. */
   member: MemberFrame | null | undefined,
+  entryStack: LoopItem[],
 ): Promise<string> {
   const route = buildRouteFrame(pageUrl.toString())
   const loopData = await prefetchLoopData(page, site, db, pageUrl, {
@@ -141,7 +142,7 @@ async function renderHoleFragment(
     breakpointId: undefined,
     loopData,
     templateContext: {
-      entryStack: [],
+      entryStack,
       page: buildPageFrame(page),
       site: buildSiteFrame(site),
       route,
@@ -160,32 +161,6 @@ async function renderHoleFragment(
   // them would never receive their page token. Stamp here — tokens are
   // stateless HMAC signatures, safe to store in the Layer B fragment cache.
   return stampFormPageTokens(renderNode(nodeId, config, acc), page.id)
-}
-
-/** Rebuild the tree for the originating published route using the frozen site. */
-async function resolveComposedHole(db: DbClient, url: URL, site: SiteDocument, nodeId: string): Promise<Page | null> {
-  const resolution = await resolvePublicRoute(db, url)
-  if (resolution.kind === 'redirect') return null
-  if (resolution.kind !== 'not-found' && getPublishedSnapshotHash(resolution.snapshot.site) !== getPublishedSnapshotHash(site)) {
-    return null
-  }
-  if (resolution.kind === 'row') {
-    const chain = resolveTemplateChain(site, { kind: 'entry', tableSlug: resolution.row.tableSlug })
-    if (!chain.length) return null
-    const tree = composeTemplateChain(chain, { kind: 'entry' })
-    if (!findDynamicNodeIds(tree, site, registry).has(nodeId)) return null
-    const title = resolution.row.cells.title
-    return typeof title === 'string' ? { ...tree, title } : tree
-  }
-  const page = resolution.kind === 'page'
-    ? site.pages.find((candidate) => candidate.id === resolution.snapshot.pageRowId)
-    : resolveNotFoundTemplate(site)
-  if (!page) return null
-  const tree = composeTemplateChain(resolveTemplateChain(site, { kind: 'page' }), { kind: 'page', page })
-  // The document frame, access rules and form tokens belong to the served
-  // page; only the tree structure comes from the surrounding layout.
-  if (!findDynamicNodeIds(tree, site, registry).has(nodeId)) return null
-  return { ...page, rootNodeId: tree.rootNodeId, nodes: tree.nodes }
 }
 
 /**
@@ -255,10 +230,13 @@ export async function handleHoleRequest(
 
   // The baked shell addresses a spliced subtree by its composed ID. Keep that
   // ID and its enclosing layout nodes intact for rendering and ancestor rules.
-  const composed = isComposed
-    ? await resolveComposedHole(ctx.db, pageUrl, snap.site, nodeId)
+  const useRoute = isComposed || (sourcePage && isTemplatePage(sourcePage) && url.searchParams.has('u'))
+  const composed = useRoute
+    ? await composedRouteForPath(ctx.db, pageUrl, snap.site)
     : null
-  const foundPage = composed ?? sourcePage
+  const onRoute = composed && findDynamicNodeIds(composed.page, snap.site, registry).has(nodeId) ? composed : null
+  const foundPage = onRoute?.page ?? sourcePage
+  const entryStack = onRoute?.entryStack ?? []
   if (!foundPage) {
     return new Response('Node not found', {
       status: 404,
@@ -294,7 +272,7 @@ export async function handleHoleRequest(
   // So is a fragment that sits inside an element with a show-when rule: the
   // rules above it are checked here, because rendering starts at this node.
   // A node that is not on any render path of its page is given to nobody.
-  const paths = showWhenPathsTo(foundPage, snap.site, nodeId, { includeSelf: false })
+  const paths = showWhenPathsTo(foundPage, snap.site, nodeId, { includeSelf: false, composed: onRoute !== null })
   const gated = showWhenPathsAreGated(paths)
   const showsMember = gated || subtreeDependsOnMember(foundPage, snap.site, registry, nodeId)
   if (gated) {
@@ -321,7 +299,7 @@ export async function handleHoleRequest(
     const member = signedIn === undefined
       ? undefined
       : memberFrameFor(signedIn, signedIn ? await memberAppRequestFrame(ctx.db, pageUrl) : null)
-    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, member)
+    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, member, entryStack)
     return new Response(html, {
       status: 200,
       headers: {
@@ -343,7 +321,7 @@ export async function handleHoleRequest(
   const cached = await getOrRender(
     cacheKey,
     async () => {
-      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, undefined)
+      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, undefined, entryStack)
       return {
         body: html,
         headers: { 'content-type': 'text/html; charset=utf-8' },
