@@ -219,6 +219,7 @@ async function writeTables(
       done += 1
     }
     for (const item of deferred) {
+      options.signal?.throwIfAborted()
       await adapter.appendTableFields(item.tableId, item.fields.map((f) => withTableIds(f, tableIdMap)))
     }
     for (const table of plan.tables) {

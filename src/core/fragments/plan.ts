@@ -331,6 +331,7 @@ function planRules(
 
   const now = Date.now()
   const classIdMap = new Map<string, string[]>()
+  const addedBindings = new Map<string, string>()
   const styleRules: StyleRule[] = []
   const add = (rule: StyleRule, id: string, extra: Partial<StyleRule> = {}) => {
     const { origin: _origin, generated: _generated, ...rest } = structuredClone(rule)
@@ -378,11 +379,25 @@ function planRules(
         report.rules.reused.push(rule.name)
         continue
       }
+      const selector = styleRuleSelector(rule)
+      const binding = addedBindings.get(rule.name)
+      if (binding) {
+        classIdMap.set(rule.id, [binding])
+        if (siteSelectors.has(selector)) report.rules.ambientKept.push(selector)
+        else {
+          // Keep one bindable class and preserve every later selector layer.
+          // The main HTML importer uses the same registry shape.
+          add(rule, nanoid(), { kind: 'ambient', name: selector, selector })
+          report.rules.ambientAdded.push(selector)
+        }
+        continue
+      }
       const id = nanoid()
+      addedBindings.set(rule.name, id)
       classIdMap.set(rule.id, [id])
       // A matching ambient selector already supplies the site's declarations.
       // The fragment still needs a bindable class name on its nodes.
-      add(rule, id, siteSelectors.has(styleRuleSelector(rule)) ? {
+      add(rule, id, siteSelectors.has(selector) ? {
         styles: {},
         contextStyles: {},
         stylePriorities: undefined,

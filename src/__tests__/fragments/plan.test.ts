@@ -81,9 +81,11 @@ describe('planFragmentInsert — classes and rules', () => {
     section.nodes.hero.classIds.push(hover.id)
     const empty = makeSite({ pages: [makePage({ id: 't-home' })] })
     const added = planIntoTarget(empty, section).plan
-    expect(added.styleRules.filter(rule => rule.name === 'hero' && rule.kind === 'class').map(rule => rule.selector))
-      .toEqual(['.hero', '.hero:hover'])
-    expect(added.nodes[added.roots[0]].classIds).toContain(added.styleRules.find(rule => rule.selector === '.hero:hover')!.id)
+    const newBinding = added.styleRules.filter(rule => rule.name === 'hero' && rule.kind === 'class')
+    expect(newBinding.map(rule => rule.selector)).toEqual(['.hero'])
+    expect(added.styleRules.find(rule => rule.selector === '.hero:hover')?.kind).toBe('ambient')
+    const bound = added.nodes[added.roots[0]].classIds.filter(id => newBinding.some(rule => rule.id === id))
+    expect(bound).toEqual([newBinding[0].id])
 
     const destination = makeTargetSite()
     destination.styleRules['target-hover'] = { ...destination.styleRules['t-hero'], id: 'target-hover', selector: '.hero:hover' }

@@ -284,7 +284,7 @@ async function handleTableItem(
     if (!body) return badRequest('Invalid table payload')
 
     if (body.appendFields !== undefined) {
-      if (Object.keys(body).length !== 1 || !Array.isArray(body.appendFields)) {
+      if (Object.keys(body).length !== 1) {
         return badRequest('Provide only the fields to append')
       }
       const fields = normalizeDataTableFields(body.appendFields)
