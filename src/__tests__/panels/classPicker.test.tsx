@@ -89,6 +89,7 @@ function createAmbient(selector: string) {
  */
 function addRenderedCanvasFrame(html: string) {
   const frame = document.createElement('iframe')
+  frame.srcdoc = '<body></body>'
   document.body.appendChild(frame)
   if (!frame.contentDocument) throw new Error('Test iframe did not create a contentDocument')
   frame.contentDocument.body.setAttribute('data-breakpoint-id', 'bp-desktop')
@@ -364,6 +365,21 @@ describe('ClassPicker — ambient selectors', () => {
 
     expect(
       screen.getByRole('button', { name: /edit selector h1\.title|deselect selector h1\.title/i }),
+    ).toBeTruthy()
+  })
+
+  it('shows the matching selectors of a node the canvas renders after it is selected', async () => {
+    const { nodeId } = loadSiteWithNode()
+    createAmbient('h1.title')
+
+    // A just-inserted node is selected before its element is on the canvas.
+    render(<ClassPicker nodeId={nodeId} />)
+    expect(screen.queryByRole('button', { name: /selector h1\.title/i })).toBeNull()
+
+    addRenderedCanvasFrame(`<h1 data-node-id="${nodeId}" class="title"></h1>`)
+
+    expect(
+      await screen.findByRole('button', { name: /edit selector h1\.title|deselect selector h1\.title/i }),
     ).toBeTruthy()
   })
 

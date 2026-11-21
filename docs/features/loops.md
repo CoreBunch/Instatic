@@ -25,11 +25,12 @@ src/core/loops/
 ├── types.ts                 — LoopItem, LoopEntitySource, LoopSourceField, LoopFetchResult, ...
 ├── registry.ts              — LoopSourceRegistry singleton (`loopSourceRegistry`)
 └── sources/
-    ├── index.ts             — register the three built-ins at boot
+    ├── index.ts             — register the built-ins at boot
     ├── dataRows.ts          — data.rows (any data_table)
     ├── entryField.ts        — entry.field (array field on currentEntry)
     ├── sitePages.ts         — site.pages (+ shared helpers re-exported via barrel)
-    └── siteMedia.ts         — site.media
+    ├── siteMedia.ts         — site.media
+    └── memberApps.ts        — members.apps (the signed-in member's connected apps)
 
 src/modules/base/loop/        — the base.loop module definition
 
@@ -57,6 +58,9 @@ interface LoopEntitySource {
   /** Allowed `orderBy` values; first entry is the default. Each uses `id`, not `value`. */
   orderByOptions: { id: string; label: string }[]
 
+  /** Direction until the author picks one (the one under which fetch() lists its natural order). Unset = 'asc'. */
+  defaultDirection?: 'asc' | 'desc'
+
   /** Server-side fetch — runs at publish time (and live at editor render time). */
   fetch(ctx: SourceFetchContext): Promise<LoopFetchResult>
 
@@ -68,7 +72,7 @@ interface LoopEntitySource {
    * request (live API, time-of-day data). Loops using a request-dependent source
    * become Layer C "holes" — the publisher emits a placeholder + a ~1.1 KB client
    * runtime fetches the rendered fragment lazily via
-   * `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>`.
+   * `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>`.
    *
    * A `requestDependent` (non-perVisitor) hole is rendered at request time and
    * cached by Layer B per `(nodeId, query, publishVersion)`.
@@ -81,8 +85,13 @@ interface LoopEntitySource {
 
   /**
    * Default `false`. Implies `requestDependent`. Output varies per individual
-   * visitor (cookies, randomization). Bypasses the Layer B cache; `fetch()`
-   * runs on every page load. Use sparingly.
+   * visitor (cookies, the signed-in member, randomization). Bypasses the
+   * Layer B cache; `fetch()` runs on every page load. Use sparingly.
+   * `ctx.request.member` is the signed-in site member or `null`, and is
+   * present only for these sources (a plugin's source also needs
+   * `members.read`). The request is built per source: a list on another
+   * source in the same fragment gets neither cookies nor member. A fragment
+   * is per-visitor when ANY list in it uses such a source.
    */
   perVisitor?: boolean
 }
@@ -116,7 +125,7 @@ Iterates rows in any `data_table`. The user picks the table in the Properties pa
 
 **Filtering by a cell.** Three `filters` keys carry the condition: `cellField` (a field id from the selected table), `cellOperator`, and `cellValue`. The operator set is closed — `is`, `isNot`, `isTrue`, `isFalse`, `isSet`, `isEmpty` — and `parseCellFilter` in `src/core/loops/cellFilter.ts` returns `null` for anything absent or half-configured, so a loop mid-edit keeps listing everything rather than silently emptying.
 
-**Sorting by a cell.** `orderBy` also accepts `cell:<fieldId>`, read by `parseCellOrder`. Riding on `orderBy` rather than a separate prop means every caller that already threads it — the publisher, the canvas preview endpoint, imported `data-order-by` attributes — supports cell sorting without further plumbing. Values compare as text in both dialects: ISO dates sort chronologically, numbers sort lexicographically (`'10' < '9'`).
+**Sorting by a cell.** `orderBy` also accepts `cell:<fieldId>`, read by `parseCellOrder`. Riding on `orderBy` rather than a separate prop means every caller that already threads it — the publisher, the canvas preview endpoint, imported `data-order-by` attributes — supports cell sorting without further plumbing. Number fields use numeric comparison in both dialects; missing, null and non-number values sort last in either direction. Other scalar fields compare as text, so ISO dates sort chronologically. Field metadata selects the comparison type: authors keep actual numbers in their cells rather than formatting values to influence ordering.
 
 Both read `cells_json`, the one place the two dialects genuinely differ (`#>> array[$n]` on Postgres, `json_extract` on SQLite). **The field name binds as a parameter, never as SQL text.** `cellFilterSql` and `cellOrderSql` own that switch; `loop-source-sql-safety.test.ts` scans the whole `src/core/loops/` tree for Postgres-isms.
 
@@ -154,6 +163,10 @@ Used by galleries.
 
 Its author-facing `fields` list exposes filename, path/URL/source URL, MIME type, and upload date. Internal uploader ids stay in `LoopItem.fields` for code that needs them, but they are not binding-picker rows.
 
+### `members.apps`
+
+The apps the signed-in site member has signed in to with their account (see [members](members.md) → "Sign-in for apps"). It is `perVisitor`: each member gets their own list in an uncached fragment, and a signed-out visitor gets none. `fetch()` reads the member from `ctx.request.member`, which the hole and loop endpoints give every `perVisitor` source (`sourceRequestFor`). Fields: `name`, `device`, `connectedOn`, `lastUsedOn`, `connectedAt`, `lastUsedAt`, `id`. The canvas shows two sample apps from `preview()`. The hole endpoint looks at every loop in the fragment it renders (`subtreeHasPerVisitorSource`), not only the hole's own node, so the list also works inside a show-when box or another list: one `perVisitor` source makes the whole fragment uncached.
+
 ### `entry.field`
 
 Iterates an array-valued field on the closest enclosing entry. It is resolved
@@ -173,6 +186,8 @@ Media ids are resolved through the publisher's batched media prefetch and
 provide `currentEntry.src`, `url`, `path`, `altText`, `mimeType`, `width`, and
 `height`.
 
+An element inside a loop can be shown only for some items: its Visibility view's "Show if" tests a field of the loop item (`showIf` with `source: 'entry'`, see [members.md](members.md) → "Show-if conditions").
+
 Contextual loops preserve authored order by default, can reverse/slice with
 direction/offset/limit, and do not support infinite pagination. Infinite
 fragments are independent requests and cannot recover an arbitrary outer
@@ -181,6 +196,8 @@ entry stack safely.
 ### Plugin-registered sources
 
 A plugin with `loops.register` registers a custom source via the SDK at activation. The source runs inside the **QuickJS sandbox** — it can use `api.cms.storage.collection(...)` to fetch plugin-owned data or `fetch(...)` (with `network.outbound` permission) for external APIs.
+
+The server registry holds it as a prefetched source whose `fetch` calls the plugin's worker. The editor's registry holds the same id as a `kind: 'remote'` source (`RemoteLoopEntitySource`): the descriptor and the plugin's name, no functions. `usePluginLoopSources` fills it from `GET /admin/api/cms/loop-sources` and keeps it current (the triggers are listed in plugin-system.md). Read the registry in the editor through `useLoopSources` / `useLoopSource` / `useLoopSourceMissing` (`src/admin/pages/site/hooks/useLoopSources.ts`). They derive from `loopSourceRegistry.getSnapshot()`, an immutable list replaced on every change, as returned by `useSyncExternalStore`, so the React Compiler recomputes when plugin sources arrive or leave. A direct `loopSourceRegistry.list()` or `.get()` in a component is memoized by the compiler and keeps the answer it first saw.
 
 See [docs/features/plugin-system.md](plugin-system.md) and the loop-sources section.
 
@@ -216,6 +233,8 @@ orderByOptions: [
 ```
 
 The `base.loop` node carries `props.filter: Record<string, unknown>` and `props.orderBy: string`. The publisher passes them to `fetch(ctx)` as `ctx.filter` and `ctx.orderBy`.
+
+**Direction.** `props.direction` is stored only once the author picks one in the Direction control. Until then the loop runs in its source's `defaultDirection`, and a source that declares none runs `'asc'`. What a direction means is each source's own business, so a source declares the direction under which `fetch()` lists items in their natural order: `members.apps`, for one, returns newest first for `'desc'` and reverses for `'asc'`. `resolveLoopDirection(props.direction, source)` (`src/core/loops/direction.ts`) is the one resolver; the publisher prefetch, the infinite-scroll endpoint, the canvas preview and the Properties panel all call it, so `ctx.direction` is never unset. `data.rows`, `site.media` and `members.apps` declare `'desc'` (newest first); `site.pages` and contextual sources list in their natural order. Changing a loop's source clears its stored direction. An imported `<instatic-loop>` without `data-direction` stores none. Loops saved before the direction became optional carry an explicit `'desc'` (the old module default) and keep it.
 
 ---
 
@@ -322,6 +341,8 @@ async function prefetchLoops(page, site, db) {
 
 The map is passed into `RenderConfig.loopData`. The walker reads from it; no async at render time.
 
+A full publish bakes each page with the items its loops resolved at that moment. When a row of a table is later published, unpublished or deleted, the baked pages that hold a `data.rows` loop over that table are removed from the active slot and render live until the next full publish, so a listing follows its rows without a site publish. See [publisher.md](publisher.md) → "Publishing one row, and the pages that list it".
+
 The public renderer and the editor's full-page **Preview page** overlay both
 use this server-side prefetch path. Preview sends the current in-memory draft
 to `/admin/api/cms/runtime/preview`; the server resolves loop and media data
@@ -340,11 +361,14 @@ In the editor, `useLoopPreviewItems` (`src/admin/pages/site/canvas/useLoopPrevie
 | `data.rows` | GETs `/data/tables/:id/loop-preview` — same projection as the publisher, and takes `cellField` / `cellOperator` / `cellValue` plus a `cell:<fieldId>` `orderBy` so the canvas shows the rows the published page will emit. On a site branch the preview reads the branch's draft rows (the branch has nothing published), mirroring `renderBranchPreview`. Falls back to synthetic items from the table's field definitions when no rows exist yet. |
 | `site.pages` | Reads pages from the in-memory site document via `selectSitePagesLoopItems`. Applies `filterPagesForLoop` + `pageToLoopItem` imported from `@core/loops` — identical to the publisher path. |
 | `site.media` | Fetches via `listCmsMediaAssets()`, filters by MIME prefix, sorts + slices client-side. |
-| Plugin sources | Calls `source.preview(ctx)` synchronously. |
+| Plugin sources (`kind: 'remote'`) | POSTs `/loop-sources/preview`, which runs the plugin's `preview()` in its sandbox. `useRemoteLoopPreview` reads the shared answer from `remoteLoopPreviews.ts`, which asks once per source, filters and limit, debounces filter edits, never refreshes on a timer, and returns the loop's previous items while a new answer loads. |
+| Other in-process sources (`member.apps`) | Calls `source.preview(ctx)` synchronously. `preview` is optional on a source; the three sources above have none. |
+
+`useLoopPreviewNotice(props)` returns the reason a loop draws nothing when the author should know it: the source id is not registered (its plugin is disabled or removed), or a plugin preview is loading, busy, failed or returned no items. A failed preview that the editor has stopped retrying carries an `onRetry`, drawn as a "Try again" button. `LoopPreviewNotice` shows it in place of the iterations, and `LoopEditor` shows it in the "Empty loop" placeholder of a loop without children.
 
 The canvas caps preview results at 6 items (`CANVAS_MAX_ITEMS`) regardless of the loop's configured `limit`. Published pages render the full set.
 
-Subscription granularity: the hook never subscribes to the whole `site` document for built-in sources. `site.pages` loops subscribe through `selectSitePagesLoopItems`, which keeps the items array (and each `LoopItem`) referentially stable across site mutations that don't change the loop's actual items — so typing in an unrelated text node doesn't re-render loop body subtrees. Only the plugin-source fallback subscribes to `site` (its `preview()` contractually receives the full document), and only while such a source is selected. Stability is gated by `src/__tests__/loops/loopPreviewItemStability.test.ts`.
+Subscription granularity: the hook never subscribes to the whole `site` document for built-in sources. `site.pages` loops subscribe through `selectSitePagesLoopItems`, which keeps the items array (and each `LoopItem`) referentially stable across site mutations that don't change the loop's actual items — so typing in an unrelated text node doesn't re-render loop body subtrees. Only the in-process `preview()` fallback subscribes to `site` (that `preview()` contractually receives the full document), and only while such a source is selected. Stability is gated by `src/__tests__/loops/loopPreviewItemStability.test.ts`.
 
 ---
 
@@ -375,10 +399,10 @@ Subscription granularity: the hook never subscribes to the whole `site` document
 
 ### Build a loop with the AI agent
 
-The site-scope AI agent stays on the HTML-native edit surface. It calls `list_loop_sources` to get valid source ids, table ids, order options, and `{currentEntry.field}` tokens, then inserts an `<instatic-loop>` marker through `insertHtml` / `replaceNodeHtml`:
+The site-scope AI agent stays on the HTML-native edit surface. It calls `list_loop_sources` to get valid source ids, table ids, order options, and `{currentEntry.field}` tokens, then inserts an `<instatic-loop>` marker through `insertHtml` / `replaceNodeHtml`. It leaves out `data-direction` so the list keeps its source's `defaultDirection` (returned by `list_loop_sources`), and adds it only to reverse that:
 
 ```html
-<instatic-loop data-source-id="data.rows" data-table-id="tbl_posts" data-order-by="publishedAt" data-direction="desc" data-limit="3">
+<instatic-loop data-source-id="data.rows" data-table-id="tbl_posts" data-order-by="publishedAt" data-limit="3">
   <article>
     <a href="{currentEntry.permalink}">
       <img src="{currentEntry.featuredMedia}">
@@ -430,6 +454,7 @@ export function activate(api) {
         .map((p) => ({ id: p.id, fields: p }))
       return { items, totalItems: items.length }
     },
+    // Sample items for the editor canvas. Gets { filters, limit } only.
     preview(ctx) {
       return [
         { id: 'preview-1', fields: { name: 'Example product', price: 99 } },
@@ -483,7 +508,7 @@ Two modes are available via the loop node's `pagination` prop:
 To enable infinite loading:
 1. Set `props.pagination = 'infinite'` on the loop node.
 2. Set `props.pageSize` (items per click; defaults to 10).
-3. The publisher auto-injects `<script type="module" src="/_instatic/assets/loop-runtime.js">` when at least one infinite loop exists on the page (see `server/publish/loopRuntime.ts`). The runtime is < 2 KB and ships only when needed.
+3. The publisher auto-injects `<script type="module" src="/_instatic/assets/loop-runtime.js?v=<contentHash>">` when at least one infinite loop exists on the page (see `server/publish/loopRuntime.ts`). `?v=` is `LOOP_RUNTIME_VERSION`, the hash of the runtime body, so a CMS upgrade that changes the runtime changes the URL; the route caches a response only under the URL that names the body it serves (see [publisher.md](publisher.md) → "Module-emitted JS"). The runtime is < 2 KB and ships only when needed.
 
 For static multi-page navigation (no JS required):
 - Set `pagination: 'infinite'` and link the pages with the query parameter below — the server renders each page. See "Deep-link to a loop page".

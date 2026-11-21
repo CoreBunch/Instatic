@@ -25,13 +25,13 @@ interface WalkNode {
   children?: string[]
 }
 
-export function collectHoleSubtreeModuleIds(
+export function collectHoleSubtreeAssets(
   page: Page,
   site: SiteDocument,
   dynamicNodeIds: ReadonlySet<string>,
-): Set<string> {
-  const out = new Set<string>()
-  if (dynamicNodeIds.size === 0) return out
+) {
+  const moduleIds = new Set<string>()
+  const infiniteLoopIds = new Set<string>()
 
   const visit = (
     nodes: Record<string, WalkNode>,
@@ -40,7 +40,8 @@ export function collectHoleSubtreeModuleIds(
   ): void => {
     const node = nodes[nodeId]
     if (!node) return
-    out.add(node.moduleId)
+    moduleIds.add(node.moduleId)
+    if (node.moduleId === 'base.loop' && node.props.pagination === 'infinite') infiniteLoopIds.add(node.id)
     if (node.moduleId === 'base.visual-component-ref') {
       const componentId =
         typeof node.props.componentId === 'string' ? node.props.componentId.trim() : ''
@@ -61,5 +62,5 @@ export function collectHoleSubtreeModuleIds(
   for (const holeNodeId of dynamicNodeIds) {
     visit(page.nodes as Record<string, WalkNode>, holeNodeId, new Set())
   }
-  return out
+  return { moduleIds, infiniteLoopIds }
 }

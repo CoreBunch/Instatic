@@ -34,6 +34,7 @@ import { render, screen, cleanup, fireEvent, act, within } from '@testing-librar
 import { readFileSync } from 'fs'
 import { SettingsModal } from '@admin/modals/Settings/SettingsModal'
 import { useEditorStore } from '@site/store/store'
+import { cmsAdapter } from '@core/persistence/cms'
 import { makeSite, makePage } from '../fixtures'
 
 // ---------------------------------------------------------------------------
@@ -73,8 +74,20 @@ function openModal(section = 'general', withSite = false) {
   } as Parameters<typeof useEditorStore.setState>[0])
 }
 
-beforeEach(resetStore)
-afterEach(cleanup)
+const originalLoadSite = cmsAdapter.loadSite
+
+beforeEach(() => {
+  resetStore()
+  // Shell tests own their data boundary too: a real request can outlive the
+  // modal and block the next test through the standalone store's load promise.
+  cmsAdapter.loadSite = async () => ({ site: makeSite(), rowSeqs: {}, shellSeq: 0 })
+})
+afterEach(async () => {
+  // Drain the immediate fixture load before restoring the adapter or resetting
+  // the store for the next test. DOM cleanup alone does not settle that load.
+  await act(async () => { cleanup() })
+  cmsAdapter.loadSite = originalLoadSite
+})
 
 // ---------------------------------------------------------------------------
 // 1 — Render gating
@@ -184,6 +197,16 @@ describe('SettingsModal — backdrop', () => {
     const backdrop = document.querySelector('[aria-hidden="true"]') as HTMLElement
     expect(backdrop).not.toBeNull()
     fireEvent.click(backdrop)
+    expect(useEditorStore.getState().isSettingsOpen).toBe(false)
+  })
+
+  it('clicking the Esc keycap closes the modal it advertises', () => {
+    // The keycap depresses on `:active` like every other `Kbd`, and sits
+    // beside the word "close". It used to be inert markup, so clicking it
+    // played the press animation and did nothing.
+    openModal()
+    render(<SettingsModal />)
+    fireEvent.click(screen.getByRole('button', { name: /esc\s*close/i }))
     expect(useEditorStore.getState().isSettingsOpen).toBe(false)
   })
 })

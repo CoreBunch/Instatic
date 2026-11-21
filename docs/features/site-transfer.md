@@ -1,8 +1,8 @@
 # Site Transfer
 
-Export and import — move a complete site between self-hosted instances. One ZIP bundle carries the shell, all data tables, all data rows, the media library (metadata + raw files + the folder tree), and published-URL redirects. Everything that defines the *site* travels in one archive, so re-importing into a fresh instance reproduces an **identical** site.
+Export and import — move a complete site between self-hosted instances. One ZIP bundle carries the shell, all data tables, all data rows and their publication history, frozen published site snapshots and compiled runtime scripts, the media library (metadata + raw files + the folder tree), and published-URL redirects. Everything that defines the *site* travels in one archive, so re-importing into a fresh instance reproduces an **identical** site.
 
-The transfer format is **self-contained** — no external service, no signed URLs, no incremental sync. Use it for backup, environment promotion (staging → production), or migrating between hosts.
+Use the portable bundle for site-content backups, environment promotion (staging → production), or migrating between hosts. It does not carry accounts, credentials, plugins, or server configuration; use database and filesystem backups for full-instance recovery. Runtime npm dependencies are restored from the frozen dependency lock through the existing dependency cache, requiring registry access on a cold destination. Authored compiled scripts and media bytes travel inside the archive.
 
 The **Export site** dialog (`src/admin/pages/data/components/ExportDialog`) is a sibling of the Site Import modal: a two-column category navigator with a detail pane. Every category is selected by default — the primary action is a one-click **full export**. Untick any category to narrow the bundle. A live, server-accurate size estimate updates as the selection changes.
 
@@ -10,7 +10,7 @@ The **Export site** dialog (`src/admin/pages/data/components/ExportDialog`) is a
 
 ## TL;DR
 
-- Format: `site-bundle-<timestamp>.zip` — `.instatic/site-bundle.json` plus `media/<storagePath>` entries. The archive manifest schema lives in `src/core/data/bundleArchive.ts`; the internal import payload schema lives in `src/core/data/bundleSchema.ts`.
+- Format: `site-bundle-<timestamp>.zip` — `.instatic/site-bundle.json` plus `media/<storagePath>` and `runtime/<index>` entries. The archive manifest schema lives in `src/core/data/bundleArchive.ts`; the internal import payload schema lives in `src/core/data/bundleSchema.ts`.
 - Endpoints:
   - `GET /admin/api/cms/export` or `POST /admin/api/cms/export` — produce a bundle from the current site
   - `POST /admin/api/cms/export/estimate` — exact byte size for an `ExportRequest`, without reading media off disk
@@ -26,6 +26,7 @@ The **Export site** dialog (`src/admin/pages/data/components/ExportDialog`) is a
 - Three import strategies: `replace` (destructive — the full-restore path), `merge-add` (insert if new), `merge-overwrite` (upsert).
 - Media bytes are stored as raw files under `media/`. Export and archive import stream media bytes; the browser and server do not assemble a media-heavy archive as a JSON/base64 payload.
 - Media folders + redirects are restored by the **`replace`** strategy (the full-restore path); merge strategies leave the local folder tree and redirects untouched.
+- A `replace` that carries media and the shell on main (with no other branch) removes the previous media library, rows and files, before the bundle's media lands. See "Replace and the media library" below.
 
 ---
 
@@ -84,6 +85,9 @@ interface SiteBundleArchiveManifest {
 
   /** All (or selected) data tables — `data_tables` rows */
   tables: DataTable[]
+
+  /** Access rules of exported tables that are not open to anyone, by table id (main branch only) */
+  tableAccess?: Record<string, AccessRule>
 
   /** All (or selected) data rows — `data_rows` rows. Cells included verbatim. */
   rows:   DataRow[]
@@ -219,7 +223,7 @@ Body: an internal `SiteBundle` JSON (verbatim). Strategy is a query-string param
 
 `POST /admin/api/cms/import/archive[?strategy=replace|merge-add|merge-overwrite]`
 
-Body: the user-facing ZIP archive emitted by export. The manifest must be the first stored entry at `.instatic/site-bundle.json`; media entries must be stored under `media/<storagePath>`. This is the path used by Super Import when a dropped ZIP is an Instatic transfer archive.
+Body: the user-facing ZIP archive emitted by export. The manifest must be the first stored entry at `.instatic/site-bundle.json`; media entries must be stored under `media/<storagePath>` and compiled runtime entries under `runtime/<index>`. This is the path used by Super Import when a dropped ZIP is an Instatic transfer archive.
 
 The archive endpoint also accepts a `selection` query parameter containing `BundleImportSelection` JSON. The browser still posts the original ZIP Blob; the server filters the manifest before delegating to the JSON import handler and streams only selected media entries to disk, draining unselected archive entries as needed. Row slug conflict resolutions travel in the same selection as `rowSlugOverrides: { tableId, rowId, slug }[]`; the server applies those overrides to the manifest row before import.
 
@@ -229,32 +233,75 @@ type ImportStrategy = 'replace' | 'merge-add' | 'merge-overwrite'
 
 | Strategy           | Tables                            | Rows                              | Media                              | Folders + redirects          |
 |--------------------|-----------------------------------|-----------------------------------|------------------------------------|------------------------------|
-| `replace`          | Wipe + recreate from bundle       | Wipe + recreate                   | Wipe + write all bytes             | Wipe + recreate from bundle  |
+| `replace`          | Wipe + recreate from bundle       | Wipe + recreate                   | Wipe + write all bytes (conditions below) | Wipe + recreate from bundle  |
 | `merge-add`        | Skip if exists; add if new        | Skip if id or active slug exists; add if new | Skip if exists; add if new         | Left untouched               |
 | `merge-overwrite`  | Upsert (incoming wins)            | Upsert (incoming wins)            | Upsert (incoming bytes win)        | Left untouched               |
 
 Folder membership (`media_asset_folders`) is restored **after** the media bytes land, and only into folders the bundle actually carried. Redirect rows are inserted after their target rows exist (in `replace`, the rows' cascade-delete clears the old redirects first). Folders + redirects ride only the `replace` (full-restore) path because merging a folder tree or redirect set into a populated instance risks unique-key collisions — the same reason the site shell is `replace`/`merge-overwrite`-only.
 
+### Draft and published state
+
+`BundlePublicationSchema` (`src/core/data/bundlePublication.ts`) stores each included row's version history and active version pointer separately from its editable `cells`. Page versions retain their frozen `site_snapshots` (shared styles, components, layouts, runtime settings and importmap), and compiled runtime files are raw ZIP entries with manifest metadata. `scheduledPublishAt` is preserved on editable rows. Branch exports contain draft content only, because branches have no independent publication.
+
+Export flushes pending collaboration writes, then reads rows and publication state in a transaction under the publish and collaboration write locks. Selecting rows also selects their versions and referenced snapshots/files; ZIP runtime entry indices always refer to the original archive manifest.
+
+On main, `applySiteBundle` validates references and runtime bytes before mutation, then restores publication inside the same transaction as the rows. `replace` restores all included state; `merge-add` leaves existing rows and their publication untouched; `merge-overwrite` replaces the history and active pointer for updated rows. Snapshot IDs are remapped to protect unrelated target snapshots. Version IDs are retained because compiled chunks contain immutable version URLs. A conflicting published route aborts the transaction. Slug overrides change editable rows; they do not rewrite historical published URLs.
+
+After commit, an empty static slot replaces the previous baked output and the render cache generation changes. The existing public renderer serves restored snapshots immediately; no draft republish or script rebuild is needed. Runtime dependency caches for active snapshots are prepared before the transaction. Import into a branch changes drafts only and never activates published versions on main.
+
+Malformed references, missing runtime files, size mismatches and CRC failures are rejected before replace can delete target data. Publication restore requires publishing capabilities and step-up authentication in addition to the normal import gates. So does a bundle that carries a `scheduled` row into main: the scheduler publishes that row when it falls due, so importing it is a publish (`authorizeImportedPublication` in `server/handlers/cms/import.ts`). This format preserves future exports; it does not reconstruct publication data absent from older bundles.
+
+#### Rows the import cannot publish
+
+On main a row is served through its published version, and `status = 'published'` is the switch that serves it. A bundle row's `published` status is therefore a claim the import can only honour by restoring a live version. A bundle exported before publication travelled in it has no `publication` section, so it brings none.
+
+`landingPublication` (`server/handlers/cms/importApply.ts`) decides the state each row lands with, for both import endpoints and every strategy:
+
+| Bundle row | Target | Lands as |
+|---|---|---|
+| `published`, and the import restores a live version for it | any | `published`, as the bundle says |
+| `published`, no live version restored | new row | `draft`, `publishedAt` cleared |
+| `published`, no live version restored | row already on main (`merge-overwrite`) | the publication state the row already has; only its draft content is replaced |
+| `published`, no live version restored | row already on main with a pending schedule | `draft`, schedule cancelled: the scheduler would otherwise publish the content the import just put in its place |
+| `draft`, `unpublished`, `scheduled` | any | as the bundle says (a `scheduled` row on main needs publishing rights, see "Capability gates") |
+
+So the import never creates a row that reads Published with nothing public, and never puts a row that was taken offline back up on its old version. A row that is live stays live on its local version while the bundle replaces its draft. `ImportResult.rowsImportedAsDraft` counts the rows that landed as drafts for this reason (new rows and cancelled schedules); the Site Import completion step reports it and tells the operator to publish, and the success toast carries the count. Importing such a bundle with `replace` therefore leaves the public site unpublished until the operator publishes again.
+
+A branch serves nothing, so rows imported into a branch keep the status the bundle gives them.
+
+### Replace and the media library
+
+Media is not branch-scoped, and records outside an import can reference it, so `replace` wipes the library only when nothing that survives the replace can (`replacesMediaLibrary` in `server/handlers/cms/importApply.ts`):
+
+- the import carries the media category (`media` present in the bundle or the selected archive manifest, even empty). A bundle exported without media leaves the library alone, like folders and redirects;
+- it carries the site shell. A kept shell can reference media (favicon, `@font-face` sources, style-rule backgrounds);
+- it runs on main and no other branch exists. Branches share main's library and their rows and shells reference it.
+
+When it applies, `deleteSiteMediaAssets` (`server/repositories/media.ts`) deletes every `media_assets` row, trashed ones included, inside the import transaction; folder memberships and usage refs cascade. It spares assets owned by records that survive a replace: user avatars (`users.avatar_media_id`) and plugin-managed media (`plugin_media_sources`). After the transaction commits, and before the bundle's media is written, `removeDeletedMediaFiles` sweeps each deleted asset's original and variants through its pinned storage adapter (`removeMediaAssetFiles`, the same sweep a single purge uses). A rolled-back import therefore never loses a file, and a bundle file at a deleted asset's storage path is written after the old bytes are gone. When the conditions do not hold, a bundle asset whose path is already taken by a kept asset still fails on `media_assets.public_path`.
+
 The JSON handler:
 
-1. Validates the bundle against `SiteBundleSchema`.
-2. Runs the same preview logic to compute the change set.
-3. Wraps the apply in a **single DB transaction**:
+1. Checks the strategy gate (`authorizeImportStrategy`), validates the bundle against `SiteBundleSchema`, then checks the shell gate (`authorizeImportedShell`); see the capability gates below.
+2. Calls `applySiteBundle`, which wraps the apply in a **single DB transaction** on the collab-aware write lane:
    - Tables: insert / update / delete per strategy.
-   - Rows: insert / update / soft-delete per strategy.
+   - Rows: insert / update / soft-delete per strategy, preserving schedules. A `published` row lands published only when a live version is restored for it (see "Rows the import cannot publish").
+   - Publication: restore versions, frozen snapshots, runtime files and active pointers for imported rows on main.
    - Site shell: if the bundle carries `site`, overwrite the `site` row.
+   - `replace` only: the media library (see above), folders, and redirects.
+3. Removes the bytes of media rows a `replace` deleted.
 4. **Outside the transaction**, writes media bytes to `uploads/<storagePath>`. Before writing, the handler calls `assertPathWithin(uploadsDir, target)` (from `server/util/pathWithin.ts`) as a defense-in-depth check — the schema already forbids traversal, but the sink re-asserts containment after `path.join()` resolves symlinks. Media writes are best-effort — if a disk write fails, the row import has already committed and the asset is skipped with a log entry.
-5. Returns `ImportResult` with counts.
+5. Returns `ImportResult` with counts, including `rowsImportedAsDraft`.
 
 The archive handler:
 
 1. Capability-gates on `data.import`.
 2. Reads and validates the first ZIP entry as `.instatic/site-bundle.json`.
 3. Applies the optional selection filter and row slug overrides to the manifest.
-4. Streams selected media entries into temporary files, validating declared size, CRC descriptors, missing selected entries, and unexpected archive entries before data is mutated.
-5. Delegates the manifest's site/data/folder/redirect content to the JSON import handler without media bytes.
-6. Moves staged media into `uploads/<storagePath>` and upserts the matching media row.
-7. Returns the same `ImportResult` shape with `mediaImported` from the staged entries.
+4. Runs the same two capability gates (`authorizeImportStrategy`, then `authorizeImportedShell` for whether the selection carries the shell).
+5. Streams selected media and runtime entries into temporary files, validating declared size, CRC, missing selected entries, and unexpected archive entries before data is mutated. Runtime bytes are read from staging for transactional database storage.
+6. Applies the manifest's site/data/folder/redirect content through `applySiteBundle` (the JSON handler's transaction), stating whether the selection carries media, then removes the bytes of media rows a `replace` deleted.
+7. Moves staged media into `uploads/<storagePath>` and upserts the matching media row.
+8. Returns the same `ImportResult` shape with `mediaImported` from the staged entries.
 
 The transaction is **all-or-nothing** for the DB side — if any insert fails, the DB rolls back. Malformed archive media is rejected before the DB transaction starts. A disk failure while moving already-validated staged media can still leave media partially written after the data import, matching the JSON import handler's best-effort filesystem semantics.
 
@@ -262,11 +309,19 @@ The transaction is **all-or-nothing** for the DB side — if any insert fails, t
 
 Per strategy:
 
-- **`replace`**: incoming bundle wins for everything.
+- **`replace`**: incoming bundle wins for everything (media under the conditions in "Replace and the media library").
 - **`merge-add`**: existing rows / tables / media are untouched. Incoming-only items added.
 - **`merge-overwrite`**: matching ids upsert. Items not in the bundle are **kept** (vs. `replace` which deletes them).
 
 Primary merge identity is **id**: a row in the bundle with the same id as an existing row is the same row. Row slugs still have a table-scoped uniqueness constraint for active rows, so a new incoming row can collide with an unrelated local row's slug. Preview reports those collisions as `rowConflicts`; Super Import lets the operator rename or skip them. The `merge-add` repository path also uses `on conflict do nothing`, so a missed slug collision is skipped instead of surfacing as a 500.
+
+### Access rules
+
+An import never opens something that was limited to members (`applySiteBundle` in `server/handlers/cms/importApply.ts`, tested in `importAccessRules.test.ts`):
+
+- **Tables.** A table's rule is the `data_tables.access_json` column, which the bundle's table writes do not set. A stored rule always stays, including through `replace`, which deletes and recreates custom tables. The bundle's `tableAccess` is only used to add a rule to a table that has none: on `replace` and `merge-overwrite` for every table in the bundle, on `merge-add` only for tables it creates. A bundle that carries a rule for a table it brings needs what the table access endpoint needs (`authorizeImportedTableAccess`): the right to manage each such table, tags a member can be granted, and step-up. Each table the import limits is recorded in the audit log as `data.table.access` with `source: "import"` (`recordImportedTableAccess`).
+- **Pages.** A page's rule is the `access` cell of its row, so it travels with the row. On `replace` and `merge-overwrite`, a page that already exists keeps its stored rule, and its `seo` head settings, unless the importer holds `site.structure.edit` (`keepPageStructuralCells`). Global head settings also require this capability in the imported site shell and restored publication snapshots. Page head settings follow the same rule everywhere the bundle carries them: the row, each restored published version's `seo` cell, and each page of the restored site snapshots (what the public renderer reads). Without that right an existing page keeps its draft's settings and a new page gets none; with it they are normalised through `parsePageSeo`. The same holds for the published versions restored from the bundle's publication history: each gets the rule its address was published with, or the draft's rule.
+- **Addresses, not only ids.** A different table that ends up on a protected table's route base, or a different page on a protected page's slug, takes that rule.
 
 ### Capability gates
 
@@ -277,12 +332,17 @@ Primary merge identity is **id**: a row in the bundle with the same id as an exi
 | Apply (any strategy)                  | `data.import`                                       |
 | Apply with `replace` strategy         | `data.import` AND `content.manage` AND step-up      |
 | Apply bundle that carries `site` shell| ALSO `site.structure.edit`                          |
+| Apply bundle that publishes: published versions, or a `scheduled` row imported into main | ALSO `pages.publish`, `content.publish.any` and step-up |
+| Apply bundle carrying a table access rule | ALSO `data.custom.tables.manage` / `data.system.tables.manage` for those tables, and step-up |
 
 ---
 
 ## Round-trip parity
 
 The export → import path round-trips losslessly for everything in the bundle. This is verified by:
+
+- `src/__tests__/server/bundlePublishedState.test.ts` — published/draft separation, collection loops, schedules, history, runtime bytes, selected rows, permissions and invalid-archive rollback on SQLite and PostgreSQL. Also bundles without a `publication` section: published rows land as drafts under every strategy and both endpoints, a live row stays live, and a retracted row stays offline. And scheduled rows: importing one into main needs publishing rights on both endpoints, and an overwrite cancels the pending schedule of the row it replaces.
+- `tests/e2e/backup-published-state.e2e.ts` — UI backup restore replaces later published content while retaining the backed-up unfinished draft.
 
 - `src/__tests__/architecture/cmsTransferExport.test.ts` — export produces a valid bundle.
 - `src/__tests__/architecture/cmsTransferPreview.test.ts` — preview matches what import would do.
@@ -318,7 +378,9 @@ Save the response ZIP to disk (browser handles the download automatically).
 2. On the destination host: setup wizard completes (creates an owner account, empty site).
 3. On the destination host: open **Import Site** from Spotlight or the Data workspace, then drop the exported ZIP bundle.
 4. Review the preview and import with `strategy: replace`.
-5. After import, the published HTML is regenerated on next publish (or `republish-all`).
+5. Visitors immediately see the backed-up published state; newer unfinished edits remain drafts. Do not republish to finish restoration: publishing would intentionally replace the restored public content with those drafts.
+
+A bundle exported before publication travelled in it is the exception: it restores drafts only. The completion step says how many rows it marked published arrived as drafts; publish the site and those rows to put them live.
 
 ### Selective export (one table only)
 
@@ -367,6 +429,7 @@ A nightly cron can hit `/admin/api/cms/export` with an admin session cookie and 
 ## Related
 
 - [docs/architecture.md](../architecture.md) — system overview
+- [docs/features/fragments.md](fragments.md) — `fragmentSourceFromBundleArchive` reads the export archive to extract fragments
 - [docs/server.md](../server.md) — handler patterns + transactions
 - [docs/features/content-storage.md](content-storage.md) — `data_tables` + `data_rows` schemas
 - [docs/features/media.md](media.md) — imported media falls back to originals when variants are absent
@@ -375,7 +438,9 @@ A nightly cron can hit `/admin/api/cms/export` with an admin session cookie and 
 - Source-of-truth files:
   - `src/core/data/bundleSchema.ts` — `SiteBundleSchema`, `ImportStrategySchema`, `BundlePreviewSchema`, `ImportResultSchema`
   - `server/handlers/cms/export.ts` — `GET+POST /export`
-  - `server/handlers/cms/import.ts` — `POST /import`
+  - `server/handlers/cms/import.ts` — `POST /import` and shared authorization gates
+  - `server/handlers/cms/importApply.ts` — shared import transaction and publication/cache restore
+  - `server/archive/zipBodyReader.ts` — incremental stored-ZIP reader
   - `server/handlers/cms/importArchive.ts` — `POST /import/archive`
   - `server/handlers/cms/importPreview.ts` — `POST /import/preview`
   - `src/core/persistence/cmsTransfer.ts` — client-side transfer helpers, including native export form submission
@@ -385,3 +450,4 @@ A nightly cron can hit `/admin/api/cms/export` with an admin session cookie and 
   - `src/__tests__/architecture/cmsTransferPreview.test.ts`
   - `src/__tests__/architecture/cmsTransferImport.test.ts`
   - `src/__tests__/architecture/import-export-roundtrip.test.ts`
+  - `src/__tests__/server/importReplaceMedia.test.ts`: `replace` media wipe, same-path re-import, rollback keeps files, spared avatars, conditions, merge strategies untouched

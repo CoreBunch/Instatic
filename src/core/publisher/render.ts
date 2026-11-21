@@ -9,7 +9,8 @@
  *
  *   - template-context defaulting (page / site / route frames)
  *   - `<body>`-tag class injection from the root node's classIds
- *   - `<head>` meta tags (title, description, favicon, lang)
+ *   - `<head>` metadata via `buildDocumentHead` (`./headTags`): title, lang,
+ *     description, favicon and the page's SEO / social / structured-data tags
  *   - runtime asset `<script>` tags + the importmap
  *   - Content-Security-Policy `<meta>` tag
  *   - inline `<style>` block OR `<link>` tags for the site CSS bundle
@@ -24,7 +25,6 @@ import type { Page, SiteDocument } from '@core/page-tree'
 import type { IModuleRegistry } from '@core/module-engine'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { buildPageFrame, buildSiteFrame, buildRouteFrame } from '@core/templates/contextFrames'
-import { interpolateTokens } from '@core/templates/tokenInterpolation'
 import { classNamesForClassIds } from '@core/page-tree'
 import {
   normalizeHtmlAttributeName,
@@ -36,13 +36,14 @@ import { collectUserStylesheetCss } from './userStylesheets'
 import { PUBLISHER_RESET_CSS } from './reset'
 import { buildSiteFrameworkCss } from './frameworkCss'
 import type { SiteCssBundle } from './siteCssBundle'
-import { escapeHtml, isSafeUrl } from './utils'
+import { escapeHtml } from './utils'
+import { buildDocumentHead, type DocumentMetaOverride } from './headTags'
 import { addCspSources, createBaseCspPlan, cspMetaTag } from './cspPlan'
 import type { PublishedPageRuntimeAssets } from '@core/site-runtime/schemas'
 import { hasPublishedRuntimeScripts, scriptTagsForRuntimeAssets } from '@core/site-runtime'
 import { renderNode } from './renderNode'
 import { findDynamicNodeIds } from './dynamicDetection'
-import { collectHoleSubtreeModuleIds } from './holeSubtreeModules'
+import { collectHoleSubtreeAssets } from './holeSubtreeModules'
 import type {
   RenderConfig,
   RenderAccumulators,
@@ -139,15 +140,19 @@ interface PublishPageOptions {
    */
   runtimePackageImportmap?: PublishedRuntimePackageImportmap
   /**
-   * Monotonic publish version from `server/publish/publishState.ts`.
-   * Stamped into every `<instatic-hole data-instatic-version>` attribute so the hole
-   * runtime can detect stale placeholders after a re-publish. Pass
-   * `getPublishVersion()` from `publishState.ts` at the call site — this
-   * keeps `src/core/publisher/` free of imports from `server/`.
-   * Defaults to `0` when omitted (holes will always get a stale response
-   * on first fetch, which is safe — the next page load sees the real version).
+   * Fingerprint of the frozen published site, supplied by the server. Stamped
+   * into hole placeholders so cache invalidation cannot make unchanged pages
+   * stale. An omitted hash cannot hydrate from the public fragment endpoint.
    */
-  publishVersion?: number
+  snapshotHash?: string
+  /**
+   * Content hashes of the hole and loop runtime scripts, supplied by the
+   * server. Each is stamped as `?v=` on its runtime's script tag so the URL
+   * changes exactly when the runtime does. Omitted (editor and tool renders
+   * that have no server asset to name): the tag carries no query.
+   */
+  holeRuntimeVersion?: string
+  loopRuntimeVersion?: string
   /**
    * Editor-only: annotate each node's outermost emitted element with
    * `uid="<id>"`. Default off — real publishes emit clean, id-less
@@ -156,7 +161,7 @@ interface PublishPageOptions {
    */
   annotateNodeIds?: boolean
   /**
-   * Per-render `<head>` overrides that outrank the site-level settings.
+   * Per-render `<head>` overrides that outrank the page and site settings.
    *
    * Post-type entries carry their own authored SEO title / description
    * (`seoTitle` / `seoDescription`). Those belong to the row, not to the
@@ -166,15 +171,6 @@ interface PublishPageOptions {
    * them here instead.
    */
   documentMeta?: DocumentMetaOverride
-}
-
-/**
- * `<head>` values supplied by the caller for this render only. An omitted
- * (or blank) key falls through to the site settings.
- */
-export interface DocumentMetaOverride {
-  title?: string
-  description?: string
 }
 
 /**
@@ -205,6 +201,7 @@ function buildStyleHead(
   site: SiteDocument,
   page: Page,
   cssMap: Map<string, string>,
+  registry: IModuleRegistry,
 ): string {
   if (cssEmission === 'external') {
     if (!options.cssBundle) {
@@ -232,7 +229,7 @@ function buildStyleHead(
 
   const frameworkCss = buildSiteFrameworkCss(site)
   const moduleCss = Array.from(cssMap.values()).join('\n')
-  const classCss = collectClassCSS(site, { mediaAssets: options.mediaAssets })
+  const classCss = collectClassCSS(site, registry, { mediaAssets: options.mediaAssets })
   const userCss = collectUserStylesheetCss(site, page)
   // Same cascade order as the external-link path: user CSS comes last so it
   // wins specificity ties against the class registry. Neutralise `</style>` in
@@ -277,6 +274,7 @@ function composeTemplateContext(
     page: pageFrame,
     site: provided.site ?? buildSiteFrame(site),
     route: provided.route ?? buildRouteFrame(pageFrame.permalink),
+    ...(provided.member !== undefined ? { member: provided.member } : {}),
   }
 }
 
@@ -325,62 +323,6 @@ function bodyHtmlAttributes(value: unknown): string {
 }
 
 /**
- * `<head>` metadata tags derived from the caller's overrides + site
- * settings + page.
- *
- * - `title` falls back through the caller's `documentMeta.title` (a
- *   post-type entry's authored SEO title) → metaTitle → page.title →
- *   site.name.
- * - `description` falls back through `documentMeta.description` → the
- *   site-level metaDescription.
- * - Whichever value wins is then token-interpolated against the render
- *   context before escaping, so `{currentEntry.*}` / `{page.*}` /
- *   `{site.*}` resolve per-entry on entry routes. That serves both ways
- *   of authoring a title: fill each row's SEO field by hand, or write one
- *   pattern like `{currentEntry.name} | Acme` on the template page. The
- *   fallback chain picks the raw value first; a token that resolves empty
- *   does NOT re-trigger the fallback — authors opt into fallbacks with the
- *   token's own `{...|fallback}` syntax.
- * - URL-typed settings (faviconUrl) are validated by
- *   isSafeUrl() (blocks `javascript:` / `vbscript:` schemes) and then
- *   escapeHtml()'d for safe attribute interpolation.
- * - `lang` honours WCAG 2.1 AA SC 3.1.1 and escapes the BCP-47 tag
- *   because settings.language is user-controlled.
- */
-interface DocumentMetaTags {
-  pageTitle: string
-  metaDesc: string
-  favicon: string
-  langAttr: string
-}
-
-function buildDocumentMetaTags(
-  site: SiteDocument,
-  page: Page,
-  context: TemplateRenderDataContext,
-  override: DocumentMetaOverride = {},
-): DocumentMetaTags {
-  const { settings } = site
-  const description = override.description || settings.metaDescription
-  const metaDesc = description
-    ? `
-  <meta name="description" content="${escapeHtml(interpolateTokens(description, context))}">`
-    : ''
-  const favicon =
-    settings.faviconUrl && isSafeUrl(settings.faviconUrl)
-      ? `\n  <link rel="icon" href="${escapeHtml(settings.faviconUrl)}">`
-      : ''
-  return {
-    pageTitle: escapeHtml(
-      interpolateTokens(override.title || (settings.metaTitle ?? page.title ?? site.name), context),
-    ),
-    metaDesc,
-    favicon,
-    langAttr: escapeHtml(settings.language ?? 'en'),
-  }
-}
-
-/**
  * Runtime / importmap / loop-runtime `<script>` tags + the flags the CSP
  * builder needs. Centralising every "do we need a script tag?" branch in
  * one place keeps publishPage straight-line and makes adding a new
@@ -395,6 +337,11 @@ interface RuntimeAssetsBlock {
   importmapTag: string
   importmap: PublishedRuntimePackageImportmap | undefined
   anyScriptTag: boolean
+}
+
+/** `?v=<version>` for a runtime script URL, or nothing when no version was supplied. */
+function runtimeVersionQuery(version: string | undefined): string {
+  return version ? `?v=${encodeURIComponent(version)}` : ''
 }
 
 function buildRuntimeAssetsBlock(
@@ -413,7 +360,7 @@ function buildRuntimeAssetsBlock(
   const hasInfiniteLoops = acc.infiniteLoopIds.size > 0
   const loopEndpointBaseUrl = options.loopEndpointBaseUrl ?? '/_instatic/loop/'
   const loopRuntimeScript = hasInfiniteLoops
-    ? `  <script type="module" src="/_instatic/assets/loop-runtime.js" data-instatic-loop-endpoint="${escapeHtml(loopEndpointBaseUrl)}"></script>`
+    ? `  <script type="module" src="/_instatic/assets/loop-runtime.js${runtimeVersionQuery(options.loopRuntimeVersion)}" data-instatic-loop-endpoint="${escapeHtml(loopEndpointBaseUrl)}"></script>`
     : ''
 
   // Hole runtime — injected into <head> (not body-end) so IntersectionObserver
@@ -421,11 +368,11 @@ function buildRuntimeAssetsBlock(
   // was actually rendered during the walk (tracked via acc.holeNodeIds) — no
   // idle JS for fully-static pages.
   const hasHoles = acc.holeNodeIds.size > 0
-  // Version the runtime URL with publishVersion so a CMS update busts the
-  // browser cache (the asset is served `max-age=3600`); the runtime endpoint
-  // ignores the query string.
+  // Both runtime URLs carry the runtime's content hash, so each changes
+  // exactly when its runtime does; the endpoint caches a response only under
+  // the URL that names the body it serves.
   const holeRuntimeScript = hasHoles
-    ? `  <script type="module" src="/_instatic/hole-runtime.js?v=${options.publishVersion ?? 0}" defer></script>`
+    ? `  <script type="module" src="/_instatic/hole-runtime.js${runtimeVersionQuery(options.holeRuntimeVersion)}" defer></script>`
     : ''
 
   // Site-dependency importmap. When present we emit a `<script type="importmap">`
@@ -488,8 +435,8 @@ interface AssembledDocumentParts {
   langAttr: string
   csp: string
   pageTitle: string
-  metaDesc: string
-  favicon: string
+  /** Page/site head tags after `<title>` (see `./headTags`), or ''. */
+  headTags: string
   styleHeadHtml: string
   importmapTag: string
   headRuntimeScripts: string
@@ -508,7 +455,7 @@ function assembleHtmlDocument(parts: AssembledDocumentParts): string {
     `<head>\n` +
     `  <meta charset="UTF-8">\n` +
     `  <meta name="viewport" content="width=device-width, initial-scale=1.0">${parts.csp}\n` +
-    `  <title>${parts.pageTitle}</title>${parts.metaDesc}${parts.favicon}\n` +
+    `  <title>${parts.pageTitle}</title>${parts.headTags}\n` +
     parts.styleHeadHtml +
     lineOrEmpty(parts.importmapTag) +
     lineOrEmpty(parts.headRuntimeScripts) +
@@ -549,7 +496,7 @@ export function publishPage(
   // emit <instatic-hole> placeholders instead of recursing.
   const dynamicNodeIds = options.dynamicNodes === 'inline'
     ? new Set<string>()
-    : findDynamicNodeIds(page, site, registry)
+    : findDynamicNodeIds(page, site, registry, { visitorKnown: options.templateContext?.member !== undefined })
 
   // Composed once per page render: the walker reads it through the config,
   // and the <head> builder interpolates {source.field} tokens in the
@@ -568,7 +515,7 @@ export function publishPage(
     loopData: options.loopData,
     mediaAssets: options.mediaAssets,
     dynamicNodeIds: dynamicNodeIds.size > 0 ? dynamicNodeIds : undefined,
-    publishVersion: options.publishVersion ?? 0,
+    snapshotHash: options.snapshotHash ?? '',
     annotateNodeIds: options.annotateNodeIds,
   }
 
@@ -594,10 +541,12 @@ export function publishPage(
   // Per-page module-JS candidates: render-emitted ids ∪ static hole-subtree
   // ids. Hole subtrees are NOT rendered here, so the static walk is the only
   // way to know what their request-time fragments will need.
+  const deferred = collectHoleSubtreeAssets(page, site, acc.holeNodeIds)
+  for (const id of deferred.infiniteLoopIds) acc.infiniteLoopIds.add(id)
   const jsModuleIds = [
     ...new Set([
       ...acc.jsMap.keys(),
-      ...collectHoleSubtreeModuleIds(page, site, dynamicNodeIds),
+      ...deferred.moduleIds,
     ]),
   ].sort()
 
@@ -610,18 +559,23 @@ export function publishPage(
     site,
     page,
     acc.cssMap,
+    registry,
   )
 
-  const meta = buildDocumentMetaTags(site, page, templateContext, options.documentMeta)
+  const head = buildDocumentHead(site, page, templateContext, options.documentMeta)
+  for (const [directive, sources] of head.cspSources) {
+    const merged = acc.cspSources.get(directive) ?? new Set<string>()
+    for (const source of sources) merged.add(source)
+    acc.cspSources.set(directive, merged)
+  }
   const runtime = buildRuntimeAssetsBlock(options, acc)
   const csp = buildContentSecurityPolicy(runtime.anyScriptTag, runtime.importmap, acc.cspSources)
 
   const html = assembleHtmlDocument({
-    langAttr: meta.langAttr,
+    langAttr: head.langAttr,
     csp,
-    pageTitle: meta.pageTitle,
-    metaDesc: meta.metaDesc,
-    favicon: meta.favicon,
+    pageTitle: head.pageTitle,
+    headTags: head.tags,
     styleHeadHtml,
     importmapTag: runtime.importmapTag,
     headRuntimeScripts: runtime.headRuntimeScripts,

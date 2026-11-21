@@ -25,6 +25,7 @@ import {
   defaultFontTokenFallback,
   resolveFontTokenStack,
   sortFontTokens,
+  suggestFontTokenName,
 } from '@core/fonts'
 import { deleteCmsFontFamily } from '@core/persistence/cmsFonts'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
@@ -68,7 +69,9 @@ export function FontsSection() {
   function ensureTokenForFont(entry: FontEntry) {
     const currentTokens = useEditorStore.getState().site?.settings.fonts?.tokens ?? EMPTY_TOKENS
     if (currentTokens.some((token) => token.familyId === entry.id)) return
-    const tokenName = currentTokens.length === 0 ? 'Primary' : entry.family
+    // A site with no tokens yet gets a role token (`font-heading` first) so
+    // the first family lands on a shared role name, not a family-named one.
+    const tokenName = currentTokens.length === 0 ? suggestFontTokenName(currentTokens) : entry.family
     createFontToken({
       name: tokenName,
       variable: tokenName,
@@ -289,6 +292,7 @@ export function FontsSection() {
       {(tokenDialogOpen || editToken) && (
         <FontTokenDialog
           token={editToken ?? undefined}
+          defaultName={suggestFontTokenName(fontTokens)}
           fonts={fonts}
           onCancel={() => {
             setTokenDialogOpen(false)

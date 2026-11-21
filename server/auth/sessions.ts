@@ -115,14 +115,15 @@ async function findSessionUserRow(
 export async function findUserBySessionHash(
   db: DbClient,
   idHash: string,
-  now = Date.now(),
+  { now = Date.now(), touchLastSeen = true }: { now?: number; touchLastSeen?: boolean } = {},
 ): Promise<AuthUser | null> {
   const row = await findSessionUserRow(db, idHash, now)
   if (!row) return null
   const user = rowToUser(row)
   if (user.mfaEnabled && row.session_mfa_passed_at == null) return null
 
-  await touchSessionLastSeen(db, idHash, now)
+  // Passive socket deliveries must not extend the recipient's idle lifetime.
+  if (touchLastSeen) await touchSessionLastSeen(db, idHash, now)
   return user
 }
 

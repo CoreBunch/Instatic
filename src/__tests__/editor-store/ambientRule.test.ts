@@ -15,6 +15,7 @@
  */
 
 import { describe, it, expect } from 'bun:test'
+import { registry } from '@core/module-engine'
 import { useEditorStore } from '@site/store/store'
 import { classNamesForClassIds } from '@core/page-tree'
 import { collectClassCSS, generateClassCSS } from '@core/publisher'
@@ -173,6 +174,23 @@ describe('node.classIds → class attribute', () => {
     expect(after).toEqual(before)
     expect(after).not.toContain(amb.id)
   })
+
+  it('setNodeClassAssignments refuses ambient ids for a multi-selection', () => {
+    freshStore()
+    const site = useEditorStore.getState().createSite('Ambient multi-selection')
+    const rootId = site.pages[0].rootNodeId
+    const firstId = useEditorStore.getState().insertNode('base.text', {}, rootId)
+    const secondId = useEditorStore.getState().insertNode('base.text', {}, rootId)
+    const amb = useEditorStore.getState().createAmbientRule({ selector: 'h1 > span' })
+    const beforeHistory = useEditorStore.getState()._historyPast.length
+
+    useEditorStore.getState().setNodeClassAssignments([firstId, secondId], amb.id, true)
+
+    const page = useEditorStore.getState().site!.pages[0]
+    expect(page.nodes[firstId].classIds ?? []).not.toContain(amb.id)
+    expect(page.nodes[secondId].classIds ?? []).not.toContain(amb.id)
+    expect(useEditorStore.getState()._historyPast.length).toBe(beforeHistory)
+  })
 })
 
 describe('publisher emits ambient rules', () => {
@@ -185,7 +203,7 @@ describe('publisher emits ambient rules', () => {
 
     // Re-read state AFTER the mutation — `getState()` returns an immutable
     // snapshot, not a live ref.
-    const css = collectClassCSS(useEditorStore.getState().site!)
+    const css = collectClassCSS(useEditorStore.getState().site!, registry)
     expect(css).toContain('h1 > span')
     expect(css).toContain('color: #f00')
   })

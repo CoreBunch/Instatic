@@ -4,6 +4,7 @@ import { ColorValueInput } from './ColorValueInput'
 
 interface ColorControlProps extends ControlProps<string> {
   format?: 'hex' | 'rgba'
+  richPicker?: boolean
   placeholder?: string
   /**
    * Optional hover-preview hooks. When provided (and the `hoverPreview`
@@ -21,6 +22,7 @@ export function ColorControl({
   value,
   onChange,
   label,
+  richPicker,
   placeholder,
   isOverride,
   disabled,
@@ -43,7 +45,8 @@ export function ColorControl({
         disabled={disabled}
         ariaLabel={label ?? propKey}
         swatchLabel={`${label ?? propKey} colour swatch`}
-        placeholder={placeholder}
+        richPicker={richPicker}
+      placeholder={placeholder}
         onChange={(next) => onChange(propKey, next)}
         onPreview={onPreview}
         onClearPreview={onClearPreview}

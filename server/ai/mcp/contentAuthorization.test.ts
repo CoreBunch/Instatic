@@ -41,7 +41,7 @@ describe('MCP content row authorization', () => {
     await expect(authorizeMcpContentTool(
       harness.db,
       ownerId,
-      ['content.edit.own'],
+      ['content.edit.own', 'data.system.tables.read'],
       'content_set_document_fields',
       { documentId: foreignRow.id, fields: { title: 'Not allowed' } },
       MAIN_SCOPE,
@@ -50,11 +50,23 @@ describe('MCP content row authorization', () => {
     await expect(authorizeMcpContentTool(
       harness.db,
       ownerId,
-      ['content.publish.own'],
+      ['content.publish.own', 'data.system.tables.read'],
       'content_set_document_status',
       { documentId: foreignRow.id, status: 'published' },
       MAIN_SCOPE,
     )).rejects.toThrow('not permitted')
+
+    // Without the system-table read cap the row is not even visible to the
+    // connector, matching GET /data/rows/:id, so the answer is not found
+    // rather than a hint that the row exists.
+    await expect(authorizeMcpContentTool(
+      harness.db,
+      ownerId,
+      ['content.edit.any'],
+      'content_set_document_fields',
+      { documentId: foreignRow.id, fields: { title: 'Not visible' } },
+      MAIN_SCOPE,
+    )).rejects.toThrow('not found')
   })
 
   it('allows own-row grants for owned documents and any-row grants for foreign documents', async () => {
@@ -74,7 +86,7 @@ describe('MCP content row authorization', () => {
     await expect(authorizeMcpContentTool(
       harness.db,
       ownerId,
-      ['content.edit.own'],
+      ['content.edit.own', 'data.system.tables.read'],
       'content_set_document_field',
       { documentId: ownRow.id, fieldId: 'title', value: 'Allowed' },
       MAIN_SCOPE,
@@ -83,7 +95,7 @@ describe('MCP content row authorization', () => {
     await expect(authorizeMcpContentTool(
       harness.db,
       ownerId,
-      ['content.edit.any'],
+      ['content.edit.any', 'data.system.tables.read'],
       'content_delete_document',
       { documentId: foreignRow.id },
       MAIN_SCOPE,
@@ -92,7 +104,7 @@ describe('MCP content row authorization', () => {
     await expect(authorizeMcpContentTool(
       harness.db,
       ownerId,
-      ['content.publish.any'],
+      ['content.publish.any', 'data.system.tables.read'],
       'content_set_document_status',
       { documentId: foreignRow.id, status: 'published' },
       MAIN_SCOPE,

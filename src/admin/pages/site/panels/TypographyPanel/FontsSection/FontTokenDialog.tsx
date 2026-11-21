@@ -14,6 +14,8 @@ import styles from './FontsSection.module.css'
 
 interface FontTokenDialogProps {
   token?: FontToken
+  /** Name pre-filled when creating a token (ignored when editing `token`). */
+  defaultName: string
   fonts: FontEntry[]
   onCancel: () => void
   onSave: (input: {
@@ -26,13 +28,14 @@ interface FontTokenDialogProps {
 
 export function FontTokenDialog({
   token,
+  defaultName,
   fonts,
   onCancel,
   onSave,
 }: FontTokenDialogProps) {
   const firstFont = fonts[0]
-  const [name, setName] = useState(token?.name ?? 'Primary')
-  const [variable, setVariable] = useState(token?.variable ?? suggestFontTokenVariable(token?.name ?? 'Primary'))
+  const [name, setName] = useState(token?.name ?? defaultName)
+  const [variable, setVariable] = useState(token?.variable ?? suggestFontTokenVariable(defaultName))
   const [familyId, setFamilyId] = useState(token?.familyId ?? firstFont?.id ?? '')
   const [fallback, setFallback] = useState(token?.fallback ?? defaultFontTokenFallback(firstFont))
   const [error, setError] = useState<string | null>(null)

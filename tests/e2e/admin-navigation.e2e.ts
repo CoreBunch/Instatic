@@ -92,28 +92,45 @@ test.describe('admin navigation', () => {
       }
     })
 
-    await test.step('global toolbar trailer remains contained on phone width', async () => {
+    await test.step('switch workspaces through the phone sheet', async () => {
       await page.setViewportSize({ width: 390, height: 844 })
-      await page.reload()
-      await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible()
-      await expectToolbarTrailer(page, 'Open live site')
+      await page.goto('/admin/site')
+      await expectEditorReady(page)
+      const switcher = page.getByRole('button', { name: /Switch workspace/ })
+      const sheet = page.getByRole('dialog', { name: 'Workspaces' })
+      await expect(switcher).toContainText('Site')
+      await expect(page.getByTestId('toolbar-publish-actions-trigger')).toBeInViewport({ ratio: 1 })
       await expectPageContained(page)
-      await expectLocatorContained(
-        page,
-        page.getByTestId('toolbar-settings-btn'),
-        'mobile toolbar settings button',
-      )
-      await expectLocatorContained(
-        page,
-        page.getByTestId('toolbar-open-live-page-btn'),
-        'mobile toolbar open live button',
-      )
-      await expectLocatorContained(
-        page,
-        page.getByTestId('account-menu-trigger'),
-        'mobile toolbar account menu trigger',
-      )
-      await expectNavigationBeforeToolbarTrailer(page)
+      await page.screenshot({ path: '.tmp/evidence/mobile-header-site.png', animations: 'disabled' })
+      await switcher.click()
+      await expect(sheet.getByRole('link')).toHaveText([
+        'Dashboard', 'Site', 'Content', 'Data', 'Media', 'Plugins', 'AI', 'Email', 'Users',
+      ])
+      await expect(sheet.locator('a[aria-current="page"]')).toHaveText('Site')
+      await expectToolbarTrailer(page, 'Open live page')
+      await page.screenshot({ path: '.tmp/evidence/mobile-header-sheet.png', animations: 'disabled' })
+      await page.keyboard.press('Escape')
+      await expect(sheet).toBeHidden()
+      await expect(switcher).toBeFocused()
+      await switcher.click()
+      await sheet.getByRole('link', { name: 'Media', exact: true }).click()
+      await expect(sheet).toBeHidden()
+      await expect(page.getByRole('button', { name: 'Toggle upload queue' })).toBeVisible()
+      await expect(switcher).toContainText('Media')
+      await page.screenshot({ path: '.tmp/evidence/mobile-header-media.png', animations: 'disabled' })
+      await switcher.click()
+      await expect(sheet.locator('a[aria-current="page"]')).toHaveText('Media')
+      await sheet.getByTestId('branch-chip').click()
+      await expect(sheet).toBeHidden()
+      await expect(page.getByRole('menu', { name: 'Branches' })).toBeVisible()
+      await page.keyboard.press('Escape')
+      await switcher.click()
+      await page.setViewportSize({ width: 320, height: 568 })
+      await expectPageContained(page, { width: 320, height: 568 })
+      await expect(sheet.getByRole('link', { name: 'Users' })).toBeInViewport({ ratio: 1 })
+      await page.setViewportSize({ width: 1280, height: 720 })
+      await expect(sheet).toHaveCount(0)
+      await expectToolbarTrailer(page, 'Open live site')
     })
   })
 
@@ -355,6 +372,7 @@ test.describe('admin settings', () => {
         await page.reload()
         await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible()
 
+        await page.getByRole('button', { name: /Switch workspace/ }).click()
         const dialog = await openSettings(page, 'Preferences')
         const preferences = dialog.getByRole('region', { name: 'Preferences' })
         await expect(
@@ -499,20 +517,6 @@ async function expectLocatorContained(
   const viewportWidth = await page.evaluate(() => document.documentElement.clientWidth)
   expect(box.x).toBeGreaterThanOrEqual(-1)
   expect(box.x + box.width).toBeLessThanOrEqual(viewportWidth + 1)
-}
-
-async function expectNavigationBeforeToolbarTrailer(page: Page): Promise<void> {
-  const toolbar = page.getByTestId('toolbar')
-  const navigationBox = await toolbar.getByRole('link', { name: 'Site' }).boundingBox()
-  const settingsBox = await toolbar.getByTestId('toolbar-settings-btn').boundingBox()
-  if (!navigationBox || !settingsBox) {
-    throw new Error('mobile toolbar navigation or settings button had no bounding box')
-  }
-
-  const navigationPrecedesSettings =
-    navigationBox.y < settingsBox.y ||
-    (Math.abs(navigationBox.y - settingsBox.y) <= 1 && navigationBox.x < settingsBox.x)
-  expect(navigationPrecedesSettings).toBe(true)
 }
 
 async function expectStoredWorkspaceLayout(

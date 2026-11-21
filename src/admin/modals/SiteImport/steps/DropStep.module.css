@@ -70,6 +70,41 @@
   border-radius: var(--radius);
 }
 
+.pluginNotice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-l);
+  padding: var(--space-l);
+  background: var(--bg-surface-2);
+  border-radius: var(--radius);
+}
+
+.pluginNoticeIcon {
+  color: var(--text-muted);
+}
+
+.pluginNoticeText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4xs);
+  min-width: 0;
+}
+
+.pluginNoticeTitle {
+  margin: 0;
+  font-size: var(--text-s);
+  font-weight: 600;
+  color: var(--text-bright);
+  overflow-wrap: anywhere;
+}
+
+.pluginNoticeBody {
+  margin: 0;
+  font-size: var(--text-s);
+  color: var(--text-muted);
+}
+
 .hiddenInput {
   position: absolute;
   width: 1px;

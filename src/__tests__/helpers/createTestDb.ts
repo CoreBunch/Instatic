@@ -15,7 +15,8 @@ export interface TestDb {
  * with all migrations applied. Each call produces a unique, independent DB.
  *
  * Set `DB=postgres TEST_POSTGRES_URL=postgres://...` to run against a real
- * Postgres instance instead.
+ * Postgres instance instead. Pass a PostgreSQL URL explicitly when a transfer
+ * test needs a separate source and destination database.
  *
  * `cleanup()` closes the client before removing anything on disk. Windows
  * refuses to unlink a file that is still open, so a SQLite handle left to
@@ -29,9 +30,9 @@ export interface TestDb {
  *   await cleanup()
  * }
  */
-export async function createTestDb(): Promise<TestDb> {
+export async function createTestDb(postgresUrl = process.env['TEST_POSTGRES_URL']): Promise<TestDb> {
   if (process.env['DB'] === 'postgres') {
-    const url = process.env['TEST_POSTGRES_URL']
+    const url = postgresUrl
     if (!url) throw new Error('TEST_POSTGRES_URL must be set when DB=postgres')
     const { db, migrations } = createDbClient(url)
     await runMigrations(db, migrations)

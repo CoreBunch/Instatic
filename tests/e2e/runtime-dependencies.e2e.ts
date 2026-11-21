@@ -1,9 +1,11 @@
+import { rm } from 'node:fs/promises'
 import { expect, test, type Browser, type Locator, type Page, type Response } from '@playwright/test'
 import { Type } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
 import {
   ANONYMOUS_STATE,
   PUBLIC_BASE_URL,
+  RUNTIME_CACHE_DIR,
   createPage,
   login,
   openCodePanel,
@@ -30,6 +32,7 @@ test.describe('runtime dependencies', () => {
   test('authors, resolves, publishes, and serves a runtime package import (SITE-014)', async ({
     page,
     browser,
+    request,
   }) => {
     test.setTimeout(120_000)
 
@@ -70,10 +73,19 @@ document.body.append(marker)
 
     await publishDraft(page)
 
-    await verifyPublishedRuntimeDependency({
+    const packageUrl = await verifyPublishedRuntimeDependency({
       browser,
       slug,
       marker,
+    })
+
+    await test.step('a visitor still gets the package after the cache folder is lost', async () => {
+      // What a recreated container or a cleaned temp folder does to a live
+      // site: the published page keeps pointing at the same package URL.
+      await rm(RUNTIME_CACHE_DIR, { recursive: true, force: true })
+      const response = await request.get(`${PUBLIC_BASE_URL}${packageUrl}`, { timeout: 75_000 })
+      expect(response.status()).toBe(200)
+      expect(response.headers()['content-type']).toContain('javascript')
     })
   })
 
@@ -197,7 +209,7 @@ async function verifyPublishedRuntimeDependency({
   browser: Browser
   slug: string
   marker: string
-}): Promise<void> {
+}): Promise<string> {
   const context = await browser.newContext()
   const visitor = await context.newPage()
   const runtimeCacheResponses: Response[] = []
@@ -238,6 +250,7 @@ async function verifyPublishedRuntimeDependency({
     expect(cacheResponse?.status()).toBe(200)
     expect(cacheResponse?.headers()['content-type']).toContain('javascript')
     expect(cacheResponse?.headers()['cache-control']).toContain('immutable')
+    return packageUrl
   } finally {
     await context.close()
   }

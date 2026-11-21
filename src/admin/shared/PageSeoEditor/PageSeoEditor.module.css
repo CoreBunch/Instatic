@@ -1,0 +1,144 @@
+.root {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5xl);
+    min-width: 0;
+}
+
+.section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-l);
+    min-width: 0;
+}
+
+.heading {
+    margin: 0;
+    color: var(--text-bright);
+    font-size: var(--text-m);
+    font-weight: 600;
+}
+
+.sectionHint {
+    margin: calc(var(--space-s) * -1) 0 0;
+    color: var(--text-subtle);
+    font-size: var(--text-xs);
+    line-height: 1.45;
+}
+
+/* Two-column form row: label left, control (plus hint) right. */
+.row {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr);
+    gap: var(--space-l);
+    align-items: start;
+    min-width: 0;
+}
+
+.label {
+    padding-top: var(--space-xs);
+    color: var(--text);
+    font-size: var(--text-s);
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.control {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    min-width: 0;
+}
+
+.hint {
+    margin: 0;
+    color: var(--text-subtle);
+    font-size: var(--text-xs);
+    line-height: 1.45;
+}
+
+.error {
+    margin: 0;
+    color: var(--danger);
+    font-size: var(--text-xs);
+    line-height: 1.3;
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    min-width: 0;
+}
+
+.stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    min-width: 0;
+}
+
+.listRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    min-width: 0;
+}
+
+.listRow > * {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.listRow > :last-child {
+    flex: 0 0 auto;
+}
+
+.blockRow {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-s);
+    min-width: 0;
+}
+
+.blockRow > :first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.linkCard {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    padding: var(--space-m);
+    border-radius: var(--radius);
+    background: var(--overlay-5);
+}
+
+.linkDetails {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: var(--space-s);
+}
+
+.note {
+    margin: 0;
+    padding: var(--space-m) var(--space-l);
+    border-radius: var(--radius);
+    background: var(--overlay-5);
+    color: var(--text);
+    font-size: var(--text-s);
+    line-height: 1.45;
+}
+
+.inheritedList {
+    min-width: 0;
+    color: var(--text-subtle);
+    font-size: var(--text-xs);
+    overflow-wrap: anywhere;
+}
+
+.inheritedList ul {
+    margin: var(--space-4xs) 0;
+    padding-inline-start: var(--space-xl);
+}

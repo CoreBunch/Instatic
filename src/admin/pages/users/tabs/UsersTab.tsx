@@ -40,7 +40,8 @@ import { UserAvatar } from '@admin/shared/UserAvatar'
 import { Badge } from '../components/Badge'
 import { RowActionMenu } from '../components/RowActionMenu'
 import { UserDialog } from '../components/UserDialog'
-import { displayUserName, formatDateTime, isOwnerUser, statusLabel } from '../utils/format'
+import { userDisplayLabel } from '@core/users/displayName'
+import { formatDateTime, isOwnerUser, statusLabel } from '../utils/format'
 import {
   emptyUserForm,
   type UserDialogMode,
@@ -49,6 +50,8 @@ import {
 import type { UsersPageData } from '../hooks/useUsersPageData'
 import styles from '../UsersPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { EmptyState } from '@ui/components/EmptyState'
+import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
 
 interface UsersTabProps {
   data: UsersPageData
@@ -330,7 +333,7 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
           <DataTableBody>
             {users.map((user) => {
               const owner = isOwnerUser(user)
-              const label = displayUserName(user)
+              const label = userDisplayLabel(user)
               return (
                 <DataTableRow key={user.id} aria-label={`User ${user.email}`}>
                   <DataTableCell>
@@ -392,7 +395,12 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
           </DataTableBody>
         </DataTable>
       ) : (
-        <p className={styles.emptyState}>No users yet.</p>
+        <EmptyState
+          variant="centered"
+          icon={<UsersSolidIcon size={28} />}
+          title="No users yet"
+          description="People you add get their own sign-in to this admin."
+        />
       )}
 
       {canManageUsers && dialogMode && (

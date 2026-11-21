@@ -13,6 +13,7 @@
  * silently keep hitting `/_instatic/loop/`.
  */
 import { afterEach, describe, expect, it } from 'bun:test'
+import { JSDOM } from 'jsdom'
 import { LOOP_RUNTIME_JS } from '../../../server/publish/loopRuntime'
 
 const ORIGINAL_FETCH = globalThis.fetch
@@ -70,6 +71,34 @@ describe('loop runtime endpoint', () => {
   it('falls back to the default when the attribute is absent', async () => {
     const url = await fetchedUrlFor(null)
     expect(url.startsWith('/_instatic/loop/')).toBe(true)
+  })
+
+  it('attaches once to a list inserted by a fragment and forwards the visitor query', async () => {
+    const dom = new JSDOM('<body></body>', { url: 'https://example.test/news?topic=design', runScripts: 'outside-only' })
+    try {
+      const { window } = dom
+      let requested: URL | undefined
+      window.fetch = async (input) => {
+        requested = new URL(String(input), window.location.href)
+        return Response.json({ html: '<p>Second item</p>', hasMore: false })
+      }
+      window.eval(LOOP_RUNTIME_JS)
+      window.document.dispatchEvent(new window.Event('DOMContentLoaded'))
+      const wrapper = window.document.createElement('section')
+      wrapper.innerHTML = '<div data-instatic-loop="c0_list" data-instatic-loop-mode="infinite" data-instatic-loop-has-more="true"></div>'
+      window.document.body.append(wrapper)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      const buttons = wrapper.querySelectorAll('button')
+      expect(buttons).toHaveLength(1)
+      buttons[0].click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      expect(requested?.searchParams.get('pagePath')).toBe('/news?topic=design')
+      expect(requested?.searchParams.get('page')).toBe('2')
+      expect(wrapper.textContent).toBe('Second item')
+      expect(wrapper.querySelector('button')).toBeNull()
+    } finally {
+      dom.window.close()
+    }
   })
 
   it('does not depend on document.currentScript, which is null in a module', () => {

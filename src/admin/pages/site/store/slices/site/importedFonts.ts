@@ -33,6 +33,7 @@ export function addImportedFonts(
       subset: 'latin',
       path: f.src,
       format: f.format,
+      ...(f.fontDisplay ? { fontDisplay: f.fontDisplay } : {}),
       ...(f.unicodeRange ? { unicodeRange: f.unicodeRange } : {}),
     }))
     const variants = Array.from(new Set(files.map((f) => f.variant)))

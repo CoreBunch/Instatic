@@ -19,7 +19,7 @@ export function readString(styles: Record<string, unknown>, key: string): string
 /**
  * Narrow check: returns true when the given value would render as a real CSS
  * value (a non-empty string or any number). Empty string is treated as unset
- * so we mirror the storage model used by `removeClassStyleProperty`.
+ * so we mirror the storage model used by `clearClassStyleProperties`.
  */
 export function hasStyleValue(value: unknown): value is string | number {
   return value !== undefined && value !== null && value !== ''

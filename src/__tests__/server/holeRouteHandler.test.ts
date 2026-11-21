@@ -5,7 +5,7 @@
  * queries (the same pattern as publicRouterCache.test.ts).
  *
  * Covers:
- *   - Correct version (matches current publishVersion) → 200 + HTML fragment
+ *   - Correct version (matches frozen published site) → 200 + HTML fragment
  *   - Stale version (?v= mismatch) → stale sentinel without caching
  *   - Missing node → 404
  *   - Site not published → 404
@@ -21,8 +21,9 @@ import {
   serveHoleRuntimeAsset,
 } from '../../../server/handlers/cms/hole'
 import { resetForTests } from '../../../server/publish/renderCache'
-import { bumpPublishVersion, getPublishVersion } from '../../../server/publish/publishState'
-import { HOLE_RUNTIME_JS } from '../../../server/publish/holeRuntime'
+import { bumpPublishVersion } from '../../../server/publish/publishState'
+import { getPublishedSnapshotHash } from '../../../server/publish/publishedSnapshotCache'
+import { HOLE_RUNTIME_JS, HOLE_RUNTIME_VERSION } from '../../../server/publish/holeRuntime'
 import { handleServerRequest } from '../../../server/router'
 import { makeModule } from '../publisher/helpers'
 import { registry } from '../../core/module-engine/registry'
@@ -214,18 +215,51 @@ describe('isHoleRuntimeAssetPath', () => {
 // serveHoleRuntimeAsset
 // ---------------------------------------------------------------------------
 
+function holeRuntimeRequest(query = '', headers: Record<string, string> = {}): [Request, URL] {
+  const url = new URL(`http://localhost/_instatic/hole-runtime.js${query}`)
+  return [new Request(url, { headers }), url]
+}
+
 describe('serveHoleRuntimeAsset', () => {
-  it('serves the HOLE_RUNTIME_JS source with correct headers', () => {
-    const res = serveHoleRuntimeAsset()
+  it('serves HOLE_RUNTIME_JS with a 1h public cache under the URL that names it', async () => {
+    const res = serveHoleRuntimeAsset(...holeRuntimeRequest(`?v=${HOLE_RUNTIME_VERSION}`))
     expect(res.status).toBe(200)
-    expect(res.headers.get('content-type')).toBe('application/javascript; charset=utf-8')
+    expect(res.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
     expect(res.headers.get('cache-control')).toBe('public, max-age=3600')
+    expect(res.headers.get('etag')).toBe(`"${HOLE_RUNTIME_VERSION}"`)
+    expect(await res.text()).toBe(HOLE_RUNTIME_JS)
   })
 
-  it('response body matches HOLE_RUNTIME_JS export', async () => {
-    const res = serveHoleRuntimeAsset()
-    const body = await res.text()
-    expect(body).toBe(HOLE_RUNTIME_JS)
+  it('serves the runtime uncached when ?v= does not name it', async () => {
+    // A page baked before an upgrade, a snapshot-hash URL, no ?v=.
+    for (const query of ['?v=000000000000', '?v=3', '']) {
+      const res = serveHoleRuntimeAsset(...holeRuntimeRequest(query))
+      expect(res.status).toBe(200)
+      expect(res.headers.get('cache-control')).toBe('no-cache')
+      expect(res.headers.get('etag')).toBe(`"${HOLE_RUNTIME_VERSION}"`)
+      expect(await res.text()).toBe(HOLE_RUNTIME_JS)
+    }
+  })
+
+  it('answers 304 with no body when If-None-Match names the runtime', async () => {
+    const cases: Array<[query: string, ifNoneMatch: string, cacheControl: string]> = [
+      ['?v=000000000000', `"${HOLE_RUNTIME_VERSION}"`, 'no-cache'],
+      ['', `"other", W/"${HOLE_RUNTIME_VERSION}"`, 'no-cache'],
+      [`?v=${HOLE_RUNTIME_VERSION}`, `W/"${HOLE_RUNTIME_VERSION}"`, 'public, max-age=3600'],
+    ]
+    for (const [query, ifNoneMatch, cacheControl] of cases) {
+      const res = serveHoleRuntimeAsset(...holeRuntimeRequest(query, { 'if-none-match': ifNoneMatch }))
+      expect(res.status).toBe(304)
+      expect(res.headers.get('etag')).toBe(`"${HOLE_RUNTIME_VERSION}"`)
+      expect(res.headers.get('cache-control')).toBe(cacheControl)
+      expect(await res.text()).toBe('')
+    }
+  })
+
+  it('serves the full body when If-None-Match names another body', async () => {
+    const res = serveHoleRuntimeAsset(...holeRuntimeRequest('', { 'if-none-match': '"000000000000"' }))
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe(HOLE_RUNTIME_JS)
   })
 })
 
@@ -243,7 +277,8 @@ describe('server router — hole namespace ownership', () => {
     )
 
     expect(res.status).toBe(200)
-    expect(res.headers.get('content-type')).toBe('application/javascript; charset=utf-8')
+    expect(res.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
+    expect(res.headers.get('cache-control')).toBe('no-cache')
     expect(await res.text()).toBe(HOLE_RUNTIME_JS)
     expect(wasQueried()).toBe(false)
   })
@@ -251,7 +286,7 @@ describe('server router — hole namespace ownership', () => {
   it('routes hole fragments through the router before public-page fallthrough', async () => {
     const snapshot = makeSnapshot()
     const db = makeFakeDb(snapshot)
-    const version = getPublishVersion()
+    const version = getPublishedSnapshotHash(snapshot.site)
 
     const res = await handleServerRequest(
       new Request(`http://localhost/_instatic/hole/text-node?v=${version}`),
@@ -301,8 +336,7 @@ describe('handleHoleRequest — method guard', () => {
 describe('handleHoleRequest — site not published', () => {
   it('returns 404 when no published snapshot exists', async () => {
     const db = makeFakeDb(null)
-    const currentVersion = getPublishVersion()
-    const url = new URL(`http://localhost/_instatic/hole/text-node?v=${currentVersion}`)
+    const url = new URL('http://localhost/_instatic/hole/text-node?v=missing')
     const req = new Request(url)
     const res = await handleHoleRequest(req, url, { db })
     expect(res.status).toBe(404)
@@ -314,43 +348,21 @@ describe('handleHoleRequest — site not published', () => {
 // ---------------------------------------------------------------------------
 
 describe('handleHoleRequest — stale version', () => {
-  it('returns stale sentinel when ?v= does not match current publishVersion', async () => {
-    const snapshot = makeSnapshot()
-    const db = makeFakeDb(snapshot)
-
-    // Bump the publish version so v=0 becomes stale
-    bumpPublishVersion()
-    const currentVersion = getPublishVersion() // = 1
-
-    // Request with the old version (0, now stale)
-    const url = new URL(`http://localhost/_instatic/hole/text-node?v=0`)
-    const req = new Request(url)
-    const res = await handleHoleRequest(req, url, { db })
-
-    const body = await res.text()
-    expect(body).toContain('instatic-hole-stale')
-    expect(body).toContain('data-instatic-stale="true"')
+  it('rejects a fingerprint from a replaced snapshot without caching', async () => {
+    const oldHash = getPublishedSnapshotHash(makeSnapshot('Old content').site)
+    const db = makeFakeDb(makeSnapshot('New content'))
+    const url = new URL(`http://localhost/_instatic/hole/text-node?v=${oldHash}`)
+    const res = await handleHoleRequest(new Request(url), url, { db })
+    expect(await res.text()).toContain('data-instatic-stale="true"')
     expect(res.headers.get('cache-control')).toBe('no-store')
-    // Stale responses must NOT be 404 or 500 — the browser replaces the
-    // placeholder with the stale sentinel and the user can still see content
     expect(res.status).toBe(200)
-
-    // Suppress unused variable warning
-    void currentVersion
   })
 
-  it('returns stale sentinel even when a snapshot exists — version mismatch wins', async () => {
-    const snapshot = makeSnapshot()
-    const db = makeFakeDb(snapshot)
-
-    bumpPublishVersion()
-
-    // Old version
-    const url = new URL(`http://localhost/_instatic/hole/text-node?v=0`)
-    const req = new Request(url)
-    const res = await handleHoleRequest(req, url, { db })
-
-    expect((await res.text())).toContain('instatic-hole-stale')
+  it('rejects a missing fingerprint', async () => {
+    const db = makeFakeDb(makeSnapshot())
+    const url = new URL('http://localhost/_instatic/hole/text-node')
+    const res = await handleHoleRequest(new Request(url), url, { db })
+    expect(await res.text()).toContain('instatic-hole-stale')
   })
 })
 
@@ -363,7 +375,7 @@ describe('handleHoleRequest — node not found', () => {
     const snapshot = makeSnapshot()
     const db = makeFakeDb(snapshot)
 
-    const currentVersion = getPublishVersion()
+    const currentVersion = getPublishedSnapshotHash(snapshot.site)
     const url = new URL(`http://localhost/_instatic/hole/no-such-node?v=${currentVersion}`)
     const req = new Request(url)
     const res = await handleHoleRequest(req, url, { db })
@@ -380,7 +392,7 @@ describe('handleHoleRequest — successful render', () => {
     const snapshot = makeSnapshot()
     const db = makeFakeDb(snapshot)
 
-    const currentVersion = getPublishVersion()
+    const currentVersion = getPublishedSnapshotHash(snapshot.site)
     const url = new URL(`http://localhost/_instatic/hole/text-node?v=${currentVersion}`)
     const req = new Request(url)
     const res = await handleHoleRequest(req, url, { db })
@@ -397,7 +409,7 @@ describe('handleHoleRequest — successful render', () => {
     const snapshot = makeSnapshot()
     const db = makeFakeDb(snapshot)
 
-    const currentVersion = getPublishVersion()
+    const currentVersion = getPublishedSnapshotHash(snapshot.site)
     const url = new URL(`http://localhost/_instatic/hole/text-node?v=${currentVersion}`)
 
     const res1 = await handleHoleRequest(new Request(url), url, { db })
@@ -414,7 +426,7 @@ describe('handleHoleRequest — successful render', () => {
     // The fragment's content depends on the originating page path (route.path).
     const snapshot = makeSnapshot('viewing:{route.path}')
     const db = makeFakeDb(snapshot)
-    const version = getPublishVersion()
+    const version = getPublishedSnapshotHash(snapshot.site)
 
     // Attacker renders the fragment under an arbitrary originating path.
     const evilUrl = new URL(`http://localhost/_instatic/hole/text-node?v=${version}&u=${encodeURIComponent('/evil-path')}`)
@@ -428,20 +440,20 @@ describe('handleHoleRequest — successful render', () => {
     expect(await real.text()).not.toContain('/evil-path')
   })
 
-  it('becomes stale for old ?v= after bumpPublishVersion()', async () => {
+  it('keeps an unchanged snapshot valid after a cache generation bump', async () => {
     const snapshot = makeSnapshot()
     const db = makeFakeDb(snapshot)
 
-    const oldVersion = getPublishVersion() // = 0
-    bumpPublishVersion() // now = 1
+    const oldVersion = getPublishedSnapshotHash(snapshot.site)
+    bumpPublishVersion()
 
-    // Old version is now stale
+    // The shell still belongs to the same frozen published site.
     const url = new URL(`http://localhost/_instatic/hole/text-node?v=${oldVersion}`)
     const req = new Request(url)
     const res = await handleHoleRequest(req, url, { db })
 
     const body = await res.text()
-    expect(body).toContain('instatic-hole-stale')
+    expect(body).toContain('Hello from hole')
   })
 })
 
@@ -451,8 +463,9 @@ describe('handleHoleRequest — successful render', () => {
 
 describe('handleHoleRequest — snapshot single-flight', () => {
   it('loads the published snapshot once for concurrent requests at the same version', async () => {
-    const { db, count } = makeCountingDb(makeSnapshot())
-    const currentVersion = getPublishVersion()
+    const snapshot = makeSnapshot()
+    const { db, count } = makeCountingDb(snapshot)
+    const currentVersion = getPublishedSnapshotHash(snapshot.site)
     const url = new URL(`http://localhost/_instatic/hole/text-node?v=${currentVersion}`)
 
     // Fire several concurrent requests for the same (nodeId, version). The
@@ -469,17 +482,19 @@ describe('handleHoleRequest — snapshot single-flight', () => {
   })
 
   it('reloads after a version bump (memo is version-keyed)', async () => {
-    const { db, count } = makeCountingDb(makeSnapshot())
+    const snapshot = makeSnapshot()
+    const { db, count } = makeCountingDb(snapshot)
 
-    const v0 = getPublishVersion()
+    const v0 = getPublishedSnapshotHash(snapshot.site)
     const url0 = new URL(`http://localhost/_instatic/hole/text-node?v=${v0}`)
     await handleHoleRequest(new Request(url0), url0, { db })
     expect(count()).toBe(1)
 
     bumpPublishVersion()
-    const v1 = getPublishVersion()
+    const v1 = getPublishedSnapshotHash(snapshot.site)
     const url1 = new URL(`http://localhost/_instatic/hole/text-node?v=${v1}`)
-    await handleHoleRequest(new Request(url1), url1, { db })
+    const res = await handleHoleRequest(new Request(url1), url1, { db })
+    expect(await res.text()).toContain('Hello from hole')
     expect(count()).toBe(2)
   })
 })
@@ -500,7 +515,7 @@ describe('hole fragments and CMS forms', () => {
     const snapshot = makeSnapshot()
     snapshot.site.pages[0].nodes['text-node'].moduleId = 'test.cmsform'
 
-    const version = getPublishVersion()
+    const version = getPublishedSnapshotHash(snapshot.site)
     const url = new URL(`http://localhost/_instatic/hole/text-node?v=${version}`)
     const res = await handleHoleRequest(new Request(url), url, { db: makeFakeDb(snapshot) })
 
