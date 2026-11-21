@@ -22,9 +22,13 @@
  * - prefers-reduced-motion: CSS transitions are disabled for users who opt out
  */
 
-import { lazy, Suspense, useContext, useEffect, useEffectEvent, useRef } from 'react'
+import { lazy, Suspense, useContext, useEffect, useEffectEvent, useRef, useState } from 'react'
 import { useEditorStore, selectActiveCanvasPage, selectRightSidebarExpanded } from '@site/store/store'
-import type { Breakpoint } from '@core/page-tree'
+import type { Breakpoint, PageNode } from '@core/page-tree'
+import { useMobileViewport } from '@admin/lib/mobileViewport'
+import { inlineTextEditSpec } from '@site/store/slices/inlineEditSlice'
+import { MoreHorizontalSolidIcon } from 'pixel-art-icons/icons/more-horizontal-solid'
+import { Button } from '@ui/components/Button'
 import { registry } from '@core/module-engine'
 import { getNodeDisplayName } from '@core/page-tree'
 import { ErrorBoundary } from '@ui/components/ErrorBoundary'
@@ -79,6 +83,11 @@ const EMPTY_BREAKPOINTS: Breakpoint[] = []
 
 interface CanvasRootProps {
   editable?: boolean
+}
+
+function hasEditableText(node: PageNode | undefined): boolean {
+  const spec = inlineTextEditSpec(node)
+  return Boolean(node && !node.hidden && spec && typeof node.props[spec.prop] === 'string')
 }
 
 export function CanvasRoot({ editable = true }: CanvasRootProps) {
@@ -149,6 +158,21 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   //   canEditContent → double-click inline text editing
   //   canEditStyle / canEditStructure → properties sidebar
   const permissions = useEditorPermissions()
+  const phone = useMobileViewport()
+  const editingText = useEditorStore((s) => s.activeInlineEdit !== null)
+  const canShowTextActions = useEditorStore((s) =>
+    s.selectedNodeIds.length === 1 && s.propertiesPanel.collapsed &&
+    !s.collapsedBreakpointIds.includes(s.activeBreakpointId),
+  )
+  const endInlineEdit = useEditorStore((s) => s.endInlineEdit)
+  const setPropertiesPanel = useEditorStore((s) => s.setPropertiesPanel)
+  const phoneTextEnabled = phone && !isLive && editable && permissions.canEditContent
+  const showPhoneTextActions = phoneTextEnabled && canShowTextActions && selectedNodeId &&
+    hasEditableText(canvasPage?.nodes[selectedNodeId]) &&
+    breakpoints.some((bp) => bp.id === activeBreakpointId && bp.previewFrame !== false)
+  const phoneEditing = phone && editingText
+  const [layerActionsFor, setLayerActionsFor] = useState<string | null>(null)
+  const showLayerActions = layerActionsFor !== null && layerActionsFor === selectedNodeId
   // Auto-dim non-active breakpoints when a layer is selected and the
   // properties panel is open — gated by the `dimInactiveBreakpoints` user
   // preference so designers comparing breakpoints side-by-side can keep
@@ -284,7 +308,9 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
       : e.metaKey || e.ctrlKey
         ? 'toggle'
         : 'replace'
-    selectNode(nodeId, mode)
+    const preservePropertiesPanelCollapse = phoneTextEnabled && mode === 'replace' &&
+      hasEditableText(selectActiveCanvasPage(useEditorStore.getState())?.nodes[nodeId])
+    selectNode(nodeId, mode, { preservePropertiesPanelCollapse })
     setFocusedPanel('canvas')
   }
 
@@ -451,6 +477,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
           data-instatic-canvas-root="true"
           data-canvas-state={canvasPage ? 'canvas-ready' : 'canvas-empty'}
           data-canvas-view={canvasView}
+          data-hide-layer-actions={phoneEditing || (showPhoneTextActions && !showLayerActions) || undefined}
           data-vc-mode={activeDocument?.kind === 'visualComponent' ? 'true' : undefined}
           onKeyDown={onCanvasKeyDown}
           onClick={onCanvasClick}
@@ -479,7 +506,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
             equally; only the frame layout differs (all frames vs. one). In live
             mode the frame is flush with the top edge, so the notch auto-hides
             (peek) and rolls down on hover instead of overlaying the page. */}
-          {editable && (
+          {editable && !phoneEditing && (
             <CanvasNotch
               peek={isLive}
               floatingControl={
@@ -499,11 +526,63 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
           {/* Design / Live view toggle — top-left chrome. In live mode this
             also hosts inline breakpoint switcher buttons, and the toggle owns
             the "Run scripts" switch + its build status / Refresh. */}
-          <CanvasModeToggle
-            peek={isLive}
-            scriptStatus={scriptBuild.status}
-            onRefreshScripts={scriptBuild.refresh}
-          />
+          {!phoneEditing && (
+            <CanvasModeToggle
+              peek={isLive}
+              scriptStatus={scriptBuild.status}
+              onRefreshScripts={scriptBuild.refresh}
+            />
+          )}
+
+          {(phoneEditing || showPhoneTextActions) && (
+            <div
+              className={styles.phoneTextActions}
+              data-editing={phoneEditing}
+              role="group"
+              aria-label="Text editing"
+              onClick={(event) => event.stopPropagation()}
+            >
+              {phoneEditing ? (
+                <Button
+                  variant="primary"
+                  size="lg"
+                  onPointerDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    endInlineEdit()
+                    clearSelection()
+                    hoverNode(null)
+                    canvasRef.current?.focus({ preventScroll: true })
+                  }}
+                >
+                  Done
+                </Button>
+              ) : selectedNodeId && (
+                <>
+                  <Button variant="primary" size="md" onClick={() => {
+                    setLayerActionsFor(null)
+                    startInlineEdit(selectedNodeId, activeBreakpointId)
+                  }}>
+                    Edit text
+                  </Button>
+                  <Button variant="ghost" size="md" onClick={() => setPropertiesPanel({ collapsed: false })}>
+                    Properties
+                  </Button>
+                  {permissions.canEditStructure && (
+                    <Button
+                      variant="ghost"
+                      size="md"
+                      iconOnly
+                      aria-label="Layer actions"
+                      aria-expanded={showLayerActions}
+                      onClick={() => setLayerActionsFor(showLayerActions ? null : selectedNodeId)}
+                    >
+                      <MoreHorizontalSolidIcon size={14} aria-hidden="true" />
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           {/* The editing-context switcher targets per-context style overrides
               (viewports + custom conditions), so it's only meaningful for

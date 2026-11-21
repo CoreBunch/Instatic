@@ -19,6 +19,7 @@
  */
 
 import { useRef, useEffect, useCallback } from 'react'
+import { isMobileViewport } from '@admin/lib/mobileViewport'
 import { useGesture } from '@use-gesture/react'
 import { useEditorStore, type EditorStore } from '@site/store/store'
 import {
@@ -89,6 +90,7 @@ function cssAttrEscape(value: string): string {
 export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanvasOptions) {
   // Ref-based transform — not React state — avoids re-renders during interaction
   const transformRef = useRef<Transform>({ zoom: 1, panX: 0, panY: 0 })
+  const fittedPhoneFrame = useRef(false)
   const rafRef = useRef<number | null>(null)
   const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const animatingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -211,7 +213,8 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
 
   /**
    * Pan the canvas so the given breakpoint's frame is horizontally centered and
-   * its top sits just below the viewport top — keeping the current zoom. Used to
+   * its top sits just below the viewport top. On phones the initial frame fits
+   * the canvas width (up to 100%); subsequent centers keep the current zoom. Used to
    * honour the user's "Default viewport" preference: opening a site should focus
    * the chosen frame instead of always landing on the left-most (mobile) frame.
    *
@@ -236,7 +239,12 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
       )
       if (!frame) return false
 
-      const cur = transformRef.current
+      const cur = { ...transformRef.current }
+      if (!fittedPhoneFrame.current && isMobileViewport() && frame.offsetWidth && root.clientWidth) {
+        cur.zoom = clampZoom(Math.min(1, root.clientWidth / frame.offsetWidth))
+        applyTransformToDOM(cur)
+        fittedPhoneFrame.current = true
+      }
       const target = panToCenterBreakpointFrame(root, frame, cur)
       if (!target) return false
 

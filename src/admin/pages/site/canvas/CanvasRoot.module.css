@@ -51,3 +51,31 @@
     font-size: var(--text-xs);
     line-height: 1.35;
 }
+
+.phoneTextActions {
+    position: absolute;
+    z-index: 54;
+    bottom: var(--space-xl);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    padding: var(--space-2xs);
+    background: var(--bg-body);
+    border-radius: var(--panel-radius);
+    box-shadow: var(--shadow-panel);
+}
+
+.phoneTextActions[data-editing="true"] {
+    bottom: auto;
+    top: var(--space-s);
+    right: var(--space-s);
+    left: auto;
+    transform: none;
+}
+
+.canvas[data-hide-layer-actions="true"] [data-canvas-selection-toolbar],
+.canvas[data-hide-layer-actions="true"] [data-canvas-radius-handles] {
+    visibility: hidden;
+}
