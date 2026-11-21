@@ -163,6 +163,7 @@ export function ShowIfControl({
     const page = selectActiveCanvasPage(s)
     return page ? subtreeHasOutlet(page.nodes, nodeId) : false
   })
+  const pageId = useEditorStore((s) => selectActiveCanvasPage(s)?.id)
   const sourceId = useId()
   const nameId = useId()
   const testId = useId()
@@ -174,6 +175,11 @@ export function ShowIfControl({
   // An unfinished condition (no name yet) is stored as typed; the publisher
   // reads it as "never", which is the safe side, and the hint says so.
   function save(next: Draft | undefined) {
+    // A pending field can unmount after its node was deleted, a different
+    // document was opened, or another editor already replaced its condition.
+    const page = selectActiveCanvasPage(useEditorStore.getState())
+    const node = page?.nodes[nodeId]
+    if (!node || page?.id !== pageId || node.props[SHOW_IF_PROP_KEY] !== props[SHOW_IF_PROP_KEY]) return
     updateNodeProps(nodeId, {
       [SHOW_IF_PROP_KEY]: next
         ? {
@@ -231,7 +237,7 @@ export function ShowIfControl({
             {draft.source === 'query' ? 'Parameter' : 'Field'}
           </label>
           <DraftInput
-            key={`${nodeId}:name`}
+            key={`${pageId}:${nodeId}:name`}
             id={nameId}
             value={draft.name}
             placeholder={NAME_PLACEHOLDER[draft.source]}
@@ -255,7 +261,7 @@ export function ShowIfControl({
             <>
               <label htmlFor={valueId} className={styles.label}>Value</label>
               <DraftInput
-                key={`${nodeId}:value`}
+                key={`${pageId}:${nodeId}:value`}
                 id={valueId}
                 value={draft.value}
                 placeholder={draft.source === 'query' ? 'plan_changed' : 'active'}

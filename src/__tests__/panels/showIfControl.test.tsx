@@ -82,6 +82,15 @@ describe('ShowIfControl', () => {
     expect(readShowIf(props('wrap'))).toEqual({ source: 'query', name: 'commerce', test: 'filled' })
   })
 
+  it('discards a pending field if its original node was deleted', () => {
+    load()
+    useEditorStore.getState().updateNodeProps('box', { showIf: { source: 'query', name: 'old', test: 'filled' } })
+    const view = render(<ShowIfControl nodeId="box" props={boxProps()} readOnly={false} />)
+    fireEvent.change(screen.getByLabelText('Parameter'), { target: { value: 'pending' } })
+    useEditorStore.getState().deleteNode('box')
+    expect(() => view.unmount()).not.toThrow()
+  })
+
   it('keeps focus in the field after Enter saves', () => {
     load()
     useEditorStore.getState().updateNodeProps('box', { showIf: { source: 'query', name: '', test: 'filled' } })
