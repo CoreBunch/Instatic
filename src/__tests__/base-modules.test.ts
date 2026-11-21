@@ -975,6 +975,26 @@ describe('base.video — render() specifics', () => {
     expect(VideoModule.canHaveChildren).toBe(false)
   })
 
+  it('uses the resolved asset path when videoUrl holds a bound media id', () => {
+    const { html } = renderModule(VideoModule, {
+      videoUrl: 'asset-id-123',
+      _resolvedMediaByKey: {
+        videoUrl: {
+          publicPath: '/uploads/reel.mp4',
+          mimeType: 'video/mp4',
+          width: 1920,
+          height: 1080,
+          altText: '',
+          blurHash: null,
+          posterPath: null,
+          variants: [],
+        },
+      },
+    })
+    expect(html).toContain('src="/uploads/reel.mp4"')
+    expect(html).not.toContain('asset-id-123')
+  })
+
   it('renders a YouTube iframe when videoUrl is a watch URL', () => {
     const { html } = renderModule(VideoModule, {
       videoUrl: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
