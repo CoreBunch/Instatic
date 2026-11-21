@@ -24,7 +24,10 @@ import type {
   FragmentInsertOutcome,
   FragmentPlanInput,
   FragmentPlanOutcome,
+  FragmentPreviewStylesListener,
 } from '@core/plugin-sdk'
+import { styleRuleSelector, type SiteDocument } from '@core/page-tree'
+import { generateCanvasClassCSS } from '@site/canvas/canvasClassCss'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { useEditorStore } from '@site/store/store'
 import { fragmentInsertDocument } from '@site/store/slices/fragmentsSlice'
@@ -36,6 +39,38 @@ import {
   toastFragmentInserted,
   type EditorFragmentPlan,
 } from './fragmentInsertFlow'
+
+export function watchFragmentPreviewStyles(onChange: FragmentPreviewStylesListener): () => void {
+  let previous: SiteDocument | null | undefined
+  const update = (site: SiteDocument | null) => {
+    const last = previous
+    previous = site
+    if (site === last) return
+    if (!site) {
+      onChange(null)
+      return
+    }
+    if (last && site.styleRules === last.styleRules && site.breakpoints === last.breakpoints
+      && site.conditions === last.conditions && site.settings.framework === last.settings.framework
+      && site.settings.fonts === last.settings.fonts) return
+
+    // A fragment can use an authored class before any canvas node uses it.
+    // Keep the full shared registry and leave node-owned module rules out.
+    const sharedRules = Object.values(site.styleRules).filter(rule => !rule.scope)
+    const registry = Object.fromEntries(sharedRules.map(rule => [rule.id, rule]))
+    const framework = site.settings.framework
+    const css = generateCanvasClassCSS(
+      registry, site.breakpoints, site.conditions, framework?.colors,
+      framework?.typography, framework?.spacing, framework?.preferences, site.settings.fonts,
+    )
+    onChange({
+      css,
+      rules: sharedRules.map(rule => ({ kind: rule.kind, name: rule.name, selector: styleRuleSelector(rule) })),
+    })
+  }
+  update(useEditorStore.getState().site)
+  return useEditorStore.subscribe(state => update(state.site))
+}
 
 type RunStepUp = <T>(action: () => Promise<T>) => Promise<T>
 

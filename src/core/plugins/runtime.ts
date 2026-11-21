@@ -567,6 +567,22 @@ export function createEditorPluginApi(
         },
       },
       fragments: {
+        watchPreviewStyles(onChange) {
+          assertPluginPermission(manifest, 'editor.fragments')
+          if (typeof onChange !== 'function') {
+            throw new TypeError('editor.fragments.watchPreviewStyles: expected a listener')
+          }
+          const notify: Parameters<EditorFragmentsApi['watchPreviewStyles']>[0] = (styles) => {
+            try {
+              onChange(styles)
+            } catch (err) {
+              console.error(`[plugin:${manifest.id}] Fragment preview listener failed:`, err)
+            }
+          }
+          if (fragmentsHost) return fragmentsHost.watchPreviewStyles(notify)
+          notify(null)
+          return () => {}
+        },
         async insert(input) {
           assertPluginPermission(manifest, 'editor.fragments')
           assertFragmentInsertInput(input)

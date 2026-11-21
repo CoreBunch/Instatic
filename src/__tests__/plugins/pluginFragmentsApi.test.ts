@@ -6,12 +6,12 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { bindPluginRuntimeFragmentsHost, createEditorPluginApi } from '@core/plugins/runtime'
-import type { EditorPluginApi, FragmentMedia, PluginManifest } from '@core/plugin-sdk'
+import type { EditorPluginApi, FragmentMedia, FragmentPreviewStyles, PluginManifest } from '@core/plugin-sdk'
 import { extractFragment, fragmentSourceFromSite, planFragmentInsert, type SiteFragment } from '@core/fragments'
 import type { StyleRule } from '@core/page-tree'
 import { useEditorStore } from '@site/store/store'
 import { fragmentInsertDocument } from '@site/store/slices/fragmentsSlice'
-import { insertFragmentForPlugin, planFragmentForPlugin } from '@admin/modals/InsertFragment/pluginFragmentsHost'
+import { insertFragmentForPlugin, planFragmentForPlugin, watchFragmentPreviewStyles } from '@admin/modals/InsertFragment/pluginFragmentsHost'
 import { __resetToastBusForTests, subscribeToasts, type Toast } from '@ui/components/Toast/toastBus'
 import { makeNode, makePage, makeSite } from '../fixtures'
 import '@modules/base/index'
@@ -126,6 +126,7 @@ beforeEach(() => {
   unbind = bindPluginRuntimeFragmentsHost({
     insert: (input) => insertFragmentForPlugin(input, (action) => action()),
     plan: planFragmentForPlugin,
+    watchPreviewStyles: watchFragmentPreviewStyles,
   })
 })
 
@@ -150,6 +151,36 @@ describe('api.editor.fragments', () => {
     await expect(denied.editor.fragments.plan({ fragment: await bannerFragment() }))
       .rejects.toThrow('requires permission "editor.fragments"')
     expect(bodyChildren()).toEqual(['first', 'second'])
+  })
+
+  it('watches unused shared styles and skips node-owned rules', () => {
+    const styles: (FragmentPreviewStyles | null)[] = []
+    const denied = api(['editor.code'])
+    expect(() => denied.editor.fragments.watchPreviewStyles(() => {}))
+      .toThrow('requires permission "editor.fragments"')
+    const unsubscribe = api().editor.fragments.watchPreviewStyles(value => styles.push(value))
+    try {
+      expect(styles).toHaveLength(1)
+      expect(styles[0]?.css).not.toContain('.btn')
+      useEditorStore.setState(state => {
+        state.site!.styleRules.button = rule('button', 'btn')
+        state.site!.styleRules.owned = {
+          ...rule('owned', 'owned'),
+          scope: { type: 'node', nodeId: 'first', role: 'module-style' },
+        }
+      })
+      expect(styles[1]?.rules).toEqual([{ kind: 'class', name: 'btn', selector: '.btn' }])
+      expect(styles[1]?.css).toContain('.btn {')
+      expect(styles[1]?.css).not.toContain('.owned')
+      useEditorStore.setState({ selectedNodeId: 'second' })
+      expect(styles).toHaveLength(2)
+      useEditorStore.setState({ site: null })
+      expect(styles.at(-1)).toBeNull()
+    } finally {
+      unsubscribe()
+    }
+    seedEditor()
+    expect(styles).toHaveLength(3)
   })
 
   it('inserts after the selection, reads only the media it uploads, and undoes in one step', async () => {

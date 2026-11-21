@@ -69,7 +69,22 @@ export type FragmentPlanOutcome =
   | { ok: true; report: FragmentInsertReport }
   | { ok: false; message: string }
 
+/** Saved destination styles available before a fragment has been inserted. */
+export interface FragmentPreviewStyles {
+  /** Publisher reset, fonts, framework tokens, and the site's shared style rules. */
+  css: string
+  /** Exact selectors and bindings an insert can reuse, even if the site doesn’t use them yet. */
+  rules: ReadonlyArray<{ kind: 'class' | 'ambient'; name: string; selector: string }>
+}
+
+export type FragmentPreviewStylesListener = (styles: FragmentPreviewStyles | null) => void
+
 export interface EditorFragmentsApi {
+  /**
+   * Observe the destination's saved styles for a preview. Emits null when the
+   * site editor is unavailable. Call the returned function to unsubscribe.
+   */
+  watchPreviewStyles: (onChange: FragmentPreviewStylesListener) => () => void
   /**
    * Insert a fragment into the open document with the same engine as the
    * Insert fragment dialog: the site's own classes, components, tokens and

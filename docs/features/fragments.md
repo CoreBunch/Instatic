@@ -50,7 +50,7 @@ src/admin/modals/InsertFragment/
 ├── FragmentReport.tsx              the review / result report
 ├── fragmentInsertFlow.ts           load file, plan against the open document, commit, toasts
 ├── createFragmentInsertAdapter.ts  CMS API + editor store implementation of the adapter
-├── pluginFragmentsHost.ts          api.editor.fragments (insert / plan) on the same flow
+├── pluginFragmentsHost.ts          api.editor.fragments (insert / plan / watchPreviewStyles) on the same flow
 └── useBindPluginFragmentsApi.ts    binds that host into the plugin runtime while the editor is open
 
 src/admin/pages/site/store/slices/fragmentsSlice.ts   insertFragment + dialog flag
@@ -160,6 +160,8 @@ E. adapter.commit(resolved)   ONE store transaction
 ## Inserting from a plugin
 
 A plugin with `editor.fragments` calls `api.editor.fragments.insert({ fragment, readMediaBytes, placement?, signal?, onProgress?, silent? })` or the dry run `api.editor.fragments.plan({ fragment })`. Both run on the dialog's own functions (`planFragmentForEditor`, `commitFragmentForEditor` in `fragmentInsertFlow.ts`), so the merge rules, step-up prompt, undo step and result toast are the same. The plugin supplies the bytes (`readMediaBytes`), which is only called for media the plan adds that the library lacks. Failures resolve as `{ ok: false, stage, message }`; a fragment `parseSiteFragment` refuses rejects `insert`. Full API: [plugin-system.md](plugin-system.md#inserting-site-fragments-editorfragments).
+
+`watchPreviewStyles` lets a plugin preview a fragment with the destination’s current shared styles, including classes that no page uses yet. The preview receives both the stylesheet and its exact selector bindings.
 
 ---
 

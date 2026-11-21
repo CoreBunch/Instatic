@@ -502,7 +502,7 @@ Editor surfaces are permission-split:
 | `api.editor.canvas.registerOverlay` | `editor.canvas` |
 | `api.editor.store.read` | `editor.store.read` |
 | `api.editor.store.transaction` | `editor.store.write` |
-| `api.editor.fragments.insert`, `api.editor.fragments.plan` | `editor.fragments` |
+| `api.editor.fragments.insert`, `api.editor.fragments.plan`, `api.editor.fragments.watchPreviewStyles` | `editor.fragments` |
 | `api.cms.storage.collection(...)` from browser plugin code | `cms.storage` |
 
 #### Inserting site fragments (`editor.fragments`)
@@ -536,6 +536,7 @@ export function activate(api) {
 - `colorSources` (on `plan` and `insert`) fills a colour the fragment adds from one of the site's own: `{ 'bg-alt': 'bg-surface' }` gives the new `bg-alt` token the site's `bg-surface` light value, dark value and dark-mode flag, so a section's band follows the site's palette. Colours the site already has are never touched; the report lists what was filled in `colors.filled`.
 - `readMediaBytes` is called only for media the plan adds that the media library does not already hold (same filename, size and MIME type). Returning null stops the insert with `stage: 'media'` before the document changes.
 - `insert` resolves `{ ok: true, report, insertedRootIds, pageId? }` or `{ ok: false, stage, message }` with `stage` one of `unavailable` (no editable document open), `plan`, `media`, `tables`, `commit`, `cancelled`. It rejects only for a malformed input, including a fragment `parseSiteFragment` refuses; `plan` resolves `{ ok: false, message }` for that.
+- `watchPreviewStyles(onChange)` sends the site’s shared class CSS, fonts, framework tokens, and exact selector bindings for a fragment preview. It includes saved styles that no canvas node uses yet and omits node-owned module rules. The callback receives `null` when the site editor is unavailable. Call the returned function to stop listening.
 - The editor shows its usual result toast; pass `silent: true` to show your own. `signal` and `onProgress` behave as in `commitFragmentPlan`.
 - The site editor binds the host while it is open for a user who can edit the draft site (`useBindPluginFragmentsApi`); `src/core/plugins/runtime.ts` checks the permission and the input shape, `src/admin/modals/InsertFragment/pluginFragmentsHost.ts` runs the insert.
 

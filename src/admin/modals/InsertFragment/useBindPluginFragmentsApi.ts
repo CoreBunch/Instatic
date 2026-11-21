@@ -6,7 +6,7 @@
  * of the editor body's chunk.
  */
 
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { bindPluginRuntimeFragmentsHost } from '@core/plugins/runtime'
 import { useStepUp } from '@admin/shared/StepUp'
 
@@ -14,11 +14,48 @@ const loadHost = () => import('./pluginFragmentsHost')
 
 export function useBindPluginFragmentsApi(enabled: boolean): void {
   const { runStepUp } = useStepUp()
+  const stepUp = useRef(runStepUp)
   useEffect(() => {
-    if (!enabled) return undefined
-    return bindPluginRuntimeFragmentsHost({
-      insert: async (input) => (await loadHost()).insertFragmentForPlugin(input, runStepUp),
+    stepUp.current = runStepUp
+  }, [runStepUp])
+
+  useEffect(() => {
+    if (!enabled) return
+    // Keep previews subscribed when the step-up provider renders its prompt.
+    const confirm: typeof runStepUp = (action) => stepUp.current(action)
+    const closePreviews = new Set<() => void>()
+    const unbind = bindPluginRuntimeFragmentsHost({
+      watchPreviewStyles(onChange) {
+        let active = true
+        let unsubscribe: (() => void) | undefined
+        function stop() {
+          active = false
+          unsubscribe?.()
+          closePreviews.delete(close)
+        }
+        function close() {
+          stop()
+          onChange(null)
+        }
+        closePreviews.add(close)
+        void loadHost().then((host) => {
+          if (!active) return
+          const release = host.watchFragmentPreviewStyles(onChange)
+          if (active) unsubscribe = release
+          else release()
+        }).catch((err) => {
+          if (!active) return
+          console.error('[fragment-preview] Could not load site styles:', err)
+          close()
+        })
+        return stop
+      },
+      insert: async (input) => (await loadHost()).insertFragmentForPlugin(input, confirm),
       plan: async (input) => (await loadHost()).planFragmentForPlugin(input),
     })
-  }, [enabled, runStepUp])
+    return () => {
+      unbind()
+      for (const close of closePreviews) close()
+    }
+  }, [enabled])
 }
