@@ -17,7 +17,7 @@
  */
 import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
-import { htmlAttributesForReact } from '@core/htmlAttributes'
+import { useCanvasHtmlAttributes } from '@modules/base/shared/useCanvasHtmlAttributes'
 import { inlineEditableElementProps, rawTextToBreakHtml } from '@modules/base/shared/inlineText'
 import { normalizeTag } from './tags'
 import type { TextStoredProps } from './props'
@@ -29,6 +29,7 @@ export const TextEditor: React.FC<ModuleComponentProps<TextStoredProps>> = ({
   inlineEdit,
 }) => {
   const tag = normalizeTag(props.tag)
+  const attributes = useCanvasHtmlAttributes(tag === 'none' ? undefined : props.htmlAttributes, inlineEdit?.ref)
 
   // Editing: the element becomes the contentEditable surface (content seeded
   // from the frozen initial HTML inside inlineEditableElementProps). `tag: none`
@@ -40,7 +41,7 @@ export const TextEditor: React.FC<ModuleComponentProps<TextStoredProps>> = ({
     const EditTag = (tag === 'none' ? 'span' : tag) as React.ElementType
     return React.createElement(EditTag, {
       ...nodeWrapperProps,
-      ...(tag === 'none' ? {} : htmlAttributesForReact(props.htmlAttributes)),
+      ...attributes,
       className: mcClassName,
       ...inlineEditableElementProps(inlineEdit),
     })
@@ -63,7 +64,7 @@ export const TextEditor: React.FC<ModuleComponentProps<TextStoredProps>> = ({
   const Tag = tag as React.ElementType
   return React.createElement(Tag, {
     ...nodeWrapperProps,
-    ...htmlAttributesForReact(props.htmlAttributes),
+    ...attributes,
     className: mcClassName,
     dangerouslySetInnerHTML: { __html: html },
   })

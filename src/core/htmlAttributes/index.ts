@@ -1,5 +1,4 @@
 export {
-  htmlAttributesForReact,
   isEventHandlerAttributeName,
   isRenderableHtmlAttributeName,
   isReservedRuntimeDataAttributeName,

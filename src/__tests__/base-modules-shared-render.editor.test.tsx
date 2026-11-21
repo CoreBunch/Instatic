@@ -16,6 +16,7 @@ import { LinkModule } from '@modules/base/link'
 import { TextModule } from '@modules/base/text'
 import { ButtonModule } from '@modules/base/button'
 import { ListModule } from '@modules/base/list'
+import { FormModule } from '@modules/base/forms'
 import { ContainerModule } from '@modules/base/container'
 import { SvgModule } from '@modules/base/svg'
 import { anchorRel } from '@modules/base/shared/anchorTarget'
@@ -117,6 +118,43 @@ describe('ListEditor canvas DOM matches parseItems', () => {
   it('renders <ol> for ordered, <ul> for unordered (== publisher tag)', () => {
     expect(renderEditor(ListModule, { listType: 'ordered', items: 'A' }).container.querySelector('ol')).not.toBeNull()
     expect(renderEditor(ListModule, { listType: 'unordered', items: 'A' }).container.querySelector('ul')).not.toBeNull()
+  })
+})
+
+describe('authored hidden attributes on the canvas', () => {
+  it('keeps an imported icon bank in the DOM and hides its container', () => {
+    const { container } = renderEditor(
+      ContainerModule,
+      { htmlAttributes: { hidden: '', 'aria-hidden': 'true' } },
+      { children: React.createElement('svg', { 'data-demo-icon': 'play' }) },
+    )
+    expect(container.querySelector('div[hidden] > svg[data-demo-icon="play"]')).not.toBeNull()
+  })
+
+  it('preserves hidden values and removes the attribute when the author clears it', () => {
+    const editor = (htmlAttributes: Record<string, string>) => (
+      <ContainerModule.component props={{ ...ContainerModule.defaults, htmlAttributes }} nodeId="bank" isSelected={false} />
+    )
+    const view = renderReact(editor({ hidden: 'until-found' }))
+    const element = view.container.firstElementChild!
+    expect(element.getAttribute('hidden')).toBe('until-found')
+    // A browser find or site script can reveal this node between editor renders.
+    element.removeAttribute('hidden')
+    view.rerender(editor({ hidden: 'until-found', title: 'Updated' }))
+    expect(element.hasAttribute('hidden')).toBe(false)
+    view.rerender(editor({ hidden: 'hidden' }))
+    expect(element.getAttribute('hidden')).toBe('hidden')
+    view.rerender(editor({ hidden: '' }))
+    expect(element.getAttribute('hidden')).toBe('')
+    view.rerender(editor({ 'aria-hidden': 'true' }))
+    expect(element.hasAttribute('hidden')).toBe(false)
+  })
+
+  it('also hides authored forms and anchors, including link-style buttons', () => {
+    for (const def of [FormModule, LinkModule, ButtonModule]) {
+      const { container } = renderEditor(def, { href: '/demo', htmlAttributes: { hidden: '' } })
+      expect(container.firstElementChild?.hasAttribute('hidden')).toBe(true)
+    }
   })
 })
 
