@@ -28,8 +28,7 @@ import { pushToast } from '@ui/components/Toast'
 import { StepUpCancelledMessage } from '@admin/shared/StepUp'
 import { useEditorStore } from '@site/store/store'
 import { fragmentInsertDocument } from '@site/store/slices/fragmentsSlice'
-import { collabBranchId } from '@site/store/slices/site/collabBranch'
-import { isSameActiveDocument } from '@site/store/slices/uiSlice'
+import { captureFragmentTarget } from './fragmentInsertTarget'
 import { createFragmentInsertAdapter } from './createFragmentInsertAdapter'
 
 type RunStepUp = <T>(action: () => Promise<T>) => Promise<T>
@@ -83,19 +82,6 @@ export async function planFragmentForEditor(
   return {
     ...planFragmentInsert({ site: state.site, tables, document: fragmentInsertDocument(state) ?? undefined }, fragment, options),
     assertCurrentTarget,
-  }
-}
-
-export function captureFragmentTarget(): () => void {
-  const state = useEditorStore.getState()
-  const branch = collabBranchId()
-  const document = fragmentInsertDocument(state)
-  return () => {
-    const current = useEditorStore.getState()
-    if (current.site !== state.site || collabBranchId() !== branch
-      || !isSameActiveDocument(document, fragmentInsertDocument(current))) {
-      throw new Error('The destination changed. Review the fragment again before inserting it.')
-    }
   }
 }
 

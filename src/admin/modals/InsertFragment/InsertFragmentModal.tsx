@@ -22,7 +22,6 @@ import { useEditorStore } from '@site/store/store'
 import { useStepUp } from '@admin/shared/StepUp'
 import { FragmentReport } from './FragmentReport'
 import {
-  captureFragmentTarget,
   commitFragmentForEditor,
   fragmentProgressLine,
   isFragmentInsertCancel,
@@ -33,6 +32,7 @@ import {
   type EditorFragmentPlan,
   type LoadedFragment,
 } from './fragmentInsertFlow'
+import { captureFragmentTarget } from './fragmentInsertTarget'
 import styles from './InsertFragmentModal.module.css'
 
 type Step =

@@ -39,6 +39,7 @@ import {
   toastFragmentInserted,
   type EditorFragmentPlan,
 } from './fragmentInsertFlow'
+import { captureFragmentTarget } from './fragmentInsertTarget'
 
 export function watchFragmentPreviewStyles(onChange: FragmentPreviewStylesListener): () => void {
   let previous: SiteDocument | null | undefined
@@ -78,7 +79,11 @@ type PlanAttempt =
   | { ok: true; plan: EditorFragmentPlan }
   | { ok: false; stage: 'unavailable' | 'plan'; message: string }
 
-async function planForActiveDocument(fragment: unknown, colorSources?: Record<string, string>): Promise<PlanAttempt> {
+async function planForActiveDocument(
+  fragment: unknown,
+  colorSources: Record<string, string> | undefined,
+  target: () => void,
+): Promise<PlanAttempt> {
   // Throws FragmentParseError for a malformed fragment: the caller decides
   // whether that rejects (insert) or resolves (plan).
   const parsed = parseSiteFragment(fragment)
@@ -87,7 +92,7 @@ async function planForActiveDocument(fragment: unknown, colorSources?: Record<st
     return { ok: false, stage: 'unavailable', message: 'Open a page or component in the site editor to insert a fragment.' }
   }
   try {
-    return { ok: true, plan: await planFragmentForEditor(parsed, colorSources ? { colorSources } : {}) }
+    return { ok: true, plan: await planFragmentForEditor(parsed, { colorSources }, target) }
   } catch (err) {
     const message = err instanceof FragmentInsertError
       ? err.message
@@ -102,10 +107,13 @@ function failureStage(err: unknown): FragmentInsertFailureStage {
   return 'commit'
 }
 
-export async function planFragmentForPlugin(input: FragmentPlanInput): Promise<FragmentPlanOutcome> {
+export async function planFragmentForPlugin(
+  input: FragmentPlanInput,
+  target = captureFragmentTarget(),
+): Promise<FragmentPlanOutcome> {
   let attempt: PlanAttempt
   try {
-    attempt = await planForActiveDocument(input.fragment, input.colorSources)
+    attempt = await planForActiveDocument(input.fragment, input.colorSources, target)
   } catch (err) {
     return { ok: false, message: getErrorMessage(err, 'The fragment is not valid.') }
   }
@@ -115,9 +123,10 @@ export async function planFragmentForPlugin(input: FragmentPlanInput): Promise<F
 export async function insertFragmentForPlugin(
   input: FragmentInsertInput,
   runStepUp: RunStepUp,
+  target = captureFragmentTarget(),
 ): Promise<FragmentInsertOutcome> {
   const announce = input.silent !== true
-  const attempt = await planForActiveDocument(input.fragment, input.colorSources)
+  const attempt = await planForActiveDocument(input.fragment, input.colorSources, target)
   if (!attempt.ok) {
     if (announce) toastFragmentInsertFailed(new Error(attempt.message))
     return attempt

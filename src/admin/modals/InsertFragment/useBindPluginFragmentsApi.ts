@@ -9,6 +9,7 @@
 import { useEffect, useRef } from 'react'
 import { bindPluginRuntimeFragmentsHost } from '@core/plugins/runtime'
 import { useStepUp } from '@admin/shared/StepUp'
+import { captureFragmentTarget } from './fragmentInsertTarget'
 
 const loadHost = () => import('./pluginFragmentsHost')
 
@@ -50,8 +51,14 @@ export function useBindPluginFragmentsApi(enabled: boolean): void {
         })
         return stop
       },
-      insert: async (input) => (await loadHost()).insertFragmentForPlugin(input, confirm),
-      plan: async (input) => (await loadHost()).planFragmentForPlugin(input),
+      async insert(input) {
+        const target = captureFragmentTarget()
+        return (await loadHost()).insertFragmentForPlugin(input, confirm, target)
+      },
+      async plan(input) {
+        const target = captureFragmentTarget()
+        return (await loadHost()).planFragmentForPlugin(input, target)
+      },
     })
     return () => {
       unbind()

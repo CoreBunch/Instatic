@@ -83,7 +83,12 @@ function stubCmsApi(): void {
       uploads.push(file.name)
       return json({ asset: asset(`new-${file.name}`, file.name, file.type, file.size) })
     }
-    if (url.endsWith('/media')) return json({ assets: [asset('lib-logo', 'logo.png', 'image/png', bytesOf('logo.png').byteLength)] })
+    if (url.endsWith('/media/lookup')) {
+      const { contentHashes } = JSON.parse(String(init?.body))
+      const contentHash = new Bun.CryptoHasher('sha256').update(bytesOf('logo.png')).digest('hex')
+      const match = { contentHash, id: 'lib-logo', filename: 'logo.png', publicPath: '/uploads/library/logo.png' }
+      return json({ matches: contentHashes.includes(contentHash) ? [match] : [] })
+    }
     throw new Error(`unexpected request ${url}`)
   }) as unknown as typeof fetch
 }
@@ -211,6 +216,37 @@ describe('api.editor.fragments', () => {
 
     useEditorStore.getState().undo()
     expect(useEditorStore.getState().site!.pages[0].nodes).toEqual(before)
+  })
+
+  it('does not apply a second plan after another insert changed the destination', async () => {
+    const fragment = await bannerFragment()
+    let indicateRead!: () => void
+    let resumeRead!: () => void
+    const waiting = new Promise<void>(resolve => { indicateRead = resolve })
+    const resume = new Promise<void>(resolve => { resumeRead = resolve })
+    const first = api().editor.fragments.insert({
+      fragment,
+      silent: true,
+      readMediaBytes: async media => {
+        indicateRead()
+        await resume
+        return bytesOf(media.filename)
+      },
+    })
+    try {
+      await waiting
+      const second = await api().editor.fragments.insert({ fragment, silent: true, readMediaBytes: media => bytesOf(media.filename) })
+      expect(second.ok).toBe(true)
+    } finally {
+      resumeRead()
+    }
+    const outdated = await first
+    expect(outdated.ok).toBe(false)
+    if (outdated.ok) throw new Error('The stale plan changed the site')
+    expect(outdated.message).toContain('The destination changed')
+    const rules = Object.values(useEditorStore.getState().site!.styleRules)
+    expect(rules.filter(rule => rule.name === 'banner')).toHaveLength(1)
+    expect(bodyChildren()).toHaveLength(3)
   })
 
   it("places inside the selected container for 'inside-selection' and at the end for 'end'", async () => {
