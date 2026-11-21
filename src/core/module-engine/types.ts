@@ -4,7 +4,7 @@ import type {
   FormEventHandler,
   KeyboardEventHandler,
   ReactNode,
-  Ref,
+  RefObject,
 } from 'react'
 import type { IconComponent } from 'pixel-art-icons/types'
 import type { TSchema } from '@core/utils/typeboxHelpers'
@@ -169,7 +169,7 @@ export interface ModuleComponentProps<
  */
 export interface InlineEditBinding {
   /** Ref the canvas attaches to focus + seed the element and read it on commit. */
-  ref: Ref<HTMLElement>
+  ref: RefObject<HTMLElement | null>
   /** Fires on every edit — the canvas reads `innerText` and commits live. */
   onInput: FormEventHandler<HTMLElement>
   /** Escape cancels, Enter commits/breaks per the module's multiline flag. */

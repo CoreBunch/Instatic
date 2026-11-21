@@ -316,6 +316,10 @@ The canvas renders modules inside per-breakpoint iframes. Two render paths:
 | The module's `render()` HTML inserted into the iframe (default)            | All modules with no `component`                            |
 | The module's React `component` rendered in a host-managed iframe           | When the module needs DOM access or interactive runtime    |
 
+`base.text` renders its stored text verbatim apart from escaping and hard breaks. An empty styled span stays empty in both the canvas and published HTML, so CSS and scripts can use it as a decoration.
+
+For authored HTML attributes, canvas modules use `useCanvasHtmlAttributes` in `src/modules/base/shared/useCanvasHtmlAttributes.ts`. A bare `hidden` hides the element and keeps its subtree available to scripts. The canvas also preserves explicit values such as `hidden="until-found"` for native browser reveal.
+
 The React component receives `ModuleComponentProps<TProps>`:
 
 ```ts
