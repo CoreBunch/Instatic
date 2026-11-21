@@ -4,6 +4,7 @@
  * emitting mark deltas between consecutive runs.
  */
 
+import { escapeMarkdownText } from './htmlPassthrough'
 import { sameMark, type JSONMark, type JSONNode } from './proseMirrorJson'
 
 interface InlineRun {
@@ -69,7 +70,7 @@ function runsToMarkdown(runs: InlineRun[]): string {
         active.push(mark)
       }
     }
-    out += escapeInline(run.text, active)
+    out += active.some((mark) => mark.type === 'code') ? run.text : escapeMarkdownText(run.text)
   }
   while (active.length > 0) {
     const closed = active.pop()
@@ -142,11 +143,4 @@ function closeMark(mark: JSONMark): string {
   }
   if (mark.type === 'underline') return '</u>'
   return MARK_OPEN[mark.type] ?? ''
-}
-
-function escapeInline(text: string, marks: JSONMark[]): string {
-  // Inside a code mark, no escaping (and no marks inside it anyway).
-  if (marks.some((m) => m.type === 'code')) return text
-  // Escape characters that would otherwise be parsed as markdown.
-  return text.replace(/([\\`*_~[\]])/g, '\\$1')
 }
