@@ -74,12 +74,15 @@
 @media (max-width: 760px) and (orientation: portrait) {
     .sidebar {
         --left-sidebar-panel-render-width: 0px;
+        /* Anchor the dock to the workspace body, including inside a picker. */
+        position: static;
         transition: none;
     }
 
     .panelSlot:not(.panelSlotFloating) {
         top: auto;
-        width: calc(100vw - var(--left-sidebar-rail-width));
+        right: 0;
+        width: auto;
         height: var(--portrait-dock-height);
         border-top: 1px solid var(--border);
     }

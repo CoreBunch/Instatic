@@ -17,6 +17,7 @@
  */
 import { useEffect, useEffectEvent, useState } from 'react'
 import { createPortal } from 'react-dom'
+import canvasLayout from '@admin/layouts/AdminCanvasLayout/AdminCanvasLayout.module.css'
 import { Button } from '@ui/components/Button'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import type { CmsMediaAsset } from '@core/persistence/cmsMedia'
@@ -205,13 +206,13 @@ function MediaPickerModalBody({
           </Button>
         </header>
 
-        <div className={styles.body}>
+        <div className={canvasLayout.editorBody}>
           <MediaSidebar
             workspace={workspace}
             activePanel={activePanel}
             onActivePanelChange={setActivePanel}
           />
-          <div className={styles.canvasArea}>
+          <div className={canvasLayout.canvasStage}>
             <MediaCanvas workspace={workspace} selectionMode={allowMultiple ? 'multiple' : 'standard'} />
           </div>
         </div>

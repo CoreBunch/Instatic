@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { entryRow, expectEditorReady, saveSelectedDraft } from './helpers'
+import { entryRow, expectEditorReady, saveSelectedDraft, startNewPost } from './helpers'
 
 const EDITOR_PREFS_KEY = 'instatic-editor-prefs'
 const EDITOR_LAYOUT_STORAGE_KEY = 'instatic-editor-layout-v2'
@@ -149,7 +149,7 @@ test.describe('admin navigation', () => {
       await page.reload()
       await expect(page.getByTestId('content-explorer-panel')).toBeVisible({ timeout: 20_000 })
 
-      await page.getByRole('button', { name: 'New post', exact: true }).click()
+      await startNewPost(page)
       await page.getByRole('textbox', { name: 'Title', exact: true }).fill(title)
       await page.getByRole('textbox', { name: 'Slug' }).fill(slug)
       await expect(page.getByTestId('content-settings-panel')).toBeVisible()

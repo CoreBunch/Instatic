@@ -42,22 +42,6 @@
     color: var(--text);
 }
 
-.body {
-    display: flex;
-    flex: 1 1 auto;
-    min-height: 0;
-    /* Inside the modal the sidebar lives next to the canvas; MediaSidebar's
-     internal layout already produces the rail + slot, we just give the
-     pair a row container. */
-}
-
-.canvasArea {
-    display: flex;
-    flex: 1 1 auto;
-    min-width: 0;
-    min-height: 0;
-}
-
 .footer {
     display: flex;
     align-items: center;
@@ -131,4 +115,27 @@
 .pickedWrongKind {
     font-size: var(--text-xs);
     color: var(--danger);
+}
+
+@media (max-width: 760px) {
+    .backdrop {
+        padding: var(--space-s);
+    }
+
+    .footer {
+        gap: var(--space-s);
+        padding: var(--space-m);
+    }
+
+    .footerActions {
+        flex-shrink: 0;
+    }
+
+    .picked {
+        flex: 1;
+    }
+
+    .pickedName {
+        max-width: 100%;
+    }
 }
