@@ -668,6 +668,12 @@ rotates the session token, so `StepUpProvider` raises
 `onSessionTokenRotated` (`@admin/shared/StepUp`) on success and
 `usePersistence` answers with `provider.reopen()`: the old socket is dropped
 and a new one opens at once on the new cookie, with no backoff.
+
+Before connection, `detachedCollabDocs.ts` retains row JSON and creates each
+local Y doc on first access. Seeds precede undo tracking; unused row seeds
+remain available for roster undo after deletion. Connecting replaces these
+local docs with server-seeded provider documents.
+
 Because every committed edit is a frame, burst-prone inputs coalesce before
 they commit: the `ColorInput` primitive throttles picker-drag change events
 (leading fire for instant clicks, one trailing fire with the final value),

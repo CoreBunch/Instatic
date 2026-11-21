@@ -26,6 +26,7 @@
  */
 
 import { Marked, type Tokens, type Token } from 'marked'
+import { isRawHtmlBlock } from './htmlPassthrough'
 import { inlineToMarkdown } from './inlineMarkdown'
 import { sameMark, type JSONMark, type JSONNode } from './proseMirrorJson'
 
@@ -471,8 +472,12 @@ function blockNodeToMarkdown(node: JSONNode): string {
     // round-trip parser + a publisher CSS rule, both of which are a
     // separate follow-up. Authors using alignment today will see it
     // visually while editing; it resets after save+reload.
-    case 'paragraph':
-      return inlineToMarkdown(node.content ?? [])
+    case 'paragraph': {
+      const content = node.content ?? []
+      const raw = content.every((child) => child.type === 'text' && !child.marks?.length)
+        ? content.map((child) => child.text ?? '').join('') : ''
+      return isRawHtmlBlock(raw) ? raw : inlineToMarkdown(content)
+    }
     case 'heading': {
       const level = clampHeadingLevel(numberAttr(node, 'level', 2))
       return `${'#'.repeat(level)} ${inlineToMarkdown(node.content ?? [])}`

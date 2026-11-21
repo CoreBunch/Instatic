@@ -11,7 +11,6 @@
 import { LazySettingsModal as SettingsModal } from '@admin/modals/Settings/LazySettingsModal'
 import { Suspense, useRef, type CSSProperties, type ReactNode, type SyntheticEvent } from 'react'
 import { Toolbar } from '@site/toolbar/Toolbar'
-import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
 import { SidebarResizeHandle } from '@admin/shared/SidebarResizeHandle'
 import { useEditorAppearancePreferences } from '@site/preferences/editorPreferences'
 import { useInstalledEditorPlugins } from '@admin/pages/plugins/hooks/useInstalledEditorPlugins'
@@ -77,12 +76,6 @@ export function AdminWorkspaceCanvasLayout({
         siteName={adminUiSiteName}
         faviconUrl={adminUiFaviconUrl}
         section={workspace}
-        adminNavigationSlot={(
-          <AdminSectionNavigation
-            section={workspace}
-            currentUser={currentUser}
-          />
-        )}
         rightSlot={toolbarRightSlot}
       />
 
