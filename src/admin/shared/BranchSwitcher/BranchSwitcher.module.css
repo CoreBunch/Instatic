@@ -192,18 +192,6 @@
         max-width: 120px;
     }
 
-    .strip {
-        height: 48px;
-    }
-
-    .strip > button {
-        min-width: 44px;
-        min-height: 44px;
-        padding: 0;
-    }
-
-    .strip > button[aria-busy="true"] > svg,
-    .stripActionLabel,
     .stripMeta {
         display: none;
     }
