@@ -3,6 +3,16 @@ import type {
   PublishedRuntimeScriptAsset,
   SiteScriptPlacement,
 } from './schemas'
+import { normalizeResourceOrigins } from './resourceOrigins'
+
+/** Only scripts that actually emit a tag may grant resource origins. */
+export function publishedRuntimeResourceOrigins(runtimeAssets: PublishedPageRuntimeAssets | undefined) {
+  return (['head', 'body-end'] as const).flatMap((placement) =>
+    runtimeScriptsForPlacement(runtimeAssets, placement).flatMap((asset) => {
+      const origins = normalizeResourceOrigins(asset.resourceOrigins)
+      return origins ? [origins] : []
+    }))
+}
 
 function escapeAttribute(value: string): string {
   return value
