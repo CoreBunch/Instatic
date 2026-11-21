@@ -467,6 +467,8 @@ api.plugin.assetUrl(p)     // '/uploads/plugins/<id>/<version>/<path>'
 
 `entrypoints.editor` and app-kind admin pages run in the admin window, not in QuickJS. They use the browser-side API from `src/core/plugin-sdk/types/editorApi.ts`.
 
+Panels, overlays and admin pages use `@instatic/host-ui` (`src/admin/plugin-host-ui/index.ts`) to render shared editor primitives, including `SegmentedControl`, `TagPill`, `Kbd`, and `ShortcutKeys`. Add new exports to the index, `src/admin/pluginRuntimeBootstrap.ts`, and `public/runtime/host-ui.js` together. `plugin-host-ui-runtime-parity.test.ts` checks all three surfaces.
+
 ```js
 export function activate(api) {
   api.editor.commands.register({
