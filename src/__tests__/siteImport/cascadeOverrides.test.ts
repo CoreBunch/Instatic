@@ -80,6 +80,21 @@ describe('cross-sheet cascade: shared kit + page overrides', () => {
     expect(effective(r, 'home.html', 'card')).toEqual({ opacity: '0.5' })
   })
 
+  it('preserves authored order for overlapping conditional declarations', () => {
+    const p = resolve(plan({
+      'home.html': page(['home.css'], '<div class="stage"></div>'),
+      'home.css': [
+        '.stage { display: block }',
+        '@media (max-width: 1279px) { .stage { aspect-ratio: 5 / 2 } }',
+        '@media (max-width: 699px) { .stage { aspect-ratio: 5 / 4 } }',
+        '@media (max-width: 479px) { .stage { aspect-ratio: 4 / 5 } }',
+      ].join('\n'),
+    }))
+    expect(p.styleRules.filter((rule) => rule.selector === '.stage')
+      .flatMap((rule) => Object.values(rule.contextStyles).map((bag) => bag.aspectRatio)))
+      .toEqual(['5 / 2', '5 / 4', '4 / 5'])
+  })
+
   it('reserves HTML-only class names when allocating suffixes', () => {
     const p = plan({
       'home.html': page(['kit.css', 'home.css']),

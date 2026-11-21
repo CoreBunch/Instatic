@@ -85,6 +85,17 @@ describe('commitImportPlan — importing the same site twice', () => {
     } as Parameters<typeof useEditorStore.setState>[0])
   })
 
+  it('reuses imported class bindings and design tokens on a repeat import', async () => {
+    const css = ':root { --accent: #defabc; --font-label: sans-serif }\n.hero { color: var(--accent) }'
+    await importSite(css)
+    const ids = Object.keys(useEditorStore.getState().site!.styleRules)
+    const result = await importSite(css)
+    expect(result.conflicts.rules.find((row) => row.desiredName === 'hero')?.defaultResolution.action).toBe('skip')
+    expect(result.conflicts.tokens.map((row) => [row.desiredVariable, row.defaultResolution.action]))
+      .toEqual([['accent', 'skip'], ['font-label', 'skip']])
+    expect(Object.keys(useEditorStore.getState().site!.styleRules)).toEqual(ids)
+  })
+
   it('keeps one copy of every imported ambient rule, in place, with its cascade order', async () => {
     await importSite()
     const h1AfterFirst = ambientRules('h1')
