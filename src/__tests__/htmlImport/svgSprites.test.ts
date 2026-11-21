@@ -55,6 +55,19 @@ describe('sprite copies and the page around them', () => {
     expect(first).not.toBe(second)
   })
 
+  it('preserves root paint and ID selectors for each instance of an external symbol', () => {
+    const sprite = '<svg xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="paint"/></defs>'
+      + '<symbol id="icon" fill="url(#paint)"><style>#dot { opacity: .5 }</style><circle id="dot"/></symbol></svg>'
+    const result = importHtml('<svg><use href="icons.svg#icon"/><use href="icons.svg#icon"/></svg>', { loadSvgSprite: () => sprite })
+    const svg = String(Object.values(result.nodes).find((node) => node.moduleId === 'base.svg')!.props.svg)
+    const gradients = [...svg.matchAll(/<linearGradient id="([^"]+)"/g)]
+    const circles = [...svg.matchAll(/<circle id="([^"]+)"/g)]
+    expect(gradients).toHaveLength(2)
+    expect(circles).toHaveLength(2)
+    for (const [, id] of gradients) expect(svg).toContain(`fill="url(#${id})"`)
+    for (const [, id] of circles) expect(result.styleCss).toContain(`#${id} { opacity: .5 }`)
+  })
+
   it('rewrites SMIL timing references to the renamed ids', () => {
     const page = '<svg hidden><symbol id="i"><circle r="1">'
       + '<animate id="a1" attributeName="r" dur="1s"/><animate attributeName="r" begin="a1.end; a1.begin+1s" dur="1s"/>'

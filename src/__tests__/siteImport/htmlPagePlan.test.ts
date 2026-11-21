@@ -206,7 +206,7 @@ describe('makeHtmlPagePlan', () => {
       ['scripts/vendor.js', 'classic', 'head'],
       ['index.html-inline-script-1.js', 'classic', 'head'],
       ['scripts/app.js', 'classic', 'body-end'],
-      ['index.html-inline-script-2.js', 'classic', 'body-end'],
+      ['index.html-inline-script-2.js', 'classic', 'head'],
       ['scripts/vendor.js', 'module', 'body-end'],
       ['scripts/app.js', 'classic', 'body-end'],
     ])

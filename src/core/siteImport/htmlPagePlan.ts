@@ -247,8 +247,8 @@ function extractDocumentMetaFromDom(htmlSource: string, htmlPath: string): Docum
       const placement = scriptPlacement(
         script.closest('head') !== null,
         format,
-        // `defer` only applies to external scripts; `async` to both kinds.
-        (hasSrc && script.hasAttribute('defer')) || script.hasAttribute('async'),
+        // Inline classic scripts execute immediately, even with async or defer.
+        hasSrc && (script.hasAttribute('defer') || script.hasAttribute('async')),
       )
 
       if (src && hasSrc) {
@@ -312,7 +312,7 @@ function extractDocumentMetaFromRegex(htmlSource: string, htmlPath: string): Doc
     const placement = scriptPlacement(
       bodyStart !== -1 && scriptMatch.index < bodyStart,
       format,
-      (Boolean(src) && hasBooleanAttr(attrs, 'defer')) || hasBooleanAttr(attrs, 'async'),
+      Boolean(src) && (hasBooleanAttr(attrs, 'defer') || hasBooleanAttr(attrs, 'async')),
     )
     if (src) {
       scriptRefs.push({ kind: 'external', src, format, placement })

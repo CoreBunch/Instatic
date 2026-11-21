@@ -37,7 +37,7 @@
  * `<textPath>` / `<mpath>` path, and an `<feImage>` or animation target are
  * copied in as `<defs>`; every id gets a random suffix no page id has, and the
  * copy's references (`url()`, `href`, SMIL `begin` / `end`, ARIA id lists,
- * `<style>` text) follow. A symbol's `<style>` reaches the page once.
+ * `<style>` text) follow. Shared styles reach the page once, and styles using copy-local ids follow each copy.
  */
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
@@ -90,7 +90,7 @@ export type SvgSpriteLoader = (path: string) => string | null
 interface InlineState {
   doc: Document
   loadSvgSprite: SvgSpriteLoader | undefined
-  /** The page as parsed, before any expansion. Built on first `#id` lookup. */
+  /** The page as parsed, when a rendered use references this document. */
   pageSnapshot: Element | null
   /** Parsed sprite files by canonical path. */
   sprites: Map<string, Element | null>
@@ -128,7 +128,13 @@ export function inlineSvgSpriteReferences(doc: Document, loadSvgSprite?: SvgSpri
   const state: InlineState = {
     doc,
     loadSvgSprite,
-    pageSnapshot: null,
+    pageSnapshot: rendered.some((use) => {
+      const href = referenceOf(use)
+      const hash = href.indexOf('#')
+      return hash >= 0 && canonicalSpritePath(href.slice(0, hash), '') === ''
+    })
+      ? doc.documentElement.cloneNode(true) as Element
+      : null,
     sprites: new Map(),
     indexes: new Map(),
     work: MAX_WORK,
@@ -159,7 +165,7 @@ function expandUse(use: Element, spritePath: string, chain: readonly string[], s
   const id = decodeFragment(href.slice(hashIndex + 1))
   const key = `${path}#${id}`
   if (!id || chain.includes(key) || chain.length >= MAX_DEPTH) return null
-  const source = path === '' ? pageSnapshot(state) : spriteRoot(path, state)
+  const source = path === '' ? state.pageSnapshot : spriteRoot(path, state)
   const target = source ? lookup(source, id, state) : null
   if (!target || target.namespaceURI !== SVG_NS) return null
 
@@ -172,8 +178,12 @@ function expandUse(use: Element, spritePath: string, chain: readonly string[], s
     : copyForUse(use, target, out, state)
   if (!copy || !copyReferencedDefinitions(copy, source!, out, state)) return null
 
-  keepStyleOnce(out, key, path === '', state)
+  const originalStyles = out.styles.map((style) => style.textContent)
   makeIdsUnique(out, state)
+  keepStyleOnce(out, originalStyles, key, path === '', state)
+  // Instance attributes belong to the document containing the use. Apply
+  // them after renaming the symbol's internal gradient and accessibility ids.
+  if (target.localName === 'symbol') copyUseAttributes(use, copy, () => true)
   for (const nested of out.uses) {
     const nestedCopy = expandUse(nested, path, [...chain, key], state)
     if (nestedCopy) nested.replaceWith(nestedCopy)
@@ -185,15 +195,6 @@ function expandUse(use: Element, spritePath: string, chain: readonly string[], s
 function charge(state: InlineState, amount: number): boolean {
   state.work -= amount
   return state.work >= 0
-}
-
-/**
- * The page as parsed, cloned once before its first use as a source, so a
- * `<g id="a">` that an earlier expansion grew is never copied grown.
- */
-function pageSnapshot(state: InlineState): Element {
-  state.pageSnapshot ??= state.doc.documentElement.cloneNode(true) as Element
-  return state.pageSnapshot
 }
 
 /**
@@ -326,8 +327,7 @@ function copyForUse(use: Element, target: Element, out: Collected, state: Inline
     for (const attr of Array.from(target.attributes)) {
       if (attr.name !== 'id') box.setAttribute(attr.name, attr.value)
     }
-    for (const attr of Array.from(target.attributes)) collectUrlReferences(attr.value, out)
-    copyUseAttributes(use, box, () => true)
+    recordElement(box, out)
     return cloneChildrenInto(box, target, out, state) ? box : null
   }
 
@@ -414,17 +414,19 @@ function copyReferencedDefinitions(copy: Element, source: Element, out: Collecte
 
 /**
  * A `<style>` inside a symbol is page CSS once the copy lands. Keep it in the
- * first copy of an external symbol and drop it from every other copy; a
- * same-page symbol's `<style>` is on the page already.
+ * first copy of an external symbol; keep later copies only when renamed ids
+ * changed their CSS. A same-page symbol's original CSS is already on the page.
  */
-function keepStyleOnce(out: Collected, key: string, samePage: boolean, state: InlineState): void {
+function keepStyleOnce(out: Collected, originals: (string | null)[], key: string, samePage: boolean, state: InlineState): void {
   if (out.styles.length === 0) return
   if (!samePage && !state.styledSymbols.has(key)) {
     state.styledSymbols.add(key)
     return
   }
-  for (const style of out.styles) style.remove()
-  out.styles = []
+  for (const [i, style] of out.styles.entries()) {
+    // Styles referencing copy-local ids must accompany every renamed copy.
+    if (style.textContent === originals[i]) style.remove()
+  }
 }
 
 /** A short random suffix; ids only need to differ from every other id on the page. */
