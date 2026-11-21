@@ -294,7 +294,7 @@ describe('cross-sheet cascade: shared kit + page overrides', () => {
   })
 
   it('carries the new name into inline SVG markup on the sheet pages', () => {
-    const svg = '<svg class="icon"><use href="#a"></use></svg>'
+    const svg = '<svg class="icon"><g class="icon"><path d="M0 0h1v1z"/></g></svg>'
     const p = plan({
       'home.html': page(['kit.css', 'home.css'], svg),
       'about.html': page(['kit.css'], svg),
@@ -305,10 +305,12 @@ describe('cross-sheet cascade: shared kit + page overrides', () => {
       ['icon', 'auto-rename'],
     ])
     const r = resolve(p)
-    const markup = (source: string) => Object.values(r.pages.find((pg) => pg.source === source)!.nodeFragment.nodes)
-      .map((n) => n.props.svg).find((v) => typeof v === 'string')
-    expect(markup('home.html')).toContain('class="icon icon-2"')
-    expect(markup('about.html')).toContain('class="icon"')
+    const svgNode = (source: string) => Object.values(r.pages.find((pg) => pg.source === source)!.nodeFragment.nodes)
+      .find((n) => n.moduleId === 'base.svg')!
+    expect(svgNode('home.html').classIds).toEqual(['icon', 'icon-2'])
+    expect(svgNode('about.html').classIds).toEqual(['icon'])
+    expect(svgNode('home.html').props.svg).toContain('<g class="icon icon-2">')
+    expect(svgNode('about.html').props.svg).toContain('<g class="icon">')
   })
 
   it('reads any bare class token in a script string as a use, and keeps those rules global', () => {
