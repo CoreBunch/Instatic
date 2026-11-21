@@ -37,6 +37,7 @@
  * Authenticates via ambient Claude Code credentials through the local Bun server.
  * No env vars, no API keys, no endpoint configuration required (Constraint #385).
  */
+import { LazySettingsModal as SettingsModal } from '@admin/modals/Settings/LazySettingsModal'
 import { Toolbar } from '@admin/pages/site/toolbar/Toolbar'
 import { ZoomControls } from '@admin/pages/site/toolbar/ZoomControls'
 import { PublishButton } from '@admin/pages/site/toolbar/PublishButton'
@@ -88,15 +89,6 @@ const AdminCanvasEditorBody = prewarmedLazy<AdminCanvasEditorBodyProps>(
   () =>
     import('./AdminCanvasEditorBody').then((m) => ({ default: m.AdminCanvasEditorBody })),
   { displayName: 'AdminCanvasEditorBody' },
-)
-
-// SettingsModal is heavy (~37 KB raw) and closed 99% of the time. lazy()
-// pushes it into its own chunk and the conditional render below avoids
-// kicking off the dynamic import until the user actually opens settings.
-// Once opened, React.lazy() caches the resolved module — subsequent
-// open/close cycles are instant.
-const SettingsModal = lazy(() =>
-  import('@admin/modals/Settings/SettingsModal').then((m) => ({ default: m.SettingsModal })),
 )
 
 // Editor-only toolbar surface: preview iframe. It self-gates on store state,

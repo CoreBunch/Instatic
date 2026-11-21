@@ -161,11 +161,13 @@ function mapLoopProps(el: Element): Record<string, unknown> {
   const tableId = attr(el, 'data-table-id')
   const customTag = attr(el, 'data-custom-tag')
   const tag = attr(el, 'data-tag')
+  const direction = normalizedAttr(el, 'data-direction')
   return {
     sourceId: attr(el, 'data-source-id'),
     filters: tableId ? { tableId } : {},
     orderBy: attr(el, 'data-order-by'),
-    direction: normalizedAttr(el, 'data-direction') === 'asc' ? 'asc' : 'desc',
+    // No `data-direction`: the loop follows its source's default order.
+    ...(direction === 'asc' || direction === 'desc' ? { direction } : {}),
     limit: integerAttr(el, 'data-limit', 10, 1),
     offset: integerAttr(el, 'data-offset', 0, 0),
     pagination: normalizedAttr(el, 'data-pagination') === 'infinite' ? 'infinite' : 'none',

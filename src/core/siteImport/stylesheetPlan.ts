@@ -16,11 +16,11 @@ import { stripGoogleFontImportRules, type GoogleFontCollector } from './fontImpo
 import type { RawStylesheetSource } from './assetPlan'
 import type {
   FileMap,
-  ImportWarning,
   LinkedStylesheet,
   PagePlan,
   StylesheetImportMode,
 } from './types'
+import type { ImportWarning } from './warnings'
 
 interface StylesheetPartition {
   /** Every top-level linked sheet with its import mode, in discovery order. */

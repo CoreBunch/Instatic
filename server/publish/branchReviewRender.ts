@@ -13,7 +13,7 @@ import '../../src/modules/base'
 import '@core/loops/sources'
 import { registry } from '@core/module-engine'
 import { publishPage } from '@core/publisher'
-import { buildRouteFrame, composeTemplateChain, resolveTemplateChain } from '@core/templates'
+import { buildPageFrame, buildRouteFrame, composeTemplateChain, resolveTemplateChain } from '@core/templates'
 import { sourceRequestFor, type LoopRequestScope } from './loopSourceRequest'
 import type { DbClient } from '../db/client'
 import { MAIN_SCOPE, type BranchScope } from '../branches/scope'
@@ -43,7 +43,7 @@ export async function renderBranchReviewPage(
   const chain = resolveTemplateChain(site, { kind: 'page' })
   const merged = composeTemplateChain(chain, { kind: 'page', page })
   const url = new URL(`http://localhost/${page.slug}`)
-  const templateContext = { entryStack: [], route: buildRouteFrame(url.toString()) }
+  const templateContext = { entryStack: [], page: buildPageFrame(page), route: buildRouteFrame(url.toString()) }
   const requestScope: LoopRequestScope = { base: { query: {}, path: url.pathname, slug: page.slug || null } }
   // Both sides read DRAFT rows: a merge compares main's draft with the
   // branch's draft, and main's published versions are what visitors see,

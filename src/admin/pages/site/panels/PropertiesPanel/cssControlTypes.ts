@@ -16,7 +16,7 @@ import { ProportionsSolidIcon } from 'pixel-art-icons/icons/proportions-solid'
 import { RulerDimensionSolidIcon } from 'pixel-art-icons/icons/ruler-dimension-solid'
 import { TextStartTIcon } from 'pixel-art-icons/icons/text-start-t'
 import { PaintBucketSolidIcon } from 'pixel-art-icons/icons/paint-bucket-solid'
-import { BoxSolidIcon } from 'pixel-art-icons/icons/box-solid'
+import { ArrowsScaleIcon } from 'pixel-art-icons/icons/arrows-scale'
 import { SparklesSolidIcon } from 'pixel-art-icons/icons/sparkles-solid'
 import { PointerSolidIcon } from 'pixel-art-icons/icons/pointer-solid'
 import { hasStyleValue } from './styleValueUtils'
@@ -72,7 +72,7 @@ const COLOR_PROPERTIES = new Set<keyof CSSPropertyBag>([
 // Border style keywords — used by the visual BorderControl and the
 // fallback property surface.
 // ---------------------------------------------------------------------------
-const BORDER_STYLE_KEYWORDS = [
+export const BORDER_STYLE_KEYWORDS = [
   'none', 'hidden', 'solid', 'dashed', 'dotted', 'double',
   'groove', 'ridge', 'inset', 'outset',
 ]
@@ -81,8 +81,11 @@ const BORDER_STYLE_KEYWORDS = [
 // Enum (select) properties → option lists (first option is the default)
 // ---------------------------------------------------------------------------
 
+export const DISPLAY_OPTIONS = ['block', 'inline', 'inline-block', 'flex', 'grid', 'none']
+
 const ENUM_OPTIONS = new Map<keyof CSSPropertyBag, string[]>([
-  ['display',          ['block', 'inline', 'inline-block', 'flex', 'grid', 'none']],
+  ['visibility', ['visible', 'hidden', 'collapse']],
+  ['display',          DISPLAY_OPTIONS],
   ['flexDirection',    ['row', 'column', 'row-reverse', 'column-reverse']],
   ['flexWrap',         ['nowrap', 'wrap', 'wrap-reverse']],
   ['alignItems',       ['flex-start', 'flex-end', 'center', 'stretch', 'baseline']],
@@ -340,33 +343,6 @@ export interface ClassStyleSectionDefinition {
 
 export const CLASS_STYLE_SECTIONS: ReadonlyArray<ClassStyleSectionDefinition> = [
   {
-    id: 'layout',
-    title: 'Layout',
-    icon: LayoutSolidIcon,
-    defaultOpen: true,
-    properties: [
-      'display',
-      'flexDirection',
-      'flexWrap',
-      'alignItems',
-      'justifyContent',
-      'justifyItems',
-      'alignSelf',
-      'justifySelf',
-      'flex',
-      'gap',
-      'rowGap',
-      'columnGap',
-      'gridTemplateColumns',
-      'gridTemplateRows',
-      'gridColumn',
-      'gridRow',
-      'overflow',
-      'overflowX',
-      'overflowY',
-    ],
-  },
-  {
     id: 'position',
     title: 'Position',
     icon: MoveIcon,
@@ -396,6 +372,30 @@ export const CLASS_STYLE_SECTIONS: ReadonlyArray<ClassStyleSectionDefinition> = 
     ],
   },
   {
+    id: 'layout',
+    title: 'Layout',
+    icon: LayoutSolidIcon,
+    defaultOpen: true,
+    properties: [
+      'display',
+      'flexDirection',
+      'flexWrap',
+      'alignItems',
+      'justifyContent',
+      'justifyItems',
+      'alignSelf',
+      'justifySelf',
+      'flex',
+      'gap',
+      'rowGap',
+      'columnGap',
+      'gridTemplateColumns',
+      'gridTemplateRows',
+      'gridColumn',
+      'gridRow',
+    ],
+  },
+  {
     id: 'spacing',
     title: 'Spacing',
     icon: RulerDimensionSolidIcon,
@@ -412,49 +412,17 @@ export const CLASS_STYLE_SECTIONS: ReadonlyArray<ClassStyleSectionDefinition> = 
     ],
   },
   {
-    id: 'typography',
-    title: 'Typography',
-    icon: TextStartTIcon,
-    properties: [
-      'fontFamily',
-      'fontSize',
-      'fontWeight',
-      'fontStyle',
-      'lineHeight',
-      'letterSpacing',
-      'textAlign',
-      'textDecoration',
-      'textTransform',
-      'whiteSpace',
-      'color',
-      'textShadow',
-    ],
-  },
-  {
-    id: 'background',
-    title: 'Background',
+    id: 'styles',
+    title: 'Styles',
     icon: PaintBucketSolidIcon,
     properties: [
-      'backgroundColor',
-      'background',
-      'backgroundImage',
+      'opacity', 'visibility', 'backgroundColor', 'backgroundImage', 'overflow',
+      'overflowX', 'overflowY', 'background',
       'backgroundSize',
       'backgroundPosition',
       'backgroundRepeat',
       'objectFit',
       'objectPosition',
-    ],
-  },
-  {
-    id: 'border',
-    title: 'Border',
-    icon: BoxSolidIcon,
-    // Drives the section "N set" dot + search filtering. The visual
-    // BorderControl edits the per-side longhands + per-corner radius +
-    // outline; the shorthand props (border / borderTop / …) live in the
-    // section's Advanced disclosure and are listed here too so a search for
-    // "border" still surfaces the section.
-    properties: [
       // Per-side longhands (canonical, edited by BorderControl)
       'borderTopWidth', 'borderTopStyle', 'borderTopColor',
       'borderRightWidth', 'borderRightStyle', 'borderRightColor',
@@ -482,19 +450,41 @@ export const CLASS_STYLE_SECTIONS: ReadonlyArray<ClassStyleSectionDefinition> = 
     ],
   },
   {
+    id: 'typography',
+    title: 'Typography',
+    icon: TextStartTIcon,
+    properties: [
+      'fontFamily',
+      'fontSize',
+      'fontWeight',
+      'fontStyle',
+      'lineHeight',
+      'letterSpacing',
+      'textAlign',
+      'textDecoration',
+      'textTransform',
+      'whiteSpace',
+      'color',
+      'textShadow',
+    ],
+  },
+  {
     id: 'effects',
     title: 'Effects',
     icon: SparklesSolidIcon,
     properties: [
-      'opacity',
       'boxShadow',
       'filter',
       'backdropFilter',
-      'transform',
-      'transformOrigin',
       'transition',
       'animation',
     ],
+  },
+  {
+    id: 'transforms',
+    title: 'Transforms',
+    icon: ArrowsScaleIcon,
+    properties: ['transform', 'transformOrigin'],
   },
   {
     id: 'interaction',
@@ -510,6 +500,17 @@ export const CLASS_STYLE_SECTIONS: ReadonlyArray<ClassStyleSectionDefinition> = 
 ]
 
 // ---------------------------------------------------------------------------
+// Text nodes put their typography controls directly below Position.
+const TEXT_STYLE_SECTIONS = [
+  ...CLASS_STYLE_SECTIONS.filter((section) => section.id === 'position'),
+  ...CLASS_STYLE_SECTIONS.filter((section) => section.id === 'typography'),
+  ...CLASS_STYLE_SECTIONS.filter((section) => section.id !== 'position' && section.id !== 'typography'),
+]
+
+export function orderedStyleSections(textElement: boolean) {
+  return textElement ? TEXT_STYLE_SECTIONS : CLASS_STYLE_SECTIONS
+}
+
 // Style tab utilities
 //
 // Shared by StyleRuleComposer, StyleSurface, and PropertiesPanel. Kept here (not
@@ -530,14 +531,6 @@ export function getClassStyleSectionSetCounts(
       section.properties.filter((prop) => hasStyleValue(storedStyles[prop])).length,
     ]),
   )
-}
-
-/**
- * Returns the active breakpoint tab id for class style reads/writes.
- * 'base' when desktop (or no breakpoint); otherwise the breakpoint id.
- */
-export function getActiveStyleTab(activeBreakpointId: string | undefined): string {
-  return activeBreakpointId && activeBreakpointId !== 'desktop' ? activeBreakpointId : 'base'
 }
 
 // ---------------------------------------------------------------------------

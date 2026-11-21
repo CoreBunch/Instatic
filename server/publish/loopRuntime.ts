@@ -13,8 +13,7 @@
  *   4. When `hasMore=false`, removes the button.
  *
  * Endpoint URL is read from `data-instatic-loop-endpoint` on the script tag —
- * defaults to `/_instatic/loop/`. Each loop sends its own pageId (the published
- * page) via a header attached at server-render time below.
+ * defaults to `/_instatic/loop/`. Each request carries the originating path and query in pagePath.
  *
  * The runtime is intentionally tiny (< 2 KB minified) to keep the
  * "no JS by default" promise honest — it ships only when at least one
@@ -32,12 +31,14 @@ function runInstaticLoopRuntime(): void {
   const scriptEl = document.querySelector('script[data-instatic-loop-endpoint]')
   const endpointBase =
     (scriptEl && scriptEl.getAttribute('data-instatic-loop-endpoint')) || '/_instatic/loop/'
-  const pagePath = location.pathname
+  const selector = '[data-instatic-loop][data-instatic-loop-mode="infinite"]'
+  const attached = new WeakSet<Element>()
 
   function attach(loopEl: Element): void {
     let pageNumber = parseInt(loopEl.getAttribute('data-instatic-loop-page') || '1', 10)
     let hasMore = loopEl.getAttribute('data-instatic-loop-has-more') === 'true'
-    if (!hasMore) return
+    if (!hasMore || attached.has(loopEl)) return
+    attached.add(loopEl)
 
     const loopId = loopEl.getAttribute('data-instatic-loop')
     if (!loopId) return
@@ -58,7 +59,7 @@ function runInstaticLoopRuntime(): void {
       try {
         const params = new URLSearchParams({
           page: String(pageNumber + 1),
-          pagePath: pagePath,
+          pagePath: location.pathname + location.search,
         })
         const res = await fetch(endpointBase + encodeURIComponent(loopId) + '?' + params.toString(), {
           headers: { accept: 'application/json' },
@@ -91,7 +92,17 @@ function runInstaticLoopRuntime(): void {
   }
 
   function init(): void {
-    document.querySelectorAll('[data-instatic-loop][data-instatic-loop-mode="infinite"]').forEach(attach)
+    document.querySelectorAll(selector).forEach(attach)
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue
+          if (node.matches(selector)) attach(node)
+          node.querySelectorAll(selector).forEach(attach)
+        }
+      }
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
   }
 
   if (document.readyState === 'loading') {

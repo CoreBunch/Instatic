@@ -161,6 +161,27 @@ export const CmsMediaFolderEnvelopeSchema = Type.Object({
   folder: CmsMediaFolderSchema,
 })
 
+/**
+ * Most content hashes one `POST /media/lookup` takes: Site Import's own file
+ * limit. The server refuses more; the client splits larger lookups.
+ */
+export const MEDIA_LOOKUP_MAX_HASHES = 10_000
+
+/** `POST /media/lookup` request body: SHA-256 hex digests. */
+export const CmsMediaLookupRequestSchema = Type.Object({
+  contentHashes: Type.Array(Type.String({ pattern: '^[0-9a-f]{64}$' }), { maxItems: MEDIA_LOOKUP_MAX_HASHES }),
+})
+
+/** `POST /media/lookup` — library assets whose content hash matched. */
+export const CmsMediaLookupResponseSchema = Type.Object({
+  matches: Type.Array(Type.Object({
+    contentHash: Type.String(),
+    id: Type.String(),
+    publicPath: Type.String(),
+    filename: Type.String(),
+  })),
+})
+
 // ---------------------------------------------------------------------------
 // cmsPublish.ts
 // ---------------------------------------------------------------------------

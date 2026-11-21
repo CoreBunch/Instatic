@@ -12,13 +12,18 @@
  * resolves that ref to the page's CURRENT path at publish time, so links keep
  * working across slug renames.
  *
+ * The page's head settings get the same pass: a canonical, `og:url` or
+ * `<link>` href naming another imported page (an hreflang alternate) becomes
+ * a page reference too, which the publisher's head emitter resolves the same
+ * way.
+ *
  * Fragments are preserved (`club.html#features` → `cms:page:<id>#features`).
  * Same-page anchors (`#features`), external URLs, `mailto:`/`tel:`, and links
  * to non-imported files are left untouched.
  */
 
 import { makePageRef } from '@core/page-tree'
-import type { PageNode } from '@core/page-tree'
+import type { PageNode, PageSeo } from '@core/page-tree'
 import type { PagePlan } from './types'
 import { resolveHref } from './htmlPagePlan'
 
@@ -51,9 +56,33 @@ export function rewriteInternalLinks(
       nodes[id] = { ...node, props: { ...node.props, href: ref } }
     }
 
-    if (!touched) return plan
-    return { ...plan, nodeFragment: { ...plan.nodeFragment, nodes } }
+    const seo = rewriteHeadLinks(plan.seo, plan.source, pageIdBySource)
+    if (!touched && seo === plan.seo) return plan
+    return { ...plan, seo, ...(touched ? { nodeFragment: { ...plan.nodeFragment, nodes } } : {}) }
   })
+}
+
+/** The head settings with every URL that names an imported page turned into its page reference. */
+function rewriteHeadLinks(
+  seo: PageSeo | null,
+  source: string,
+  pageIdBySource: ReadonlyMap<string, string>,
+): PageSeo | null {
+  if (!seo) return seo
+  let touched = false
+  const ref = (href: string) => {
+    const pageRef = hrefToPageRef(href, source, pageIdBySource, true)
+    if (pageRef === null) return href
+    touched = true
+    return pageRef
+  }
+  const next: PageSeo = {
+    ...seo,
+    ...(seo.canonical ? { canonical: ref(seo.canonical) } : {}),
+    ...(seo.openGraph?.url ? { openGraph: { ...seo.openGraph, url: ref(seo.openGraph.url) } } : {}),
+    ...(seo.links ? { links: seo.links.map((link) => ({ ...link, href: ref(link.href) })) } : {}),
+  }
+  return touched ? next : seo
 }
 
 /**
@@ -64,16 +93,15 @@ function hrefToPageRef(
   href: string,
   source: string,
   pageIdBySource: ReadonlyMap<string, string>,
+  preserveQuery = false,
 ): string | null {
   if (!href) return null
 
-  // Split off the fragment, which is KEPT and re-attached to the page ref below.
-  // Any query string is dropped by `resolveHref` — CMS routes are slugs.
-  const hashIdx = href.indexOf('#')
-  const fragment = hashIdx >= 0 ? href.slice(hashIdx) : ''
-  const pathPart = hashIdx >= 0 ? href.slice(0, hashIdx) : href
-
-  // Pure same-page anchor (`#features`) or empty → not an internal page link.
+  // Body links use slug routes. Head URLs can identify a particular edition
+  // or paginated result, so retain their query along with the fragment.
+  const suffixStart = preserveQuery ? href.search(/[?#]/) : href.indexOf('#')
+  const suffix = suffixStart >= 0 ? href.slice(suffixStart) : ''
+  const pathPart = suffixStart >= 0 ? href.slice(0, suffixStart) : href
   if (!pathPart) return null
 
   // resolveHref returns null for external / absolute-scheme / fragment hrefs,
@@ -84,5 +112,5 @@ function hrefToPageRef(
   const targetId = pageIdBySource.get(resolved)
   if (!targetId) return null
 
-  return makePageRef(targetId, fragment)
+  return makePageRef(targetId, suffix)
 }

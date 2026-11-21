@@ -34,11 +34,14 @@
  * module-JS channel's static hole-subtree walk.
  */
 
+import { isComposedNodeId, isTemplatePage } from '@core/templates'
+import { composedRouteForPath } from '../../publish/composedRoute'
 import type { DbClient } from '../../db/client'
 import type { Page, SiteDocument } from '@core/page-tree'
-import type { ClosedContent } from '@core/loops/types'
+import type { ClosedContent, LoopItem } from '@core/loops/types'
 import { registry } from '@core/module-engine'
 import {
+  findDynamicNodeIds,
   renderNode,
   showWhenPathsAllow,
   showWhenPathsAreGated,
@@ -55,7 +58,7 @@ import {
   visitorRequestScope,
   type LoopRequestScope,
 } from '../../publish/loopSourceRequest'
-import { getOrRender } from '../../publish/renderCache'
+import { getOrRender, peek } from '../../publish/renderCache'
 import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
 import { HOLE_RUNTIME_JS, HOLE_RUNTIME_VERSION } from '../../publish/holeRuntime'
@@ -124,6 +127,7 @@ async function renderHoleFragment(
   closed: ClosedContent,
   /** The visitor's member frame (null when signed out); undefined for a shared render. */
   member: MemberFrame | null | undefined,
+  entryStack: LoopItem[],
 ): Promise<string> {
   const route = buildRouteFrame(pageUrl.toString())
   const loopData = await prefetchLoopData(page, site, db, pageUrl, {
@@ -138,7 +142,7 @@ async function renderHoleFragment(
     breakpointId: undefined,
     loopData,
     templateContext: {
-      entryStack: [],
+      entryStack,
       page: buildPageFrame(page),
       site: buildSiteFrame(site),
       route,
@@ -202,22 +206,42 @@ export async function handleHoleRequest(
       },
     })
   }
-  const foundPage = snap.nodeIndex.get(nodeId)
+  const sourcePage = snap.nodeIndex.get(nodeId)
+  const fallbackPath = sourcePage ? buildPageFrame(sourcePage).permalink : '/'
+  let pageUrl: URL
+  try {
+    const forwarded = new URL(url.searchParams.get('u') ?? fallbackPath, url.origin)
+    pageUrl = forwarded.origin === url.origin ? forwarded : new URL(fallbackPath, url.origin)
+  } catch {
+    pageUrl = new URL(fallbackPath, url.origin)
+  }
+
+  const cacheKey = {
+    urlPath: `${HOLE_PATH_PREFIX}${nodeId}`,
+    queryString: `v=${currentVersion}&u=${encodeURIComponent(pageUrl.pathname)}&${normalizeQuery(pageUrl.searchParams)}`,
+  }
+  const isComposed = isComposedNodeId(nodeId)
+  if (isComposed && !sourcePage) {
+    // Only a shared, fully checked render can populate this versioned key.
+    // Repeated visitor requests need neither a route lookup nor recomposition.
+    const cached = peek(cacheKey)
+    if (cached) return new Response(cached.body, { status: cached.status, headers: cached.headers })
+  }
+
+  // The baked shell addresses a spliced subtree by its composed ID. Keep that
+  // ID and its enclosing layout nodes intact for rendering and ancestor rules.
+  const useRoute = isComposed || (sourcePage && isTemplatePage(sourcePage) && url.searchParams.has('u'))
+  const composed = useRoute
+    ? await composedRouteForPath(ctx.db, pageUrl, snap.site)
+    : null
+  const onRoute = composed && findDynamicNodeIds(composed.page, snap.site, registry).has(nodeId) ? composed : null
+  const foundPage = onRoute?.page ?? sourcePage
+  const entryStack = onRoute?.entryStack ?? []
   if (!foundPage) {
     return new Response('Node not found', {
       status: 404,
       headers: { 'content-type': 'text/plain; charset=utf-8' },
     })
-  }
-
-  // Reconstruct the originating page URL forwarded by the runtime (`u`). Falls
-  // back to the page's own permalink when absent (older runtime / direct hit).
-  const pageUrlRaw = url.searchParams.get('u') ?? buildPageFrame(foundPage).permalink
-  let pageUrl: URL
-  try {
-    pageUrl = new URL(pageUrlRaw, url.origin)
-  } catch {
-    pageUrl = new URL(buildPageFrame(foundPage).permalink, url.origin)
   }
 
   // A fragment is part of a page and is gated like one: by the page that owns
@@ -248,7 +272,7 @@ export async function handleHoleRequest(
   // So is a fragment that sits inside an element with a show-when rule: the
   // rules above it are checked here, because rendering starts at this node.
   // A node that is not on any render path of its page is given to nobody.
-  const paths = showWhenPathsTo(foundPage, snap.site, nodeId, { includeSelf: false })
+  const paths = showWhenPathsTo(foundPage, snap.site, nodeId, { includeSelf: false, composed: onRoute !== null })
   const gated = showWhenPathsAreGated(paths)
   const showsMember = gated || subtreeDependsOnMember(foundPage, snap.site, registry, nodeId)
   if (gated) {
@@ -275,7 +299,7 @@ export async function handleHoleRequest(
     const member = signedIn === undefined
       ? undefined
       : memberFrameFor(signedIn, signedIn ? await memberAppRequestFrame(ctx.db, pageUrl) : null)
-    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, member)
+    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, member, entryStack)
     return new Response(html, {
       status: 200,
       headers: {
@@ -295,12 +319,9 @@ export async function handleHoleRequest(
   // no cookies (they would fragment the cache) and no member.
   const scope: LoopRequestScope = { base }
   const cached = await getOrRender(
-    {
-      urlPath: `${HOLE_PATH_PREFIX}${nodeId}`,
-      queryString: `v=${currentVersion}&u=${encodeURIComponent(pageUrl.pathname)}&${normalizeQuery(pageUrl.searchParams)}`,
-    },
+    cacheKey,
     async () => {
-      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, undefined)
+      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, undefined, entryStack)
       return {
         body: html,
         headers: { 'content-type': 'text/html; charset=utf-8' },

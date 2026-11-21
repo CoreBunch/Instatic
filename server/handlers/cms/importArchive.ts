@@ -27,6 +27,7 @@ import { jsonResponse, badRequest } from '../../http'
 import { importMediaAsset, assignAssetToFolders } from '../../repositories/media'
 import { parseValue, formatValueErrors, compiled } from '@core/utils/typeboxHelpers'
 import { validateAndSanitizeMediaBytes, resolveMediaWriteTarget } from './importMediaValidation'
+import { mediaContentHash } from './mediaUpload'
 import {
   ImportResultSchema,
   ImportStrategySchema,
@@ -138,7 +139,7 @@ export async function handleImportArchiveRoute(
       bundle: siteBundleWithoutMediaBytes(selectedManifest),
       strategy,
       carriesMedia: selectedManifest.media !== undefined,
-      mayChangePageAccess: userHasCapability(user, 'site.structure.edit'),
+      mayChangePageStructure: userHasCapability(user, 'site.structure.edit'),
       runtimeFiles: stagedMedia?.runtimeFiles,
       uploadsDir: options.uploadsDir,
     })
@@ -218,10 +219,8 @@ export async function importStagedArchiveMediaEntries(input: {
     // upload pipeline so there is exactly one place to update if the detection
     // or sanitisation logic changes. The staged file is fully buffered here to
     // sniff its magic bytes (unavoidable — MIME detection needs the head).
-    const safeBytes = validateAndSanitizeMediaBytes(
-      new Uint8Array(await Bun.file(stagedPath).arrayBuffer()),
-      asset,
-    )
+    const stagedBytes = new Uint8Array(await Bun.file(stagedPath).arrayBuffer())
+    const safeBytes = validateAndSanitizeMediaBytes(stagedBytes, asset)
 
     // SVG entries are written from the sanitized in-memory bytes; all other
     // types are moved from staging (zero-copy fast path).
@@ -237,6 +236,7 @@ export async function importStagedArchiveMediaEntries(input: {
       mimeType: asset.mimeType,
       // Use the sanitized byte length — SVG shrinks after script removal.
       sizeBytes: safeBytes.length,
+      contentHash: mediaContentHash(stagedBytes),
       storagePath: asset.storagePath,
       publicPath: `/uploads/${asset.storagePath}`,
       altText: asset.altText,

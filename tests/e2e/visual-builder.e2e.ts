@@ -617,11 +617,7 @@ test.describe('visual builder', () => {
         await expect(selectorRow).toBeVisible()
         await selectorRow.click()
         await page.getByLabel('Search class style properties to add').fill('background color')
-        const backgroundInput = page
-          .getByTestId('css-property-row-backgroundColor')
-          .getByRole('textbox', { name: 'Background color', exact: true })
-        await backgroundInput.fill('#00aa55')
-        await backgroundInput.blur()
+        await setSolidFill(page, '#00aa55')
 
         await openLayersPanel(page)
         const containerRow = page
@@ -762,7 +758,7 @@ test.describe('visual builder', () => {
       await page.getByLabel('Search class style properties to add').fill('font size')
       const fontSizeInput = page
         .getByTestId('css-property-row-fontSize')
-        .getByLabel('Font size')
+        .getByRole('textbox', { name: 'Font size', exact: true })
       await fontSizeInput.fill('28px')
       await fontSizeInput.blur()
       await expect(canvasHeadline).toHaveCSS('font-size', '28px')
@@ -821,7 +817,7 @@ test.describe('visual builder', () => {
       await page.getByLabel('Search class style properties to add').fill('font size')
       const fontSizeInput = page
         .getByTestId('css-property-row-fontSize')
-        .getByLabel('Font size')
+        .getByRole('textbox', { name: 'Font size', exact: true })
       await fontSizeInput.fill('30px')
       await fontSizeInput.blur()
       await expect(canvasHeadline).toHaveCSS('font-size', '30px')
@@ -940,7 +936,7 @@ test.describe('visual builder', () => {
       await page.getByLabel('Search class style properties to add').fill('font size')
       const fontSizeInput = page
         .getByTestId('css-property-row-fontSize')
-        .getByLabel('Font size')
+        .getByRole('textbox', { name: 'Font size', exact: true })
       await fontSizeInput.fill('31px')
       await fontSizeInput.blur()
 
@@ -982,7 +978,7 @@ test.describe('visual builder', () => {
       await page.getByLabel('Search class style properties to add').fill('font size')
       let fontSizeInput = page
         .getByTestId('css-property-row-fontSize')
-        .getByLabel('Font size')
+        .getByRole('textbox', { name: 'Font size', exact: true })
       await fontSizeInput.fill('20px')
       await fontSizeInput.blur()
       await expect(desktopButton).toHaveCSS('font-size', '20px')
@@ -990,7 +986,7 @@ test.describe('visual builder', () => {
       await switchEditingContext(page, 'Mobile')
       fontSizeInput = page
         .getByTestId('css-property-row-fontSize')
-        .getByLabel('Font size')
+        .getByRole('textbox', { name: 'Font size', exact: true })
       await fontSizeInput.fill('33px')
       await fontSizeInput.blur()
 
@@ -1192,17 +1188,13 @@ test.describe('visual builder', () => {
       await styleSearch.fill('font size')
       const fontSizeInput = page
         .getByTestId('css-property-row-fontSize')
-        .getByLabel('Font size')
+        .getByRole('textbox', { name: 'Font size', exact: true })
       await fontSizeInput.fill('24px')
       await fontSizeInput.blur()
       await expect(desktopButton).toHaveCSS('font-size', '24px')
 
       await styleSearch.fill('background color')
-      const backgroundInput = page
-        .getByTestId('css-property-row-backgroundColor')
-        .getByRole('textbox', { name: 'Background color', exact: true })
-      await backgroundInput.fill(background)
-      await backgroundInput.blur()
+      await setSolidFill(page, background)
       await expect(desktopButton).toHaveCSS('background-color', expectedBackground)
 
       await styleSearch.fill('padding')
@@ -1506,4 +1498,13 @@ async function insertSavedLayoutViaPicker(page: Page, layoutName: string): Promi
 async function openSavedLayoutContextMenu(page: Page, layoutName: string): Promise<void> {
   await openSavedLayoutSection(page)
   await expectSavedLayoutItem(page, layoutName).click({ button: 'right' })
+}
+
+async function setSolidFill(page: Page, color: string) {
+  await page.getByRole('button', { name: 'Edit fill', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Fill', exact: true })
+  const field = dialog.getByRole('textbox', { name: 'Colour value (HEX)', exact: true })
+  await field.fill(color)
+  await field.press('Enter')
+  await dialog.getByRole('button', { name: 'Close fill editor' }).click()
 }

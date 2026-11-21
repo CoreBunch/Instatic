@@ -53,7 +53,11 @@ export { normalizeImportedTokens } from './tokenNames'
 
 // ── Phase 2 — conflict detection + resolution ─────────────────────────────────
 
-export { detectConflicts, applyConflictResolutions } from './conflicts'
+export { detectConflicts, applyConflictResolutions, withPageSlugs } from './conflicts'
+export { hashImportAssets, detectMediaConflicts } from './mediaConflicts'
+export type { ExistingMediaMatch } from './mediaConflicts'
+export { importedSiteFilePath, importSourceHash, siteFileImportRecord, uniqueSiteFilePath } from './siteFilePaths'
+export { mergeImportOrder, prioritiesForOrder } from './importOrder'
 
 
 // ── Phase 2 — adapter interfaces ─────────────────────────────────────────────
@@ -74,14 +78,8 @@ export type {
   FileMap,
   FileRole,
   PagePlan,
-  ConflictResolution,
-  PageConflict,
-  RuleConflict,
-  TokenConflict,
-  CrossSheetClassConflict,
   ImportPlan,
   ImportResult,
-  ImportWarning,
   ImportAsset,
   UploadedImportAsset,
   StylesheetImportMode,
@@ -95,6 +93,17 @@ export type {
   ImportScriptDependency,
   ImportScript,
 } from './types'
+export type { ImportWarning } from './warnings'
+export type {
+  ConflictResolution,
+  PageConflict,
+  RuleConflict,
+  TokenConflict,
+  CrossSheetClassConflict,
+  FileConflict,
+  FileConflictState,
+  MediaConflict,
+} from './conflictTypes'
 
 // ── Error classes (callers need instanceof checks) ────────────────────────────
 

@@ -1,5 +1,4 @@
 import {
-  bagToCSS,
   createStyleRuleCssEmitter,
   generateClassCSS,
   PUBLISHER_RESET_CSS,
@@ -208,20 +207,21 @@ export function generateAmbientPlaceholderSuppressionCSS(
  */
 export function generatePreviewClassCSS(
   cls: StyleRule,
-  preview: { breakpointId?: string | null; styles: Record<string, unknown> },
+  preview: { contextId?: string | null; styles: Record<string, unknown> },
+  breakpoints: ViewportContext[],
+  conditions: ReadonlyArray<ConditionDef>,
   responsiveOptions: ResponsiveCssOptions = {},
 ): string {
-  const priorities = preview.breakpointId
-    ? cls.contextStylePriorities?.[preview.breakpointId]
-    : cls.stylePriorities
-  const decls = bagToCSS(preview.styles, responsiveOptions, priorities)
-  if (!decls) return ''
+  const { contextId, styles } = preview
   const selector = styleRuleSelector(cls)
-  const doubled = `${selector}${selector}`
-  if (!preview.breakpointId) {
-    return `${doubled} {\n${decls}\n}`
-  }
-  return `[data-breakpoint-id="${escapeCssAttribute(preview.breakpointId)}"] ${doubled} {\n${decls}\n}`
+  const target = cls.kind === 'class' ? selector + selector : selector
+  const emitRule = createStyleRuleCssEmitter(breakpoints, conditions, responsiveOptions)
+  return emitRule(target, {
+    styles: contextId ? {} : styles,
+    stylePriorities: cls.stylePriorities,
+    contextStyles: contextId ? { [contextId]: styles } : {},
+    contextStylePriorities: cls.contextStylePriorities,
+  }).join('\n\n')
 }
 
 /**

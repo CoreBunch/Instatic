@@ -1,0 +1,260 @@
+/* Rich colour picker surface. Every static colour is a globals.css token;
+   the gradients read the dynamic `--color-picker-*` properties set inline. */
+
+.picker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    /* The host (FloatingPanel, default 244px) owns the width — a fixed width
+       here overflowed the panel's content box by its 1px borders and turned
+       the panel's `overflow-y: auto` into a horizontal scrollbar. */
+    width: 100%;
+    padding: var(--space-s);
+    box-sizing: border-box;
+}
+
+/* --- Fill-type tabs ------------------------------------------------------ */
+.fillGlyph {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--overlay-40);
+}
+
+.fillGlyph-solid {
+    background: var(--overlay-80);
+}
+
+.fillGlyph-linear {
+    background: linear-gradient(180deg, var(--overlay-80) 20%, transparent);
+}
+
+.fillGlyph-radial {
+    background: radial-gradient(
+        circle at 50% 45%,
+        var(--overlay-80) 0%,
+        transparent 75%
+    );
+}
+
+.fillGlyph-conic {
+    background: conic-gradient(
+        from 0deg,
+        var(--overlay-80),
+        transparent 70%
+    );
+}
+
+/* --- Gradient stops strip ------------------------------------------------ */
+
+.stops {
+    position: relative;
+    height: 16px;
+    border-radius: var(--input-radius);
+    /* JS-driven property; the default keeps the rule valid before the first
+       inline write. */
+    --color-picker-gradient: none;
+    background: var(--picker-checkerboard);
+    background-size: var(--picker-checkerboard-size) var(--picker-checkerboard-size);
+    cursor: copy;
+    touch-action: none;
+}
+
+.stopsFill {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--color-picker-gradient);
+    pointer-events: none;
+}
+
+.stopHandle,
+.saturationHandle,
+.trackHandle {
+    position: absolute;
+    left: var(--color-picker-x);
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--picker-white);
+    border-radius: 50%;
+    box-shadow: 0 0 0 1px var(--scrim-50);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+}
+
+.stopHandle,
+.trackHandle {
+    top: 50%;
+}
+
+.stopHandle {
+    background:
+        linear-gradient(var(--color-picker-swatch), var(--color-picker-swatch)),
+        var(--picker-checkerboard);
+    background-size: auto, var(--picker-checkerboard-size) var(--picker-checkerboard-size);
+}
+
+.stopHandleSelected {
+    width: 15px;
+    height: 15px;
+    box-shadow:
+        0 0 0 1px var(--scrim-50),
+        0 0 0 3px var(--overlay-30);
+}
+
+/* --- Saturation / brightness square ------------------------------------- */
+
+.saturation {
+    position: relative;
+    height: 148px;
+    border-radius: var(--radius);
+    background:
+        linear-gradient(to top, var(--picker-black), transparent),
+        linear-gradient(to right, var(--picker-white), transparent),
+        var(--color-picker-hue);
+    cursor: crosshair;
+    touch-action: none;
+}
+
+.saturation:focus-visible,
+.hue:focus-visible,
+.alpha:focus-visible {
+    outline: none;
+    box-shadow: var(--shadow-input-focus);
+}
+
+.saturationHandle {
+    top: var(--color-picker-y);
+}
+
+/* --- Hue + alpha tracks -------------------------------------------------- */
+
+.sliderRow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+}
+
+.tracks {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--space-s);
+    min-width: 0;
+}
+
+.hue,
+.alpha {
+    position: relative;
+    height: 10px;
+    border-radius: var(--input-radius);
+    cursor: pointer;
+    touch-action: none;
+}
+
+.hue {
+    background: var(--picker-hue-track);
+}
+
+.alpha {
+    background: var(--picker-checkerboard);
+    background-size: var(--picker-checkerboard-size) var(--picker-checkerboard-size);
+}
+
+.alphaFill {
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: linear-gradient(to right, transparent, var(--color-picker-solid));
+    pointer-events: none;
+}
+
+.trackHandle {
+    background: var(--color-picker-solid);
+}
+
+/* --- Text fields --------------------------------------------------------- */
+
+.fields {
+    display: grid;
+    grid-template-columns: 1fr 68px;
+    gap: var(--space-2xs);
+    align-items: center;
+}
+
+.valueInput,
+.unitInput {
+    min-width: 0;
+}
+
+/* Numeric fields (opacity, angle): a TEXT input whose value carries its unit
+   ("100%", "180deg"), with a hover-revealed stepper on the trailing edge.
+   Shared by every numeric field in the picker — see UnitStepperInput. */
+.unitInput input {
+    padding-right: 0;
+}
+
+/* --- Gradient angle ------------------------------------------------------ */
+
+.angleRow {
+    display: grid;
+    grid-template-columns: 1fr 84px;
+    gap: var(--space-2xs);
+    align-items: center;
+}
+
+.angleLabel {
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+}
+
+/* --- Token list ---------------------------------------------------------- */
+
+.tokens {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    padding-top: var(--space-2xs);
+    border-top: 1px solid var(--border-muted);
+}
+
+.tokenList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-px);
+    max-height: 148px;
+    overflow-y: auto;
+}
+
+.tokenRow {
+    gap: var(--space-xs);
+}
+
+.tokenSwatch {
+    flex: 0 0 auto;
+    width: 12px;
+    height: 12px;
+    border: 1px solid var(--overlay-20);
+    border-radius: var(--radius-sm);
+    background:
+        linear-gradient(var(--color-picker-swatch), var(--color-picker-swatch)),
+        var(--picker-checkerboard);
+    background-size: auto, var(--picker-checkerboard-size) var(--picker-checkerboard-size);
+}
+
+.tokenName {
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tokenEmpty {
+    margin: 0;
+    padding: var(--space-xs) var(--space-s);
+    color: var(--text-subtle);
+    font-size: var(--text-2xs);
+}
+
+.saveColor { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-3xs); }
