@@ -195,6 +195,20 @@
     .stripMeta {
         display: none;
     }
+
+    .stripName {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .stripLinked > span {
+        position: absolute;
+        clip-path: inset(50%);
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+    }
 }
 
 .stripLinked {
