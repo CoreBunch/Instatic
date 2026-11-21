@@ -314,55 +314,34 @@
 
 @media (max-width: 760px) {
     .header {
-        height: 68px;
-        flex-wrap: wrap;
-        align-content: center;
-        row-gap: var(--space-4xs);
-        padding: var(--space-4xs) var(--space-s);
-    }
-
-    .siteName {
-        max-width: 104px;
-        margin-right: var(--space-4xs);
-    }
-
-    .siteNameSkeleton {
-        width: 84px;
-        margin-right: var(--space-4xs);
+        height: 56px;
+        padding: 0 var(--space-m);
+        gap: var(--space-s);
     }
 
     .workspaceToolbarItems {
-        justify-content: flex-end;
-        flex: 1 1 0;
+        flex: 0 0 auto;
     }
 
-    .spacer {
-        min-width: 0;
-    }
-
+    .spacer,
     .zoomGroup,
-    .publishActionStatus,
-    .pluginButtonWrapper {
+    .publishActionStatus {
         display: none;
     }
 
-    .adminLink,
-    .activeSection {
-        justify-content: center;
-        width: 30px;
-        min-width: 30px;
-        padding: 0;
-        gap: 0;
+    .workspaceToolbarItems > button,
+    .publishActionGroup,
+    .publishActionGroup button {
+        min-height: 44px;
     }
 
-    .adminLink > span:not([role="status"]),
-    .activeSection > span:not([role="status"]) {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip: rect(0 0 0 0);
-        white-space: nowrap;
+    .workspaceToolbarItems > button,
+    .publishPrimaryButton {
+        font-size: var(--text-xl);
+    }
+
+    .publishMenuTrigger {
+        min-width: 44px;
     }
 }
 

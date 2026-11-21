@@ -14,7 +14,6 @@ import { useWorkspaceLayout } from '@admin/state/workspaceLayout'
 import { useEditorStore } from '@site/store/store'
 import { makeSite } from '../fixtures'
 import { Toolbar } from '@site/toolbar/Toolbar'
-import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
 import type { CmsCurrentUser } from '@core/persistence'
 import { CORE_CAPABILITIES } from '@core/capabilities'
 import { executeContentTool } from '@content/agent/contentBridge'
@@ -471,7 +470,6 @@ describe('ContentPage', () => {
               <>
                 <Toolbar
                   section="site"
-                  adminNavigationSlot={<AdminSectionNavigation section="site" />}
                   rightSlot={<span>right</span>}
                 />
                 <LocationProbe />
@@ -484,7 +482,6 @@ describe('ContentPage', () => {
               <>
                 <Toolbar
                   section="content"
-                  adminNavigationSlot={<AdminSectionNavigation section="content" />}
                   rightSlot={<span>right</span>}
                 />
                 <LocationProbe />
@@ -514,15 +511,10 @@ describe('ContentPage', () => {
               <>
                 <Toolbar
                   section="site"
-                  adminNavigationSlot={(
-                    <AdminSectionNavigation
-                      section="site"
-                      onWorkspaceNavigateStart={() => {
-                        transitionStarts.push('content')
-                        return 180
-                      }}
-                    />
-                  )}
+                  onWorkspaceNavigateStart={() => {
+                    transitionStarts.push('content')
+                    return 180
+                  }}
                   rightSlot={<span>site controls</span>}
                 />
                 <LocationProbe />
@@ -535,7 +527,6 @@ describe('ContentPage', () => {
               <>
                 <Toolbar
                   section="content"
-                  adminNavigationSlot={<AdminSectionNavigation section="content" />}
                   rightSlot={<span>content controls</span>}
                 />
                 <LocationProbe />
@@ -578,15 +569,10 @@ describe('ContentPage', () => {
               <>
                 <Toolbar
                   section="site"
-                  adminNavigationSlot={(
-                    <AdminSectionNavigation
-                      section="site"
-                      onWorkspaceNavigateStart={() => new Promise<void>((resolve) => {
-                        transitionStarts.push('content')
-                        resolveNavigation = resolve
-                      })}
-                    />
-                  )}
+                  onWorkspaceNavigateStart={() => new Promise<void>((resolve) => {
+                    transitionStarts.push('content')
+                    resolveNavigation = resolve
+                  })}
                   rightSlot={<span>site controls</span>}
                 />
                 <LocationProbe />
@@ -599,7 +585,6 @@ describe('ContentPage', () => {
               <>
                 <Toolbar
                   section="content"
-                  adminNavigationSlot={<AdminSectionNavigation section="content" />}
                   rightSlot={<span>content controls</span>}
                 />
                 <LocationProbe />

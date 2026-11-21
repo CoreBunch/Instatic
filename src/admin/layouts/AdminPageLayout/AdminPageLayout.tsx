@@ -29,7 +29,6 @@
 import { LazySettingsModal as SettingsModal } from '@admin/modals/Settings/LazySettingsModal'
 import { Suspense, type ReactNode } from 'react'
 import { Toolbar } from '@site/toolbar/Toolbar'
-import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
 import { SkeletonCards } from '@ui/components/Skeleton'
 import { useEditorAppearancePreferences } from '@site/preferences/editorPreferences'
 import { useInstalledEditorPlugins } from '@admin/pages/plugins/hooks/useInstalledEditorPlugins'
@@ -129,12 +128,6 @@ export function AdminPageLayout({
         siteName={siteName}
         faviconUrl={faviconUrl}
         section={workspace}
-        adminNavigationSlot={(
-          <AdminSectionNavigation
-            section={workspace}
-            currentUser={currentUser}
-          />
-        )}
         rightSlot={toolbarRightSlot}
       />
 
