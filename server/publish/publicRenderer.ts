@@ -2,7 +2,7 @@ import '../../src/modules/base'
 import '@core/loops/sources'
 import { registry } from '@core/module-engine'
 import { publishPage } from '@core/publisher'
-import { buildRouteFrame } from '@core/templates/contextFrames'
+import { buildPageFrame, buildRouteFrame } from '@core/templates/contextFrames'
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { buildPublishedSiteModuleJsMap, resolveModuleScripts } from './moduleJsBundle'
 import type { ModuleScriptRef } from './moduleJsBundle'
@@ -145,6 +145,11 @@ async function renderMergedTemplate(
   return { html, moduleScripts, cssBundle }
 }
 
+/** The binding frames for a page render: the served page itself, and the request route when known. */
+function pageTemplateContext(page: Page, url: URL | undefined): TemplateRenderDataContext {
+  return { entryStack: [], page: buildPageFrame(page), ...(url ? { route: buildRouteFrame(url.toString()) } : {}) }
+}
+
 export async function renderPublishedSnapshot(
   snapshot: PublishedPageSnapshot,
   ctx: RenderPublishedSnapshotContext,
@@ -157,13 +162,12 @@ export async function renderPublishedSnapshot(
   const chain = resolveTemplateChain(snapshot.site, { kind: 'page' })
   const merged = composeTemplateChain(chain, { kind: 'page', page })
 
-  // Seed route frame from the actual request URL (when available) so
-  // `{route.slug}` / `{route.path}` bindings resolve to live values.
-  // publishPage falls back to the page permalink if no templateContext
-  // is provided.
-  const templateContext: TemplateRenderDataContext | undefined = ctx.url
-    ? { entryStack: [], route: buildRouteFrame(ctx.url.toString()) }
-    : undefined
+  // `{page.*}` names the page being served, not the layout the composed tree
+  // is keyed by (composeTemplateChain keeps the innermost template's id and
+  // slug for the publish.html filter). Seed the route frame from the actual
+  // request URL (when available) so `{route.slug}` / `{route.path}` resolve
+  // to live values; without one publishPage falls back to the page permalink.
+  const templateContext = pageTemplateContext(page, ctx.url)
 
   const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
   return { ...rendered, pageId: snapshot.pageRowId, slug: page.slug, siteId: snapshot.site.id }
@@ -186,9 +190,7 @@ export async function renderPublishedNotFound(
   const chain = resolveTemplateChain(snapshot.site, { kind: 'page' })
   const merged = composeTemplateChain(chain, { kind: 'page', page })
 
-  const templateContext: TemplateRenderDataContext | undefined = ctx.url
-    ? { entryStack: [], route: buildRouteFrame(ctx.url.toString()) }
-    : undefined
+  const templateContext = pageTemplateContext(page, ctx.url)
 
   const rendered = await renderMergedTemplate(merged, snapshot, templateContext, ctx)
   return { ...rendered, pageId: page.id, slug: page.slug, siteId: snapshot.site.id }

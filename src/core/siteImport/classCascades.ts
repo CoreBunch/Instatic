@@ -40,15 +40,15 @@
  */
 
 import type {
-  CrossSheetClassConflict,
   ImportScript,
   NewStyleRule,
   PagePlan,
 } from './types'
+import type { CrossSheetClassConflict } from './conflictTypes'
 import type { CssFileResult } from './assetPlan'
 import type { StyleRule } from '@core/page-tree'
 import { canonicalJson } from '@core/utils/canonicalJson'
-import { pageClassUsage } from './classUsage'
+import { importClassNames, pageClassUsage } from './classUsage'
 import {
   createCascadedStyleRuleLayers,
   mergeStyleRuleCascade,
@@ -179,7 +179,9 @@ export function detectCrossSheetClassConflicts(
   if (cascades.length === 0) return []
 
   const rulesByCssPath = new Map<string, NewStyleRule[]>()
-  const usedNames = new Set<string>(existingClassRules.map((rule) => rule.name))
+  const usage = pageClassUsage(pagePlans, scripts)
+  const authoredNames = importClassNames(usage, cssFileResults.flatMap((file) => file.rules))
+  const usedNames = new Set([...authoredNames, ...existingClassRules.map((rule) => rule.name)])
   // class name → the sheets defining it, built once (detection is per class
   // per cascade per sheet, so a per-lookup scan of each sheet's rules is
   // quadratic on large imports).
@@ -188,7 +190,6 @@ export function detectCrossSheetClassConflicts(
     if (!rulesByCssPath.has(file.cssPath)) rulesByCssPath.set(file.cssPath, file.rules)
     for (const rule of file.rules) {
       if (rule.kind !== 'class') continue
-      usedNames.add(rule.name)
       const sheets = sheetsDefining.get(rule.name) ?? new Set<string>()
       sheets.add(file.cssPath)
       sheetsDefining.set(rule.name, sheets)
@@ -222,8 +223,7 @@ export function detectCrossSheetClassConflicts(
       pagesLoading.set(sheet, list)
     }
   }
-  const usage = pageClassUsage(pagePlans, scripts)
-  const confinedBefore = previouslyConfinedNames(existingClassRules)
+  const confinedBefore = previouslyConfinedNames(existingClassRules, authoredNames)
   const nameFor = (name: string, sheet: string): string => {
     const previous = confinedBefore.get(`${sheet}\0${name}`)
     if (previous) return previous
@@ -299,12 +299,13 @@ export function crossSheetRenameTargets(conflicts: readonly CrossSheetClassConfl
  */
 function previouslyConfinedNames(
   rules: ReadonlyArray<Pick<StyleRule, 'name' | 'origin'>>,
+  authoredNames: ReadonlySet<string>,
 ): Map<string, string> {
   const names = new Map<string, string>()
   for (const rule of rules) {
     const source = rule.origin?.source
     const match = /^(.+)-(\d+)$/.exec(rule.name)
-    if (!source || !match) continue
+    if (!source || !match || authoredNames.has(rule.name)) continue
     const key = `${source}\0${match[1]}`
     if (!names.has(key)) names.set(key, rule.name)
   }

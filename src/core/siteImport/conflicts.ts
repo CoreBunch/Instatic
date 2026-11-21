@@ -19,18 +19,24 @@
 
 import type {
   ImportPlan,
+  PagePlan,
+  NewStyleRule,
+  ImportColorToken,
+  ImportFontToken,
+  ImportScript,
+  ImportStylesheet,
+} from './types'
+import type {
   PageConflict,
   RuleConflict,
   TokenConflict,
   CrossSheetClassConflict,
   ConflictResolution,
-  PagePlan,
-  NewStyleRule,
-  ImportColorToken,
-  ImportFontToken,
-} from './types'
+  FileConflict,
+} from './conflictTypes'
 import {
   classKindSelector,
+  normalizePageSlug,
   replaceCssSelectorClassName,
   type SiteDocument,
   type PageNode,
@@ -40,6 +46,8 @@ import { normalizeFrameworkColorSlug } from '@core/framework'
 import { isUntouchedFontRoleToken, normalizeFontTokenVariable, type FontToken } from '@core/fonts'
 import { applyCrossSheetClassResolutions, normalizeBindableClassRules } from './classCascadeResolution'
 import { declaredCustomProperties, rewriteRuleVarRefs, rewriteStyleBagVarRefs } from './varRefs'
+import { importClassNames, pageClassUsage } from './classUsage'
+import { detectFileConflicts } from './fileConflicts'
 
 // ---------------------------------------------------------------------------
 // Detection
@@ -49,6 +57,7 @@ interface ConflictDetectionResult {
   pages: PageConflict[]
   rules: RuleConflict[]
   tokens: TokenConflict[]
+  files: FileConflict[]
 }
 
 /**
@@ -64,25 +73,56 @@ export function detectConflicts(
   styleRules: NewStyleRule[],
   colorTokens: ImportColorToken[] = [],
   fontTokens: ImportFontToken[] = [],
+  scripts: ImportScript[] = [],
+  stylesheets: ImportStylesheet[] = [],
   /** Class names other conflict rows (cross-sheet renames) already target. */
   reservedClassNames: Iterable<string> = [],
 ): ConflictDetectionResult {
   const pageConflicts = detectPageConflicts(currentSite, pagePlans)
-  const ruleConflicts = detectRuleConflicts(currentSite, styleRules, reservedClassNames)
+  const authoredNames = importClassNames(pageClassUsage(pagePlans, scripts), styleRules)
+  const ruleConflicts = detectRuleConflicts(currentSite, styleRules, [...authoredNames, ...reservedClassNames])
   const tokenConflicts = detectTokenConflicts(
     currentSite,
     colorTokens,
     fontTokens,
     declaredCustomProperties(pagePlans, styleRules),
   )
-  return { pages: pageConflicts, rules: ruleConflicts, tokens: tokenConflicts }
+  const fileConflicts = detectFileConflicts(currentSite, scripts, stylesheets)
+  return { pages: pageConflicts, rules: ruleConflicts, tokens: tokenConflicts, files: fileConflicts }
+}
+
+/**
+ * Give pages the slugs the user typed in the Review step and detect page
+ * conflicts again against those final slugs.
+ *
+ * The plan's page conflicts were detected against the slugs derived from the
+ * file paths. A slug edited afterwards must be checked again, or a page
+ * renamed onto an existing route (`index`) would skip the Conflicts step and
+ * be suffixed silently (`index-2`) at commit. Pass the plan already narrowed
+ * to the selected pages, so a deselected page claims no slug. Typed slugs are
+ * normalised the way the page store normalises them.
+ */
+export function withPageSlugs(
+  plan: ImportPlan,
+  currentSite: SiteDocument,
+  slugBySource: ReadonlyMap<string, string>,
+): ImportPlan {
+  const pages = plan.pages.map((page) => {
+    const typed = slugBySource.get(page.source)
+    return typed === undefined ? page : { ...page, slug: normalizePageSlug(typed) }
+  })
+  return {
+    ...plan,
+    pages,
+    conflicts: { ...plan.conflicts, pages: detectPageConflicts(currentSite, pages) },
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Page conflict detection
 // ---------------------------------------------------------------------------
 
-function detectPageConflicts(
+export function detectPageConflicts(
   site: SiteDocument,
   pagePlans: PagePlan[],
 ): PageConflict[] {

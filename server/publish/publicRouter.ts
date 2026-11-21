@@ -119,9 +119,14 @@ export function publicSlugFromPath(pathname: string): string {
 export function contentRouteFromPath(pathname: string): { tableRouteBase: string; rowSlug: string } | null {
   const parts = pathname.replace(/^\/+|\/+$/g, '').split('/').filter(Boolean)
   if (parts.length < 2) return null
-  return {
-    tableRouteBase: `/${parts.slice(0, -1).map((part) => decodeURIComponent(part)).join('/')}`,
-    rowSlug: decodeURIComponent(parts[parts.length - 1]),
+  try {
+    return {
+      tableRouteBase: `/${parts.slice(0, -1).map((part) => decodeURIComponent(part)).join('/')}`,
+      rowSlug: decodeURIComponent(parts[parts.length - 1]),
+    }
+  } catch (err) {
+    if (err instanceof URIError) return null
+    throw err
   }
 }
 
@@ -160,7 +165,7 @@ type PublicRouteResolution =
  * templates; when there isn't one, we return `not-found` rather than inventing
  * a fallback document.
  */
-async function resolvePublicRoute(
+export async function resolvePublicRoute(
   db: DbClient,
   url: URL,
 ): Promise<PublicRouteResolution> {

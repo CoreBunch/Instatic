@@ -80,6 +80,17 @@ describe('cross-sheet cascade: shared kit + page overrides', () => {
     expect(effective(r, 'home.html', 'card')).toEqual({ opacity: '0.5' })
   })
 
+  it('reserves HTML-only class names when allocating suffixes', () => {
+    const p = plan({
+      'home.html': page(['kit.css', 'home.css']),
+      'account.html': page(['kit.css'], '<span class="btn btn-2">Account</span>'),
+      'kit.css': KIT,
+      'home.css': '.btn { color: red }',
+    })
+    expect(p.conflicts.crossSheetClasses[0].defaultResolution.resolvedName).toBe('btn-3')
+    expect(effective(resolve(p), 'account.html', 'btn').color).toBe('black')
+  })
+
   it('keeps two pages that override the same class each on their own value', () => {
     const p = plan({
       'home.html': page(['kit.css', 'home.css']),

@@ -9,11 +9,11 @@
  */
 
 import type {
-  CrossSheetClassConflict,
   ImportPlan,
   NewStyleRule,
   PagePlan,
 } from './types'
+import type { CrossSheetClassConflict } from './conflictTypes'
 import {
   classKindSelector,
   extractCssSelectorClasses,

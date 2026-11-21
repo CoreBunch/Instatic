@@ -24,8 +24,9 @@ interface SectionProps {
   indicatorTestId?: string;
   icon?: IconComponent;
   meta?: React.ReactNode;
-  headerAction?: React.ReactNode;
+  headerAction?: React.ReactNode | ((expand: () => void) => React.ReactNode);
   forceOpen?: boolean;
+  empty?: boolean;
   /**
    * Drop the section's own vertical padding so spacing comes entirely from the
    * parent container's grid gap (the borderless-tile / 1px-gap card pattern).
@@ -51,11 +52,12 @@ export function Section({
   meta,
   headerAction,
   forceOpen = false,
+  empty = false,
   flush = false,
   chevron = false,
 }: SectionProps) {
   const [open, setOpen] = useState(defaultOpen);
-  const expanded = forceOpen || open;
+  const expanded = !empty && (forceOpen || open);
 
   return (
     <div className={cn(styles.section, flush && styles.sectionFlush, expanded && styles.sectionOpen)}>
@@ -68,6 +70,7 @@ export function Section({
             if (!forceOpen) setOpen((o) => !o);
           }}
           className={styles.sectionToggle}
+          disabled={empty}
           aria-expanded={expanded}
         >
           {SectionIcon && (
@@ -96,7 +99,9 @@ export function Section({
           )}
         </button>
         {headerAction && (
-          <span className={styles.sectionHeaderAction}>{headerAction}</span>
+          <span className={styles.sectionHeaderAction}>
+            {typeof headerAction === "function" ? headerAction(() => setOpen(true)) : headerAction}
+          </span>
         )}
       </div>
       {expanded && <div className={styles.sectionContent}>{children}</div>}

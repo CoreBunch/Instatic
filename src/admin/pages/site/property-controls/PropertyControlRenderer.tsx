@@ -120,118 +120,130 @@ export function PropertyControlRenderer({
     : permissions.canEditStructure
   const effectiveDisabled = disabled || !allowedByCategory
 
-  const shared = {
-    propKey,
-    value,
-    onChange,
-    label: control.label,
-    isOverride,
-    disabled: effectiveDisabled,
-    layout,
+  // Every control is built through this so the binding affordance, when the
+  // prop can be bound, lands in the control's own label row (`labelAction`)
+  // and never over the control itself.
+  function renderControl(labelAction?: React.ReactNode): React.ReactNode {
+    const shared = {
+      propKey,
+      value,
+      onChange,
+      label: control.label,
+      isOverride,
+      disabled: effectiveDisabled,
+      layout,
+      labelAction,
+    }
+
+    let inner: React.ReactNode
+
+    switch (control.type) {
+      case 'text':
+        inner = (
+          <TextControl
+            {...shared}
+            value={String(value ?? '')}
+            placeholder={control.placeholder}
+            normalize={control.normalize}
+          />
+        )
+        break
+
+      case 'textarea':
+        inner = (
+          <TextareaControl
+            {...shared}
+            value={String(value ?? '')}
+            rows={control.rows}
+            placeholder={control.placeholder}
+          />
+        )
+        break
+
+      case 'number':
+        inner = (
+          <NumberControl
+            {...shared}
+            value={Number(value ?? 0)}
+            min={control.min}
+            max={control.max}
+            step={control.step}
+            unit={control.unit}
+          />
+        )
+        break
+
+      case 'color':
+        inner = <ColorControl {...shared} value={String(value ?? '')} format={control.format} />
+        break
+
+      case 'select':
+        inner = <SelectControl {...shared} options={control.options} />
+        break
+
+      case 'toggle':
+        inner = <ToggleControl {...shared} value={Boolean(value)} />
+        break
+
+      case 'image':
+        inner = <ImageControl {...shared} value={String(value ?? '')} />
+        break
+
+      case 'media':
+        inner = (
+          <MediaLibraryControl
+            {...shared}
+            value={String(value ?? '')}
+            mediaKind={control.mediaKind}
+          />
+        )
+        break
+
+      case 'url':
+        inner = <UrlControl {...shared} value={String(value ?? '')} />
+        break
+
+      case 'dataTable':
+        inner = (
+          <DataTableControl
+            {...shared}
+            value={String(value ?? '')}
+            includeSystem={control.includeSystem}
+          />
+        )
+        break
+
+      case 'svg':
+        inner = <SvgControl {...shared} value={String(value ?? '')} />
+        break
+
+      case 'richtext':
+        return null
+
+      case 'group':
+        inner = (
+          <GroupSection
+            label={control.label}
+            schema={control.children}
+            props={{ [propKey]: value } as Record<string, unknown>}
+            onChange={onChange}
+            isOverride={isOverride}
+            disabled={disabled}
+            defaultCollapsed={control.collapsed}
+          />
+        )
+        break
+
+      default:
+        return null
+    }
+
+    return inner
   }
 
-  let inner: React.ReactNode
-
-  switch (control.type) {
-    case 'text':
-      inner = (
-        <TextControl
-          {...shared}
-          value={String(value ?? '')}
-          placeholder={control.placeholder}
-          normalize={control.normalize}
-        />
-      )
-      break
-
-    case 'textarea':
-      inner = (
-        <TextareaControl
-          {...shared}
-          value={String(value ?? '')}
-          rows={control.rows}
-          placeholder={control.placeholder}
-        />
-      )
-      break
-
-    case 'number':
-      inner = (
-        <NumberControl
-          {...shared}
-          value={Number(value ?? 0)}
-          min={control.min}
-          max={control.max}
-          step={control.step}
-          unit={control.unit}
-        />
-      )
-      break
-
-    case 'color':
-      inner = <ColorControl {...shared} value={String(value ?? '')} format={control.format} />
-      break
-
-    case 'select':
-      inner = <SelectControl {...shared} options={control.options} />
-      break
-
-    case 'toggle':
-      inner = <ToggleControl {...shared} value={Boolean(value)} />
-      break
-
-    case 'image':
-      inner = <ImageControl {...shared} value={String(value ?? '')} />
-      break
-
-    case 'media':
-      inner = (
-        <MediaLibraryControl
-          {...shared}
-          value={String(value ?? '')}
-          mediaKind={control.mediaKind}
-        />
-      )
-      break
-
-    case 'url':
-      inner = <UrlControl {...shared} value={String(value ?? '')} />
-      break
-
-    case 'dataTable':
-      inner = (
-        <DataTableControl
-          {...shared}
-          value={String(value ?? '')}
-          includeSystem={control.includeSystem}
-        />
-      )
-      break
-
-    case 'svg':
-      inner = <SvgControl {...shared} value={String(value ?? '')} />
-      break
-
-    case 'richtext':
-      return null
-
-    case 'group':
-      inner = (
-        <GroupSection
-          label={control.label}
-          schema={control.children}
-          props={{ [propKey]: value } as Record<string, unknown>}
-          onChange={onChange}
-          isOverride={isOverride}
-          disabled={disabled}
-          defaultCollapsed={control.collapsed}
-        />
-      )
-      break
-
-    default:
-      return null
-  }
+  const inner = renderControl()
+  // Unknown or unimplemented control types (and richtext) render nothing.
+  if (inner === null) return null
 
   if (control.type === 'group') {
     return (
@@ -241,8 +253,6 @@ export function PropertyControlRenderer({
     )
   }
 
-  // Bake the resolved disabled flag into the inner-content for the
-  // DynamicBindingControl branch below.
   const isDisabled = effectiveDisabled
 
   // Binding mode is explicit. Token mode is only for free text-ish props
@@ -254,7 +264,7 @@ export function PropertyControlRenderer({
   const content = dynamicBinding && !isDisabled && bindingMode !== null ? (
     <DynamicBindingControl
       propKey={propKey}
-      label={control.label ?? propKey}
+      label={control.label || propKey}
       control={control}
       layout={layout}
       binding={dynamicBinding.binding}
@@ -272,9 +282,8 @@ export function PropertyControlRenderer({
       availableFields={dynamicBinding.availableFields}
       sourceLabel={dynamicBinding.sourceLabel}
       loopTableId={dynamicBinding.loopTableId}
-    >
-      {inner}
-    </DynamicBindingControl>
+      renderControl={renderControl}
+    />
   ) : inner
 
   return (

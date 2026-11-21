@@ -2,7 +2,7 @@
  * Per-widget dashboard data hooks.
  *
  * Each hook owns ONE network round-trip against a per-domain endpoint
- * (`/admin/api/cms/dashboard/<domain>`). The 6 hooks fire in parallel
+ * (`/admin/api/cms/dashboard/<domain>`). The widget hooks fire in parallel
  * when the dashboard mounts, and each widget unblocks AS ITS DATA
  * ARRIVES — the dashboard fills in progressively instead of stalling
  * on the slowest endpoint (the audit-events-driven Activity feed).
@@ -20,10 +20,12 @@
  *                                  range queries)
  *   • `useRecentActivityStats()`— Activity widget (a 50-row audit-events
  *                                  scan + projections; slowest)
+ *   • `useDomainStats()`       — Domain widget (configured public origin)
  *
  * Validation: each response is validated at the JSON boundary against the
  * TypeBox schema below via the canonical `apiRequest` (`@core/http`).
- * Storage exposes loading/error state, including an explicit permission message.
+ * Storage and Domain expose loading and error state. Storage includes an
+ * explicit permission message.
  * Other hooks keep the existing behavior: on non-OK status or an invalid payload,
  * the hook keeps `null` (the widget keeps showing its skeleton, which is
  * better than throwing and blanking the dashboard). That swallow-on-failure
@@ -183,6 +185,10 @@ const DashboardActivityStatsSchema = looseObject({
 })
 type DashboardActivityStats = Static<typeof DashboardActivityStatsSchema>
 
+const DashboardDomainStatsSchema = looseObject({
+  publicOrigin: Type.Union([Type.String({ minLength: 1 }), Type.Null()]),
+})
+
 // ---------------------------------------------------------------------------
 // Generic fetch hook factory
 // ---------------------------------------------------------------------------
@@ -272,4 +278,8 @@ export function usePublishLineupStats(): DashboardPublishLineupStats | null {
 /** Activity widget. The heaviest endpoint — a 50-row `audit_events` scan. */
 export function useRecentActivityStats(): DashboardActivityStats | null {
   return useDashboardEndpoint('activity', DashboardActivityStatsSchema)
+}
+
+export function useDomainStats() {
+  return useAsyncResource((signal) => fetchDashboardEndpoint('domain', DashboardDomainStatsSchema, signal), [])
 }

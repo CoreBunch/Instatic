@@ -22,6 +22,24 @@ export {
 } from './operationSchema'
 export { PageSchema } from './page'
 export {
+  PageSeoSchema,
+  PAGE_HEAD_LINK_RELS,
+  PAGE_HEAD_PRELOAD_AS,
+  RESERVED_PAGE_META_NAMES,
+  parsePageSeo,
+  mergePageSeo,
+} from './pageSeo'
+export type {
+  PageSeo,
+  PageHeadLink,
+  PageHeadLinkRel,
+  PageHeadMeta,
+  PageHeadPreloadAs,
+  PageOpenGraph,
+  PageThemeColor,
+  PageTwitterCard,
+} from './pageSeo'
+export {
   CSSDeclarationPriorityBagSchema,
   StyleRuleOriginSchema,
   StyleRuleSchema,
@@ -175,6 +193,7 @@ export {
 } from './selectors'
 
 export {
+  validateCssClassName,
   assertValidCssClassName,
   styleRuleSelector,
   classNamesForClassIds,

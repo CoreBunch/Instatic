@@ -34,12 +34,12 @@ import type {
   ClassifiedFile,
   FileMap,
   ImportPlan,
-  ImportWarning,
   ImportGoogleFont,
   ImportScript,
   PagePlan,
   StylesheetImportMode,
 } from './types'
+import type { ImportWarning } from './warnings'
 
 interface BuildImportPlanInput {
   fileMap: FileMap
@@ -194,15 +194,18 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
   const { pages, styleRules } = rewriteImportVarRefs(normalizedPagePlans, normalizedStyleRules, renames)
 
   // 6. Detect conflicts against the current site — pages, class rules, and
-  //    design tokens (colour + font) all flow through one resolution model.
-  //    Class rows reserve the names the cross-sheet rows already picked, so
-  //    the two never default to the same new name.
+  //    design tokens (colour + font), and site files (scripts + kept
+  //    stylesheets) all flow through one resolution model. Media conflicts
+  //    need the server's library and are added by the wizard
+  //    (`detectMediaConflicts`).
   const conflicts = detectConflicts(
     currentSite,
     pages,
     styleRules,
     colors,
     fontTokens,
+    scripts,
+    stylesheets,
     crossSheetRenameTargets(crossSheetClasses),
   )
 
@@ -219,7 +222,7 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
     scripts,
     linkedStylesheets,
     stylesheets,
-    conflicts: { ...conflicts, crossSheetClasses },
+    conflicts: { ...conflicts, crossSheetClasses, media: [] },
     warnings,
     droppedAtRules,
   }

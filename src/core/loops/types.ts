@@ -70,6 +70,8 @@ export const LoopItemSchema = Type.Object({
 
 export type LoopItem = Static<typeof LoopItemSchema>
 
+export type LoopDirection = 'asc' | 'desc'
+
 // ---------------------------------------------------------------------------
 // Source contract
 // ---------------------------------------------------------------------------
@@ -117,7 +119,8 @@ export interface SourceFetchContext {
   filters: Record<string, unknown>
   /** One of the source's `orderByOptions[].id` values. */
   orderBy: string
-  direction: 'asc' | 'desc'
+  /** The loop's stored direction, or the source's `defaultDirection` when it has none. */
+  direction: LoopDirection
   /** Hard cap from the loop instance; sources may further clamp. */
   limit: number
   offset: number
@@ -270,6 +273,14 @@ interface LoopEntitySourceBase {
   filterSchema: PropertySchema
   /** Allowed values for the loop's `orderBy` property. */
   orderByOptions: { id: string; label: string }[]
+  /**
+   * The direction a loop uses when its author never picked one. Unset means
+   * `'asc'`. Each source decides what a direction means for it, so this is
+   * the direction under which `fetch()` lists items in their natural order:
+   * `'desc'` for the newest-first listings (`data.rows`, `site.media`,
+   * `members.apps`). Resolved by `resolveLoopDirection`.
+   */
+  defaultDirection?: LoopDirection
   /** Fields available for `dynamicBindings` inside the loop. */
   fields: LoopSourceField[]
 }

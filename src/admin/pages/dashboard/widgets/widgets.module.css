@@ -252,7 +252,7 @@
     color: var(--success);
 }
 
-/* ── Pages / posts / status row utilities ──────────────────────────── */
+/* ── Pages / posts footer ──────────────────────────────────────────── */
 .subFootRow {
     margin-top: auto;
     display: flex;
@@ -262,30 +262,14 @@
     color: var(--text-subtle);
 }
 
-.statusRow {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--space-m) 0;
-    border-top: 1px solid var(--border);
-}
-
-.statusRow:first-of-type {
-    border-top: 0;
-}
-
-.statusLabel {
+/* ── Publishing status widget ─────────────────────────────────────── */
+.publishState {
     display: flex;
     align-items: center;
     gap: var(--space-s);
-    font-size: var(--text-s);
-    color: var(--text);
-}
-
-.statusGrid {
-    display: grid;
-    gap: 0;
-    margin-top: var(--space-3xs);
+    margin: 0 0 var(--space-xs);
+    font-size: var(--text-l);
+    color: var(--text-bright);
 }
 
 /* ── Domain widget ─────────────────────────────────────────────────── */
@@ -293,26 +277,18 @@
     font-family: var(--font-mono);
     font-size: var(--text-l);
     color: var(--text-bright);
-    margin-top: var(--space-4xs);
+    margin: 0 0 var(--space-xs);
+    overflow-wrap: anywhere;
 }
 
-.domainList {
-    margin-top: auto;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-xs);
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    color: var(--text-subtle);
+.widgetHint {
+    margin: 0;
+    font-size: var(--text-s);
+    color: var(--text-muted);
 }
 
-.domainList > div {
-    display: flex;
-    justify-content: space-between;
-}
-
-.domainOk {
-    color: var(--success);
+.widgetHint + .widgetHint {
+    margin-top: var(--space-xs);
 }
 
 /* ── Media thumbnail grid ──────────────────────────────────────────── */

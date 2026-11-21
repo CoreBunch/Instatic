@@ -14,7 +14,7 @@ The Dashboard is the **canonical implementation** of the borderless-tile-card pa
 - Widgets are draggable (move) and resizable (column / row span). Drop targets and resize previews use `--accent-3` for the dashed indicator.
 - Customize mode: dashed outline + bottom-docked `<BlockLibrary>` of unused widgets. Toggled by a top-toolbar button.
 - Layout persists per-user via `useDashboardLayout` (server-side `user_preferences`).
-- Most data-backed widgets stream from `/admin/api/cms/dashboard/<domain>` (`handleDashboardRoutes` -> per-widget readers). AI usage reads `/admin/api/ai/audit`; Domain and Site status are local status tiles today.
+- Most widgets load from `/admin/api/cms/dashboard/<domain>` via `handleDashboardRoutes`. Publishing status and AI usage reuse the publish status and AI audit endpoints.
 
 ---
 
@@ -48,7 +48,7 @@ src/admin/pages/dashboard/
     ├── PluginsWidget.tsx
     ├── PostsWidget.tsx
     ├── PublishQueueWidget.tsx
-    ├── StatusWidget.tsx
+    ├── PublishingStatusWidget.tsx
     ├── StorageWidget.tsx
     ├── widgets.module.css       — widget-shared CSS
     └── index.ts                 — registerFirstPartyDashboardWidgets()
@@ -134,11 +134,11 @@ interface DashboardWidgetDefinition {
 | `pages`    | 3             | 3 × 3         | lilac | Published, draft, scheduled, and trailing-week page counts |
 | `posts`    | 3             | 3 × 3         | peach | Total posts, category count, scheduled count, and 28-day bars |
 | `media`    | 3             | 3 × 3         | peach | File count, total bytes, and latest thumbnails |
-| `status`   | 3             | 3 × 3         | mint  | Local site/build/backup/plugin status rows |
+| `status`   | 3             | 3 × 3         | mint  | Publishing status, last publication, and unpublished site changes |
 | `activity` | 4             | 6 × 5         | peach | Recent audit-backed admin activity; endpoint requires `audit.read` |
 | `publish`  | 4             | 6 × 5         | sky   | Scheduled, recently published, and draft content rows |
 | `plugins`  | 4             | 6 × 5         | mint  | Installed plugin counts and lifecycle-state rows |
-| `domain`   | 3             | 6 × 3         | sky   | Local primary-domain and HTTPS verification rows |
+| `domain`   | 3             | 6 × 3         | sky   | Configured public host, port, and HTTPS configuration |
 | `ai-usage` | 3             | Library only  | lilac | This-month AI spend, chats, top scope, and daily spend sparkline |
 
 `Registry span` is the widget's `defaultSize`, used when the user drops it from the Block Library. `Seeded layout` is the fresh-user grid in `useDashboardLayout.ts`; `ai-usage` is first-party but intentionally starts in the Block Library instead of the default grid.
@@ -229,18 +229,20 @@ The dashboard fans out into **per-domain** endpoints under `/admin/api/cms/dashb
 | `/dashboard/storage`        | `useStorageStats`        | `dashboard.read` + `storage.elect` | `{ imageBytes, videoBytes, documentBytes, pluginBytes, databaseBytes, totalBytes, dialect }` |
 | `/dashboard/publish-lineup` | `usePublishLineupStats`  | `dashboard.read` + content visibility | `{ rows: [{ id, path, status, at }] }` |
 | `/dashboard/activity`       | `useRecentActivityStats` | `dashboard.read` + `audit.read` | `{ rows: [{ id, action, actor, targetCode, targetText, createdAt }] }` |
+| `/dashboard/domain`         | `useDomainStats`         | `dashboard.read` | `{ publicOrigin: string \| null }` |
 
 Every endpoint requires `dashboard.read`. Media, plugins, activity, and storage also require their domain capability; a rejected request returns 403. The Storage tile displays a permission message after a 403 instead of staying in its loading state. Storage uses `storage.elect`, the permission for inspecting and choosing installation storage adapters.
 
+The Domain endpoint returns `configuredPublicOrigin()` from `server/auth/security.ts`. This is the first normalized public origin from `PUBLIC_ORIGIN` or platform auto-detection. When it is unset, `publicOrigin` is `null` and the widget shows setup guidance. The widget shows the hostname and any non-default port. “HTTPS configured” describes the URL scheme. The widget shows an error with a retry action when the request fails.
+
 Pages, posts, and publish lineup use the table-family and row-read policy in `server/auth/dataAccess.ts`. The SQL scope in `server/repositories/dashboard/content.ts` excludes unreadable table families, other authors' rows for own-only roles, deleted rows/tables, and non-main branches **before** counts, histograms, sorting, or limits. Author ownership takes precedence over creator fallback. A dashboard-only user receives empty content statistics and lineup; category counts include only readable post-type tables. `site.read` alone grants no row access. Regression coverage: `src/__tests__/server/dashboardAccess.test.ts`.
 
-Non-CMS first-party widgets:
+Widgets that reuse existing endpoints:
 
 | Widget | Data source | Notes |
 |--------|-------------|-------|
 | `ai-usage` | `listAiAudit(startOfMonthIso())` -> `/admin/api/ai/audit` | Maps a 403 from missing `ai.audit.read` to a no-permission empty state. |
-| `domain` | Local component rows | Shows the current placeholder primary-domain / HTTPS rows. |
-| `status` | Local component rows | Shows the current placeholder site/build/backup/plugin status rows. |
+| `status` | `getCmsPublishStatus()` → `/admin/api/cms/publish/status` | Requires `site.read`. Shows whether main has a published version, when it last published, and whether the main site draft matches the published snapshot. A 403 shows a permission message. Other request failures offer a retry. |
 
 ### Timezone-aware day bucketing
 

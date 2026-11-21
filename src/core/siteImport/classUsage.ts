@@ -6,11 +6,12 @@
  * whether renaming a class could miss elements that code creates.
  */
 
-import type { ImportScript, PagePlan } from './types'
+import { extractCssSelectorClasses } from '@core/page-tree'
+import type { ImportScript, NewStyleRule, PagePlan } from './types'
 
 export interface PageClassUsage {
-  /** The page carries the class (on a node or in SVG markup), or its scripts may write it. */
-  uses(pageSource: string, name: string): boolean
+  /** Authored class tokens on all imported pages, including scripts. */
+  names: Iterable<string>
   /**
    * A script the page loads may put the class on elements at runtime, which
    * a rename of the page's nodes would not reach.
@@ -46,9 +47,19 @@ export function pageClassUsage(
   }
   return {
     outsideNodes,
-    uses: (pageSource, name) => (carried.get(pageSource)?.has(name) ?? false) || outsideNodes(pageSource, name),
+    names: users.keys(),
     pagesUsing: (name) => users.get(name) ?? [],
   }
+}
+
+/** Every authored class name a generated rename target must keep clear of. */
+export function importClassNames(usage: PageClassUsage, rules: Iterable<NewStyleRule>): Set<string> {
+  const names = new Set(usage.names)
+  for (const rule of rules) {
+    if (rule.kind === 'class') names.add(rule.name)
+    for (const token of extractCssSelectorClasses(rule.selector)) names.add(token.name)
+  }
+  return names
 }
 
 function carriedClasses(page: PagePlan): Set<string> {

@@ -25,7 +25,8 @@ import type {
   ImportStylesheet,
   UploadedImportAsset,
 } from './types'
-import type { ConditionDef } from '@core/page-tree'
+import type { ImportWarning } from './warnings'
+import type { ConditionDef, PageSeo } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
 import type { FontEntry } from '@core/fonts'
 
@@ -117,14 +118,16 @@ export interface SiteImportTransaction {
     title: string
     slug: string
     nodeFragment: ImportFragment
+    /** The page's head settings read from its `<head>`; null for none. */
+    seo: PageSeo | null
   }): string
 
   /**
    * Overwrite the content of an existing page (conflict: overwrite resolution).
    *
-   * The existing page's id, slug, and title are retained; only the node tree
-   * is replaced with the imported fragment. Class name→id linking applies
-   * identically to `addPage`.
+   * The existing page's id is retained; its title, slug, node tree and head
+   * settings are replaced by the imported page's. Class name→id linking
+   * applies identically to `addPage`.
    */
   overwritePage(
     pageId: string,
@@ -132,6 +135,7 @@ export interface SiteImportTransaction {
       title: string
       slug: string
       nodeFragment: ImportFragment
+      seo: PageSeo | null
     },
   ): void
 
@@ -239,4 +243,33 @@ export interface SiteImportTransaction {
    * @returns The committed `{ id, path }` for each added stylesheet.
    */
   addStylesheets(stylesheets: ImportStylesheet[]): { id: string; path: string }[]
+
+  /**
+   * Keep existing script / stylesheet files an import delivers again (a
+   * `FileConflict` resolved to `skip` or `overwrite`). Each file keeps its id,
+   * path and load order. `replacement`, when given (overwrite), brings the
+   * imported content, a script's format, a fresh `importRecord`, and a
+   * script's npm packages: a pinned version the script now asks for replaces
+   * the listed one, unless that would loosen a pin, another script outside
+   * the replacement still imports the package, or two replacements disagree;
+   * then the listed version stays and a `dependency-version-kept` warning
+   * says so. The pages in `pageIds` join a page-scoped file's runtime scope;
+   * an empty `pageIds` (a site-wide sheet) widens it to every page.
+   *
+   * @returns `{ id, path }` for each reused file still in the site, and the
+   *          warnings raised.
+   */
+  reuseSiteFiles(
+    items: { existingFileId: string; pageIds: string[]; replacement?: ImportScript | ImportStylesheet }[],
+  ): { files: { id: string; path: string }[]; warnings: ImportWarning[] }
+
+  /**
+   * Merge this import's files of one kind into the site's load order
+   * (`mergeImportOrder`) and renumber priorities as little as that order
+   * allows (`prioritiesForOrder`). `importOrder` lists the import's files
+   * (added, replaced, reused) by id in the import's own order; `addedIds`
+   * are the ones this import just added, which have no place in the site's
+   * order yet.
+   */
+  orderImportedFiles(kind: 'script' | 'style', importOrder: string[], addedIds: string[]): void
 }

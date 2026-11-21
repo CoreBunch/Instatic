@@ -22,12 +22,14 @@ export function NumberControl({
   isOverride,
   disabled,
   layout,
+  labelAction,
 }: NumberControlProps) {
   return (
     <ControlRow
       propKey={propKey}
       label={label}
       layout={layout}
+      labelAction={labelAction}
       isOverride={isOverride}
       disabled={disabled}
       labelSuffix={unit ? <span className={controlRowStyles.labelUnit}>{unit}</span> : undefined}

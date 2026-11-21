@@ -57,12 +57,12 @@ import {
 import { parseStyleDeclarations } from './cssDeclarationReader'
 import { extractUrlPayloads, parseFontFaceRule } from './fontFaceParser'
 import type {
-  ImportWarning,
   BreakpointHint,
   AssetRef,
   NewStyleRule,
   ParsedFontFace,
 } from './types'
+import type { ImportWarning } from './warnings'
 
 // ---------------------------------------------------------------------------
 // Public interface

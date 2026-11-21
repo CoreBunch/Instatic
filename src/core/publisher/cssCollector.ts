@@ -19,6 +19,7 @@
  */
 
 import type { SiteDocument } from '@core/page-tree'
+import type { IModuleRegistry } from '@core/module-engine'
 import { generateClassCSS } from './classCss'
 import type { ResponsiveCssOptions } from './responsiveBackground'
 import { collectUsedStyleRuleIds, treeShakeStyleRules } from './styleRuleTreeShake'
@@ -36,13 +37,17 @@ import { collectUsedStyleRuleIds, treeShakeStyleRules } from './styleRuleTreeSha
  * @param site The site containing the class registry, page nodes, and VCs.
  * @returns A CSS string of all used class-name rules, or empty string if none.
  */
-export function collectClassCSS(site: SiteDocument, options: ResponsiveCssOptions = {}): string {
+export function collectClassCSS(
+  site: SiteDocument,
+  registry: Pick<IModuleRegistry, 'get' | 'generation'>,
+  options: ResponsiveCssOptions = {},
+): string {
   // Defensive guard: corrupted/partial snapshots may have classes undefined
   if (!site.styleRules) return ''
 
   const usedClasses = treeShakeStyleRules(
     site.styleRules,
-    collectUsedStyleRuleIds(site),
+    collectUsedStyleRuleIds(site, registry),
   )
 
   if (Object.keys(usedClasses).length === 0) return ''

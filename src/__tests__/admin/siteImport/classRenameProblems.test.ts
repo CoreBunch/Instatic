@@ -49,9 +49,10 @@ describe('classRenameProblems', () => {
     const check = (ruleName: string, crossName: string) =>
       classRenameProblems(plan, siteNames, new Map([['btn', rename(ruleName)]]), new Map([[crossSheetConflictKey(cross), rename(crossName)]]))
 
+    expect(check('md:flex-2', 'fine-2').size).toBe(0)
     expect(check('same', 'same').get(crossKey)).toContain('Another conflict')
     expect(check('fine', 'taken').get(crossKey)).toContain('already a class in this site')
     expect(check('card', 'fine-2').get(ruleKey)).toContain('already brings')
-    expect(check('9bad', 'fine-2').get(ruleKey)).toContain('not a valid class name')
+    expect(check('bad name', 'fine-2').get(ruleKey)).toContain('not a valid class name')
   })
 })

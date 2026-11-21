@@ -39,6 +39,7 @@ import {
   isGoogleFontRequested,
   makeDefaultSelection as makeRealDefaultSelection,
   selectedImportCount,
+  emptyConflictResolutionMaps,
 } from '@admin/modals/SiteImport/shared/importPlanning'
 import type { ImportSelection } from '@admin/modals/SiteImport'
 import { buildImportPlan, commitImportPlan } from '@core/siteImport'
@@ -115,7 +116,7 @@ function makeMinimalPlan(overrides: Partial<ImportPlan> = {}): ImportPlan {
     scripts: overrides.scripts ?? [],
     linkedStylesheets: overrides.linkedStylesheets ?? [],
     stylesheets: overrides.stylesheets ?? [],
-    conflicts: overrides.conflicts ?? { pages: [], rules: [], tokens: [], crossSheetClasses: [] },
+    conflicts: overrides.conflicts ?? { pages: [], rules: [], tokens: [], crossSheetClasses: [], files: [], media: [] },
     warnings: overrides.warnings ?? [],
     droppedAtRules: overrides.droppedAtRules ?? [],
   }
@@ -131,7 +132,7 @@ function makeMinimalResult(overrides: Partial<ImportResult> = {}): ImportResult 
     colors: overrides.colors ?? [],
     scripts: overrides.scripts ?? [],
     stylesheets: overrides.stylesheets ?? [],
-    conflicts: overrides.conflicts ?? { pages: [], rules: [], tokens: [], crossSheetClasses: [] },
+    conflicts: overrides.conflicts ?? { pages: [], rules: [], tokens: [], crossSheetClasses: [], files: [], media: [] },
     warnings: overrides.warnings ?? [],
   }
 }
@@ -1045,6 +1046,94 @@ describe('SiteImportModal — global static import', () => {
   })
 })
 
+describe('SiteImportModal — a route typed in the Review step', () => {
+  it('lists a route renamed onto an existing page as a page conflict instead of suffixing it', async () => {
+    const site = makeSite({ name: 'Site With Home' })
+    useEditorStore.setState({ site } as Parameters<typeof useEditorStore.setState>[0])
+    const existingSlug = site.pages[0]!.slug
+
+    renderSiteImportModal()
+    const htmlFile = new File(
+      ['<!doctype html><html><head><title>Landing</title></head><body><h1>Landing</h1></body></html>'],
+      'landing.html',
+      { type: 'text/html' },
+    )
+    fireEvent.drop(screen.getByLabelText(/drop site files/i), { dataTransfer: { files: [htmlFile] } })
+    expect(await screen.findByText('Review import')).toBeDefined()
+
+    fireEvent.change(screen.getByLabelText('Route for Landing'), { target: { value: existingSlug } })
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }))
+
+    expect(await screen.findByText(/Page slug conflicts \(1\)/)).toBeDefined()
+    expect(screen.getByText('landing.html')).toBeDefined()
+  })
+})
+
+describe('SiteImportModal — media library lookup', () => {
+  it('keeps every dropped file and the lookup of the latest plan when an older one answers last', async () => {
+    useEditorStore.setState({ site: makeSite({ name: 'Lookup Site' }) } as Parameters<typeof useEditorStore.setState>[0])
+    const pending: Array<(matches: unknown[]) => void> = []
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/admin/api/cms/media/lookup') {
+        const { contentHashes } = JSON.parse(String(init?.body)) as { contentHashes: string[] }
+        const matches = await new Promise<unknown[]>((resolve) => pending.push(resolve))
+        return jsonResponse({
+          matches: matches.length > 0
+            ? [{ contentHash: contentHashes[0], id: 'old-logo', publicPath: '/uploads/logo.png', filename: 'logo.png' }]
+            : [],
+        })
+      }
+      return jsonResponse({ error: `Unexpected request: ${url}` }, 500)
+    }
+
+    renderSiteImportModal()
+    fireEvent.drop(screen.getByLabelText(/drop site files/i), {
+      dataTransfer: {
+        files: [
+          new File(
+            ['<!doctype html><html><head><title>Logo</title><link rel="stylesheet" href="style.css"></head><body><img src="logo.png" alt=""></body></html>'],
+            'logo.html',
+            { type: 'text/html' },
+          ),
+          new File(['.hero { color: red }'], 'style.css', { type: 'text/css' }),
+          new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 7])], 'logo.png', { type: 'image/png' }),
+        ],
+      },
+    })
+    await waitFor(() => expect(pending).toHaveLength(1))
+    pending[0]!([])
+    expect(await screen.findByText('Review import')).toBeDefined()
+
+    // Files dropped onto the Review step rebuild the plan even while a
+    // lookup is still out, so two lookups can be in flight at once.
+    const step = screen.getByLabelText('Add import files').parentElement!
+    const dropMore = (name: string, marker: number) =>
+      fireEvent.drop(step, {
+        dataTransfer: {
+          files: [new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, marker])], name, { type: 'image/png' })],
+          types: ['Files'],
+        },
+      })
+    dropMore('a.png', 1)
+    await waitFor(() => expect(pending).toHaveLength(2))
+    dropMore('b.png', 2)
+    await waitFor(() => expect(pending).toHaveLength(3))
+    pending[2]!([])
+    // The superseded lookup answers last, with a match it must not apply.
+    pending[1]!(['match'])
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    // Both dropped files made it into the plan, not only the last drop.
+    fireEvent.click(screen.getByRole('button', { name: /^Media/ }))
+    expect(screen.getByText('3 of 3')).toBeDefined()
+
+    fireEvent.click(screen.getByRole('button', { name: /continue/i }))
+    await waitFor(() => expect(screen.queryByText('Review import')).toBeNull())
+    expect(screen.queryByText(/Media already in the library/)).toBeNull()
+  })
+})
+
 // ---------------------------------------------------------------------------
 // 3 — DropStep error handling
 // ---------------------------------------------------------------------------
@@ -1613,8 +1702,7 @@ describe('ConflictsStep — conflict rendering', () => {
   afterEach(cleanup)
 
   const noopResChange = () => {}
-  const emptyPageRes = new Map<string, ConflictResolution>()
-  const emptyRuleRes = new Map<string, ConflictResolution>()
+  const noResolutions = emptyConflictResolutionMaps()
 
   it('returns null (renders nothing) when plan has no conflicts', () => {
     const plan = makeMinimalPlan()
@@ -1622,10 +1710,8 @@ describe('ConflictsStep — conflict rendering', () => {
       <ConflictsStep
         plan={plan}
         classNameProblems={new Map()}
-        pageResolutions={emptyPageRes}
-        ruleResolutions={emptyRuleRes}
-        onPageResolutionChange={noopResChange}
-        onRuleResolutionChange={noopResChange}
+        resolutions={noResolutions}
+        onResolutionChange={noopResChange}
       />,
     )
     expect(document.querySelector('h3')).toBeNull()
@@ -1636,6 +1722,8 @@ describe('ConflictsStep — conflict rendering', () => {
       conflicts: {
         tokens: [],
         crossSheetClasses: [],
+        files: [],
+        media: [],
         pages: [
           {
             source: 'about.html',
@@ -1651,10 +1739,8 @@ describe('ConflictsStep — conflict rendering', () => {
       <ConflictsStep
         plan={plan}
         classNameProblems={new Map()}
-        pageResolutions={emptyPageRes}
-        ruleResolutions={emptyRuleRes}
-        onPageResolutionChange={noopResChange}
-        onRuleResolutionChange={noopResChange}
+        resolutions={noResolutions}
+        onResolutionChange={noopResChange}
       />,
     )
     expect(screen.getByText(/Page slug conflicts/i)).toBeDefined()
@@ -1665,6 +1751,8 @@ describe('ConflictsStep — conflict rendering', () => {
       conflicts: {
         tokens: [],
         crossSheetClasses: [],
+        files: [],
+        media: [],
         pages: [],
         rules: [
           {
@@ -1680,10 +1768,8 @@ describe('ConflictsStep — conflict rendering', () => {
       <ConflictsStep
         plan={plan}
         classNameProblems={new Map()}
-        pageResolutions={emptyPageRes}
-        ruleResolutions={emptyRuleRes}
-        onPageResolutionChange={noopResChange}
-        onRuleResolutionChange={noopResChange}
+        resolutions={noResolutions}
+        onResolutionChange={noopResChange}
       />,
     )
     expect(screen.getByText(/Class name conflicts/i)).toBeDefined()
@@ -1694,6 +1780,8 @@ describe('ConflictsStep — conflict rendering', () => {
       conflicts: {
         tokens: [],
         crossSheetClasses: [],
+        files: [],
+        media: [],
         pages: [
           {
             source: 'about.html',
@@ -1716,10 +1804,8 @@ describe('ConflictsStep — conflict rendering', () => {
       <ConflictsStep
         plan={plan}
         classNameProblems={new Map()}
-        pageResolutions={emptyPageRes}
-        ruleResolutions={emptyRuleRes}
-        onPageResolutionChange={noopResChange}
-        onRuleResolutionChange={noopResChange}
+        resolutions={noResolutions}
+        onResolutionChange={noopResChange}
       />,
     )
     expect(screen.getByText(/Page slug conflicts/i)).toBeDefined()
@@ -1731,6 +1817,8 @@ describe('ConflictsStep — conflict rendering', () => {
       conflicts: {
         tokens: [],
         crossSheetClasses: [],
+        files: [],
+        media: [],
         pages: [
           {
             source: 'home.html',
@@ -1746,10 +1834,8 @@ describe('ConflictsStep — conflict rendering', () => {
       <ConflictsStep
         plan={plan}
         classNameProblems={new Map()}
-        pageResolutions={emptyPageRes}
-        ruleResolutions={emptyRuleRes}
-        onPageResolutionChange={noopResChange}
-        onRuleResolutionChange={noopResChange}
+        resolutions={noResolutions}
+        onResolutionChange={noopResChange}
       />,
     )
     const rowControls = within(screen.getByRole('group', { name: 'Conflict resolution for home.html' }))
@@ -1763,6 +1849,8 @@ describe('ConflictsStep — conflict rendering', () => {
       conflicts: {
         tokens: [],
         crossSheetClasses: [],
+        files: [],
+        media: [],
         pages: [
           {
             source: 'about.html',
@@ -1778,10 +1866,8 @@ describe('ConflictsStep — conflict rendering', () => {
       <ConflictsStep
         plan={plan}
         classNameProblems={new Map()}
-        pageResolutions={emptyPageRes}
-        ruleResolutions={emptyRuleRes}
-        onPageResolutionChange={noopResChange}
-        onRuleResolutionChange={noopResChange}
+        resolutions={noResolutions}
+        onResolutionChange={noopResChange}
       />,
     )
     const rowControls = within(screen.getByRole('group', { name: 'Conflict resolution for about.html' }))
@@ -1794,12 +1880,14 @@ describe('ConflictsStep — conflict rendering', () => {
     ])
   })
 
-  it('calls onPageResolutionChange when a row resolution changes', () => {
+  it('reports a page row resolution change under the pages category', () => {
     const changes: [string, ConflictResolution][] = []
     const plan = makeMinimalPlan({
       conflicts: {
         tokens: [],
         crossSheetClasses: [],
+        files: [],
+        media: [],
         pages: [
           {
             source: 'about.html',
@@ -1815,10 +1903,8 @@ describe('ConflictsStep — conflict rendering', () => {
       <ConflictsStep
         plan={plan}
         classNameProblems={new Map()}
-        pageResolutions={emptyPageRes}
-        ruleResolutions={emptyRuleRes}
-        onPageResolutionChange={(source, res) => changes.push([source, res])}
-        onRuleResolutionChange={noopResChange}
+        resolutions={noResolutions}
+        onResolutionChange={(category, key, res) => { if (category === 'pages') changes.push([key, res]) }}
       />,
     )
     const rowControls = within(screen.getByRole('group', { name: 'Conflict resolution for about.html' }))
@@ -1833,6 +1919,8 @@ describe('ConflictsStep — conflict rendering', () => {
       conflicts: {
         tokens: [],
         crossSheetClasses: [],
+        files: [],
+        media: [],
         pages: [],
         rules: [
           {
@@ -1851,10 +1939,8 @@ describe('ConflictsStep — conflict rendering', () => {
       <ConflictsStep
         plan={plan}
         classNameProblems={new Map()}
-        pageResolutions={emptyPageRes}
-        ruleResolutions={ruleRes}
-        onPageResolutionChange={noopResChange}
-        onRuleResolutionChange={noopResChange}
+        resolutions={{ ...noResolutions, rules: ruleRes }}
+        onResolutionChange={noopResChange}
       />,
     )
 
@@ -1869,6 +1955,8 @@ describe('ConflictsStep — conflict rendering', () => {
       conflicts: {
         tokens: [],
         crossSheetClasses: [],
+        files: [],
+        media: [],
         pages: [],
         rules: [
           {
@@ -1897,10 +1985,8 @@ describe('ConflictsStep — conflict rendering', () => {
       <ConflictsStep
         plan={plan}
         classNameProblems={new Map()}
-        pageResolutions={emptyPageRes}
-        ruleResolutions={emptyRuleRes}
-        onPageResolutionChange={noopResChange}
-        onRuleResolutionChange={(desiredName, res) => changes.push([desiredName, res])}
+        resolutions={noResolutions}
+        onResolutionChange={(category, key, res) => { if (category === 'rules') changes.push([key, res]) }}
       />,
     )
 
@@ -1919,6 +2005,8 @@ describe('ConflictsStep — conflict rendering', () => {
       conflicts: {
         tokens: [],
         crossSheetClasses: [],
+        files: [],
+        media: [],
         pages: [
           {
             source: 'about.html',
@@ -1941,10 +2029,8 @@ describe('ConflictsStep — conflict rendering', () => {
       <ConflictsStep
         plan={plan}
         classNameProblems={new Map()}
-        pageResolutions={emptyPageRes}
-        ruleResolutions={emptyRuleRes}
-        onPageResolutionChange={(source, res) => changes.push([source, res])}
-        onRuleResolutionChange={noopResChange}
+        resolutions={noResolutions}
+        onResolutionChange={(category, key, res) => { if (category === 'pages') changes.push([key, res]) }}
       />,
     )
 
@@ -1955,6 +2041,50 @@ describe('ConflictsStep — conflict rendering', () => {
     expect(changes).toEqual([
       ['about.html', { action: 'skip' }],
       ['about-copy.html', { action: 'skip' }],
+    ])
+  })
+
+  it('offers reuse for files and media already in the site, with bulk actions per category', () => {
+    const changes: [string, string, ConflictResolution][] = []
+    const plan = makeMinimalPlan({
+      conflicts: {
+        pages: [],
+        rules: [],
+        tokens: [],
+        crossSheetClasses: [],
+        files: [
+          { kind: 'script', path: 'js/app.js', sitePath: 'js/app.js', existingFileId: 'f1', state: 'unchanged', defaultResolution: { action: 'skip' } },
+        ],
+        media: [
+          {
+            sourcePath: 'img/logo.png',
+            existingAssetId: 'a1',
+            existingUrl: '/uploads/logo.png',
+            existingFilename: 'logo.png',
+            defaultResolution: { action: 'skip' },
+          },
+        ],
+      },
+    })
+
+    render(
+      <ConflictsStep
+        plan={plan}
+        resolutions={noResolutions}
+        onResolutionChange={(category, key, res) => changes.push([category, key, res])}
+      />,
+    )
+
+    expect(screen.getByText('Files already in this site (1)')).toBeDefined()
+    expect(screen.getByText('Media already in the library (1)')).toBeDefined()
+    expect(screen.getAllByRole('button', { name: 'Use existing', pressed: true })).toHaveLength(2)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Replace all site file conflicts' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Upload copies for all media conflicts' }))
+
+    expect(changes).toEqual([
+      ['files', 'script:js/app.js', { action: 'overwrite' }],
+      ['media', 'img/logo.png', { action: 'auto-rename' }],
     ])
   })
 })
@@ -2274,6 +2404,8 @@ describe('commitImportPlan — overwrite with no existing target falls back to a
       conflicts: {
         tokens: [],
         crossSheetClasses: [],
+        files: [],
+        media: [],
         // Intra-batch collision → empty existingPageId, but user chose overwrite.
         pages: [
           {
@@ -2312,6 +2444,8 @@ describe('commitImportPlan — overwrite with no existing target falls back to a
       conflicts: {
         tokens: [],
         crossSheetClasses: [],
+        files: [],
+        media: [],
         pages: [
           {
             source: 'home.html',
