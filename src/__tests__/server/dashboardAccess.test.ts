@@ -1,11 +1,14 @@
 import { expect, test } from 'bun:test'
+import type { PublishLineupStats } from '@core/dashboard'
 import { createCapabilityTestHarness, readJson } from '../helpers/capabilityHarness'
-import { createDataRow, createDataTable } from '../../../server/repositories/data'
+import { createDataRow, createDataTable, saveDataRowDraft, scheduleDataRowPublish } from '../../../server/repositories/data'
+import { persistDataRowPublish } from '../../../server/repositories/data/publish'
+import { publishDraftSite } from '../../../server/publish/publishSite'
 import { insertBranch } from '../../../server/repositories/branches'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 import type { CoreCapability } from '../../../server/auth/capabilities'
 import { configurePublicOrigins, resetPublicOrigins } from '../../../server/auth/security'
-import type { PagesStats, PostsStats, PublishLineupStats } from '../../../server/repositories/dashboard'
+import type { PagesStats, PostsStats } from '../../../server/repositories/dashboard'
 
 const prefix = '/admin/api/cms/dashboard/'
 const widgets = ['pages', 'posts', 'storage', 'publish-lineup', 'media', 'plugins', 'activity', 'domain']
@@ -55,6 +58,49 @@ test('dashboard domain returns the canonical configured origin or null', async (
     resetPublicOrigins()
     await h.cleanup()
   }
+})
+
+test('publish lineup uses canonical paths and keeps editor row identities', async () => {
+  const h = await createCapabilityTestHarness()
+  try {
+    const cookie = await h.setupOwner()
+    const { user } = await readJson<{ user: { id: string } }>(await h.cms('/admin/api/cms/me', { cookie }))
+    await publishDraftSite(h.db, user.id)
+
+    const table = await createDataTable(h.db, MAIN_SCOPE, {
+      name: 'Articles', slug: 'articles', kind: 'postType', singularLabel: 'Article', pluralLabel: 'Articles',
+      routeBase: '/news/features',
+    })
+    const article = await createDataRow(h.db, MAIN_SCOPE, { tableId: table.id, slug: 'live-slug', cells: {} })
+    await persistDataRowPublish(h.db, article.id, user.id)
+    await saveDataRowDraft(h.db, MAIN_SCOPE, article.id, { slug: 'draft-slug', cells: {} }, user.id)
+
+    const about = await createDataRow(h.db, MAIN_SCOPE, { tableId: 'pages', slug: 'about', cells: {} })
+    const scheduledAt = '2040-01-02T12:00:00.000Z'
+    await scheduleDataRowPublish(h.db, MAIN_SCOPE, about.id, scheduledAt)
+    const template = await createDataRow(h.db, MAIN_SCOPE, {
+      tableId: 'pages', slug: 'layout-page', cells: { templateEnabled: true, templateTarget: { kind: 'everywhere' } },
+    })
+    const privateTable = await createDataTable(h.db, MAIN_SCOPE, {
+      name: 'Notes', slug: 'notes', kind: 'data', singularLabel: 'Note', pluralLabel: 'Notes', routeBase: '',
+    })
+    const note = await createDataRow(h.db, MAIN_SCOPE, { tableId: privateTable.id, slug: 'internal', cells: {} })
+
+    const res = await h.cms(prefix + 'publish-lineup', { cookie })
+    expect(res.status).toBe(200)
+    const { rows } = await readJson<PublishLineupStats>(res)
+    expect(rows).toHaveLength(5)
+    expect(rows[0]).toEqual({
+      id: about.id, tableSlug: 'pages', tableKind: 'page', slug: 'about', path: '/about',
+      status: 'scheduled', at: scheduledAt,
+    })
+    expect(rows.find((row) => row.slug === 'index')).toMatchObject({ path: '/', status: 'published' })
+    expect(rows.find((row) => row.id === article.id)).toMatchObject({
+      tableSlug: 'articles', tableKind: 'postType', slug: 'draft-slug', path: '/news/features/live-slug',
+    })
+    expect(rows.find((row) => row.id === template.id)?.path).toBeNull()
+    expect(rows.find((row) => row.id === note.id)?.path).toBeNull()
+  } finally { await h.cleanup() }
 })
 
 const cases: { name: string; caps: CoreCapability[]; system: boolean; custom: boolean; own: boolean; all: boolean }[] = [

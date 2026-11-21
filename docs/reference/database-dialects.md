@@ -61,6 +61,8 @@ const { rows } = await db<SiteRow>`select id, settings_json from site`
 
 **Comparing or ordering by a JSON field.** `jsonField` yields text on Postgres and a typed value on SQLite, so `jsonField(...) = <number>` is an error on one and a match on the other. Use the typed helpers in `server/db/jsonExtract.ts`, the one file allowed to hold the dialect-specific SQL: `jsonFieldTyped(column, field, dialect, 'text' | 'number' | 'boolean')` yields a value of that JSON type and NULL for rows holding another (bind booleans through `jsonBooleanParam`), and `jsonFieldOrder(column, field, dialect, direction)` yields ORDER BY terms that sort missing values, booleans, numbers and text in the same sequence on both. `jsonTextLike` is the LIKE that folds ASCII letters only on both sides and declares its escape character, and `jsonColumnIsObject` tests that a JSON column holds an object. `listPluginRecords` is the reference caller.
 
+`jsonObjectField` projects a nested object field without returning its parent document. Alias the result with a `_json` suffix so both adapters hydrate it. Publish lineup uses this to read a page’s template target.
+
 Gated by `src/__tests__/architecture/db-json-column-naming.test.ts`:
 
 1. Every `jsonb`-typed column in `migrations-pg.ts` has a name ending in `_json`.
