@@ -163,3 +163,54 @@
 .segment--left .sideInput { left: calc(var(--band-x) / 2 - 19px); }
 .segment--right .sideInput { right: calc(var(--band-x) / 2 - 19px); }
 .segmentLinked .sideInput.sideInput { color: var(--text-bright); }
+
+@media (max-width: 760px) {
+    .root { height: auto; }
+
+    .phoneBox .boxHeader {
+        position: static;
+        display: flex;
+        justify-content: space-between;
+        height: auto;
+        padding: 0;
+    }
+
+    .phoneBox .boxLabel {
+        color: var(--text);
+        font-size: var(--text-l);
+        letter-spacing: normal;
+        text-transform: none;
+    }
+
+    .phoneBox .boxBody {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: var(--space-s);
+        height: auto;
+    }
+
+    .phoneBox .boxInner {
+        position: static;
+        grid-column: 1 / -1;
+        background: transparent;
+    }
+
+    .phoneBox .boxInner:empty { display: none; }
+
+    .phoneSide {
+        display: grid;
+        gap: var(--space-2xs);
+        min-width: 0;
+        color: var(--text-muted);
+        font-size: var(--text-s);
+        text-transform: capitalize;
+    }
+
+    .phoneSide .phoneInput::placeholder { color: var(--text-muted); }
+
+    .phoneSide .phoneInput {
+        min-height: 44px;
+        font-size: max(1rem, var(--text-l));
+        text-align: center;
+    }
+}

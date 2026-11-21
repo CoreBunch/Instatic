@@ -87,7 +87,7 @@ export function StyleSurface({
   moduleContent,
   onFocusClassPicker,
 }: StyleSurfaceProps) {
-  // scrollRef → outer grid which is also the scroll container
+  // The section list scrolls independently of the category navigation.
   const scrollRef = useRef<HTMLDivElement>(null)
   const [styleQuery, setStyleQuery] = useState('')
 
@@ -214,9 +214,18 @@ export function StyleSurface({
   const ModuleIcon = definition?.icon
 
   return (
-    <div ref={scrollRef} className={styles.surface}>
-      {/* ── Left column: search + module section + CSS area ─────────── */}
-      <div className={styles.surfaceContent}>
+    <div className={styles.surface}>
+      <div className={styles.railSticky}>
+        <StyleCategoryRail
+          activeAnchorId={activeAnchorId}
+          sectionSetCounts={sectionSetCounts}
+          onSectionClick={handleSectionClick}
+          definition={definition ?? null}
+          activeClass={activeClass}
+          editingInline={showInline}
+        />
+      </div>
+      <div ref={scrollRef} className={styles.surfaceContent}>
 
         {/* Search bar — sticky at the top, searches both module and CSS.
             Hidden when no class is selected or the active class is a locked
@@ -259,18 +268,6 @@ export function StyleSurface({
 
         {/* CSS area — StyleRuleComposer sections, locked preview, or generated lock */}
         {cssContent}
-      </div>
-
-      {/* ── Right column: sticky rail ────────────────────────────── */}
-      <div className={styles.railSticky}>
-        <StyleCategoryRail
-          activeAnchorId={activeAnchorId}
-          sectionSetCounts={sectionSetCounts}
-          onSectionClick={handleSectionClick}
-          definition={definition ?? null}
-          activeClass={activeClass}
-          editingInline={showInline}
-        />
       </div>
     </div>
   )

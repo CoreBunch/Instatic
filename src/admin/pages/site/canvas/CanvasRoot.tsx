@@ -23,7 +23,7 @@
  */
 
 import { lazy, Suspense, useContext, useEffect, useEffectEvent, useRef, useState } from 'react'
-import { useEditorStore, selectActiveCanvasPage, selectRightSidebarExpanded } from '@site/store/store'
+import { useEditorStore, selectActiveCanvasPage, selectPropertiesPanelVisible, selectRightSidebarExpanded } from '@site/store/store'
 import type { Breakpoint, PageNode } from '@core/page-tree'
 import { useMobileViewport } from '@admin/lib/mobileViewport'
 import { inlineTextEditSpec } from '@site/store/slices/inlineEditSlice'
@@ -118,7 +118,8 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   const activeBreakpointId = useEditorStore((s) => s.activeBreakpointId)
   const canvasView = useEditorStore((s) => s.canvasView)
   const agentSnapshotCaptureRequest = useEditorStore((s) => s.agentSnapshotCaptureRequest)
-  const rightSidebarExpanded = useEditorStore(selectRightSidebarExpanded)
+  const phone = useMobileViewport()
+  const rightSidebarExpanded = useEditorStore(phone ? selectPropertiesPanelVisible : selectRightSidebarExpanded)
   const isLive = canvasView === 'live'
   const runScripts = useEditorStore((s) => s.runScripts)
   // selectedNodeId is needed here for canvas-level keyboard shortcuts (Delete, Ctrl+D).
@@ -158,7 +159,6 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   //   canEditContent → double-click inline text editing
   //   canEditStyle / canEditStructure → properties sidebar
   const permissions = useEditorPermissions()
-  const phone = useMobileViewport()
   const editingText = useEditorStore((s) => s.activeInlineEdit !== null)
   const canShowTextActions = useEditorStore((s) =>
     s.selectedNodeIds.length === 1 && s.propertiesPanel.collapsed &&

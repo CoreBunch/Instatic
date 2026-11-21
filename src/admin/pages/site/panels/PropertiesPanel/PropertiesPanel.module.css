@@ -183,6 +183,7 @@
     min-height: 0;
     display: grid;
     grid-template-columns: minmax(0, 1fr) 32px;
+    grid-template-rows: minmax(0, 1fr);
     gap: var(--space-3xs);
     min-width: 0;
     overflow: hidden;
@@ -191,6 +192,29 @@
 .selectorScrollContainer {
     min-width: 0;
     min-height: 0;
+    grid-area: 1 / 1;
     overflow-y: auto;
     scrollbar-width: thin;
+}
+
+@media (max-width: 760px) {
+    .panel > [role="toolbar"] {
+        height: auto;
+        min-height: 44px;
+        padding-inline: var(--space-xl);
+    }
+
+    .nodeViewSwitcher .nodeViewButton {
+        min-height: 36px;
+        font-size: var(--text-m);
+    }
+
+    .selectorSurfaceLayout {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .selectorScrollContainer {
+        grid-area: 2 / 1;
+    }
 }
