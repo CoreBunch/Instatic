@@ -56,13 +56,13 @@ describe('PreferencesSection — catalog-driven rendering', () => {
     // Boolean preferences currently declared in `admin/pages/site/preferences/catalog.ts`:
     //   hoverPreview, confirmBeforeDelete,
     //   layersShowIcon, layersShowTag, layersShowClasses,
-    //   layersAutoExpandSelected, layersSmoothScroll,
+    //   layersAutoExpandSelected, layersSmoothScroll, layersArrowKeyReorder,
     //   dimInactiveBreakpoints, propertiesSmoothScroll,
     //   propertiesSectionsExpanded,
     //   spotlightTelemetryEnabled  ← Phase 6: opt-in command-usage telemetry
     // Adding/removing a boolean preference is one catalog edit and this
     // assertion updates with it.
-    expect(screen.getAllByRole('switch')).toHaveLength(11)
+    expect(screen.getAllByRole('switch')).toHaveLength(12)
     expect(screen.getByRole('switch', { name: /preview suggestions on hover/i })).toBeDefined()
     expect(screen.getByRole('switch', { name: /confirm before deleting/i })).toBeDefined()
     expect(screen.getByRole('switch', { name: /show module icon/i })).toBeDefined()
@@ -70,6 +70,7 @@ describe('PreferencesSection — catalog-driven rendering', () => {
     expect(screen.getByRole('switch', { name: /show class names/i })).toBeDefined()
     expect(screen.getByRole('switch', { name: /auto-expand on selection/i })).toBeDefined()
     expect(screen.getByRole('switch', { name: /smooth scroll to selected/i })).toBeDefined()
+    expect(screen.getByRole('switch', { name: /move layers with arrow keys/i })).toBeDefined()
     expect(screen.getByRole('switch', { name: /dim inactive viewports/i })).toBeDefined()
     expect(screen.getByRole('switch', { name: /smooth scroll on tab change/i })).toBeDefined()
     expect(screen.getByRole('switch', { name: /expand style sections by default/i })).toBeDefined()

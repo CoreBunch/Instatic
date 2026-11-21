@@ -62,6 +62,7 @@ export function findMatchingShortcutCommand(
 
   for (const binding of KEYBINDINGS) {
     if (COMPONENT_OWNED_SHORTCUTS.has(binding.commandId)) continue
+    if (binding.enabled && !binding.enabled()) continue
     if (binding.scope === 'canvas' && context.editor?.activeInlineEdit) continue
     if (binding.scope === 'canvas' && !isLayerShortcutSurface(event)) continue
     if (shouldIgnoreEditableTarget(binding.commandId) && isEditableShortcutTarget(event.target)) continue

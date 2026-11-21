@@ -28,6 +28,7 @@
  *   4. Re-run the architecture test: bun test src/__tests__/architecture/keybindings-registry-single-source.test.ts
  */
 
+import { readEditorPreferenceBool } from '@site/preferences/editorPreferences'
 import type { CommandId, CommandShortcut } from './types'
 
 // ─── Key event shape ──────────────────────────────────────────────────────────
@@ -62,6 +63,8 @@ export interface KeybindingDefinition {
   ariaKeyshortcuts?: string
   /** Predicate that returns true when the event matches this binding. */
   match: (e: KeyEventLike) => boolean
+  /** Optional local preference gate for shortcuts that are opt-in. */
+  enabled?: () => boolean
   /** Activation scope — handlers gate firing based on this. */
   scope: 'global' | 'editor' | 'canvas' | 'panels'
   /**
@@ -200,6 +203,28 @@ export const KEYBINDINGS: ReadonlyArray<KeybindingDefinition> = [
     commandId: 'layers.paste',
     shortcut: { mac: '⌘V', win: 'Ctrl+V' },
     match: (e) => (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v',
+    scope: 'canvas',
+    ignoreInEditableField: true,
+  },
+
+  {
+    commandId: 'layers.moveUp',
+    shortcut: { mac: '↑', win: '↑' },
+    ariaKeyshortcuts: 'ArrowUp',
+    match: (e) =>
+      !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'ArrowUp',
+    enabled: () => readEditorPreferenceBool('layersArrowKeyReorder'),
+    scope: 'canvas',
+    ignoreInEditableField: true,
+  },
+
+  {
+    commandId: 'layers.moveDown',
+    shortcut: { mac: '↓', win: '↓' },
+    ariaKeyshortcuts: 'ArrowDown',
+    match: (e) =>
+      !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.key === 'ArrowDown',
+    enabled: () => readEditorPreferenceBool('layersArrowKeyReorder'),
     scope: 'canvas',
     ignoreInEditableField: true,
   },
