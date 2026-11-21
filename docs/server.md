@@ -8,12 +8,16 @@ The server is a single `Bun.serve` process that boots the DB, runs migrations, a
 
 ## TL;DR
 
-- **Entrypoint:** `server/index.ts` (boots DB → migrations → role sync → plugin activation → `Bun.serve`).
+- **Entrypoint:** `server/index.ts` (boots DB → migrations → role sync → plugin activation → `Bun.serve`). Its first act is `unsupportedBunWarning(Bun.version)` from `server/bunVersion.ts`: when the runtime is outside `SUPPORTED_BUN_RANGE` (a constant mirroring `engines.bun`, gated by `bunVersion.test.ts`) it logs one `[server]` warning and boots anyway. The dev launchers use the same module's `devStackBunError` and refuse a Bun older than 1.4.1.
 - **Router:** `server/router.ts` — ordered route table, first-match wins. Each route is a `tryServeX(req, runtime, url, pathname)` function returning `Response | null`.
 - **CMS API:** every `/admin/api/cms/*` request goes through `server/handlers/cms/index.ts`, which runs a CSRF origin check and dispatches to per-resource handler groups.
 - **Auth:** session cookie (`SESSION_COOKIE_NAME`) → `findUserBySessionHash` → `requireCapability(req, db, 'site.read')`. Every state-changing handler starts with one of these guards.
 - **DB:** one `DbClient` interface (`server/db/client.ts`) — tagged-template callable returning `{ rows, rowCount }`. Two adapters: `postgres.ts` (via `Bun.sql`) and `sqlite.ts` (via `bun:sqlite`). Selected by `DATABASE_URL`.
 - **Repositories** (`server/repositories/`) hold all SQL. Handlers never write SQL directly.
+- **Mail** (`server/mail/`) is the only code that sends email: connectors (Resend, Postmark, Mailgun, Brevo, Amazon SES, SMTP), one default sender, templates, and a queue with retries (`queueTemplateMail`) that every email goes through except the admin's own tests (`sendSiteMail`). A development server with nothing set up captures mail instead of sending it. See [`features/email.md`](features/email.md).
+- **OAuth** (`server/oauth/`) is the protocol shared by every authorization server this process runs: issuer origin, PKCE, redirect URI rules, opaque tokens, code exchange, refresh rotation with reuse detection, proof of possession (DPoP), and the token endpoint. It names no table; a realm supplies its rows through a `GrantStore`. MCP connectors (`server/ai/mcp/oauth/`) and member app sign-in (`server/members/apps/`) are the two realms. See [`docs/features/mcp-connectors.md`](features/mcp-connectors.md).
+- **Members** (`server/members/`) is everything about people who sign in on the published site: accounts, sessions, emailed links and the `/_instatic/members/*` endpoints. It shares no code with admin auth beyond hashing, origin checks and the rate limiter. See [`features/members.md`](features/members.md).
+- **Registry** (`server/registry/`) is the only code that talks to the npm registry, npm's downloads API and OSV: a TTL-cached client behind `handlers/cms/registry.ts` (browse) and `publish/runtime/dependencyResolver.ts` (install). `NPM_REGISTRY_URL` selects the registry for both. See [`features/dependencies.md`](features/dependencies.md).
 - **Write policy** (`server/writePolicy/`) — pure per-capability diff validators (`validateSiteWriteDiff`, `validatePageWriteDiff`) shared by BOTH write transports: the HTTP save handler (`server/handlers/cms/siteDocument.ts`) and the collab relay's CRDT update guard (`server/collab/updateGuard.ts`). No DB, no HTTP — plain data in, verdict out.
 - **Plugins:** `server/plugins/runtime.ts` activates installed plugins at boot. Server entrypoints run in per-plugin Bun workers that host QuickJS-WASM (`server/plugins/pluginWorker.ts`, `server/plugins/host/workerPool.ts`, `server/plugins/quickjs/vm.ts`); module packs use `server/plugins/modulePackVm.ts` for server-side evaluation.
 - **Published pages and content rows** are served by `tryServePublicRoute`, which delegates resolution + render to `server/publish/publicRouter.ts`. A warm Layer B cache entry is served before any DB work; on a miss the live render reads the published `SiteDocument` from `site_snapshots` (stored once per publish, referenced by `data_row_versions.site_snapshot_id`, memoised per publish version). Uploads + admin SPA assets are served from disk by `tryServeUpload` and `tryServeStaticAsset`.
@@ -25,7 +29,9 @@ The server is a single `Bun.serve` process that boots the DB, runs migrations, a
 ```text
 server/index.ts
     │
-    ├─→ readServerConfig()                   ← env vars: PORT, DATABASE_URL, UPLOADS_DIR, STATIC_DIR, PUBLIC_ORIGIN, TRUSTED_PROXY_CIDRS
+    ├─→ readServerConfig()                   ← env vars: PORT, DATABASE_URL, UPLOADS_DIR, STATIC_DIR, PUBLIC_ORIGIN, TRUSTED_PROXY_CIDRS, NPM_REGISTRY_URL, INSTATIC_MANAGER_TOKEN, INSTATIC_MANAGER_DIR
+    ├─→ applyPendingRestore(...)             ← server/manager/pending.ts: a restore staged through the Manager API takes effect here, before the DB opens
+    ├─→ configureNpmRegistryUrl(...)         ← server/registry/config.ts: one registry for browsing, resolving and bun install
     │
     ├─→ createDbClient(DATABASE_URL)         ← server/db/index.ts
     │     │
@@ -41,20 +47,25 @@ server/index.ts
     │
     ├─→ createCollabRelay(db)                ← server/collab/relay.ts: live Y docs,
     │                                           debounced persistence, reset protocol
-    ├─→ createCollabSocketLayer(relay)       ← server/collab/socket.ts: multiplexed
-    │                                           y-protocols wire + awareness
-    ├─→ Bun.serve({ fetch: req => handleServerRequest(req, runtime),
-    │               websocket: collabSocket.handlers })
-    │     (the co-editing socket `/admin/api/cms/site-socket` upgrades at this
-    │      boundary — see server/collab/socket.ts; everything else goes
-    │      through the router)
-    │
-    └─→ collabSocket.setPublisher(server)    ← wire the collab fan-out to Bun pub/sub
+    ├─→ createCollabSocketLayer(relay, db)   ← server/collab/socket.ts: multiplexed
+    │                                           authorized y-protocols wire + awareness
+    └─→ Bun.serve({ fetch: req => handleServerRequest(req, runtime),
+                    websocket: collabSocket.handlers })
+          (the co-editing socket `/admin/api/cms/site-socket` upgrades at this
+           boundary — see server/collab/socket.ts; everything else goes
+           through the router)
 ```
 
 Boot is sequential and fail-fast. If migrations fail, the process exits. If a plugin's `activate` throws, the host logs `[plugin:<id>]` and continues — one bad plugin doesn't bring the server down.
 
 ---
+
+The HTTP server accepts request bodies up to 1 GiB, matching Site Import's
+archive input limit. CMS archive imports stream media entries to disk; their
+manifest has a separate 256 MiB limit. JSON bodies retain a 128 MiB default
+limit in `readValidatedBody`, enforced while streaming even without a
+`Content-Length` header; endpoints can set a smaller limit. Oversized JSON
+requests receive HTTP 413.
 
 ## Routing
 
@@ -81,11 +92,13 @@ const routes: readonly RouteHandler[] = [
   tryServeHealth,                  // /health
   tryServeAi,                      // /admin/api/ai/*         → server/ai/handlers/
   tryServeCmsApi,                  // /admin/api/cms/*        → handlers/cms/index.ts
-  tryServeLoopRuntimeAsset,        // /_instatic/loop-runtime.js (fixed CMS asset)
+  tryServeBranchPreviewLink,       // /_instatic/preview/<token> | /exit → publish/publicRoutes.ts
+                                   //   sets / clears the branch preview cookie
+  tryServeLoopRuntimeAsset,        // /_instatic/assets/loop-runtime.js?v=<contentHash> (fixed CMS asset)
   tryServeLoop,                    // /_instatic/loop/*       → handlers/cms/loop.ts
-  tryServeHoleRuntimeAsset,        // /_instatic/hole-runtime.js (fixed CMS asset)
+  tryServeHoleRuntimeAsset,        // /_instatic/hole-runtime.js?v=<contentHash> (fixed CMS asset)
   tryServeHole,                    // /_instatic/hole/*       → handlers/cms/hole.ts
-  tryServeModuleJsAsset,           // /_instatic/module-js/*  → handlers/cms/moduleJs.ts
+  tryServeModuleJsAsset,           // /_instatic/module-js/<id>.js?v=<contentHash>  → handlers/cms/moduleJs.ts
   tryServePublicForm,              // /_instatic/form/*       → forms/handler.ts
   tryServeRuntimeAsset,            // /_instatic/assets/*     → published runtime assets
   tryServeRuntimePackageNamespace, // /_instatic/runtime/cache/<hash>/<...> → bun install workspace
@@ -95,9 +108,11 @@ const routes: readonly RouteHandler[] = [
   tryServeUpload,                  // /uploads/* → uploadsDir (with nosniff hardening)
   tryServeAdminApp,                // /admin/* → dist/index.html (SPA fallback)
   tryServePublicRoute,             // /<slug> OR /<route-base>/<row-slug>
-                                   //   → server/publish/publicRouter.ts
-                                   //   resolves to page snapshot OR data row + template,
-                                   //   live-renders, runs publish.html pipeline
+                                   //   → server/publish/publicRoutes.ts: a live preview
+                                   //   cookie renders the branch draft (branchPreview.ts),
+                                   //   otherwise publicRouter.ts resolves to page snapshot
+                                   //   OR data row + template, live-renders, runs the
+                                   //   publish.html pipeline
   trySetupRedirect,                // first-run redirect → /admin/setup
   tryServeNotFoundPage,            // fall-through GET → site's 404 page (notFound
                                    //   template; baked 404.html artefact, else live
@@ -140,7 +155,9 @@ This prevents an unknown path under a known namespace from accidentally matching
 
 1. **CSRF defense in depth.** State-changing methods (`POST/PUT/PATCH/DELETE`) must come from an `Origin` matching a configured public origin (`PUBLIC_ORIGIN`, auto-detected from `RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN`), or a dev allowlist entry. With nothing configured the check falls back to the inbound `Host` header. Forwarded headers (`X-Forwarded-Host` / `X-Forwarded-Proto`) are never consulted, so `TRUSTED_PROXY_CIDRS` has no bearing on CSRF. `SameSite=Lax` already covers most CSRF; this catches the same-site-different-subdomain edge.
 
-2. **Group dispatch.** The handler walks an ordered chain of route-group handlers, each owning a resource:
+2. **Branch scope.** `resolveBranchScope(req, db)` (`server/branches/scope.ts`) turns the `X-Instatic-Branch` header into a `BranchScope` — `MAIN_SCOPE` when absent, `400` for a malformed id, `404 { code: 'branch_not_found' }` for an unknown one. Content handlers receive it and pass it to every repository call; see [`features/branches.md`](features/branches.md).
+
+3. **Group dispatch.** The handler walks an ordered chain of route-group handlers, each owning a resource:
 
 ```ts
 const response =
@@ -151,21 +168,23 @@ const response =
   ?? (await handleUsersRoutes(req, db))
   ?? (await handleRolesRoutes(req, db))
   ?? (await handleAuditRoutes(req, db))
-  ?? (await handleSiteRoutes(req, db))
-  ?? (await handlePagesRoutes(req, db))
-  ?? (await handleComponentsRoutes(req, db))
-  ?? (await handleRuntimeRoutes(req, db))
+  ?? (await handleBranchesRoutes(req, db, scope, options))
+  ?? (await handleSiteRoutes(req, db, scope))
+  ?? (await handlePagesRoutes(req, db, scope))
+  ?? (await handleComponentsRoutes(req, db, scope))
+  ?? (await handleRuntimeRoutes(req, db, scope))
+  ?? (await handleRegistryRoutes(req, db))              // npm registry proxy, site.read
   ?? (await handleMediaFolderRoutes(req, db))           // before /media/:id
   ?? (await handleMediaStorageAdminRoutes(req, db, …))  // before /media/:id
   ?? (await handleMediaRoutes(req, db, …))
   ?? (await handlePluginsRoutes(req, db, …))
-  ?? (await handleDataRoutes(req, db))
+  ?? (await handleDataRoutes(req, db, scope, options))
   ?? (await handleDashboardRoutes(req, db))
   ?? (await handleFontsRoutes(req, db, …))
-  ?? (await handlePublishRoutes(req, db))
-  ?? (await handleExportRoute(req, db, options))
-  ?? (await handleImportPreviewRoute(req, db))          // before /import (longer path)
-  ?? (await handleImportRoute(req, db, options))
+  ?? (await handlePublishRoutes(req, db, scope))         // 409 off main
+  ?? (await handleExportRoute(req, db, scope, options))
+  ?? (await handleImportPreviewRoute(req, db, scope))   // before /import (longer path)
+  ?? (await handleImportRoute(req, db, scope, options))
 ```
 
 Each group module owns its URL matching and returns `Response | null`. The first non-null wins. Order matters — handler order comments in `index.ts` document the load-bearing precedence (e.g. media folder/storage routes must run before `/media/:id` because that pattern would otherwise eat them).
@@ -296,9 +315,10 @@ Use `binaryResponse` whenever a route handler returns binary content (runtime as
 | `sessions.ts`     | Session lookup, MFA gate, step-up timer                                    |
 | `authz.ts`        | `requireAuthenticatedUser`, `requireCapability`, `requireAnyCapability`    |
 | `capabilities.ts` | `CoreCapability` enum and per-capability membership rules                  |
+| `dataAccess.ts`   | Table-family and row-ownership rules for data rows (`canReadTable`, `canReadDataRow`, `resolveRowAccess`, `rowVisibilityFor`), shared by the HTTP data handlers, the AI read tools, and the MCP relay |
 | `lockout.ts`      | Failed-login lockout policy                                                |
 | `mfa.ts`          | TOTP enrollment, verification                                              |
-| `rateLimit.ts`    | Token-bucket rate limiters                                                 |
+| `rateLimit.ts`    | Sliding-window rate limiters (sign-in, MFA, members)                       |
 | `security.ts`     | `isStateChangingMethod`, `originAllowed`, `configurePublicOrigins`, `DEV_ORIGIN_ALLOWLIST`, IP stamp |
 | `deviceLabel.ts`  | Device-fingerprint label for the sessions panel                            |
 
@@ -445,11 +465,12 @@ Same code, both engines.
 ### The two adapters
 
 - **`server/db/postgres.ts`** wraps `Bun.sql` (native Bun Postgres client). `rowCount` is read from `result.count` (Bun's CommandComplete affected-row count) rather than `result.length`, which is always 0 for non-RETURNING writes.
-- **`server/db/sqlite.ts`** wraps `bun:sqlite`, with four custom behaviors:
+- **`server/db/sqlite.ts`** wraps `bun:sqlite`, with five custom behaviors:
   1. `toBindable(value)` converts JS values (objects, dates, booleans, `Uint8Array`) to SQLite-bindable types.
   2. On read, any column ending in `_json` whose value is a non-empty string is auto-`JSON.parse`d.
-  3. On boot, PRAGMAs are set: `journal_mode = WAL`, `foreign_keys = ON`, `synchronous = NORMAL`, `busy_timeout = 5000`.
-  4. Transaction serialization: concurrent `db.transaction()` calls are queued via a promise chain so `BEGIN` is never issued while another transaction is open on the single shared connection. This prevents "cannot start a transaction within a transaction" errors when transaction callbacks `await` async work.
+  3. On read, any column ending in `_at` holding SQLite's `YYYY-MM-DD HH:MM:SS` stamp is rewritten to ISO 8601 UTC. Repositories bind `nowIso()` rather than stamping with `current_timestamp`, so only three legacy DDL defaults can still write that shape; V8 would otherwise parse it as local time.
+  4. On boot, PRAGMAs are set: `journal_mode = WAL`, `foreign_keys = ON`, `synchronous = NORMAL`, `busy_timeout = 5000`.
+  5. Transaction serialization: concurrent `db.transaction()` calls are queued via a promise chain so `BEGIN` is never issued while another transaction is open on the single shared connection. This prevents "cannot start a transaction within a transaction" errors when transaction callbacks `await` async work.
 
 Both adapters return the same `DbResult<Row>` shape, so callers never branch on dialect.
 
@@ -485,7 +506,7 @@ Three-layer model: **static-by-default, dynamic-by-auto-detection**.
 
 - **Layer A — static-to-disk.** **Every** page is baked at publish time. A fully-static page (no dynamic modules, no request-dependent bindings/loop sources, no VC refs to dynamic VCs) bakes a complete document; a page with dynamic nodes bakes its static **shell** with `<instatic-hole>` placeholders (the dynamic nodes are Layer C holes). HTML is written to `uploads/published/current/<route>.html`, and the CSS bundles (`/_instatic/css/…`) and runtime JS (`/_instatic/assets/…`) are baked into the same slot. The visitor router reads all of these directly off disk (`readArtefact` / `readStaticAsset`) — **a published page never touches the DB for HTML, CSS, or JS.** TTFB ≤ 1.5 ms.
 - **Layer B — in-memory LRU.** Requests with real loop-pagination query params (`loop_<nodeId>_page`) bypass the disk fast-path and render live, memoised by `(urlPath, canonicalQuery)`. Junk params collapse to the empty canonical query and still hit Layer A. Single-flight. Every publish bumps `publishVersion` so the entire cache evicts lazily. The version is captured at render start — if a publish lands before the factory resolves, the result is returned to the caller but not stored; the next request re-renders against the fresh snapshot.
-- **Layer C — server islands ("holes").** When `findDynamicNodeIds(...)` classifies a node as dynamic (module flagged `dynamic: true`, or its bindings/loop source declare `requestDependent: true` / `perVisitor: true`, or it's a VC ref to a dynamic VC), the publisher emits a `<instatic-hole>` placeholder with an optional `staticPlaceholder(props)` skeleton. A ~1.1 KB `IntersectionObserver` runtime fetches `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` lazily as the placeholder enters the viewport, forwarding the originating page path/query into the fragment render. **The hole fragment is the only request that reads the DB for an otherwise-static page.** Shared hole responses are cached via Layer B's LRU; per-visitor holes bypass it with `Cache-Control: no-store`.
+- **Layer C — server islands ("holes").** When `findDynamicNodeIds(...)` classifies a node as dynamic (module flagged `dynamic: true`, or its bindings/loop source declare `requestDependent: true` / `perVisitor: true`, or it's a VC ref to a dynamic VC), the publisher emits a `<instatic-hole>` placeholder with an optional `staticPlaceholder(props)` skeleton. A ~1.1 KB `IntersectionObserver` runtime fetches `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` lazily as the placeholder enters the viewport, forwarding the originating page path/query into the fragment render. **The hole fragment is the only request that reads the DB for an otherwise-static page.** Shared hole responses are cached via Layer B's LRU; per-visitor holes bypass it with `Cache-Control: no-store`.
 
 Authors don't toggle anything. `src/core/publisher/dynamicDetection.ts:findDynamicNodeIds` is backed by the single walker that powers Layer A's shell-vs-complete bake and Layer C's placeholder emission. The rules live in exactly one file.
 
@@ -531,15 +552,19 @@ Server-side publishing helpers live in `server/publish/`:
 | `publicRouter.ts`                 | Visitor URL → resolution → Response. Composes Layer A disk-read + Layer B cache. Single entry for every visitor HTML request. |
 | `staticArtefact.ts`               | Layer A. Two-slot symlink swap (`current → slot-{a,b}`), atomic per-file `tmp + rename`, slot-aware read/write/purge. |
 | `renderCache.ts`                  | Layer B. Bounded LRU keyed by `(urlPath, canonicalQuery)`, entries versioned. Single-flight on cache miss. `bumpPublishVersion()` invalidates lazily; version captured at render start so mid-flight publishes discard without caching stale HTML. |
-| `holeRuntime.ts`                  | Layer C client-side runtime (~1.1 KB). Exports `runInstaticHoleRuntime` (TS source) and `HOLE_RUNTIME_JS` (IIFE-serialized for browser delivery). |
+| `holeRuntime.ts`                  | Layer C client-side runtime (~1.1 KB). Exports `runInstaticHoleRuntime` (TS source), `HOLE_RUNTIME_JS` (IIFE-serialized for browser delivery) and `HOLE_RUNTIME_VERSION` (its content hash, the `?v=` on the runtime's script tag). |
+| `loopRuntime.ts`                  | Infinite-loop client runtime. Exports `LOOP_RUNTIME_JS` and `LOOP_RUNTIME_VERSION` (its content hash, the `?v=` on the runtime's script tag). |
+| `assetVersion.ts`                 | `assetContentVersion(body)` (the `?v=` content hash) and `serveVersionedScript`, the response rule shared by `/_instatic/module-js/<id>.js`, `/_instatic/hole-runtime.js` and `/_instatic/assets/loop-runtime.js`: `public, max-age=3600` only when `?v=` names the body served, `no-cache` otherwise, with `ETag: "<contentHash>"` on both and `304 Not Modified` when `If-None-Match` names it. |
 | `publishSite.ts`                  | Full-site publish orchestrator (`publishDraftSite`): phase-1 builds, the short `persistSitePublish` transaction, Layer A bake + slot swap, Layer B bump. |
-| `publishRow.ts`                   | Per-row publish orchestrator (`publishDataRow`) + `removeDataRowArtefact`: persist via the data repository, in-place artefact update, Layer B bump. |
+| `publishRow.ts`                   | Per-row publish orchestrator (`publishDataRow`) + `retractDataRowArtefacts`: page rows use the site pipeline with published shared resources and just the selected draft; other rows use an in-place artefact update and Layer B bump. Both also drop the baked pages that loop over the row's table. |
+| `loopArtefacts.ts`                | `removeArtefactsLoopingOverTable`: removes from the active slot every baked route whose render tree loops over a table, so listings follow row changes without a site publish. |
 | `publicRenderer.ts`               | `renderPublishedSnapshot`, `renderPublishedDataRowTemplate` — snapshot-aware wrappers around `publishPage`. |
 | `publishedHtmlPipeline.ts`        | Plugin frontend-asset injection + `publish.html` filter chain. Runs at publish time for every baked page (complete doc or hole shell); also runs in the Layer B factory for query-string / live renders (cached). |
 | `siteCssBundle.ts`                | Per-site reset / framework / style CSS bundles (hashed filenames).  |
 | `republish.ts`                    | Bulk re-publish (after a settings change touches all pages).        |
 | `publishScheduler.ts`             | Scheduled publish jobs.                                             |
 | `frontendInjections.ts`           | Plugin-contributed frontend scripts injected into published HTML.   |
+| `canvasStylesheets.ts`            | The stylesheet share of that plan, as CSS text for the editor canvas. |
 | `mediaPresentation.ts`            | `<picture>` / `<img srcset>` materialization at publish time.       |
 | `mediaPrefetch.ts`, `loopPrefetch.ts` | Pre-warm caches needed by published pages.                      |
 | `runtime/packageServer.ts`        | Serve per-site `bun install` workspace under `/_instatic/runtime/cache/`. |

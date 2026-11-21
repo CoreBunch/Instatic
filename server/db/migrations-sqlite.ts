@@ -28,6 +28,69 @@ import type { Migration } from './runMigrations'
  * same unified store as posts. The legacy "pages" and "page_versions" tables
  * have been removed from this baseline.
  */
+/**
+ * Every `*_at` text column that existed when migration 030 shipped. Rows
+ * stamped by SQL `current_timestamp` hold `YYYY-MM-DD HH:MM:SS`, which sorts
+ * before the ISO 8601 `T` form written from JS and compares wrongly against a
+ * bound ISO cutoff (`published_at >= ${sinceIso}` misses the whole boundary
+ * day). 030 rewrites those values in place so every timestamp column holds one
+ * shape. Checked against the live schema by
+ * `src/__tests__/db/iso-timestamp-migration.test.ts`.
+ */
+export const ISO_TIMESTAMP_COLUMNS_030: ReadonlyArray<readonly [table: string, columns: readonly string[]]> = [
+  ['active_media_storage_adapter', ['elected_at']],
+  ['active_media_variant_delegate', ['elected_at']],
+  ['ai_conversations', ['created_at', 'updated_at', 'deleted_at']],
+  ['ai_defaults', ['updated_at']],
+  ['ai_mcp_connectors', ['created_at', 'last_used_at', 'revoked_at', 'expires_at']],
+  ['ai_mcp_oauth_clients', ['created_at']],
+  ['ai_mcp_oauth_codes', ['created_at', 'expires_at', 'consumed_at']],
+  ['ai_mcp_oauth_tokens', ['created_at', 'expires_at', 'revoked_at']],
+  ['ai_messages', ['created_at']],
+  ['ai_model_pricing', ['refreshed_at']],
+  ['ai_provider_credentials', ['created_at', 'updated_at', 'last_used_at']],
+  ['audit_events', ['created_at']],
+  ['collab_documents', ['updated_at']],
+  ['data_row_redirects', ['created_at']],
+  ['data_row_versions', ['published_at', 'created_at']],
+  ['data_rows', ['created_at', 'updated_at', 'published_at', 'scheduled_publish_at', 'deleted_at']],
+  ['data_tables', ['created_at', 'updated_at', 'deleted_at']],
+  ['installed_plugins', ['installed_at', 'updated_at']],
+  ['login_attempts', ['attempted_at']],
+  ['media_assets', ['deleted_at', 'replaced_at', 'created_at']],
+  ['media_folders', ['created_at']],
+  ['media_smart_folders', ['created_at']],
+  ['media_usage_refs', ['computed_at']],
+  ['plugin_crash_events', ['occurred_at']],
+  ['plugin_media_sources', ['created_at', 'updated_at']],
+  ['plugin_records', ['created_at', 'updated_at']],
+  ['plugin_schedule_runs', ['started_at', 'finished_at']],
+  ['plugin_schedules', ['last_run_at', 'last_finished_at', 'next_run_at', 'claimed_at', 'created_at', 'updated_at']],
+  ['plugin_secrets', ['created_at', 'updated_at']],
+  ['published_runtime_assets', ['created_at']],
+  ['roles', ['created_at', 'updated_at']],
+  ['schema_migrations', ['applied_at']],
+  ['sessions', ['created_at', 'last_seen_at', 'expires_at', 'revoked_at', 'mfa_passed_at', 'step_up_expires_at']],
+  ['site', ['created_at', 'updated_at']],
+  ['site_branch_merge_requests', ['resolved_at', 'created_at', 'updated_at']],
+  ['site_branch_merges', ['undone_at', 'created_at']],
+  ['site_branch_previews', ['expires_at', 'created_at', 'revoked_at']],
+  ['site_branch_review_comments', ['created_at']],
+  ['site_branches', ['created_at', 'updated_at']],
+  ['site_snapshots', ['created_at']],
+  ['user_preferences', ['updated_at']],
+  ['users', ['last_login_at', 'password_updated_at', 'mfa_enabled_at', 'created_at', 'updated_at', 'deleted_at']],
+]
+
+function isoTimestampRewrite030(): string {
+  return ISO_TIMESTAMP_COLUMNS_030.flatMap(([table, columns]) =>
+    columns.map(
+      (column) =>
+        `update ${table} set ${column} = strftime('%Y-%m-%dT%H:%M:%fZ', ${column}) where ${column} like '____-__-__ __:__:__%';`,
+    ),
+  ).join('\n')
+}
+
 export const sqliteMigrations: Migration[] = [
   {
     id: '001_baseline',
@@ -1242,6 +1305,629 @@ export const sqliteMigrations: Migration[] = [
                  from json_each(roles.capabilities_json)
                 where value = 'roles.manage'
              );
+    `,
+  },
+  {
+    // Stable provenance for plugin-managed media. The mapping lets an
+    // integration converge on one media asset instead of creating a duplicate
+    // on every sync, and keeps replacements on the same asset id.
+    id: '026_plugin_media_sources',
+    sql: `
+      create table if not exists plugin_media_sources (
+        plugin_id text not null references installed_plugins(id) on delete cascade,
+        source_key text not null,
+        asset_id text not null references media_assets(id) on delete cascade,
+        source_version text,
+        content_hash text not null,
+        created_at text not null default current_timestamp,
+        updated_at text not null default current_timestamp,
+        primary key (plugin_id, source_key),
+        unique (asset_id)
+      );
+
+      create index if not exists plugin_media_sources_asset_idx
+        on plugin_media_sources (asset_id);
+    `,
+  },
+  {
+    // Site branches. Every content row keeps its LOGICAL id on every branch;
+    // the physical primary key stays `id` and is `<branch>:<logical>` off
+    // main (see src/core/branches/ids.ts). Existing rows all belong to
+    // `main`, where physical == logical, so nothing moves. Collab doc ids
+    // gain a branch segment. Nothing is dropped except the table-slug
+    // uniqueness index, which is recreated per branch.
+    id: '027_site_branches',
+    sql: `
+      create table if not exists site_branches (
+        id text primary key,
+        name text not null,
+        base_branch_id text,
+        created_by_user_id text references users(id) on delete set null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      insert into site_branches (id, name, base_branch_id)
+      values ('main', 'main', null)
+      on conflict (id) do nothing;
+
+      alter table site add column branch_id text not null default 'main';
+      alter table site add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) virtual;
+
+      create unique index if not exists site_branch_idx
+        on site (branch_id);
+
+      alter table data_tables add column branch_id text not null default 'main';
+      alter table data_tables add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) virtual;
+
+      create index if not exists data_tables_branch_idx
+        on data_tables (branch_id);
+
+      drop index if exists data_tables_slug_active_idx;
+
+      create unique index if not exists data_tables_branch_slug_active_idx
+        on data_tables (branch_id, slug)
+        where deleted_at is null;
+
+      alter table data_rows add column branch_id text not null default 'main';
+      alter table data_rows add column logical_id text generated always as (
+        case when branch_id = 'main' then id else substr(id, length(branch_id) + 2) end
+      ) virtual;
+
+      create index if not exists data_rows_branch_idx
+        on data_rows (branch_id);
+
+      update collab_documents
+         set doc_id = 'site:main'
+       where doc_id = 'site:default';
+
+      update collab_documents
+         set doc_id = 'page:main:' || substr(doc_id, 6)
+       where doc_id like 'page:%'
+         and doc_id not like 'page:main:%';
+
+      update collab_documents
+         set doc_id = 'component:main:' || substr(doc_id, 11)
+       where doc_id like 'component:%'
+         and doc_id not like 'component:main:%';
+
+      update collab_documents
+         set doc_id = 'layout:main:' || substr(doc_id, 8)
+       where doc_id like 'layout:%'
+         and doc_id not like 'layout:main:%';
+
+      create table if not exists site_branch_bases (
+        branch_id text not null references site_branches(id) on delete cascade,
+        kind text not null,
+        logical_id text not null,
+        content_hash text not null,
+        content_json text not null default '{}',
+        primary key (branch_id, kind, logical_id)
+      );
+
+      create table if not exists site_branch_previews (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        token_hash text not null,
+        expires_at text,
+        created_by_user_id text references users(id) on delete set null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        revoked_at text
+      );
+
+      create unique index if not exists site_branch_previews_token_idx
+        on site_branch_previews (token_hash);
+
+      create index if not exists site_branch_previews_branch_idx
+        on site_branch_previews (branch_id);
+
+      -- Branch powers are Owner/Admin by default: create forks a branch and
+      -- reaches the branches you forked; manage reaches every branch and
+      -- merges. The boot-time role sync re-applies both; the migration
+      -- records them for the seed snapshot.
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'site.branches.create'),
+             updated_at = current_timestamp
+       where id in ('owner', 'admin')
+         and not exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'site.branches.create'
+             );
+
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'site.branches.manage'),
+             updated_at = current_timestamp
+       where id in ('owner', 'admin')
+         and not exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'site.branches.manage'
+             );
+    `,
+  },
+  {
+    id: '028_site_branch_reviews',
+    sql: `
+      create table if not exists site_branch_merge_requests (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        requested_by_user_id text references users(id) on delete set null,
+        note text not null default '',
+        content_hash text not null default '',
+        status text not null default 'open',
+        resolved_by_user_id text references users(id) on delete set null,
+        resolved_at text,
+        resolution_note text not null default '',
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create index if not exists site_branch_merge_requests_branch_idx
+        on site_branch_merge_requests (branch_id, status, created_at desc);
+
+      create unique index if not exists site_branch_merge_requests_open_idx
+        on site_branch_merge_requests (branch_id)
+        where status = 'open';
+
+      create table if not exists site_branch_review_comments (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        request_id text references site_branch_merge_requests(id) on delete set null,
+        entity_key text not null default '',
+        author_user_id text references users(id) on delete set null,
+        body text not null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create index if not exists site_branch_review_comments_branch_idx
+        on site_branch_review_comments (branch_id, created_at);
+    `,
+  },
+  {
+    id: '029_site_branch_merges',
+    sql: `
+      create table if not exists site_branch_merges (
+        id text primary key,
+        branch_id text not null references site_branches(id) on delete cascade,
+        direction text not null,
+        applied_by_user_id text references users(id) on delete set null,
+        change_count integer not null default 0,
+        entries_json text not null default '[]',
+        undone_at text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create index if not exists site_branch_merges_branch_idx
+        on site_branch_merges (branch_id, created_at desc);
+    `,
+  },
+  {
+    // Repositories now bind ISO 8601 timestamps from JS (`nowIso()`) instead
+    // of stamping with SQL `current_timestamp`, which on SQLite wrote
+    // `YYYY-MM-DD HH:MM:SS`. Convert the rows written before that change so a
+    // column never mixes the two shapes: the space form sorts before the `T`
+    // form and compares wrongly against bound ISO cutoffs.
+    id: '030_iso_timestamps',
+    sql: isoTimestampRewrite030(),
+  },
+  {
+    // Which plugin created this table via `cms.content.tables.create` (null
+    // for user/import-created tables). The plugin host's `@own-created`
+    // contentAccess marker resolves against this column, so a plugin keeps
+    // access to tables it created at runtime — durable across restarts and
+    // admin-side slug renames. Nullable, no default: purely additive.
+    id: '031_data_tables_created_by_plugin',
+    sql: `
+      alter table data_tables add column created_by_plugin_id text;
+    `,
+  },
+  {
+    // Outgoing mail. `mail_connectors` are the accounts the server can send
+    // through (SMTP, Amazon SES); each secret is encrypted with the master
+    // key. `mail_settings` is one row: which connector sends, and as whom.
+    // `mail_templates` holds only the templates an owner has edited; the
+    // defaults live in code. `mail_outbox` is the delivery log; `body_text`
+    // is filled only in development, where mail is captured instead of
+    // sent, because bodies carry live sign-in and reset links.
+    id: '032_mail',
+    sql: `
+      create table if not exists mail_connectors (
+        id text primary key,
+        kind text not null,
+        label text not null,
+        config_json text not null default '{}',
+        secret_ciphertext blob,
+        secret_iv blob,
+        key_fingerprint text,
+        last_used_at text,
+        last_error text,
+        created_by_user_id text references users(id) on delete set null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create table if not exists mail_settings (
+        id text primary key,
+        default_connector_id text references mail_connectors(id) on delete set null,
+        from_address text not null default '',
+        from_name text not null default '',
+        reply_to text not null default '',
+        updated_by_user_id text references users(id) on delete set null,
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create table if not exists mail_templates (
+        template_key text primary key,
+        subject text not null,
+        body_markdown text not null,
+        updated_by_user_id text references users(id) on delete set null,
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create table if not exists mail_outbox (
+        id text primary key,
+        kind text not null,
+        to_address text not null,
+        subject text not null,
+        status text not null,
+        connector_id text,
+        connector_label text,
+        error text,
+        body_text text,
+        provider_message_id text,
+        duration_ms integer,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create index if not exists mail_outbox_created_idx
+        on mail_outbox (created_at desc);
+
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'mail.manage'),
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+       where id in ('owner', 'admin')
+         and not exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'mail.manage'
+             );
+    `,
+  },
+  {
+    // Site members: people who sign up and log in on the published site,
+    // kept fully apart from admin `users`. Sessions and tokens store only
+    // hashes. `member_tags` is keyed (member, tag, source) so a tag granted
+    // by a plugin and the same tag granted by hand are separate rows.
+    // `member_settings` is one installation-wide row, deliberately outside
+    // the branched, exported site document. `data_tables.access_json` holds
+    // a table's access rule for its entry routes (null = anyone).
+    id: '033_members',
+    sql: `
+      create table if not exists members (
+        id text primary key,
+        email text not null,
+        email_normalized text not null,
+        password_hash text,
+        status text not null default 'active',
+        email_verified_at text,
+        profile_json text not null default '{}',
+        last_login_at text,
+        deleted_at text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create unique index if not exists members_email_active_idx
+        on members (email_normalized) where deleted_at is null;
+
+      create table if not exists member_sessions (
+        id_hash text primary key,
+        member_id text not null references members(id) on delete cascade,
+        ip_address text,
+        user_agent text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        last_seen_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        expires_at text not null,
+        revoked_at text
+      );
+
+      create index if not exists member_sessions_member_idx
+        on member_sessions (member_id);
+
+      create table if not exists member_tokens (
+        id_hash text primary key,
+        member_id text not null references members(id) on delete cascade,
+        kind text not null,
+        payload_json text not null default '{}',
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        expires_at text not null,
+        used_at text
+      );
+
+      create index if not exists member_tokens_member_kind_idx
+        on member_tokens (member_id, kind);
+
+      create table if not exists member_tags (
+        member_id text not null references members(id) on delete cascade,
+        tag text not null,
+        source text not null,
+        expires_at text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        primary key (member_id, tag, source)
+      );
+
+      create index if not exists member_tags_tag_idx
+        on member_tags (tag);
+
+      create table if not exists member_events (
+        id text primary key,
+        member_id text references members(id) on delete set null,
+        kind text not null,
+        ip_address text,
+        user_agent text,
+        metadata_json text not null default '{}',
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create index if not exists member_events_member_idx
+        on member_events (member_id, created_at desc);
+
+      create table if not exists member_settings (
+        id text primary key,
+        signup_mode text not null default 'closed',
+        profile_fields_json text not null default '[]',
+        pages_json text not null default '{}',
+        updated_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      alter table data_tables add column access_json text;
+
+      -- The capability-less admin role was called "Member", which now reads
+      -- as a site member. Relabel it, unless an owner already renamed it.
+      update roles
+         set name = 'No access',
+             description = 'An admin account that can sign in but do nothing. Not a site member: those sign in on the published site.'
+       where id = 'member'
+         and name = 'Member'
+         and description = 'Public-facing member account — no admin access by default.';
+
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'members.read'),
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+       where id in ('owner', 'admin')
+         and not exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'members.read'
+             );
+
+      update roles
+         set capabilities_json = json_insert(capabilities_json, '$[#]', 'members.manage'),
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+       where id in ('owner', 'admin')
+         and not exists (
+               select 1
+                 from json_each(roles.capabilities_json)
+                where value = 'members.manage'
+             );
+    `,
+  },
+  {
+    // Outgoing email waits here until a connector takes it. A row holds the
+    // template key and the values to fill it with, encrypted, because the
+    // values carry live sign-in links; it is deleted once the email is sent
+    // or given up on. `lane` 0 is the core's own mail, which always goes
+    // before a plugin's. `deliver_before` is the moment after which sending
+    // would be pointless (the link in it has expired). `mail_outbox` gains
+    // the attempt count and the time of the next try, so the activity log
+    // can say a message is waiting. `mail_connectors.delivery_paused_at` is
+    // set while a connector refuses the account itself (a wrong key or
+    // password): queued email is then held, and one email at a time is let
+    // through as a probe, until one gets through. `accepted_at` marks a row
+    // whose email the provider has taken: such a row is never sent again,
+    // even if recording the outcome and deleting the row failed.
+    id: '034_mail_queue',
+    sql: `
+      create table if not exists mail_queue (
+        id text primary key,
+        outbox_id text not null,
+        kind text not null,
+        to_address text not null,
+        source text not null default 'core',
+        reference text,
+        lane integer not null default 0,
+        payload_ciphertext blob not null,
+        payload_iv blob not null,
+        attempts integer not null default 0,
+        next_attempt_at text not null,
+        deliver_before text not null,
+        claimed_at text,
+        accepted_at text,
+        suspect_at text,
+        last_error text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+
+      create index if not exists mail_queue_due_idx
+        on mail_queue (lane, next_attempt_at);
+
+      create index if not exists mail_queue_source_idx
+        on mail_queue (source);
+
+      alter table mail_outbox add column attempts integer not null default 0;
+      alter table mail_outbox add column next_attempt_at text;
+      alter table mail_outbox add column source text not null default 'core';
+
+      alter table mail_connectors add column delivery_paused_at text;
+    `,
+  },
+  {
+    // Email a plugin asks for. `mail_counters` holds the two limits as rows
+    // that are raised by one conditional UPDATE, so no two concurrent sends,
+    // on one server or several, can both take the last place: `to:<address>`
+    // counts a plugin's emails to one recipient in one clock hour (`bucket`),
+    // and `backlog` counts how many of a plugin's emails are waiting.
+    // `mail_queue.member_id` remembers that the sender named a site member
+    // rather than an address, so the outcome can be reported without ever
+    // handing the member's address back. `mail_outbox.source_label` is the
+    // sending plugin's name at the time, so the log still says who sent an
+    // email after that plugin is gone. `installed_plugins.install_id` is a
+    // random id given to an install when it first sends email, stamped on
+    // each email it queues (`mail_queue.install_id`): what became of an email
+    // is told only to the install that queued it, never to a later install of
+    // the same plugin id.
+    id: '035_plugin_mail',
+    sql: `
+      create table if not exists mail_counters (
+        source text not null,
+        scope text not null,
+        bucket text not null default '',
+        count integer not null default 0,
+        primary key (source, scope, bucket)
+      );
+
+      alter table mail_queue add column member_id text;
+
+      alter table mail_outbox add column source_label text;
+
+      alter table installed_plugins add column install_id text;
+
+      alter table mail_queue add column install_id text;
+    `,
+  },
+  {
+    // Postgres only: record data bound as a JSON string was stored as a
+    // string scalar no filter could see; its twin unwraps those rows. SQLite
+    // stores JSON as text either way, so there is nothing to repair here.
+    id: '036_plugin_records_json_repair',
+    sql: `
+      select 1;
+    `,
+  },
+  {
+    // Plugin storage: an optional unique key per record (derived from the
+    // resource's declared uniqueField) and a version counter for conditional
+    // updates. Schema only. NULL keys are distinct in a unique index on both
+    // dialects, so existing rows and resources without a uniqueField are
+    // unaffected.
+    id: '037_plugin_record_keys',
+    sql: `
+      alter table plugin_records add column unique_key text;
+
+      alter table plugin_records add column version integer not null default 0;
+
+      create unique index if not exists plugin_records_unique_key_idx
+        on plugin_records (plugin_id, resource_id, unique_key);
+    `,
+  },
+  {
+    // Sign-in for apps: a site member approves an app (Instatic Desktop, a
+    // premium plugin) and the app gets tokens that say who the member is.
+    // Separate from the MCP OAuth tables on purpose: those belong to admin
+    // users, and a member token must never be usable as an admin token.
+    id: '038_member_apps',
+    sql: `
+      create table if not exists member_apps (
+        id text primary key,
+        name text not null,
+        redirect_uris_json text not null default '[]',
+        scopes_json text not null default '[]',
+        created_by_user_id text references users(id) on delete set null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        deleted_at text
+      );
+
+      -- An authorization request waiting for the member's answer on the
+      -- owner's approval page. Short-lived; answered at most once, and only
+      -- from the browser that opened it (browser_hash is that browser's
+      -- marker cookie, hashed).
+      create table if not exists member_app_requests (
+        id_hash text primary key,
+        app_id text not null references member_apps(id) on delete cascade,
+        browser_hash text not null,
+        redirect_uri text not null,
+        code_challenge text not null,
+        scope text not null,
+        resource text not null,
+        state text,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        expires_at text not null,
+        decided_at text
+      );
+
+      -- One approval of one app by one member. Every code and token hangs
+      -- off it, so revoking the grant ends them all.
+      create table if not exists member_app_grants (
+        id text primary key,
+        member_id text not null references members(id) on delete cascade,
+        app_id text not null references member_apps(id) on delete cascade,
+        scope text not null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        last_used_at text,
+        expires_at text not null,
+        revoked_at text
+      );
+
+      create index if not exists member_app_grants_member_idx
+        on member_app_grants (member_id);
+
+      create table if not exists member_app_codes (
+        code_hash text primary key,
+        grant_id text not null references member_app_grants(id) on delete cascade,
+        app_id text not null references member_apps(id) on delete cascade,
+        redirect_uri text not null,
+        code_challenge text not null,
+        scope text not null,
+        resource text not null,
+        expires_at text not null,
+        consumed_at text
+      );
+
+      create table if not exists member_app_tokens (
+        id text primary key,
+        grant_id text not null references member_app_grants(id) on delete cascade,
+        app_id text not null references member_apps(id) on delete cascade,
+        kind text not null,
+        token_hash text not null unique,
+        scope text not null,
+        resource text not null,
+        created_at text not null default (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+        expires_at text not null,
+        revoked_at text
+      );
+
+      create index if not exists member_app_tokens_grant_idx
+        on member_app_tokens (grant_id);
+    `,
+  },
+  {
+    id: '039_member_app_devices',
+    sql: `
+      -- The device an app runs on: the thumbprint of a key the app keeps and
+      -- proves it holds on every refresh, and the name the app gave it.
+      alter table member_app_requests add column device_jkt text;
+      alter table member_app_requests add column device_name text;
+      alter table member_app_grants add column device_jkt text;
+      alter table member_app_grants add column device_name text;
+    `,
+  },
+  {
+    // Site Import reuses media the library already holds instead of
+    // uploading a second copy on every re-import. The hash is the SHA-256 of
+    // the bytes the server received for the upload (before SVG sanitising),
+    // so the importer can compare it with the file it is about to send.
+    // Rows uploaded before this migration have none and are never matched.
+    id: '040_media_content_hash',
+    sql: `
+      alter table media_assets add column content_hash text;
+
+      create index if not exists media_assets_content_hash_idx
+        on media_assets (content_hash);
     `,
   },
 ]

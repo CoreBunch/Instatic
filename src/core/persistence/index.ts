@@ -2,6 +2,7 @@ export { cmsAdapter } from './cms'
 export { getCmsPublishStatus, publishCmsDraft } from './cmsPublish'
 export {
   buildCmsRuntimePreview,
+  listCmsCanvasPluginStylesheets,
   resolveCmsRuntimeDependencies,
   validateCmsRuntimeScripts,
 } from './cmsRuntime'
@@ -25,6 +26,10 @@ export {
   updateCmsDataRowStatus,
   updateCmsDataRowTable,
   updateCmsDataTable,
+  getCmsDataTableAccess,
+  setCmsDataTableAccess,
+  listCmsDataRowVersions,
+  restoreCmsDataRowVersion,
 } from './cmsData'
 
 export {
@@ -68,6 +73,25 @@ export {
 } from './cmsUsers'
 export type { CmsAuditEvent, CmsRole } from './cmsUsers'
 export {
+  createCmsMemberApp,
+  deleteCmsMember,
+  deleteCmsMemberApp,
+  disconnectCmsMemberApp,
+  downloadCmsMemberData,
+  getCmsMember,
+  getCmsMemberSettings,
+  grantCmsMemberTag,
+  inviteCmsMember,
+  listCmsMemberApps,
+  listCmsMembers,
+  revokeCmsMemberTag,
+  saveCmsMemberSettings,
+  signOutCmsMember,
+  suspendCmsMember,
+  unsuspendCmsMember,
+  type CmsMemberListQuery,
+} from './cmsMembers'
+export {
   changeCurrentUserPassword,
   deleteCurrentUserAvatar,
   disableCurrentUserTotp,
@@ -95,3 +119,43 @@ export type {
 } from './cmsAuth'
 
 // usePersistence moved to src/editor/hooks/usePersistence.ts (Constraint #179 — no React in core)
+export {
+  listCmsBranches,
+  createCmsBranch,
+  renameCmsBranch,
+  deleteCmsBranch,
+  getCmsBranchPreview,
+  issueCmsBranchPreview,
+  revokeCmsBranchPreview,
+  getCmsBranchMergePlan,
+  applyCmsBranchMerge,
+  undoCmsBranchMerge,
+  getCmsBranchReview,
+  requestCmsBranchMerge,
+  withdrawCmsBranchMergeRequest,
+  declineCmsBranchMergeRequest,
+  addCmsBranchReviewComment,
+  cmsBranchReviewRenderUrl,
+} from './cmsBranches'
+export {
+  getCmsRegistryLatestVersion,
+  getCmsRegistryPackage,
+  getCmsRegistryPackageAdvisories,
+  getCmsRegistryPackageDownloads,
+  getCmsRegistryProfile,
+  searchCmsRegistry,
+} from './cmsRegistry'
+export {
+  createCmsMailConnector,
+  deleteCmsMailConnector,
+  getCmsMailActivity,
+  getCmsMailOverview,
+  listCmsMailTemplates,
+  resetCmsMailTemplate,
+  saveCmsMailDefaults,
+  saveCmsMailTemplate,
+  setCmsMailConnectorSecret,
+  testCmsMailConnector,
+  testCmsMailTemplate,
+  type CmsMailActivityQuery,
+} from './cmsMail'

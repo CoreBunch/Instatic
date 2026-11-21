@@ -20,6 +20,9 @@ import type {
   CmsPluginsPayload,
   InstalledPlugin,
   PluginManifest,
+  PluginAppScope,
+  PluginFrontendOrigins,
+  PluginMailTemplateDeclaration,
   PluginPermission,
 } from '@core/plugin-sdk'
 import { requestCmsSiteReload } from '@admin/state/adminEvents'
@@ -61,6 +64,16 @@ interface PendingInstall {
    * value so an upgrade adding new external hosts shows them as "New".
    */
   previousNetworkAllowedHosts?: string[]
+  /**
+   * `appScopes` from the manifest of the existing install. The dialog diffs
+   * it against the new manifest's, since a scope that is removed or
+   * reworded is withdrawn from apps and members at the update.
+   */
+  previousAppScopes?: PluginAppScope[]
+  /** `frontend.origins` from the existing install, diffed the same way. */
+  previousFrontendOrigins?: PluginFrontendOrigins
+  /** `mail.templates` from the existing install: an added or reworded email is flagged. */
+  previousMailTemplates?: PluginMailTemplateDeclaration[]
 }
 
 /**
@@ -302,16 +315,22 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         ? await inspectCmsPluginPackage(file)
         : parsePluginManifest(JSON.parse(await file.text()))
 
-      // Detect upgrade vs. fresh install client-side so we can render the
-      // right copy in the confirmation dialog. The server detects upgrades
-      // independently — this is purely a UX hint.
+      // Detect upgrade vs. reinstall vs. fresh install client-side so the
+      // confirmation dialog can say which one is about to happen. The server
+      // decides independently — this is purely the copy.
+      //
+      // The installed version is carried whenever one exists, INCLUDING when
+      // it equals the incoming one. It used to be dropped in that case, so
+      // re-uploading the same build rendered the first-install screen: no
+      // mention of the plugin already being there, and every permission
+      // badged "new" even though the operator had approved them all.
       const existing = payload.plugins.find((p) => p.id === manifest.id)
-      const upgradeFromVersion =
-        existing && existing.version !== manifest.version ? existing.version : undefined
+      const upgradeFromVersion = existing ? existing.version : undefined
       const previouslyGrantedPermissions = existing
         ? existing.grantedPermissions
         : undefined
       const previousNetworkAllowedHosts = existing?.manifest.networkAllowedHosts
+      const previousFrontendOrigins = existing?.manifest.frontend?.origins
 
       // EVERY install and upgrade goes through the review dialog — including
       // a zero-permission declarative plugin, which renders "No permissions
@@ -325,6 +344,11 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         ...(previousNetworkAllowedHosts !== undefined
           ? { previousNetworkAllowedHosts }
           : {}),
+        ...(existing?.manifest.appScopes !== undefined
+          ? { previousAppScopes: existing.manifest.appScopes }
+          : {}),
+        ...(previousFrontendOrigins !== undefined ? { previousFrontendOrigins } : {}),
+        ...(existing ? { previousMailTemplates: existing.manifest.mail?.templates ?? [] } : {}),
       })
     } catch (err) {
       setError(getErrorMessage(err, 'Could not install plugin'))

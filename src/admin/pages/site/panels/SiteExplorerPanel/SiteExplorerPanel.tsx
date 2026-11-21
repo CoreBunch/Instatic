@@ -1,6 +1,8 @@
 import { useState, type KeyboardEvent, type MouseEvent } from 'react'
 import { useEditorStore } from '@site/store/store'
 import type { SiteFile } from '@core/files/schemas'
+import { fileDiagnostics } from '@core/site-runtime'
+import { useRuntimeDiagnostics } from '@site/diagnostics'
 import type { ExplorerPathChangePlan, Page, SiteExplorerSectionId, StructuralSiteExplorerSectionId } from '@core/page-tree'
 import { createUniquePageSlug, pagePublicPath, isHomePage } from '@core/page-tree'
 import { templateTargetLabel } from '@core/templates'
@@ -17,6 +19,7 @@ import { Settings2SolidIcon } from 'pixel-art-icons/icons/settings-2-solid'
 import { SiteCreateDialog, buildScriptPath, buildStylePath, slugifySiteItemName, type SiteCreatePayload, type SiteCreateKind } from '@admin/shared/dialogs/SiteCreateDialog'
 import type { ExplorerContextMenuItem } from '@site/explorer-actions'
 import { usePageSettingsDialogs } from './usePageSettingsDialogs'
+import { describeAccessRule } from '@admin/shared/AccessRuleEditor'
 import { useVCDeletionConfirm } from '@admin/shared/dialogs/VCDeletionConfirmDialog'
 import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import {
@@ -100,6 +103,8 @@ export function SiteExplorerPanel({
   const setActiveDocument = useEditorStore((s) => s.setActiveDocument)
   const addPage = useEditorStore((s) => s.addPage)
   const renamePage = useEditorStore((s) => s.renamePage)
+  const setPageAccess = useEditorStore((s) => s.setPageAccess)
+  const setPageSeo = useEditorStore((s) => s.setPageSeo)
   const deletePage = useEditorStore((s) => s.deletePage)
   const convertPageToTemplate = useEditorStore((s) => s.convertPageToTemplate)
   const convertTemplateToPage = useEditorStore((s) => s.convertTemplateToPage)
@@ -128,6 +133,9 @@ export function SiteExplorerPanel({
 
   const files = site?.files ?? EMPTY_FILES
   const fileBuckets = groupSiteFiles(files)
+  // Build problems for the current draft, so a failing script is visible in
+  // the tree instead of only as a count on the publish button.
+  const diagnostics = useRuntimeDiagnostics()
 
   function handleCreate({ name, slug }: SiteCreatePayload) {
     if (!createKind) return
@@ -154,8 +162,10 @@ export function SiteExplorerPanel({
 
   const pages = site?.pages ?? []
   const { openTemplateSettings, openPageSettings, dialogs: pageSettingsDialogs } = usePageSettingsDialogs({
-    pages,
+    site,
     renamePage,
+    setPageAccess,
+    setPageSeo,
     convertPageToTemplate,
     openPageInCanvas,
   })
@@ -535,6 +545,7 @@ export function SiteExplorerPanel({
         icon: FileTextSolidIcon,
         active: page.id === activePageId && activeDocument?.kind !== 'visualComponent',
         pinned: isHomePage(page),
+        ...(page.access ? { access: describeAccessRule(page.access) } : {}),
         ariaLabel: `Open page ${page.title}`,
         target: { kind: 'page', id: page.id, title: page.title, slug: page.slug },
         preview: { page, kindLabel: 'Page' },
@@ -588,6 +599,7 @@ export function SiteExplorerPanel({
         active: activeEditorFileId === file.id,
         ariaLabel: `Open ${fileName(file.path)}`,
         target: { kind: 'file', id: file.id, path: file.path },
+        problems: fileDiagnostics(diagnostics, file.id) ?? undefined,
       })),
     )
     : null
@@ -604,6 +616,7 @@ export function SiteExplorerPanel({
         active: activeEditorFileId === file.id,
         ariaLabel: `Open ${fileName(file.path)}`,
         target: { kind: 'file', id: file.id, path: file.path },
+        problems: fileDiagnostics(diagnostics, file.id) ?? undefined,
       })),
     )
     : null

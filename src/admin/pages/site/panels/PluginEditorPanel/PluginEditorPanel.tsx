@@ -21,11 +21,7 @@ import { ErrorBoundary } from '@ui/components/ErrorBoundary'
 import { Panel, type DockablePanelProps } from '@admin/shared/Panel'
 import { useEditorStore } from '@site/store/store'
 import { pluginRuntime } from '@core/plugins/runtime'
-import { buildPluginRoutesHelper } from '@core/plugins/adminRuntime'
-import {
-  PluginContext,
-  type PluginContextValue,
-} from '@admin/plugin-host-hooks'
+import { PluginContextProvider } from '@admin/plugin-host-hooks'
 import styles from './PluginEditorPanel.module.css'
 
 interface PluginEditorPanelProps extends DockablePanelProps {
@@ -114,7 +110,7 @@ function PluginEditorPanelContent({
 
 /**
  * Inner component — wraps the plugin's panel component in a
- * `PluginContext.Provider` so the plugin's hooks (`usePluginSettings`,
+ * `PluginContextProvider` so the plugin's hooks (`usePluginSettings`,
  * `usePluginRoutes`, `usePluginContext`, `useEditorCommand`) resolve
  * with the right plugin identity, settings snapshot, and HTTP scope.
  */
@@ -135,20 +131,16 @@ function PluginPanelSubtree({
   settings: Record<string, string | number | boolean>
   PanelComponent: import('@core/plugin-sdk').PluginEditorPanelComponent
 }) {
-  const contextValue: PluginContextValue = {
-    pluginId,
-    pluginVersion,
-    surfaceId: panelId,
-    surfaceLabel: label,
-    grantedPermissions,
-    settings,
-    routes: buildPluginRoutesHelper(pluginId),
-    runCommand: (commandId) => pluginRuntime.runCommand(commandId),
-  }
-
   return (
-    <PluginContext.Provider value={contextValue}>
+    <PluginContextProvider
+      pluginId={pluginId}
+      pluginVersion={pluginVersion}
+      surfaceId={panelId}
+      surfaceLabel={label}
+      grantedPermissions={grantedPermissions}
+      settings={settings}
+    >
       <PanelComponent panel={{ id: panelId, pluginId, label }} />
-    </PluginContext.Provider>
+    </PluginContextProvider>
   )
 }

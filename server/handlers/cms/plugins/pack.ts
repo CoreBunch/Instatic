@@ -23,11 +23,7 @@ import {
   PluginPackError,
 } from '../../../plugins/pack'
 import { getDraftSite, saveDraftSite } from '../../../repositories/site'
-import {
-  listDataRows,
-  createDataRow,
-  saveDataRowDraft,
-} from '../../../repositories/data'
+import { findDataRowSlot, listDataRows, updateDataRowStatus, upsertDataRowDraft } from '../../../repositories/data'
 import { pageFromRow, pageToCells } from '../../../../src/core/data/pageFromRow'
 import { visualComponentToCells } from '../../../../src/core/data/componentFromRow'
 import { savedLayoutFromRow, savedLayoutToCells } from '../../../../src/core/data/layoutFromRow'
@@ -36,6 +32,7 @@ import { layoutSlugFromName } from '@core/layouts'
 import { badRequest, jsonResponse, methodNotAllowed } from '../../../http'
 import { type CmsHandlerOptions, requestAuditContext } from '../shared'
 import { pluginNotFound } from './shared'
+import { MAIN_SCOPE } from '../../../branches/scope'
 
 export interface PluginPackSummary {
   installed: {
@@ -45,6 +42,34 @@ export interface PluginPackSummary {
     layouts: { id: string; name: string }[]
   }
   replaced: { visualComponents: string[]; pages: string[]; classes: string[]; layouts: string[] }
+}
+
+/**
+ * Write one pack row under the id the pack names.
+ *
+ *  - The id is the pack's choice, so it may already belong to a row of
+ *    another table. That row is never written: the sync is refused.
+ *  - A row the owner deleted still holds its id (inserting it again would
+ *    fail), so it is brought back. It comes back as a draft: a re-sync is
+ *    not a publish, and what was live before the delete stays off the site
+ *    until someone publishes it.
+ */
+async function writePackRow(
+  db: DbClient,
+  pluginId: string,
+  row: { id: string; tableId: 'pages' | 'components' | 'layouts'; cells: Record<string, unknown>; slug: string },
+  actorUserId: string,
+): Promise<void> {
+  const slot = await findDataRowSlot(db, MAIN_SCOPE, row.id)
+  if (slot && slot.tableId !== row.tableId) {
+    throw new PluginPackError(
+      `Plugin "${pluginId}" pack entry "${row.id}" uses an id that already belongs to something else on this site.`,
+    )
+  }
+  await upsertDataRowDraft(db, MAIN_SCOPE, row, actorUserId)
+  if (slot?.deleted && slot.status !== 'draft') {
+    await updateDataRowStatus(db, MAIN_SCOPE, row.id, 'draft', actorUserId)
+  }
 }
 
 /**
@@ -66,16 +91,16 @@ async function installPluginPackToSite(
   const raw = await loadPluginPackFile(uploadsDir, plugin.manifest.assetBasePath, plugin.manifest.pack.path)
   const pack = parsePluginPack(plugin.id, raw)
 
-  const shell = await getDraftSite(db)
+  const shell = await getDraftSite(db, MAIN_SCOPE)
   if (!shell) return null
 
   // Assemble a temporary SiteDocument for the pack merge function.
   // VCs and layouts are included so applyPluginPackToSite can detect
   // replaced ids.
   const [pageRows, vcRows, layoutRows] = await Promise.all([
-    listDataRows(db, 'pages'),
-    listDataRows(db, 'components'),
-    listDataRows(db, 'layouts'),
+    listDataRows(db, MAIN_SCOPE, 'pages'),
+    listDataRows(db, MAIN_SCOPE, 'components'),
+    listDataRows(db, MAIN_SCOPE, 'layouts'),
   ])
   const { visualComponentFromRow } = await import('../../../../src/core/data/componentFromRow')
   const existingVCs = vcRows.flatMap((r) => {
@@ -97,41 +122,27 @@ async function installPluginPackToSite(
 
   // Extract shell (strip pages, visualComponents, and layouts) and save
   const { pages: packPages, visualComponents: _vcs, layouts: _layouts, ...nextShell } = nextSiteDoc
-  await saveDraftSite(db, nextShell, actorUserId)
+  await saveDraftSite(db, MAIN_SCOPE, nextShell, actorUserId)
 
-  // Upsert pack pages as data_rows
-  const existingPagesById = new Map(pageRows.map((r) => [r.id, r]))
+  // Write the pack's pages, Visual Components and layouts as data rows.
   for (const page of packPages) {
-    const cells = pageToCells(page)
-    if (existingPagesById.has(page.id)) {
-      await saveDataRowDraft(db, page.id, { cells, slug: page.slug }, actorUserId)
-    } else {
-      await createDataRow(db, { id: page.id, tableId: 'pages', cells, slug: page.slug }, actorUserId)
-    }
+    await writePackRow(db, plugin.id, { id: page.id, tableId: 'pages', cells: pageToCells(page), slug: page.slug }, actorUserId)
   }
-
-  // Upsert pack VCs as data_rows
-  const existingVCsById = new Map(vcRows.map((r) => [r.id, r]))
   for (const vc of pack.visualComponents) {
-    const cells = visualComponentToCells(vc)
-    const slug = vcSlugFromName(vc.name)
-    if (existingVCsById.has(vc.id)) {
-      await saveDataRowDraft(db, vc.id, { cells, slug }, actorUserId)
-    } else {
-      await createDataRow(db, { id: vc.id, tableId: 'components', cells, slug }, actorUserId)
-    }
+    await writePackRow(
+      db,
+      plugin.id,
+      { id: vc.id, tableId: 'components', cells: visualComponentToCells(vc), slug: vcSlugFromName(vc.name) },
+      actorUserId,
+    )
   }
-
-  // Upsert pack layouts as data_rows
-  const existingLayoutRowsById = new Map(layoutRows.map((r) => [r.id, r]))
   for (const layout of pack.layouts) {
-    const cells = savedLayoutToCells(layout)
-    const slug = layoutSlugFromName(layout.name)
-    if (existingLayoutRowsById.has(layout.id)) {
-      await saveDataRowDraft(db, layout.id, { cells, slug }, actorUserId)
-    } else {
-      await createDataRow(db, { id: layout.id, tableId: 'layouts', cells, slug }, actorUserId)
-    }
+    await writePackRow(
+      db,
+      plugin.id,
+      { id: layout.id, tableId: 'layouts', cells: savedLayoutToCells(layout), slug: layoutSlugFromName(layout.name) },
+      actorUserId,
+    )
   }
 
   await createAuditEvent(db, {

@@ -25,15 +25,17 @@
  */
 
 import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { PageSeoSchema, parsePageSeo } from './pageSeo'
 import { compiledCheck } from '@core/utils/typeboxCompiler'
 import { FrameworkSettingsSchema } from '@core/framework-schema'
-import { SiteFontsSettingsSchema, parseSiteFontsSettings } from '@core/fonts'
+import { SiteFontsSettingsSchema, buildFontRoleTokens, parseSiteFontsSettings } from '@core/fonts'
 
 // ---------------------------------------------------------------------------
 // SiteSettingsSchema
 // ---------------------------------------------------------------------------
 
 export const SiteSettingsSchema = Type.Object({
+  seo: Type.Optional(PageSeoSchema),
   metaTitle: Type.Optional(Type.String()),
   metaDescription: Type.Optional(Type.String()),
   faviconUrl: Type.Optional(Type.String()),
@@ -52,8 +54,27 @@ export type SiteSettings = Static<typeof SiteSettingsSchema>
 // Defaults
 // ---------------------------------------------------------------------------
 
+/**
+ * Read-time fallback for a stored shell whose settings are missing or not an
+ * object. Deliberately minimal: an existing site read through this fallback
+ * must render exactly as it did before, so new-site seeds do not belong here.
+ */
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   shortcuts: {},
+}
+
+/**
+ * Settings a brand-new site starts with: the font role tokens (`font-heading`,
+ * `font-body`, `font-mono`) as fallback-only system stacks, so content made for
+ * one site references the same variables in any other. Used by every site
+ * creation path (first-run setup and the editor's draft bootstrap); never
+ * applied to sites that already exist.
+ */
+export function createNewSiteSettings(): SiteSettings {
+  return {
+    shortcuts: {},
+    fonts: { items: [], tokens: buildFontRoleTokens() },
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -86,7 +107,9 @@ export function parseSiteSettings(raw: unknown): SiteSettings {
 
   const fonts = r.fonts != null ? parseSiteFontsSettings(r.fonts) : undefined
 
+  const seo = parsePageSeo(r.seo)
   return {
+    ...(seo ? { seo } : {}),
     ...(typeof r.metaTitle === 'string' ? { metaTitle: r.metaTitle } : {}),
     ...(typeof r.metaDescription === 'string' ? { metaDescription: r.metaDescription } : {}),
     ...(typeof r.faviconUrl === 'string' ? { faviconUrl: r.faviconUrl } : {}),

@@ -60,9 +60,9 @@ function makeFakeDb(pluginRows: FakePluginRow[]) {
       const row = pluginRows.find((r) => r.id === values[0])
       return { rows: row ? [row as Row] : [], rowCount: row ? 1 : 0 }
     }
-    // setPluginLifecycleStatus — values: [lifecycleStatus, lastError, id]
+    // setPluginLifecycleStatus — values: [lifecycleStatus, lastError, updated_at, id]
     if (norm.includes('update installed_plugins set lifecycle_status')) {
-      const id = values[2] as string
+      const id = values[3] as string
       const row = pluginRows.find((r) => r.id === id)
       if (row) {
         row.lifecycle_status = values[0]
@@ -270,7 +270,10 @@ describe('plugin boot resilience — boot loop structure', () => {
     expect(source).toMatch(/removePluginCompletely\(/)
     // The teardown deletes the DB row and sweeps the plugin's whole on-disk
     // tree (stale version dirs included), not just the current version.
-    expect(source).toContain('deletePlugin(db,')
+    // The row goes inside a transaction that also withdraws the plugin's app
+    // scopes, so no later cleanup failure leaves an approval behind.
+    expect(source).toContain('deletePlugin(tx,')
+    expect(source).toContain('withdrawPluginAppScopes(tx,')
     expect(source).toMatch(/removeAllPluginAssets\(/)
     // Crash bookkeeping has no FK to installed_plugins — the teardown must
     // sweep it explicitly so it can't outlive the row.

@@ -42,6 +42,8 @@ import {
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import styles from '../AccountPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { EmptyState } from '@ui/components/EmptyState'
+import { MonitorSolidIcon } from 'pixel-art-icons/icons/monitor-solid'
 
 function formatDateTime(value: string): string {
   return new Date(value).toLocaleString()
@@ -167,7 +169,12 @@ export function SessionsTab() {
         // reached on transient empty responses (e.g. the list raced with a
         // global revoke). Render an honest empty state rather than a fake
         // "this device" placeholder.
-        <p className={styles.emptyState}>No active sessions.</p>
+        <EmptyState
+          variant="centered"
+          icon={<MonitorSolidIcon size={28} />}
+          title="No active sessions"
+          description="Devices signed in to your account appear here."
+        />
       ) : (
         <DataTable aria-label="Active sessions" density="compact">
           <DataTableHead>

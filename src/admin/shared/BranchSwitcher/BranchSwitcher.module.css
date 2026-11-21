@@ -1,0 +1,216 @@
+/* Branch switcher — the toolbar chip, its palette, and the context strip. */
+
+/* ── Chip ─────────────────────────────────────────────────────────────────── */
+
+/* Doubled selector: beats the Button primitive's icon-only width so the
+   chip is a true square. */
+.chip.chip {
+    --branch-accent: var(--accent-1);
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    margin-right: var(--space-3xs);
+    border-radius: var(--input-radius);
+    color: var(--text-subtle);
+}
+
+.chipBranch {
+    color: var(--branch-accent);
+    background: color-mix(in oklab, var(--branch-accent) 12%, transparent);
+}
+
+.chipBranch:hover {
+    background: color-mix(in oklab, var(--branch-accent) 18%, transparent);
+}
+
+/* ── Palette ─────────────────────────────────────────────────────────────── */
+
+.group {
+    padding: var(--space-xs) var(--space-m) var(--space-4xs);
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.row {
+    --branch-accent: var(--text-muted);
+    min-height: 42px;
+}
+
+.rowIcon {
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--branch-accent);
+}
+
+.rowMain {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-px);
+    min-width: 0;
+    text-align: left;
+}
+
+.rowName {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 650;
+}
+
+.rowMeta {
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.rowTrailing {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    flex-shrink: 0;
+    color: var(--text-muted);
+}
+
+.rowCurrent .rowTrailing {
+    color: var(--text);
+}
+
+.empty {
+    padding: var(--space-s) var(--space-m);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+}
+
+.createRow {
+    color: var(--text);
+}
+
+.code {
+    padding: 0 var(--space-4xs);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-3);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+}
+
+/* ── Creator ─────────────────────────────────────────────────────────────── */
+
+.createForm {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    padding: var(--space-xs) var(--space-m) var(--space-m);
+}
+
+.createHeader {
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.createTitle {
+    color: var(--text);
+    font-size: var(--text-s);
+    font-weight: 750;
+}
+
+.hint {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+}
+
+.hintError {
+    color: var(--danger-text);
+}
+
+.fromMain {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+}
+
+.createActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-xs);
+}
+
+/* ── Context strip ───────────────────────────────────────────────────────── */
+
+/* Painted in the canvas surface colour (the same token CanvasRoot uses), so it
+ * reads as a band that belongs to the workspace rather than to the toolbar
+ * chrome. Identity tint stays on the icon and name only. */
+.strip {
+    --branch-accent: var(--accent-1);
+    position: relative;
+    z-index: 29;
+    display: flex;
+    align-items: center;
+    gap: var(--space-xs);
+    height: 34px;
+    padding: 0 var(--space-s) 0 var(--space-m);
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-surface-2);
+    color: var(--text);
+    font-size: var(--text-xs);
+    user-select: none;
+}
+
+.stripIcon {
+    flex-shrink: 0;
+    color: var(--branch-accent);
+}
+
+.stripName {
+    color: var(--branch-accent);
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+.stripMeta {
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.stripSpacer {
+    flex: 1;
+    min-width: var(--space-s);
+}
+
+@media (max-width: 760px) {
+    .chipBranch {
+        max-width: 120px;
+    }
+
+    .stripMeta {
+        display: none;
+    }
+}
+
+.stripLinked {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-4xs);
+    margin-left: var(--space-xs);
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* A pill inside a shrink-to-fit flex row: its percentage max-width has no
+   definite box to resolve against (WebKit collapses the label to one letter),
+   and nothing here needs it to truncate. */
+.pill {
+    max-width: none;
+}

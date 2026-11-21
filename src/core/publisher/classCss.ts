@@ -11,8 +11,11 @@ import { responsiveBackgroundImage, type ResponsiveCssOptions } from './responsi
 /**
  * Convert a camelCase CSS property name to kebab-case.
  * "backgroundColor" -> "background-color", "zIndex" -> "z-index"
+ * Custom properties are case-sensitive and pass through as authored, so
+ * `--brandColor` keeps matching `var(--brandColor)`.
  */
 function toKebab(camel: string): string {
+  if (camel.startsWith('--')) return camel
   return camel.replace(/([A-Z])/g, (_, c: string) => `-${c.toLowerCase()}`)
 }
 
@@ -49,12 +52,19 @@ const DENIED_PROPS = new Set<string>([
 ])
 
 /**
- * A syntactically valid CSS property name. `-{0,2}` allows an optional leading
- * `-` (vendor prefix, e.g. `-webkit-...`) or `--` (custom property), then a
- * letter, then letters / digits / hyphens. Zero dashes covers the camelCase
- * keys our editor writes (`fontSize`) AND plain kebab-case keys (`flex-grow`).
+ * A syntactically valid CSS property name. `-?` allows an optional leading `-`
+ * (vendor prefix, e.g. `-webkit-...`), then a letter, then letters / digits /
+ * hyphens. No dash covers the camelCase keys our editor writes (`fontSize`)
+ * AND plain kebab-case keys (`flex-grow`).
  */
-const VALID_PROPERTY_RE = /^-{0,2}[a-zA-Z][a-zA-Z0-9-]*$/
+const VALID_PROPERTY_RE = /^-?[a-zA-Z][a-zA-Z0-9-]*$/
+
+/**
+ * A custom property name. The spec allows any identifier after `--`, so
+ * underscores and a leading `--_` are valid; Webflow exports generate both
+ * (`--brand---ds_mapped---bg`, `--_mapped---button--fill`).
+ */
+const CUSTOM_PROPERTY_RE = /^--[a-zA-Z0-9_-]+$/
 
 /**
  * Whether a property may be emitted into published CSS. Permissive: valid CSS
@@ -62,7 +72,8 @@ const VALID_PROPERTY_RE = /^-{0,2}[a-zA-Z][a-zA-Z0-9-]*$/
  * the same gate (no second source of truth).
  */
 export function isEmittableProperty(prop: string): boolean {
-  return VALID_PROPERTY_RE.test(prop) && !DENIED_PROPS.has(prop.toLowerCase())
+  const valid = prop.startsWith('--') ? CUSTOM_PROPERTY_RE.test(prop) : VALID_PROPERTY_RE.test(prop)
+  return valid && !DENIED_PROPS.has(prop.toLowerCase())
 }
 
 // ---------------------------------------------------------------------------
@@ -270,6 +281,11 @@ export function bagToReactStyle(
  * narrowest matching query wins. Pure min-width contexts emit narrowest first
  * so the widest matching query wins. Mixed/custom viewport queries keep the
  * user's registry order.
+ *
+ * Those two width orderings are *within* a query kind: a registry holding both
+ * `min-width` and `max-width` contexts keeps the two groups in registry order
+ * and sorts each group by width in its own slots. See
+ * `sortViewportContextCascade`.
  */
 export interface ViewportContext {
   id: string
@@ -296,15 +312,49 @@ function viewportQuerySort(breakpoint: ViewportContext): ViewportQuerySort {
   return { kind: 'other', width: breakpoint.width }
 }
 
-export function compareViewportContextCascade(
-  a: { breakpoint: ViewportContext; index: number },
-  b: { breakpoint: ViewportContext; index: number },
-): number {
-  const aQuery = viewportQuerySort(a.breakpoint)
-  const bQuery = viewportQuerySort(b.breakpoint)
-  if (aQuery.kind === 'max' && bQuery.kind === 'max') return bQuery.width - aQuery.width
-  if (aQuery.kind === 'min' && bQuery.kind === 'min') return aQuery.width - bQuery.width
-  return a.index - b.index
+/**
+ * Order viewport contexts for emission.
+ *
+ * This cannot be a plain `Array.prototype.sort` comparator. Width order is only
+ * meaningful between two contexts of the same query kind — comparing a
+ * `min-width` against a `max-width` has no answer, and falling back to registry
+ * index for those pairs makes the comparator non-transitive: with
+ * `[min-width: 1024px, max-width: 900px, min-width: 768px]` the two min-width
+ * contexts never get compared to each other, so the 1024px block is emitted
+ * before the 768px one and wins the equal-specificity tie at every viewport
+ * above 1024px. Mobile-first CSS silently inverts.
+ *
+ * Instead, partition by kind over registry order and sort each kind group
+ * within the slots that group already occupies. Cross-kind order stays registry
+ * order, `min`/`max` groups get their width order regardless of how the kinds
+ * interleave, and `other` (mixed or non-pixel queries, where width order is not
+ * defined) is never reordered.
+ */
+export function sortViewportContextCascade<T extends { breakpoint: ViewportContext; index: number }>(
+  entries: readonly T[],
+): T[] {
+  // Registry order first, so the result never depends on the caller's array
+  // order (`contextStyles` key order is authoring order, not registry order).
+  const ordered = entries.slice().sort((a, b) => a.index - b.index)
+
+  for (const kind of ['min', 'max'] as const) {
+    const slots: number[] = []
+    for (let i = 0; i < ordered.length; i++) {
+      if (viewportQuerySort(ordered[i].breakpoint).kind === kind) slots.push(i)
+    }
+    if (slots.length < 2) continue
+
+    const group = slots.map((slot) => ordered[slot])
+    group.sort((a, b) => {
+      const aWidth = viewportQuerySort(a.breakpoint).width
+      const bWidth = viewportQuerySort(b.breakpoint).width
+      if (aWidth !== bWidth) return kind === 'min' ? aWidth - bWidth : bWidth - aWidth
+      return a.index - b.index
+    })
+    slots.forEach((slot, i) => { ordered[slot] = group[i] })
+  }
+
+  return ordered
 }
 
 /**
@@ -318,7 +368,7 @@ export function compareViewportContextCascade(
  * between what the editor shows and what a publish ships.
  *
  * Cascade order (precedence Q-A): base → custom conditions (registry order) →
- * viewport @media contexts (see `compareViewportContextCascade`). Context keys
+ * viewport @media contexts (see `sortViewportContextCascade`). Context keys
  * matching neither registry are skipped (orphaned overrides).
  */
 export interface StyleRuleDeclarationLayers {
@@ -390,8 +440,7 @@ export function createStyleRuleCssEmitter(
       blocks.push(`${prelude} {\n  ${selector} {\n${decls}\n  }\n}`)
     }
 
-    bpEntries.sort(compareViewportContextCascade)
-    for (const { contextId, bag, breakpoint } of bpEntries) {
+    for (const { contextId, bag, breakpoint } of sortViewportContextCascade(bpEntries)) {
       const decls = bagToCSS(bag, options, layers.contextStylePriorities?.[contextId])
       if (!decls) continue
       const prelude = conditionPrelude({ kind: 'media', query: breakpointMediaQuery(breakpoint) })

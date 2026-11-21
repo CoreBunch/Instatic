@@ -1,4 +1,4 @@
-import { expect, type FrameLocator, type Page } from '@playwright/test'
+import { expect, type FrameLocator, type Locator, type Page } from '@playwright/test'
 import { OWNER } from './constants'
 
 /**
@@ -80,24 +80,38 @@ export async function insertModuleViaPicker(
  */
 export async function openLayersPanel(page: Page): Promise<void> {
   const tree = page.getByRole('tree', { name: 'Page element tree' })
-  if (!(await tree.isVisible().catch(() => false))) {
-    const explorer = page.getByRole('complementary', { name: 'Explorer' })
-    if (!(await explorer.isVisible().catch(() => false))) {
-      await page.getByRole('button', { name: 'Open Explorer panel' }).click()
-    }
+  const explorer = await ensureExplorerOpen(page)
+  if (!(await tree.isVisible())) {
     await explorer.getByRole('button', { name: 'Layers', exact: true }).click()
   }
   await expect(tree).toBeVisible()
+}
+
+/**
+ * Make sure the Explorer panel is open, and return it.
+ *
+ * The editor remounts its panels whenever it reloads a document: right after a
+ * branch is created or switched, the Explorer is gone for a moment and then
+ * comes back open. A single "is it visible?" check taken in that moment would
+ * conclude the panel is closed and wait for an "Open Explorer panel" button
+ * that never appears. So this retries: each pass re-reads the state, and only
+ * clicks the button while the panel really is closed.
+ */
+async function ensureExplorerOpen(page: Page): Promise<Locator> {
+  const explorer = page.getByRole('complementary', { name: 'Explorer' })
+  const openButton = page.getByRole('button', { name: 'Open Explorer panel' })
+  await expect(async () => {
+    if (!(await explorer.isVisible())) await openButton.click({ timeout: 1_000 })
+    await expect(explorer).toBeVisible({ timeout: 1_000 })
+  }).toPass({ timeout: 20_000 })
+  return explorer
 }
 
 type ExplorerTab = 'Site' | 'Code' | 'Media'
 
 /** Open one of the consolidated Explorer tabs and wait for it to become active. */
 export async function openExplorerTab(page: Page, tab: ExplorerTab): Promise<void> {
-  const explorer = page.getByRole('complementary', { name: 'Explorer' })
-  if (!(await explorer.isVisible().catch(() => false))) {
-    await page.getByRole('button', { name: 'Open Explorer panel' }).click()
-  }
+  const explorer = await ensureExplorerOpen(page)
 
   const tabButton = explorer.getByRole('button', { name: tab, exact: true })
   if ((await tabButton.getAttribute('aria-pressed')) !== 'true') {
@@ -112,6 +126,36 @@ export async function openCodePanel(page: Page): Promise<void> {
   await expect(
     page.getByRole('button', { name: 'New stylesheet', exact: true }),
   ).toBeVisible()
+}
+
+/**
+ * Create a site stylesheet from the Code Explorer and type `css` into it.
+ * Returns once the Code Editor shows the text and the store has synced it.
+ */
+export async function createStylesheet(page: Page, name: string, css: string): Promise<void> {
+  await openCodePanel(page)
+  const newStylesheet = page.getByRole('button', { name: 'New stylesheet', exact: true })
+  await newStylesheet.scrollIntoViewIfNeeded()
+  await newStylesheet.click()
+
+  const dialog = page.getByRole('dialog', { name: 'New stylesheet' })
+  await expect(dialog).toBeVisible()
+  await dialog.getByLabel('Name').fill(name)
+  await dialog.getByRole('button', { name: 'Create' }).click()
+  await expect(dialog).toBeHidden()
+
+  await expect(page.getByRole('complementary', { name: 'Code Editor' })).toBeVisible()
+  await expect(page.getByLabel('Stylesheet settings')).toBeVisible()
+
+  const editor = page.locator('[data-codemirror-container] .cm-content')
+  await expect(editor).toBeVisible({ timeout: 15_000 })
+  await editor.click()
+  const text = css.trim()
+  await page.keyboard.insertText(text)
+
+  // CodeMirror syncs into the editor store through a short debounce.
+  await expect(editor).toContainText(text.split('\n')[0]!)
+  await page.waitForTimeout(300)
 }
 
 /** Select a layer in the DOM/layers tree by its display name. */
@@ -186,4 +230,17 @@ export async function publishDraft(page: Page): Promise<void> {
   }
 
   await expect(publishButton).toHaveText(/Published/, { timeout: 30_000 })
+}
+
+/**
+ * A template priority higher than any template created earlier in the suite.
+ *
+ * The whole suite shares one site, and a Posts entry route is rendered through
+ * the highest-priority matching template. A spec that authors its own Posts
+ * template must therefore outrank every template an earlier spec left behind,
+ * or its post renders through someone else's template. Seconds since a fixed
+ * epoch grow with creation order, whatever order the spec files run in.
+ */
+export function newestTemplatePriority(): number {
+  return Math.floor((Date.now() - Date.UTC(2026, 0, 1)) / 1000)
 }

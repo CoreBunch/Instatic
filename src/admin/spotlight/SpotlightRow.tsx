@@ -16,6 +16,7 @@ import { cn } from '@ui/cn'
 import { SearchSolidIcon } from 'pixel-art-icons/icons/search-solid'
 import { SaveSolidIcon } from 'pixel-art-icons/icons/save-solid'
 import { SendSolidIcon } from 'pixel-art-icons/icons/send-solid'
+import { MailSolidIcon } from 'pixel-art-icons/icons/mail-solid'
 import { UndoIcon } from 'pixel-art-icons/icons/undo'
 import { RedoIcon } from 'pixel-art-icons/icons/redo'
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
@@ -39,6 +40,8 @@ import { ArrowUpIcon } from 'pixel-art-icons/icons/arrow-up'
 import { ArrowDownIcon } from 'pixel-art-icons/icons/arrow-down'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
+import { GitBranchSolidIcon } from 'pixel-art-icons/icons/git-branch-solid'
+import { CircleDotSolidIcon } from 'pixel-art-icons/icons/circle-dot-solid'
 import { ContainerSolidIcon } from 'pixel-art-icons/icons/container-solid'
 import { BoxSolidIcon } from 'pixel-art-icons/icons/box-solid'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
@@ -75,6 +78,7 @@ const ICON_MAP: Record<string, IconComponent> = {
   'search-solid': SearchSolidIcon,
   'save-solid': SaveSolidIcon,
   'send-solid': SendSolidIcon,
+  'mail-solid': MailSolidIcon,
   'undo': UndoIcon,
   'redo': RedoIcon,
   'layout-solid': LayoutSolidIcon,
@@ -101,6 +105,8 @@ const ICON_MAP: Record<string, IconComponent> = {
   'arrow-down': ArrowDownIcon,
   'plus': PlusIcon,
   'edit-solid': EditSolidIcon,
+  'git-branch-solid': GitBranchSolidIcon,
+  'circle-dot-solid': CircleDotSolidIcon,
   'container-solid': ContainerSolidIcon,
   'box-solid': BoxSolidIcon,
   'box-stack-solid': BoxStackSolidIcon,

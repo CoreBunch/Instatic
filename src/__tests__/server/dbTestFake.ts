@@ -35,3 +35,15 @@ export function createFakeDb(
   fn.close = async (): Promise<void> => {}
   return Object.assign(fn, { dialect: 'sqlite' as const })
 }
+
+/**
+ * The public router asks, once per publish version, which published routes
+ * are protected (`server/publish/accessGate.ts`). Fixtures that stub the
+ * database by SQL text have no protected routes: answer those two reads with
+ * no rows. Pass the SQL lower-cased and whitespace-collapsed.
+ */
+export function answerAccessIndexRead(sql: string): DbResult | undefined {
+  const isPageRead = sql.includes('data_row_versions.cells_json') && sql.includes("data_rows.table_id = 'pages'")
+  const isTableRead = sql.includes('access_json') && sql.includes('from data_tables')
+  return isPageRead || isTableRead ? { rows: [], rowCount: 0 } : undefined
+}

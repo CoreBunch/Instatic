@@ -6,6 +6,7 @@ import type { DbClient } from '../../../../db/client'
 import { countDataRows, getDataRow, getDataRowMany } from '../read'
 import { softDeleteDataRow } from '../mutations'
 import { getDataTableBySlug } from '../../tables'
+import { MAIN_SCOPE } from '../../../../branches/scope'
 
 async function freshDb(): Promise<DbClient> {
   const db = createSqliteClient(':memory:')
@@ -34,21 +35,21 @@ describe('getDataRowMany', () => {
   })
 
   it('returns the same hydrated rows as per-id getDataRow, in one query', async () => {
-    const many = await getDataRowMany(db, ['post-1', 'post-3'])
+    const many = await getDataRowMany(db, MAIN_SCOPE, ['post-1', 'post-3'])
     const byId = new Map(many.map((row) => [row.id, row]))
     expect(byId.size).toBe(2)
-    expect(byId.get('post-1')).toEqual((await getDataRow(db, 'post-1')) ?? undefined)
-    expect(byId.get('post-3')).toEqual((await getDataRow(db, 'post-3')) ?? undefined)
+    expect(byId.get('post-1')).toEqual((await getDataRow(db, MAIN_SCOPE, 'post-1')) ?? undefined)
+    expect(byId.get('post-3')).toEqual((await getDataRow(db, MAIN_SCOPE, 'post-3')) ?? undefined)
   })
 
   it('omits missing and soft-deleted ids instead of throwing', async () => {
-    await softDeleteDataRow(db, 'post-2')
-    const many = await getDataRowMany(db, ['post-1', 'post-2', 'nope'])
+    await softDeleteDataRow(db, MAIN_SCOPE, 'post-2')
+    const many = await getDataRowMany(db, MAIN_SCOPE, ['post-1', 'post-2', 'nope'])
     expect(many.map((row) => row.id)).toEqual(['post-1'])
   })
 
   it('returns [] for an empty id list without touching the db', async () => {
-    expect(await getDataRowMany(db, [])).toEqual([])
+    expect(await getDataRowMany(db, MAIN_SCOPE, [])).toEqual([])
   })
 })
 
@@ -57,19 +58,19 @@ describe('countDataRows', () => {
     const db = await freshDb()
     await seedRow(db, 'post-1')
     await seedRow(db, 'post-2')
-    expect(await countDataRows(db, 'posts')).toBe(2)
-    await softDeleteDataRow(db, 'post-1')
-    expect(await countDataRows(db, 'posts')).toBe(1)
-    expect(await countDataRows(db, 'pages')).toBe(0)
+    expect(await countDataRows(db, MAIN_SCOPE, 'posts')).toBe(2)
+    await softDeleteDataRow(db, MAIN_SCOPE, 'post-1')
+    expect(await countDataRows(db, MAIN_SCOPE, 'posts')).toBe(1)
+    expect(await countDataRows(db, MAIN_SCOPE, 'pages')).toBe(0)
   })
 })
 
 describe('getDataTableBySlug', () => {
   it('resolves a seeded system table by slug and misses unknown slugs', async () => {
     const db = await freshDb()
-    const posts = await getDataTableBySlug(db, 'posts')
+    const posts = await getDataTableBySlug(db, MAIN_SCOPE, 'posts')
     expect(posts?.id).toBe('posts')
     expect(posts?.system).toBe(true)
-    expect(await getDataTableBySlug(db, 'no-such-table')).toBeNull()
+    expect(await getDataTableBySlug(db, MAIN_SCOPE, 'no-such-table')).toBeNull()
   })
 })

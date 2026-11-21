@@ -1,6 +1,7 @@
 import { placeholder, type DbClient } from '../db/client'
 import { rowToUser, USER_JOINED_COLUMNS, type AuthUser, type JoinedUserRow } from '../repositories/users'
 import { deriveDeviceLabel } from './deviceLabel'
+import { nowIso } from '@core/utils/isoDate'
 
 const SESSION_IDLE_TIMEOUT_MS = 1000 * 60 * 60 * 24 * 30
 
@@ -114,14 +115,15 @@ async function findSessionUserRow(
 export async function findUserBySessionHash(
   db: DbClient,
   idHash: string,
-  now = Date.now(),
+  { now = Date.now(), touchLastSeen = true }: { now?: number; touchLastSeen?: boolean } = {},
 ): Promise<AuthUser | null> {
   const row = await findSessionUserRow(db, idHash, now)
   if (!row) return null
   const user = rowToUser(row)
   if (user.mfaEnabled && row.session_mfa_passed_at == null) return null
 
-  await touchSessionLastSeen(db, idHash, now)
+  // Passive socket deliveries must not extend the recipient's idle lifetime.
+  if (touchLastSeen) await touchSessionLastSeen(db, idHash, now)
   return user
 }
 
@@ -139,7 +141,7 @@ async function touchSessionLastSeen(db: DbClient, idHash: string, now: number): 
   lastSeenTouchedAt.set(idHash, now)
   await db`
     update sessions
-    set last_seen_at = current_timestamp
+    set last_seen_at = ${nowIso()}
     where id_hash = ${idHash}
   `
 }
@@ -165,7 +167,7 @@ export async function findUserByPendingMfaSessionHash(
 export async function revokeSessionByHash(db: DbClient, idHash: string): Promise<void> {
   await db`
     update sessions
-    set revoked_at = current_timestamp
+    set revoked_at = ${nowIso()}
     where id_hash = ${idHash}
   `
 }
@@ -221,7 +223,7 @@ export async function rotateSessionToken(
 
     await tx`
       update sessions
-      set revoked_at = current_timestamp
+      set revoked_at = ${nowIso()}
       where id_hash = ${currentIdHash}
         and revoked_at is null
     `
@@ -268,7 +270,7 @@ export async function markSessionMfaPassed(
   await db`
     update sessions
     set mfa_passed_at = ${passedAt},
-        last_seen_at = current_timestamp
+        last_seen_at = ${nowIso()}
     where id_hash = ${idHash}
       and revoked_at is null
   `

@@ -8,6 +8,7 @@
  */
 
 import { Type, parseValue, type Static, type TSchema } from '@core/utils/typeboxHelpers'
+import { stripTrailingSlashes } from '@core/utils/urlValidation'
 import {
   SYSTEM_PROMPT_DYNAMIC_BOUNDARY,
   type AiContentBlock,
@@ -140,7 +141,7 @@ function toolOutputToString(output: AiToolOutput): string {
 // ---------------------------------------------------------------------------
 
 export function trimSlash(url: string): string {
-  return url.replace(/\/+$/, '')
+  return stripTrailingSlashes(url)
 }
 
 /**

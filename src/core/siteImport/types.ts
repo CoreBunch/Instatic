@@ -5,10 +5,19 @@
  * @see src/__tests__/architecture/siteImport-headless.test.ts
  */
 
-import type { StyleRule, ConditionDef } from '@core/page-tree'
+import type { StyleRule, ConditionDef, PageSeo } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
-import type { FontFileFormat } from '@core/fonts'
-import type { SiteScriptFormat } from '@core/site-runtime'
+import type { FontDisplay, FontFileFormat } from '@core/fonts'
+import type { SiteScriptFormat, SiteScriptPlacement } from '@core/site-runtime'
+import type { ImportWarning } from './warnings'
+import type {
+  PageConflict,
+  RuleConflict,
+  TokenConflict,
+  CrossSheetClassConflict,
+  FileConflict,
+  MediaConflict,
+} from './conflictTypes'
 
 // ---------------------------------------------------------------------------
 // NewStyleRule — a StyleRule ready to insert (sans identity fields)
@@ -21,108 +30,6 @@ import type { SiteScriptFormat } from '@core/site-runtime'
  * by the parser.
  */
 export type NewStyleRule = Omit<StyleRule, 'id' | 'createdAt' | 'updatedAt'>
-
-// ---------------------------------------------------------------------------
-// ImportWarning
-// ---------------------------------------------------------------------------
-
-/**
- * Categories of warnings that the import pipeline can emit.
- *
- * Phase 1 (CSS parser) kinds:
- * - `dropped-at-rule`: an @-rule that the engine can't model was silently
- *   dropped (@page, @namespace, @layer, etc.). `@keyframes`, `@font-face`,
- *   `@supports`, and `@container` are imported through dedicated paths.
- * - `unmatched-media-query`: an @media query that could not be matched to any
- *   defined viewport context. Inner declarations are still imported under a
- *   reusable media condition so nothing is silently lost.
- * - `invalid-rule`: a rule that the CSS engine rejected (typically a sheet-
- *   level parse error that causes `replaceSync` to throw).
- * - `unknown-property`: legacy — retained for back-compat with any persisted
- *   warnings. The Phase 1a permissive property model no longer emits this; a
- *   declaration is only dropped when its NAME is denied (see
- *   `blocked-property`), not when it's merely uncurated.
- * - `blocked-property`: a CSS declaration whose property name is on the
- *   security denylist (`behavior`, `-moz-binding`, …). Rare. The declaration
- *   is dropped from the rule.
- * - `asset-reference`: informational — a `url(...)` payload was found in a
- *   declaration value. Assets are collected in `assetRefs` (not warnings) by
- *   the Phase 1 parser; this kind is reserved for Phase 2's use.
- * - `duplicate-class`: two `.foo { ... }` rules with the same class selector
- *   appeared in the same file. The later rule's declarations win (CSS cascade
- *   semantics). One warning is emitted per duplicated class.
- *
- * Phase 2 (site import pipeline) kinds:
- * - `missing-stylesheet`: a stylesheet referenced from an HTML `<link>` or a
- *   local CSS `@import` was not found in the FileMap. The page is still
- *   imported; the missing CSS is noted but not fatal.
- * - `missing-script`: a `<script src>` referenced in an HTML file was not
- *   found in the FileMap. The page is still imported; the missing script is
- *   noted but not fatal.
- * - `asset-upload-failed`: an individual asset upload was rejected by the
- *   media library (e.g. unsupported MIME, oversized file, server error).
- *   The remaining assets continue to upload; the failed file is left
- *   referenced in the source HTML/CSS by its original FileMap path so the
- *   import doesn't degrade pages or rules. Surface the warning in the
- *   wizard's Done step so the user can re-upload manually.
- * - `font-install-failed`: a Google Fonts CSS2 import was understood, but the
- *   CMS Google-font installer could not download/register the self-hosted
- *   files. The import continues; affected font tokens fall back to their
- *   authored fallback stacks.
- * - `external-font`: an `@font-face` whose every `src` is an external URL
- *   (or `local(...)` only) — nothing to upload, so the face is skipped rather
- *   than imported. The user can re-add the font by hand. Self-hosted faces
- *   (a bundled `.woff2`/`.woff`/`.ttf`/`.otf`) ARE imported as custom fonts.
- * - `unresolved-asset`: an HTML/CSS reference to a media file (image, font,
- *   video, …) that the archive does not contain under that path — not even
- *   after the punctuation-insensitive fallback match. The reference is left
- *   pointing at its original path, so the page imports with a broken image
- *   rather than losing the element. One warning per distinct missing path.
- * - `asset-folder-failed`: the asset uploaded and its URL was rewritten, but
- *   placing it under the folder that mirrors its bundle path failed (folder
- *   listing or creation rejected). The asset sits at the media root; the user
- *   can drag it into place. Never blocks the URL rewrite (#409).
- * - `script-order-conflict`: two pages link the same scripts in contradictory
- *   orders, so no single load order satisfies both. The order from the page
- *   that links them first wins; `path` names the first script of the cycle.
- */
-type ImportWarningKind =
-  | 'dropped-at-rule'
-  | 'unmatched-media-query'
-  | 'invalid-rule'
-  | 'unknown-property'
-  | 'blocked-property'
-  | 'asset-reference'
-  | 'duplicate-class'
-  | 'missing-stylesheet'
-  | 'missing-script'
-  | 'asset-upload-failed'
-  | 'asset-folder-failed'
-  | 'font-install-failed'
-  | 'external-font'
-  | 'unresolved-asset'
-  | 'script-order-conflict'
-
-export interface ImportWarning {
-  kind: ImportWarningKind
-  /** Human-readable description of what was dropped or why. */
-  message: string
-  /**
-   * For CSS warnings: the raw CSS source text that triggered the warning,
-   * truncated to ~120 chars with a trailing `…` if cut.
-   * For `missing-stylesheet`: the HTML/CSS file that referenced the missing CSS.
-   */
-  source?: string
-  /** The CSS selector relevant to the warning (for unknown-property, duplicate-class). */
-  selector?: string
-  /** The camelCase property name (for unknown-property warnings). */
-  property?: string
-  /**
-   * File path relevant to the warning (for `missing-stylesheet`: the unresolved
-   * CSS href as it appeared in the HTML source).
-   */
-  path?: string
-}
 
 // ---------------------------------------------------------------------------
 // BreakpointHint — how @media queries map to named viewport contexts
@@ -196,6 +103,7 @@ export interface ParsedFontFace {
   /** Raw `url(...)` payloads from the `src` descriptor, in source order. */
   srcUrls: string[]
   unicodeRange?: string
+  fontDisplay?: FontDisplay
 }
 
 /**
@@ -208,6 +116,7 @@ export interface ImportFontFile {
   /** FileMap key (pre-rewrite) → media public URL (post-rewrite). */
   src: string
   unicodeRange?: string
+  fontDisplay?: FontDisplay
 }
 
 /** A custom font family synthesized from imported `@font-face` blocks. */
@@ -222,10 +131,18 @@ export interface ImportFontFamily {
  * CMS Google-font installer used by the Typography panel, producing self-hosted
  * font entries instead of leaving an external stylesheet in the site.
  */
-export interface ImportGoogleFont {
+export interface GoogleFontRequest {
   family: string
   variants: string[]
   subsets: string[]
+}
+
+/** A planned Google font: the install request plus where the import asked for it. */
+export interface ImportGoogleFont extends GoogleFontRequest {
+  /** Converted CSS (rules from linked sheets, inline `<style>`) requests it. */
+  requestedByConvertedCss: boolean
+  /** `ImportStylesheet.path` of every stylesheet file whose `@import` requests it. */
+  stylesheetPaths: string[]
 }
 
 /**
@@ -243,7 +160,7 @@ export interface ImportColorToken {
 
 /**
  * A root-scope `--font-*` custom property pulled from imported CSS. Committed
- * into `site.settings.fonts.tokens` so `font-family: var(--font-primary)` keeps
+ * into `site.settings.fonts.tokens` so `font-family: var(--font-body)` keeps
  * resolving through the builder's editable font-token model.
  */
 export interface ImportFontToken {
@@ -281,10 +198,18 @@ export interface ImportScript {
   content: string
   /** Loader semantics from the source HTML. Classic scripts bypass bundling. */
   format: SiteScriptFormat
+  /** `'head'` only when every page runs it as a blocking `<head>` script. */
+  placement: SiteScriptPlacement
   /** HTML FileMap sources that linked this script. */
   pageSources: string[]
   /** Final committed page IDs. Filled by `commitImportPlan` before adapter call. */
   pageIds?: string[]
+  /**
+   * SHA-256 of the text as the bundle had it, before asset URLs were
+   * rewritten. Filled by `commitImportPlan`; the store keeps it in the site
+   * file's `importRecord`.
+   */
+  sourceHash?: string
   /**
    * Runtime ordering; lower runs earlier. One number per script, so it is
    * derived from EVERY page's document order at once (`scriptOrder.ts`): a
@@ -325,9 +250,11 @@ export interface LinkedStylesheet {
 }
 
 /**
- * A stylesheet kept as a file (`mode: 'file'`). Committed as a `SiteFile`
- * (`type: 'style'`) plus a page-scoped `site.runtime.styles` entry, exactly
- * like imported scripts. `content` is the flattened CSS: the sheet's
+ * A stylesheet imported as a file: a linked sheet kept with `mode: 'file'`,
+ * or a sheet no imported page links. Committed as a `SiteFile`
+ * (`type: 'style'`) plus a `site.runtime.styles` entry, exactly like imported
+ * scripts. A linked sheet is scoped to the pages that linked it; an unlinked
+ * one has no `pageSources` and applies to every page. `content` is the flattened CSS: the sheet's
  * unconditional local `@import` graph inlined in cascade order, trusted
  * Google-font `@import`s stripped (they install as self-hosted fonts), and
  * `url(...)` payloads normalised to FileMap keys for asset rewriting.
@@ -337,10 +264,16 @@ export interface ImportStylesheet {
   path: string
   /** Flattened CSS text. */
   content: string
-  /** HTML FileMap sources that linked this stylesheet. */
+  /** HTML FileMap sources that linked this stylesheet. Empty: no page linked it, so it is site-wide. */
   pageSources: string[]
   /** Final committed page IDs. Filled by `commitImportPlan` before adapter call. */
   pageIds?: string[]
+  /**
+   * SHA-256 of the text as the bundle had it, before asset URLs were
+   * rewritten. Filled by `commitImportPlan`; the store keeps it in the site
+   * file's `importRecord`.
+   */
+  sourceHash?: string
   /** Cascade ordering within the user-stylesheet bundle; lower applies earlier. */
   priority: number
 }
@@ -349,23 +282,17 @@ export interface ImportStylesheet {
  * A script tag discovered while planning one HTML page, preserving source
  * order across inline executable JavaScript and external `<script src>` tags.
  */
-export type PageScript =
-  | {
-    kind: 'external'
-    /** FileMap path of the linked JavaScript file. */
-    path: string
-    /** Loader semantics from the source HTML. */
-    format: SiteScriptFormat
-  }
-  | {
-    kind: 'inline'
-    /** Stable synthetic SiteFile path derived from the source HTML file. */
-    path: string
-    /** Inline JavaScript source. */
-    content: string
-    /** Loader semantics from the source HTML. */
-    format: SiteScriptFormat
-  }
+export type PageScript = {
+  /** Loader semantics from the source HTML. */
+  format: SiteScriptFormat
+  /** Where the page ran it: a blocking `<head>` script, or after the body. */
+  placement: SiteScriptPlacement
+} & (
+  /** `path`: the linked FileMap file. */
+  | { kind: 'external'; path: string }
+  /** `path`: a stable synthetic SiteFile path derived from the HTML file. */
+  | { kind: 'inline'; path: string; content: string }
+)
 
 // ---------------------------------------------------------------------------
 // Phase 2 — Site-import pipeline types
@@ -460,7 +387,7 @@ export interface PagePlan {
   /**
    * The body content as a flat node fragment.
    *
-   * URL-shaped props (`src`, `href`, `srcset`) are normalized to FileMap keys
+   * URL-shaped props (`src`, `href`, `srcset`, `videoUrl`, `poster`) are normalized to FileMap keys
    * (relative paths) so that `applyAssetRewrites` can do exact-string
    * replacement without needing the original base path.
    */
@@ -473,107 +400,13 @@ export interface PagePlan {
    * creates the record with it.
    */
   imageAlts: Record<string, string>
-}
-
-/** How a slug, rule-name, or token-variable conflict is resolved for a single item. */
-export interface ConflictResolution {
-  action: 'auto-rename' | 'overwrite' | 'skip' | 'custom-rename'
-  /** Resolved slug (for page conflicts; defined when action !== 'skip'). */
-  resolvedSlug?: string
-  /** Resolved name (for rule conflicts; defined when action !== 'skip'). */
-  resolvedName?: string
   /**
-   * Resolved CSS custom-property name without leading `--` (for token conflicts;
-   * defined when action is `auto-rename` or `custom-rename`).
+   * The page's `<head>` read into its SEO settings (`headSeo.ts`), or null
+   * when the head held nothing beyond title, stylesheets and scripts. URL
+   * fields (favicon, link hrefs, Open Graph / Twitter images) are normalised
+   * to FileMap keys by `buildAssetPlan`, like node props.
    */
-  resolvedVariable?: string
-}
-
-/** A page slug that collides with an existing page. */
-export interface PageConflict {
-  /** FileMap key of the HTML source file. */
-  source: string
-  /** The slug the importer wanted to use. */
-  desiredSlug: string
-  /** ID of the existing page that owns the slug. */
-  existingPageId: string
-  /** Default resolution (auto-rename; may be overridden by the UI). */
-  defaultResolution: ConflictResolution
-}
-
-/**
- * A `kind:'class'` rule name that collides with an existing class rule.
- *
- * Ambient rules NEVER conflict — multiple ambient rules with the same
- * selector are allowed; cascade resolves by `order`.
- */
-export interface RuleConflict {
-  /** FileMap key of the CSS source file (or empty if unknown). */
-  source: string
-  /** The class name the importer wanted to use. */
-  desiredName: string
-  /** ID of the existing StyleRule that owns the name. */
-  existingRuleId: string
-  /** Default resolution (auto-rename; may be overridden by the UI). */
-  defaultResolution: ConflictResolution
-}
-
-/**
- * One divergent cross-sheet definition of a class name among CONVERTED
- * stylesheets: two page cascades define the same class with different
- * effective declarations. The first-encountered definition keeps the bare
- * name; each later distinct definition raises one conflict.
- *
- * Resolutions (applied by `applyCrossSheetClassResolutions`):
- * - `auto-rename` / `custom-rename` (default): this definition moves to
- *   `resolvedName` — its pages' class tokens and its cascade's selectors
- *   follow, so every page keeps rendering with its own styles.
- * - `skip`: drop this definition; its pages bind to the first definition.
- * - `overwrite`: this definition wins the bare name; the other definitions'
- *   class fragments are dropped and their pages bind to this one.
- */
-export interface CrossSheetClassConflict {
-  /** The colliding class name as authored in the source CSS. */
-  desiredName: string
-  /** Stable id of this divergent definition (hash of its effective declarations). */
-  definitionId: string
-  /**
-   * CSS file paths whose class fragments produce this definition and are not
-   * shared with the kept (first) definition's cascades.
-   */
-  sources: string[]
-  /** HTML page sources rendered with this definition. */
-  pageSources: string[]
-  /** Default resolution (auto-rename; may be overridden by the UI). */
-  defaultResolution: ConflictResolution
-}
-
-/**
- * A design-token CSS custom property (`--bg`, `--font-primary`) extracted from
- * the import that collides with an existing token in the site.
- *
- * Both colour tokens (keyed by `--<slug>`) and font tokens (keyed by
- * `--font-*`) are modelled here: they are the same thing — a `--var` contract
- * referenced by `var(--x)` in the imported CSS — and resolve through one UI.
- *
- * `auto-rename` / `custom-rename` rename the imported token AND rewrite every
- * `var(--old)` reference in the imported style rules and node inline styles to
- * the new name, so the imported design stays faithful. `skip` keeps the
- * existing token (imported `var(--x)` binds to it). `overwrite` replaces the
- * existing token's value, keeping its name so both sides keep resolving.
- */
-export interface TokenConflict {
-  /** Which registry the token lives in. */
-  kind: 'color' | 'font'
-  /**
-   * The CSS custom-property name without the leading `--` the importer wanted
-   * (e.g. `bg` for `--bg`, `font-primary` for `--font-primary`).
-   */
-  desiredVariable: string
-  /** ID of the existing token (framework colour / font token) that owns the name. */
-  existingTokenId: string
-  /** Default resolution (auto-rename; may be overridden by the UI). */
-  defaultResolution: ConflictResolution
+  seo: PageSeo | null
 }
 
 /**
@@ -641,7 +474,10 @@ export interface ImportPlan {
    * mode this plan was built with. Drives the wizard's per-sheet mode picker.
    */
   linkedStylesheets: LinkedStylesheet[]
-  /** Stylesheets kept as files (`mode: 'file'`), ready to commit as SiteFiles. */
+  /**
+   * Stylesheets that import as SiteFiles: linked sheets kept as files
+   * (`mode: 'file'`, page-scoped) and sheets no page links (site-wide).
+   */
   stylesheets: ImportStylesheet[]
   conflicts: {
     pages: PageConflict[]
@@ -649,6 +485,13 @@ export interface ImportPlan {
     tokens: TokenConflict[]
     /** Divergent cross-sheet class definitions among CONVERTED stylesheets. */
     crossSheetClasses: CrossSheetClassConflict[]
+    /** Scripts and kept stylesheets whose site file path already exists. */
+    files: FileConflict[]
+    /**
+     * Media files already in the library. Always empty from `buildImportPlan`
+     * (it is pure and cannot ask the server); filled by `detectMediaConflicts`.
+     */
+    media: MediaConflict[]
   }
   warnings: ImportWarning[]
   /**
@@ -656,8 +499,6 @@ export interface ImportPlan {
    * (from `dropped-at-rule` warnings in the CSS parser).
    */
   droppedAtRules: string[]
-  /** CSS files present in the FileMap but not linked by any imported page. */
-  unusedCss: string[]
 }
 
 /**
@@ -678,7 +519,7 @@ export interface ImportResult {
   fontTokens: { id: string; name: string; variable: string }[]
   /** Site scripts committed from imported JS files. */
   scripts: { id: string; path: string }[]
-  /** Stylesheets committed as page-scoped SiteFiles (`mode: 'file'`). */
+  /** Stylesheets committed as SiteFiles: kept linked sheets and unlinked site-wide ones. */
   stylesheets: { id: string; path: string }[]
   /** Resolved conflicts (mirrors ImportPlan.conflicts with final actions). */
   conflicts: ImportPlan['conflicts']

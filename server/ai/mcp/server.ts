@@ -21,11 +21,9 @@ import type { AiBrowserBridge, AiTool, AiToolOutput } from '../runtime/types'
 import { executeAiTool } from '../drivers/http/execTool'
 import { mcpToolsForCapabilities } from './registry'
 import { authorizeMcpContentTool } from './contentAuthorization'
-import {
-  getEditorBridgeForUser,
-  type EditorBridgeScope,
-} from './editorBridge'
+import { getEditorBridgeBranch, getEditorBridgeForUser, type EditorBridgeScope } from './editorBridge'
 import { runPublishFlush } from '../../publish/publishFlush'
+import { MAIN_SCOPE } from '../../branches/scope'
 
 export interface McpServerContext {
   db: DbClient
@@ -174,6 +172,7 @@ export function buildMcpServer(ctx: McpServerContext): Server {
                 ctx.capabilities,
                 toolName,
                 input,
+                { branchId: getEditorBridgeBranch(ctx.userId, browserScope) ?? MAIN_SCOPE.branchId },
               )
               const current = getEditorBridgeForUser(ctx.userId, browserScope)
               if (!current) throw new Error(NO_WORKSPACE_MESSAGE[browserScope])
@@ -193,6 +192,10 @@ export function buildMcpServer(ctx: McpServerContext): Server {
     try {
       output = await executeAiTool(tool, args ?? {}, bridge, requestContext.mcpReq.signal, {
         db: ctx.db,
+        // Headless MCP reads describe the live site. Browser-bridged tools run
+        // inside whatever branch the connected workspace has open (the bridge
+        // records it, and the ownership pre-check above reads the row there).
+        branch: MAIN_SCOPE,
         userId: ctx.userId,
         capabilities: ctx.capabilities,
         scope: tool.scope === 'shared' ? 'content' : tool.scope,

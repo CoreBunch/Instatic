@@ -4,6 +4,9 @@ import { FolderGlyphIcon } from 'pixel-art-icons/icons/folder-glyph'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
 import { cn } from '@ui/cn'
+import { Tooltip } from '@ui/components/Tooltip'
+import { LockSolidIcon } from 'pixel-art-icons/icons/lock-solid'
+import { ProblemBadge } from '@site/diagnostics'
 import {
   TreeChevron,
   TreeIconSlot,
@@ -104,7 +107,6 @@ export function ExplorerFolderRow({
     >
       {renameActive ? (
         <>
-          <TreeChevron expanded={expanded} />
           <TreeIconSlot icon={FolderGlyphIcon} iconSize={12} />
           <InlineRenameInput
             value={renameValue}
@@ -113,6 +115,7 @@ export function ExplorerFolderRow({
             onCancel={onCancelRename}
           />
           {itemCount > 0 && <TreeMeta>{itemCount}</TreeMeta>}
+          <TreeChevron expanded={expanded} />
         </>
       ) : (
         <Button
@@ -138,12 +141,12 @@ export function ExplorerFolderRow({
             onKeyDown(folder, event)
           }}
         >
-          <TreeChevron expanded={expanded} />
           <TreeIconSlot icon={FolderGlyphIcon} iconSize={12} />
           <TreeLabelGroup>
             <TreeLabel>{folder.name}</TreeLabel>
             {itemCount > 0 && <TreeMeta>{itemCount}</TreeMeta>}
           </TreeLabelGroup>
+          <TreeChevron expanded={expanded} />
         </Button>
       )}
     </TreeRow>
@@ -291,7 +294,6 @@ export function ExplorerItemRow<TTarget>({
       >
         {renameActive ? (
           <>
-            <TreeChevron visible={false} />
             <TreeIconSlot icon={item.icon} iconSize={12} />
             <InlineRenameInput
               value={renameValue}
@@ -325,12 +327,19 @@ export function ExplorerItemRow<TTarget>({
               onKeyDown(item, event)
             }}
           >
-            <TreeChevron visible={false} />
             <TreeIconSlot icon={item.icon} iconSize={12} />
             <TreeLabelGroup>
               <TreeLabel>{item.label}</TreeLabel>
-              {item.meta && <TreeMeta>{item.meta}</TreeMeta>}
+              {item.meta && <TreeMeta className={styles.itemMeta} title={item.meta}>{item.meta}</TreeMeta>}
             </TreeLabelGroup>
+            {item.access && (
+              <Tooltip content={`${item.access}. Change it in Page settings.`}>
+                <span role="img" aria-label={item.access} className={styles.accessMarker}>
+                  <LockSolidIcon size={10} aria-hidden="true" />
+                </span>
+              </Tooltip>
+            )}
+            {item.problems && <ProblemBadge file={item.problems} />}
           </Button>
         )}
       </TreeRow>

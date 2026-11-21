@@ -273,6 +273,8 @@ Deep imports into these engine modules are enforced by `src/__tests__/architectu
 - `@core/framework` — the framework engine (color, typography, spacing CSS generation)
 - `@core/framework-schema` — pure leaf: TypeBox schemas + derived types for persisted framework token settings; no dependency on the engine or page-tree
 - `@core/fonts`
+- `@core/collab`
+- `@core/registry` — TypeBox shapes for the npm registry proxy plus the ESM-entry preflight shared by the importmap builder and the Dependencies panel
 
 Note: `@core/framework-schema` is a dependency of both `@core/page-tree` (for `FrameworkSettingsSchema` and `GeneratedClassMetadataSchema`) and `@core/framework` (for the persisted data shapes). This arrangement keeps the module graph one-directional — the engine depends on the schema leaf, not on the page tree. Any other module barrel is still a convention without a gate; treat deep imports in those as drift and migrate them to the barrel as part of whatever change you're making.
 
@@ -298,7 +300,7 @@ Note: `@core/framework-schema` is a dependency of both `@core/page-tree` (for `F
 - Always use `bun` (not `npm` / `pnpm` / `yarn`) for installs, scripts, and tests.
 - Lockfile is `bun.lock`. Do not introduce `package-lock.json` or `yarn.lock`.
 - Server scripts run with `bun --watch server/index.ts`. Frontend dev runs with `vite`.
-- Run the full stack locally with `bun run dev` (defaults to SQLite at `.tmp/dev.db` — no external dependencies) or `docker compose up --build` (everything in containers with Postgres). Set `DATABASE_URL=postgres://...` before `bun run dev` to use Postgres instead.
+- Run the full stack locally with `bun run dev` (defaults to SQLite at `.tmp/dev.db` — no external dependencies; runs `bun install --frozen-lockfile` first, so a pull never leaves a stale `node_modules`) or `docker compose up --build` (everything in containers with Postgres). Set `DATABASE_URL=postgres://...` before `bun run dev` to use Postgres instead.
 - **`bun run build` runs `tsc -b && vite build`** — both type-checking and bundling. A change that runs in dev but fails `tsc` is not done.
 
 ## Verification

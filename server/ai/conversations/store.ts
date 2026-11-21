@@ -13,7 +13,7 @@ import { nanoid } from 'nanoid'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 import { AiContentBlockSchema, type AiContentViewBlock } from '@core/ai'
 import type { DbClient } from '../../db/client'
-import { isoDateOrNull } from '@core/utils/isoDate'
+import { isoDateOrNull, nowIso } from '@core/utils/isoDate'
 import type { AiContentBlock, ToolScope } from '../runtime/types'
 import type {
   AppendMessageInput,
@@ -349,7 +349,7 @@ export async function updateConversationForUser(
     set title = ${nextTitle},
         credential_id = ${nextCredentialId},
         model_id = ${nextModelId},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${conversationId} and user_id = ${userId}
     returning id, user_id, scope, title, credential_id, model_id,
               prompt_tokens_total, completion_tokens_total,
@@ -375,7 +375,7 @@ export async function replaceDefaultConversationTitle(
   const result = await db`
     update ai_conversations
     set title = ${nextTitle},
-        updated_at = current_timestamp
+        updated_at = ${nowIso()}
     where id = ${conversationId}
       and user_id = ${userId}
       and deleted_at is null
@@ -394,10 +394,11 @@ export async function softDeleteConversationForUser(
   userId: string,
   conversationId: string,
 ): Promise<boolean> {
+  const now = nowIso()
   const result = await db`
     update ai_conversations
-    set deleted_at = current_timestamp,
-        updated_at = current_timestamp
+    set deleted_at = ${now},
+        updated_at = ${now}
     where id = ${conversationId} and user_id = ${userId}
   `
   return result.rowCount > 0
@@ -431,8 +432,9 @@ export async function appendMessage(
     const cacheReadTokens = input.cacheReadTokens ?? 0
     const cacheCreationTokens = input.cacheCreationTokens ?? 0
 
-    // Pass content as a plain array; the DB boundary handles JSON
-    // encoding/decoding for `_json` columns.
+    // Serialize content explicitly: on Postgres `content_json` is `text`, and
+    // Bun binds a plain array to a text parameter via String(), storing
+    // '[object Object]'. Reads JSON.parse `_json` strings on both dialects.
     const { rows: msgRows } = await tx<MessageRow>`
       insert into ai_messages (
         id, conversation_id, position, role, content_json,
@@ -441,7 +443,7 @@ export async function appendMessage(
         cache_read_tokens, cache_creation_tokens
       )
       values (
-        ${id}, ${conversationId}, ${position}, ${input.role}, ${input.content},
+        ${id}, ${conversationId}, ${position}, ${input.role}, ${JSON.stringify(input.content)},
         ${input.toolCallId ?? null}, ${input.toolName ?? null},
         ${promptTokens}, ${completionTokens}, ${costUsd},
         ${cacheReadTokens}, ${cacheCreationTokens}
@@ -461,7 +463,7 @@ export async function appendMessage(
           cost_usd_total = cost_usd_total + ${costUsd},
           cache_read_tokens_total = cache_read_tokens_total + ${cacheReadTokens},
           cache_creation_tokens_total = cache_creation_tokens_total + ${cacheCreationTokens},
-          updated_at = current_timestamp
+          updated_at = ${nowIso()}
       where id = ${conversationId}
     `
 

@@ -19,12 +19,15 @@
  * connector can only ever reach the open workspace of its OWN owner and a
  * content tool can never be dispatched to the site editor (or vice versa).
  */
+import { MAIN_BRANCH_ID } from '@core/branches'
 import type { AiBrowserBridge, AiStreamEvent } from '../runtime/types'
 import { createBridge, encodeStreamEvent } from '../runtime'
 
 interface EditorBridgeEntry {
   bridgeId: string
   bridge: AiBrowserBridge
+  /** The branch the connected workspace has open; browser tools act in it. */
+  branchId: string
   destroy: () => void
 }
 
@@ -54,6 +57,11 @@ export function hasEditorBridge(userId: string, scope: EditorBridgeScope): boole
   return byUser.get(userId)?.has(scope) ?? false
 }
 
+/** The branch the user's live workspace has open, or null when disconnected. */
+export function getEditorBridgeBranch(userId: string, scope: EditorBridgeScope): string | null {
+  return byUser.get(userId)?.get(scope)?.branchId ?? null
+}
+
 /**
  * Open the long-lived stream the editor consumes. The server pushes
  * `toolRequest` events down it whenever an MCP browser tool is invoked for this
@@ -63,9 +71,14 @@ export function createEditorBridgeStream(
   userId: string,
   scope: EditorBridgeScope,
   signal: AbortSignal,
-  // Test seam: the idle lease shrinks to milliseconds in unit tests.
-  idleLeaseMs: number = STREAM_IDLE_LEASE_MS,
+  options: {
+    /** The branch the workspace has open (its `X-Instatic-Branch`); main when absent. */
+    branchId?: string
+    /** Test seam: the idle lease shrinks to milliseconds in unit tests. */
+    idleLeaseMs?: number
+  } = {},
 ): ReadableStream<Uint8Array> {
+  const { branchId = MAIN_BRANCH_ID, idleLeaseMs = STREAM_IDLE_LEASE_MS } = options
   let closeStream: (() => void) | null = null
 
   return new ReadableStream<Uint8Array>({
@@ -75,6 +88,7 @@ export function createEditorBridgeStream(
 
       let bridgeId = ''
       let destroyBridge = (): void => {}
+      let pendingCount = (): number => 0
       let heartbeat: ReturnType<typeof setInterval> | null = null
       let lease: ReturnType<typeof setTimeout> | null = null
 
@@ -104,7 +118,14 @@ export function createEditorBridgeStream(
       const armLease = (): void => {
         if (closed) return
         if (lease) clearTimeout(lease)
-        lease = setTimeout(cleanup, idleLeaseMs)
+        lease = setTimeout(() => {
+          // Never recycle under a pending call: that rejected it while the
+          // editor was still working on it (its result then 404'd). Every
+          // pending call is bounded by the relay's per-call timeout, so an
+          // orphaned stream still drains and closes.
+          if (pendingCount() > 0) armLease()
+          else cleanup()
+        }, idleLeaseMs)
       }
 
       const emit = (event: AiStreamEvent): void => {
@@ -112,24 +133,28 @@ export function createEditorBridgeStream(
         try {
           controller.enqueue(encodeStreamEvent(event))
           // Tool traffic proves the stream is wanted — keep the idle lease
-          // from expiring under an active batch. (The relay's own per-call
-          // timeout is 90s, comfortably inside the lease.)
+          // from expiring under an active batch.
           armLease()
         } catch {
           cleanup()
         }
       }
 
-      const created = createBridge(emit, signal)
+      // Serial: the editor runs relayed tools strictly one at a time, so
+      // pushing a whole batch at once only started every call's timeout (and
+      // the idle lease) early — queued calls timed out, or the lease closed the
+      // stream mid-batch, while the tab was still working through earlier ones.
+      const created = createBridge(emit, signal, undefined, undefined, { serial: true })
       bridgeId = created.bridgeId
       destroyBridge = created.destroy
+      pendingCount = created.pendingCount
 
       // Newest instance of this workspace wins. The user's other workspace
       // remains connected, so Site and Content may serve MCP simultaneously.
       const userBridges = byUser.get(userId) ?? new Map<EditorBridgeScope, EditorBridgeEntry>()
       const previous = userBridges.get(scope)
       if (previous) previous.destroy()
-      userBridges.set(scope, { bridgeId, bridge: created.bridge, destroy: destroyBridge })
+      userBridges.set(scope, { bridgeId, bridge: created.bridge, branchId, destroy: destroyBridge })
       byUser.set(userId, userBridges)
 
       emit({ type: 'bridgeReady', bridgeId })

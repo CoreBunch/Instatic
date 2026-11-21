@@ -1,0 +1,93 @@
+/* Merge / update review dialog. */
+
+.loading {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-s);
+    padding: var(--space-xs) 0;
+}
+
+.error,
+.empty,
+.summary {
+    margin: 0 0 var(--space-m);
+    color: var(--text);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+}
+
+.error {
+    color: var(--danger-text);
+}
+
+.empty {
+    color: var(--text-muted);
+}
+
+.group {
+    margin-bottom: var(--space-m);
+}
+
+.groupTitle {
+    margin: 0 0 var(--space-xs);
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    min-height: 40px;
+    padding: var(--space-xs) var(--space-s);
+    border-radius: var(--radius);
+    background: var(--bg-surface-2);
+    color: var(--text);
+    font-size: var(--text-xs);
+}
+
+.rowConflict {
+    background: color-mix(in oklab, var(--warning) 10%, var(--bg-surface-2));
+}
+
+/* Fixed action column so the labels line up whatever the pill says. */
+.action {
+    display: inline-flex;
+    flex: 0 0 72px;
+}
+
+.main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-px);
+    min-width: 0;
+}
+
+.label {
+    font-weight: 650;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.conflict {
+    color: var(--warning);
+    font-size: var(--text-2xs);
+}
+
+.footerSpacer {
+    flex: 1;
+}

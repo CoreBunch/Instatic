@@ -1,0 +1,186 @@
+/* Activity tab: the period's numbers, the filters, and the log beside its detail. */
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.headerActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-l);
+  white-space: nowrap;
+}
+
+/* ── Summary tiles ───────────────────────────────────────────────────────── */
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: var(--space-px);
+  overflow: hidden;
+  border-radius: var(--card-radius);
+  background: var(--bg-surface);
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3xs);
+  min-width: 0;
+  padding: var(--space-2xl);
+  background: var(--bg-surface-2);
+}
+
+.tile[data-wide="true"] {
+  grid-column: span 2;
+}
+
+/* Four number tiles leave no room for the chart beside them: it takes its own row. */
+.summary[data-crowded="true"] .tile[data-wide="true"] {
+  grid-column: 1 / -1;
+}
+
+.tileLabel {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.tileValue {
+  color: var(--text-bright);
+  font-size: var(--text-3xl);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.tile[data-tone="danger"] .tileValue {
+  color: var(--danger-light);
+}
+
+.tile[data-tone="warning"] .tileValue {
+  color: var(--warning);
+}
+
+.tileHint {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+
+.inlineAction {
+  vertical-align: baseline;
+}
+
+/* ── Volume chart ────────────────────────────────────────────────────────── */
+.chart {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-4xs);
+  height: 56px;
+  margin: var(--space-xs) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.column {
+  --queued: 0;
+  --sent: 0;
+  --failed: 0;
+  --captured: 0;
+
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--chart-track-bg);
+  overflow: hidden;
+}
+
+.segment {
+  flex: none;
+}
+
+.segment[data-status="sent"] {
+  height: calc(var(--sent) * 100%);
+  background: var(--success);
+}
+
+.segment[data-status="failed"] {
+  height: calc(var(--failed) * 100%);
+  background: var(--danger);
+}
+
+.segment[data-status="captured"] {
+  height: calc(var(--captured) * 100%);
+  background: var(--warning);
+}
+
+.segment[data-status="queued"] {
+  height: calc(var(--queued) * 100%);
+  background: var(--text-subtle);
+}
+
+.chartAxis {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+
+/* ── Filters ─────────────────────────────────────────────────────────────── */
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-l);
+}
+
+.search {
+  flex: 1 1 240px;
+  min-width: 200px;
+}
+
+.filterSelect {
+  flex: 0 1 190px;
+  min-width: 150px;
+}
+
+/* ── Captured message ───────────────────────────────────────────────────── */
+.message {
+  display: grid;
+  gap: var(--space-s);
+}
+
+.message h4 {
+  margin: 0;
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.message pre {
+  max-height: 320px;
+  margin: 0;
+  padding: var(--space-l);
+  overflow: auto;
+  border-radius: var(--radius);
+  background: var(--bg-surface);
+  color: var(--text-bright);
+  font-family: var(--font-mono);
+  font-size: var(--text-s);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

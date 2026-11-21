@@ -10,8 +10,16 @@
 
 import { nanoid } from 'nanoid'
 import type { StoreApi } from 'zustand'
-import type { NodeTree, PageNode, StyleRule, SiteDocument } from '@core/page-tree'
-import { addPage, createNode, reconcileSiteExplorerInPlace, reindexNodeParents } from '@core/page-tree'
+import type { NodeTree, PageNode, PageSeo, StyleRule, SiteDocument } from '@core/page-tree'
+import {
+  addMissingConditions,
+  addPage,
+  createNode,
+  createStyleRuleOrderAllocator,
+  reconcileSiteExplorerInPlace,
+  reindexNodeParents,
+  type StyleRuleOrderAllocator,
+} from '@core/page-tree'
 import type { VisualComponent } from '@core/visualComponents'
 import { syncAllVCRefSlotInstances, allTreeNodeMaps } from '../vcSlotReconcile'
 import { collectSlotOutletNames } from '@core/visualComponents'
@@ -19,15 +27,19 @@ import { create } from 'mutative'
 import type { Draft, Patches } from 'mutative'
 import type { ImportFragment } from '@core/htmlImport'
 import type { NewStyleRule } from '@core/siteImport'
-import { addImportedScriptDependencies, addImportedScripts, addImportedStylesheets } from './importedSiteFiles'
+import {
+  addImportedScripts,
+  addImportedStylesheets,
+  orderImportedFiles,
+  reuseImportedFiles,
+} from './importedSiteFiles'
+import { addImportedScriptDependencies, replaceImportedScriptDependencies } from './importedScriptDependencies'
 import { applyLocalSitePatches, notifyCollabBlocked } from './collabBinding'
 import type { EditorStore } from '@site/store/types'
 import { reconcileFrameworkClasses } from './framework/reconcile'
 import {
-  createStyleRuleOrderAllocator,
   indexStyleRulesByName,
   linkImportedClassNames,
-  type StyleRuleOrderAllocator,
   findReimportedStyleRule,
   indexStyleRulesByOrigin,
   registerStyleRuleOrigin,
@@ -358,8 +370,19 @@ export function buildSiteHelpers(
       const byOrigin = indexStyleRulesByOrigin(site.styleRules)
       const allocateStyleRuleOrder = createStyleRuleOrderAllocator(site.styleRules)
 
+      // package.json changed: refresh the draft's mirror so the dependency UI sees it.
+      const mirrorPackageJson = (changed: boolean): boolean => {
+        if (changed) {
+          draft.packageJson = {
+            dependencies: { ...site.packageJson.dependencies },
+            devDependencies: { ...site.packageJson.devDependencies },
+          }
+        }
+        return changed
+      }
+
       const helpers: SiteImportTransaction = {
-        addPage({ id: pageId, title, slug, nodeFragment }: { id?: string; title: string; slug: string; nodeFragment: ImportFragment }): string {
+        addPage({ id: pageId, title, slug, nodeFragment, seo }: { id?: string; title: string; slug: string; nodeFragment: ImportFragment; seo: PageSeo | null }): string {
           // addPage creates a fresh base.body root, normalises the slug, and
           // pushes the page onto site.pages. We then graft the fragment nodes
           // in as children of that root — same logical step as insertImportedNodes.
@@ -367,6 +390,7 @@ export function buildSiteHelpers(
           // Honour a caller-supplied id so the importer can pre-mint page ids
           // and rewrite internal links to `cms:page:<id>` before committing.
           if (pageId) page.id = pageId
+          if (seo) page.seo = seo
           applyImportedBodyAttributes(
             page.nodes[page.rootNodeId]!,
             nodeFragment,
@@ -421,7 +445,7 @@ export function buildSiteHelpers(
           return id
         },
 
-        overwritePage(pageId: string, { title, slug, nodeFragment }: { title: string; slug: string; nodeFragment: ImportFragment }): void {
+        overwritePage(pageId: string, { title, slug, nodeFragment, seo }: { title: string; slug: string; nodeFragment: ImportFragment; seo: PageSeo | null }): void {
           const page = site.pages.find((p) => p.id === pageId)
           if (!page) throw new Error('overwritePage: page not found')
 
@@ -449,6 +473,8 @@ export function buildSiteHelpers(
           page.nodes = newNodes
           page.title = title
           page.slug = slug
+          if (seo) page.seo = seo
+          else delete page.seo
           didMutate = true
         },
 
@@ -472,15 +498,7 @@ export function buildSiteHelpers(
         },
 
         addConditions(conditions): void {
-          if (conditions.length === 0) return
-          if (!site.conditions) site.conditions = []
-          const existing = new Set(site.conditions.map((c) => c.id))
-          for (const def of conditions) {
-            if (existing.has(def.id)) continue
-            existing.add(def.id)
-            site.conditions.push(def)
-            didMutate = true
-          }
+          if (addMissingConditions(site, conditions) > 0) didMutate = true
         },
 
         addFonts(fonts): { id: string; family: string }[] {
@@ -526,13 +544,7 @@ export function buildSiteHelpers(
         },
 
         addScripts(scripts): { id: string; path: string }[] {
-          const dependenciesChanged = addImportedScriptDependencies(site, scripts)
-          if (dependenciesChanged) {
-            draft.packageJson = {
-              dependencies: { ...site.packageJson.dependencies },
-              devDependencies: { ...site.packageJson.devDependencies },
-            }
-          }
+          const dependenciesChanged = mirrorPackageJson(addImportedScriptDependencies(site, scripts))
           const committed = addImportedScripts(site, draft.siteRuntime, scripts)
           if (committed.length > 0 || dependenciesChanged) didMutate = true
           return committed
@@ -542,6 +554,21 @@ export function buildSiteHelpers(
           const committed = addImportedStylesheets(site, draft.siteRuntime, stylesheets)
           if (committed.length > 0) didMutate = true
           return committed
+        },
+
+        reuseSiteFiles(items) {
+          const replacing = items.flatMap(({ existingFileId, replacement }) =>
+            replacement && 'format' in replacement ? [{ fileId: existingFileId, script: replacement }] : [])
+          // Decided before the content changes: "other scripts that still import it".
+          const dependencies = replaceImportedScriptDependencies(site, replacing)
+          mirrorPackageJson(dependencies.changed)
+          const files = reuseImportedFiles(site, draft.siteRuntime, items)
+          if (files.length > 0 || dependencies.changed) didMutate = true
+          return { files, warnings: dependencies.warnings }
+        },
+
+        orderImportedFiles(kind, importOrder, addedIds): void {
+          if (orderImportedFiles(site, draft.siteRuntime, kind, importOrder, addedIds)) didMutate = true
         },
       }
 

@@ -1,5 +1,5 @@
 import { readCssDeclarationBlock } from '@core/css-substitution'
-import type { ImportWarning } from './types'
+import type { ImportWarning } from './warnings'
 import type { DeclarationLayer } from './declarationCascade'
 
 export function parseStyleDeclarations(

@@ -27,6 +27,7 @@
  * adapter-agnostic; this module never touches the filesystem directly.
  */
 import type { DbClient } from '../../db/client'
+import type { DeletedMediaAsset } from '../../repositories/media'
 import { dispatchDelete, dispatchUpload } from './mediaUploadDispatch'
 import { getElectedVariantDelegate, type ElectedVariantDelegate } from '../../repositories/mediaStorageAdapters'
 import { runImageVariantJob, isImageVariantOk } from './imageVariantWorkerHost'
@@ -319,4 +320,19 @@ export async function removeVariantFiles(
       console.error('[mediaVariants] variant delete failed (orphaned bytes):', err)
     }
   }
+}
+
+/**
+ * Sweep a hard-deleted asset's bytes: the original through the adapter pinned
+ * on its row, then every variant. Call it only after the row delete has
+ * committed. Best-effort like `removeVariantFiles`: a failed delete logs and
+ * leaves orphaned bytes, never throws.
+ */
+export async function removeMediaAssetFiles(asset: DeletedMediaAsset): Promise<void> {
+  try {
+    await dispatchDelete(asset.storageAdapterId, asset.storagePath)
+  } catch (err) {
+    console.error('[mediaVariants] original delete failed (orphaned bytes):', err)
+  }
+  await removeVariantFiles(asset.variants)
 }

@@ -40,12 +40,6 @@ export function LayerTreeNodeContent({
 }: LayerTreeNodeContentProps) {
   return (
     <>
-      <TreeChevron
-        onClick={onToggle}
-        expanded={expanded}
-        visible={hasChildren && !isRoot}
-      />
-
       {showIcon && (
         <TreeIconSlot iconSize={11} iconColor="var(--text-disabled)">
           <ModuleIcon
@@ -92,6 +86,7 @@ export function LayerTreeNodeContent({
           <EyeOffSolidIcon size={13} color="currentColor" />
         </span>
       )}
+      {hasChildren && !isRoot && <TreeChevron expanded={expanded} onClick={onToggle} />}
     </>
   )
 }

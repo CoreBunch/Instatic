@@ -168,10 +168,10 @@ function makeFakeDb() {
       return { rows: [row as Row], rowCount: 1 }
     }
     // recordFailedLoginAttempt — increments counter and sets locked_until.
-    // Bind shape: values[0]=lockedUntil (Date|null), values[1]=userId.
+    // Bind shape: values[0]=lockedUntil (Date|null), values[1]=updated_at, values[2]=userId.
     if (normalized.includes('update users') && normalized.includes('failed_login_count = failed_login_count + 1')) {
       const lockedUntil = values[0] as Date | null
-      const userId = values[1]
+      const userId = values[2]
       const user = users.find((candidate) => candidate.id === userId && candidate.deleted_at == null)
       if (!user) return { rows: [], rowCount: 0 }
       user.failed_login_count = Number(user.failed_login_count ?? 0) + 1
@@ -349,7 +349,8 @@ function makeFakeDb() {
     // be matched BEFORE the `last_login_at` matcher because the RETURNING
     // clause of this SQL also mentions `last_login_at`.
     if (normalized.includes('update users') && normalized.includes('set email =')) {
-      const userId = values[7]
+      // values[7] is the bound updated_at; the id follows it.
+      const userId = values[8]
       const user = users.find((candidate) => candidate.id === userId && candidate.deleted_at == null)
       if (!user) return { rows: [], rowCount: 0 }
       Object.assign(user, {
@@ -365,7 +366,8 @@ function makeFakeDb() {
       return { rows: [user as Row], rowCount: 1 }
     }
     if (normalized.includes('update users') && normalized.includes('set deleted_at')) {
-      const user = users.find((candidate) => candidate.id === values[0] && candidate.deleted_at == null)
+      // values[0..1] are the bound deleted_at / updated_at; the id follows them.
+      const user = users.find((candidate) => candidate.id === values[2] && candidate.deleted_at == null)
       if (!user) return { rows: [], rowCount: 0 }
       user.deleted_at = new Date().toISOString()
       return { rows: [], rowCount: 1 }

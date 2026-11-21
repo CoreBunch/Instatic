@@ -184,7 +184,7 @@ Each accent also has a standard 10% tint for soft backgrounds: `--accent-1-10`, 
 `TagPill` maps the first meaningful alphanumeric character of its label to a
 stable numbered accent. This keeps selector punctuation from driving the color
 while giving class names, HTML tags, and badges enough visual variety without
-creating a second tag-specific tint scale.
+creating a second tag-specific tint scale. A `tone` (`success`, `warning`, `danger`) replaces the categorical accent with the matching state token — the same gradient tint, coloured by state — for badges that report a status rather than an identity (the merge review's request state, a change's action).
 
 ---
 

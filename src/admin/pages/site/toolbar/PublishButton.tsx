@@ -1,22 +1,30 @@
-import { useEffect, useRef, useState } from 'react'
+import { VersionHistoryDialog } from '@admin/shared/VersionHistoryDialog'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import type { SiteDocument } from '@core/page-tree'
 import { selectActivePage, useEditorStore } from '@site/store/store'
 import { getCmsPublishStatus, publishCmsDraft } from '@core/persistence'
+import { requestLoopSourcesRefresh } from '@site/canvas/loopSourceEvents'
+import { reportPublishWarnings } from '@site/toolbar/reportPublishWarnings'
 import { LoaderIcon } from 'pixel-art-icons/icons/loader'
 import { CalendarSolidIcon } from 'pixel-art-icons/icons/calendar-solid'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { CircleAlertSolidIcon } from 'pixel-art-icons/icons/circle-alert-solid'
 import { CloudUploadSolidIcon } from 'pixel-art-icons/icons/cloud-upload-solid'
 import { EyeSolidIcon } from 'pixel-art-icons/icons/eye-solid'
+import { ArchiveRestoreSolidIcon } from 'pixel-art-icons/icons/archive-restore-solid'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
+import { useBranchPublishGate } from '@admin/state/branchStore'
 import { SchedulePublishDialog } from '@admin/modals/SchedulePublishDialog'
 import type { PersistenceSaveStatus } from '@site/hooks/usePersistence'
 import { pushToast } from '@ui/components/Toast'
+import { summarizeRuntimeDiagnostics } from '@core/site-runtime'
+import { SiteDiagnosticsList } from '@site/diagnostics'
 import { PublishActionGroup, type PublishActionMenuItem } from './PublishActionGroup'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import type { SiteRuntimeDiagnostic } from '@core/site-runtime'
 
 type PublishState = 'idle' | 'publishing' | 'published' | 'error'
+
 
 interface PublishButtonProps {
   enabled?: boolean
@@ -38,8 +46,12 @@ export function PublishButton({
   const activePage = useEditorStore(selectActivePage)
   const openPreview = useEditorStore((s) => s.openPreview)
   const { runStepUp } = useStepUp()
+  // Publishing only exists on main: on a branch the control stays visible
+  // but disabled, and the status chip carries the reason inline.
+  const branchGate = useBranchPublishGate()
   const [state, setState] = useState<PublishState>('idle')
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   /**
    * The `site` reference captured when the button entered the "published"
@@ -49,8 +61,20 @@ export function PublishButton({
    */
   const publishedSiteRef = useRef<SiteDocument | null>(null)
   const syncError = saveStatus?.state === 'error' ? saveStatus.message ?? 'Sync failed' : null
-  const runtimeErrorCount = runtimeDiagnostics.filter((diagnostic) => diagnostic.severity === 'error').length
+  const diagnosticsSummary = summarizeRuntimeDiagnostics(runtimeDiagnostics)
+  const runtimeErrorCount = diagnosticsSummary.errors
   const runtimeErrorLabel = `${runtimeErrorCount} code error${runtimeErrorCount === 1 ? '' : 's'}`
+  // A count alone is not actionable. The same breakdown hangs off both the
+  // status text and the publish button, because a blocked publish disables
+  // the button and the status is then the only thing left to hover.
+  const diagnosticsDetail = (
+    <SiteDiagnosticsList
+      files={diagnosticsSummary.files}
+      siteWide={diagnosticsSummary.siteWide}
+      errors={diagnosticsSummary.errors}
+      warnings={diagnosticsSummary.warnings}
+    />
+  )
 
   useEffect(() => {
     const timer = statusTimerRef
@@ -60,7 +84,7 @@ export function PublishButton({
   }, [])
 
   useEffect(() => {
-    if (!enabled || !siteId) return
+    if (!enabled || !siteId || branchGate.onBranch) return
     let cancelled = false
 
     async function loadPublishStatus() {
@@ -78,7 +102,7 @@ export function PublishButton({
 
     void loadPublishStatus()
     return () => { cancelled = true }
-  }, [enabled, siteId])
+  }, [enabled, siteId, branchGate.onBranch])
 
   useEffect(() => {
     if (state !== 'published' || site === publishedSiteRef.current) return
@@ -102,6 +126,7 @@ export function PublishButton({
     if (
       !site ||
       !enabled ||
+      branchGate.onBranch ||
       state === 'publishing' ||
       runtimeErrorCount > 0 ||
       runtimeValidationPending
@@ -113,6 +138,9 @@ export function PublishButton({
     }
 
     setState('publishing')
+    // A plugin may have been disabled since this editor last looked. The
+    // publish does not wait for the answer; the canvas catches up.
+    requestLoopSourcesRefresh()
 
     try {
       // No client-side flush needed: edits stream to the server live, and
@@ -123,9 +151,10 @@ export function PublishButton({
       // blast-radius site action (one click replaces every public page),
       // which is why the server gates it behind a fresh step-up window
       // in addition to the `pages.publish` capability check.
-      await runStepUp(() => publishCmsDraft())
+      const result = await runStepUp(() => publishCmsDraft())
       publishedSiteRef.current = useEditorStore.getState().site
       setState('published')
+      void reportPublishWarnings(result)
     } catch (err) {
       if (err instanceof Error && err.message === StepUpCancelledMessage) {
         // User dismissed the step-up dialog — return the button to its
@@ -156,6 +185,7 @@ export function PublishButton({
   const disabled = (
     !site ||
     !enabled ||
+    branchGate.onBranch ||
     isPublishing ||
     notSynced ||
     runtimeErrorCount > 0 ||
@@ -167,6 +197,8 @@ export function PublishButton({
     state === 'error' ? 'Retry publish' :
     'Publish'
 
+  // No branch entry here: the strip names the branch and the disabled Publish
+  // carries the reason, so the status pill stays about sync and code health.
   const status =
     syncError ? {
       label: 'Sync failed',
@@ -212,7 +244,7 @@ export function PublishButton({
       id: 'schedule-publish',
       label: 'Schedule publish…',
       icon: CalendarSolidIcon,
-      disabled: !activePage || runtimeErrorCount > 0 || runtimeValidationPending,
+      disabled: !activePage || branchGate.onBranch || runtimeErrorCount > 0 || runtimeValidationPending,
       onSelect: () => setScheduleDialogOpen(true),
       testId: 'toolbar-schedule-publish-action',
     },
@@ -223,6 +255,16 @@ export function PublishButton({
       disabled: !site,
       onSelect: () => openPreview(),
       testId: 'toolbar-preview-action',
+    },
+    {
+      // Published versions of the active page; restoring rewrites its draft
+      // on the active branch and the relay reloads the canvas.
+      id: 'version-history',
+      label: 'Version history…',
+      icon: ArchiveRestoreSolidIcon,
+      disabled: !activePage,
+      onSelect: () => setHistoryOpen(true),
+      testId: 'toolbar-version-history-action',
     },
     // "Open live page" used to live here. It now has a dedicated
     // toolbar icon button (`OpenLivePageButton`) next to the avatar so
@@ -235,20 +277,24 @@ export function PublishButton({
         statusLabel={state === 'published' ? null : status.label}
         statusTone={status.tone}
         statusAriaLabel={status.ariaLabel}
+        statusTooltip={runtimeErrorCount > 0 ? diagnosticsDetail : undefined}
         publishLabel={label}
         publishAriaLabel={
-          state === 'published'
-            ? 'Published'
-            : runtimeErrorCount > 0
-              ? `Cannot publish: ${runtimeErrorLabel}`
-              : 'Publish site'
+          branchGate.reason
+            ? `Cannot publish: ${branchGate.reason}`
+            : state === 'published'
+              ? 'Published'
+              : runtimeErrorCount > 0
+                ? `Cannot publish: ${runtimeErrorLabel}`
+                : 'Publish site'
         }
         publishTitle={
-          state === 'published'
-            ? 'Published'
-            : runtimeErrorCount > 0
-              ? `Resolve ${runtimeErrorLabel} before publishing`
-              : 'Publish site'
+          branchGate.reason
+            ?? (state === 'published'
+              ? 'Published'
+              : runtimeErrorCount > 0
+                ? diagnosticsDetail
+                : 'Publish site')
         }
         publishState={state === 'publishing' ? 'busy' : state === 'published' ? 'success' : state}
         publishBusy={isPublishing}
@@ -257,6 +303,16 @@ export function PublishButton({
         onPublish={handlePublish}
         menuItems={menuItems}
       />
+      {activePage && historyOpen && (
+        <Suspense fallback={null}>
+          <VersionHistoryDialog
+            rowId={activePage.id}
+            entityLabel="page"
+            title={activePage.title}
+            onClose={() => setHistoryOpen(false)}
+          />
+        </Suspense>
+      )}
       {activePage && (
         <SchedulePublishDialog
           open={scheduleDialogOpen}

@@ -37,6 +37,7 @@ import { BundlePreviewSchema } from '@core/data/bundleSchema'
 import type { DbClient } from '../../../server/db/client'
 import type { SiteShell } from '@core/page-tree'
 import type { DataRow, DataTable } from '@core/data/schemas'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 
 // ---------------------------------------------------------------------------
 // Minimal valid site shell for seeding
@@ -63,7 +64,7 @@ const TEST_SHELL: SiteShell = {
 // ---------------------------------------------------------------------------
 
 async function seedAuth(db: DbClient): Promise<string> {
-  await saveDraftSite(db, TEST_SHELL)
+  await saveDraftSite(db, MAIN_SCOPE, TEST_SHELL)
   await createUser(db, {
     id: 'test-owner',
     email: 'owner@preview.test',
@@ -166,7 +167,7 @@ describe('handleImportPreviewRoute — empty local + non-empty bundle', () => {
     }
 
     const req = makePreviewRequest(cookie, bundle)
-    const res = await handleImportPreviewRoute(req, db)
+    const res = await handleImportPreviewRoute(req, db, MAIN_SCOPE)
     expect(res).not.toBeNull()
     expect(res!.status).toBe(200)
 
@@ -189,11 +190,11 @@ describe('handleImportPreviewRoute — 2 of 5 local rows overlap with bundle', (
     const cookie = await seedAuth(db)
 
     // Seed 5 posts locally — 2 of them will share IDs with the bundle
-    const local1 = await createDataRow(db, { tableId: 'posts', cells: {}, slug: 'l1' })
-    const local2 = await createDataRow(db, { tableId: 'posts', cells: {}, slug: 'l2' })
-    const overlap1 = await createDataRow(db, { tableId: 'posts', cells: {}, slug: 'o1' })
-    const overlap2 = await createDataRow(db, { tableId: 'posts', cells: {}, slug: 'o2' })
-    const local5 = await createDataRow(db, { tableId: 'posts', cells: {}, slug: 'l5' })
+    const local1 = await createDataRow(db, MAIN_SCOPE, { tableId: 'posts', cells: {}, slug: 'l1' })
+    const local2 = await createDataRow(db, MAIN_SCOPE, { tableId: 'posts', cells: {}, slug: 'l2' })
+    const overlap1 = await createDataRow(db, MAIN_SCOPE, { tableId: 'posts', cells: {}, slug: 'o1' })
+    const overlap2 = await createDataRow(db, MAIN_SCOPE, { tableId: 'posts', cells: {}, slug: 'o2' })
+    const local5 = await createDataRow(db, MAIN_SCOPE, { tableId: 'posts', cells: {}, slug: 'l5' })
 
     // Bundle contains 4 rows: 2 overlap with local, 2 are new
     const bundle = {
@@ -212,7 +213,7 @@ describe('handleImportPreviewRoute — 2 of 5 local rows overlap with bundle', (
     void local1; void local2; void local5
 
     const req = makePreviewRequest(cookie, bundle)
-    const res = await handleImportPreviewRoute(req, db)
+    const res = await handleImportPreviewRoute(req, db, MAIN_SCOPE)
     const body = JSON.parse(await res!.text())
     const preview = parseValue(BundlePreviewSchema, body)
 
@@ -231,7 +232,7 @@ describe('handleImportPreviewRoute — row slug conflicts', () => {
     await runMigrations(db, sqliteMigrations)
     const cookie = await seedAuth(db)
 
-    await createDataRow(db, { tableId: 'posts', cells: { title: 'Local', slug: 'shared' }, slug: 'shared' })
+    await createDataRow(db, MAIN_SCOPE, { tableId: 'posts', cells: { title: 'Local', slug: 'shared' }, slug: 'shared' })
 
     const bundle = {
       schemaVersion: 1,
@@ -244,7 +245,7 @@ describe('handleImportPreviewRoute — row slug conflicts', () => {
     }
 
     const req = makePreviewRequest(cookie, bundle)
-    const res = await handleImportPreviewRoute(req, db)
+    const res = await handleImportPreviewRoute(req, db, MAIN_SCOPE)
     const body = JSON.parse(await res!.text())
     const preview = parseValue(BundlePreviewSchema, body)
 
@@ -276,7 +277,7 @@ describe('handleImportPreviewRoute — bundle table not present locally', () => 
     }
 
     const req = makePreviewRequest(cookie, bundle)
-    const res = await handleImportPreviewRoute(req, db)
+    const res = await handleImportPreviewRoute(req, db, MAIN_SCOPE)
     const body = JSON.parse(await res!.text())
     const preview = parseValue(BundlePreviewSchema, body)
 
@@ -345,7 +346,7 @@ describe('handleImportPreviewRoute — totals.mediaEmbedded', () => {
     }
 
     const req = makePreviewRequest(cookie, bundle)
-    const res = await handleImportPreviewRoute(req, db)
+    const res = await handleImportPreviewRoute(req, db, MAIN_SCOPE)
     const body = JSON.parse(await res!.text())
     const preview = parseValue(BundlePreviewSchema, body)
 
@@ -367,7 +368,7 @@ describe('handleImportPreviewRoute — totals.mediaEmbedded', () => {
     }
 
     const req = makePreviewRequest(cookie, bundle)
-    const res = await handleImportPreviewRoute(req, db)
+    const res = await handleImportPreviewRoute(req, db, MAIN_SCOPE)
     const body = JSON.parse(await res!.text())
     const preview = parseValue(BundlePreviewSchema, body)
 
@@ -392,7 +393,7 @@ describe('handleImportPreviewRoute — meta fields', () => {
     }
 
     const req = makePreviewRequest(cookie, bundle)
-    const res = await handleImportPreviewRoute(req, db)
+    const res = await handleImportPreviewRoute(req, db, MAIN_SCOPE)
     const body = JSON.parse(await res!.text())
     const preview = parseValue(BundlePreviewSchema, body)
 
@@ -415,7 +416,7 @@ describe('handleImportPreviewRoute — meta fields', () => {
     }
 
     const req = makePreviewRequest(cookie, bundle)
-    const res = await handleImportPreviewRoute(req, db)
+    const res = await handleImportPreviewRoute(req, db, MAIN_SCOPE)
     const body = JSON.parse(await res!.text())
     const preview = parseValue(BundlePreviewSchema, body)
 
@@ -441,7 +442,7 @@ describe('handleImportPreviewRoute — totals.rows', () => {
     }
 
     const req = makePreviewRequest(cookie, bundle)
-    const res = await handleImportPreviewRoute(req, db)
+    const res = await handleImportPreviewRoute(req, db, MAIN_SCOPE)
     const body = JSON.parse(await res!.text())
     const preview = parseValue(BundlePreviewSchema, body)
 
@@ -462,7 +463,7 @@ describe('handleImportPreviewRoute — auth', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(bundle),
     })
-    const res = await handleImportPreviewRoute(req, db)
+    const res = await handleImportPreviewRoute(req, db, MAIN_SCOPE)
     expect(res!.status).toBe(401)
   })
 })

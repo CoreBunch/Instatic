@@ -72,7 +72,12 @@ export function makeStaticRunProgress(plan: ImportPlan): RunProgress {
   progress.categories.pages = { done: 0, total: plan.pages.length }
   // Kept stylesheet files count alongside converted rules — one "styles" row.
   progress.categories.styles = { done: 0, total: plan.styleRules.length + plan.stylesheets.length }
-  progress.categories.media = { done: 0, total: plan.assets.length }
+  // Files the library already holds are reused, not uploaded: they start done.
+  const reused = new Set(
+    plan.conflicts.media.filter((c) => c.defaultResolution.action === 'skip').map((c) => c.sourcePath),
+  )
+  const reusedCount = plan.assets.filter((asset) => reused.has(asset.sourcePath)).length
+  progress.categories.media = { done: reusedCount, total: plan.assets.length }
   progress.categories.colors = { done: 0, total: plan.colors.length }
   progress.categories.fonts = {
     done: 0,
@@ -115,11 +120,13 @@ export function rankWarning(kind: ImportWarning['kind']): number {
     case 'asset-upload-failed':
     case 'missing-stylesheet':
     case 'missing-script':
+    case 'missing-svg-sprite':
     case 'script-order-conflict':
       return 0
     case 'external-font':
     case 'font-install-failed':
     case 'asset-folder-failed':
+    case 'dependency-version-kept':
       return 1
     default:
       return 2
@@ -173,4 +180,15 @@ export function makeCmsRunDoneProgress(totals: CmsRunTotals, result: CmsImportRe
   progress.categories.mediaFolders = { done: result.mediaFoldersImported, total: totals.mediaFolders }
   progress.categories.redirects = { done: result.redirectsImported, total: totals.redirects }
   return progress
+}
+
+/** One-line "what landed" summary for the completion toast of a static run. */
+export function describeStaticImportResult(result: ImportResult, mediaSummary: string): string {
+  const sheets = result.stylesheets.length
+  return [
+    `${result.pages.length} pages`,
+    `${result.styleRules.length} style rules`,
+    ...(sheets > 0 ? [`${sheets} ${sheets === 1 ? 'stylesheet' : 'stylesheets'}`] : []),
+    mediaSummary,
+  ].join(' · ')
 }

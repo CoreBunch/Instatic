@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'bun:test'
-import { normalizeOrigin, readServerConfig, resolvePublicOrigins } from '../../../server/config'
+import { tmpdir } from 'node:os'
+import { resolve } from 'node:path'
+import { normalizeOrigin, readRuntimeCacheDir, readServerConfig, resolvePublicOrigins } from '../../../server/config'
 
 describe('normalizeOrigin', () => {
   it('lowercases scheme and host and strips the trailing slash', () => {
@@ -128,10 +130,13 @@ describe('readServerConfig', () => {
       staticDir: './dist',
       trustedProxyCidrs: [],
       publicOrigins: [],
+      npmRegistryUrl: 'https://registry.npmjs.org',
+      manager: { token: null, tokenRejected: false, dir: resolve('.tmp/manager') },
+      runtimeCacheDir: resolve('.tmp/runtime-cache'),
     })
   })
 
-  it('reads runtime paths, port, trusted proxies, and public origins from env', () => {
+  it('reads runtime paths, port, trusted proxies, public origins, and the registry from env', () => {
     expect(
       readServerConfig({
         PORT: '4321',
@@ -144,6 +149,7 @@ describe('readServerConfig', () => {
         PUBLIC_ORIGIN: 'https://CMS.example.com/, http://localhost:5173',
         RENDER_EXTERNAL_URL: 'https://ignored.onrender.com',
         RAILWAY_PUBLIC_DOMAIN: 'ignored.up.railway.app',
+        NPM_REGISTRY_URL: 'https://npm.example.com/registry/',
       }),
     ).toEqual({
       port: 4321,
@@ -154,6 +160,36 @@ describe('readServerConfig', () => {
       staticDir: '/srv/instatic/dist',
       trustedProxyCidrs: ['10.0.0.0/8', '192.168.0.0/16'],
       publicOrigins: ['https://cms.example.com', 'http://localhost:5173'],
+      npmRegistryUrl: 'https://npm.example.com/registry',
+      manager: { token: null, tokenRejected: false, dir: resolve('/srv/instatic/manager') },
+      runtimeCacheDir: resolve('/srv/instatic/runtime-cache'),
     })
+  })
+})
+
+describe('readRuntimeCacheDir', () => {
+  it('sits beside the SQLite database, where the data volume is', () => {
+    expect(
+      readRuntimeCacheDir({ DATABASE_URL: 'sqlite:/app/data/cms.db', UPLOADS_DIR: '/app/uploads' }),
+    ).toBe(resolve('/app/data/runtime-cache'))
+  })
+
+  it('sits beside the uploads directory for Postgres, never inside it', () => {
+    const dir = readRuntimeCacheDir({
+      DATABASE_URL: 'postgres://instatic:secret@postgres:5432/instatic',
+      UPLOADS_DIR: '/app/storage/uploads',
+    })
+    expect(dir).toBe(resolve('/app/storage/runtime-cache'))
+    expect(dir.startsWith(resolve('/app/storage/uploads'))).toBe(false)
+  })
+
+  it('never defaults to the OS temp folder', () => {
+    expect(readRuntimeCacheDir({}).startsWith(resolve(tmpdir()))).toBe(false)
+  })
+
+  it('lets RUNTIME_CACHE_DIR override the default', () => {
+    expect(
+      readRuntimeCacheDir({ RUNTIME_CACHE_DIR: './custom-cache', DATABASE_URL: 'sqlite:/app/data/cms.db' }),
+    ).toBe(resolve('./custom-cache'))
   })
 })

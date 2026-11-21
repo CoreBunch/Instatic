@@ -1,5 +1,7 @@
 import type { ModuleComponentProps } from '@core/module-engine'
+import { htmlAttributesForReact } from '@core/htmlAttributes'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
+import { submitUsesChildren } from './content'
 
 type FormProps = Record<string, unknown> & {
   formId: string
@@ -101,7 +103,7 @@ export function FormEditor({ children, mcClassName, nodeWrapperProps, props }: M
 export function LabelEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<LabelProps>) {
   const htmlFor = props.targetMode === 'explicit' && props.targetId ? props.targetId : undefined
   return (
-    <label {...nodeWrapperProps} className={mcClassName} htmlFor={htmlFor}>
+    <label {...htmlAttributesForReact(props.htmlAttributes)} {...nodeWrapperProps} className={mcClassName} htmlFor={htmlFor}>
       {props.text}
     </label>
   )
@@ -110,6 +112,7 @@ export function LabelEditor({ mcClassName, nodeWrapperProps, props }: ModuleComp
 export function InputEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<InputProps>) {
   return (
     <input
+      {...htmlAttributesForReact(props.htmlAttributes)}
       {...nodeWrapperProps}
       className={mcClassName}
       type={props.inputType}
@@ -128,6 +131,7 @@ export function InputEditor({ mcClassName, nodeWrapperProps, props }: ModuleComp
 export function TextareaEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<TextareaProps>) {
   return (
     <textarea
+      {...htmlAttributesForReact(props.htmlAttributes)}
       {...nodeWrapperProps}
       className={mcClassName}
       name={props.name}
@@ -145,6 +149,7 @@ export function TextareaEditor({ mcClassName, nodeWrapperProps, props }: ModuleC
 export function SelectEditor({ children, mcClassName, nodeWrapperProps, props }: ModuleComponentProps<SelectProps>) {
   return (
     <select
+      {...htmlAttributesForReact(props.htmlAttributes)}
       {...nodeWrapperProps}
       className={mcClassName}
       name={props.name}
@@ -160,7 +165,7 @@ export function SelectEditor({ children, mcClassName, nodeWrapperProps, props }:
 
 export function OptionEditor({ nodeWrapperProps, props }: ModuleComponentProps<OptionProps>) {
   return (
-    <option {...nodeWrapperProps} value={props.value} disabled={props.disabled}>
+    <option {...htmlAttributesForReact(props.htmlAttributes)} {...nodeWrapperProps} value={props.value} disabled={props.disabled}>
       {props.label}
     </option>
   )
@@ -168,7 +173,7 @@ export function OptionEditor({ nodeWrapperProps, props }: ModuleComponentProps<O
 
 export function OptionGroupEditor({ children, nodeWrapperProps, props }: ModuleComponentProps<OptionGroupProps>) {
   return (
-    <optgroup {...nodeWrapperProps} label={props.label} disabled={props.disabled}>
+    <optgroup {...htmlAttributesForReact(props.htmlAttributes)} {...nodeWrapperProps} label={props.label} disabled={props.disabled}>
       {children}
     </optgroup>
   )
@@ -177,6 +182,7 @@ export function OptionGroupEditor({ children, nodeWrapperProps, props }: ModuleC
 export function CheckboxEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<ChoiceProps>) {
   return (
     <input
+      {...htmlAttributesForReact(props.htmlAttributes)}
       {...nodeWrapperProps}
       className={mcClassName}
       type="checkbox"
@@ -193,6 +199,7 @@ export function CheckboxEditor({ mcClassName, nodeWrapperProps, props }: ModuleC
 export function RadioEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<ChoiceProps>) {
   return (
     <input
+      {...htmlAttributesForReact(props.htmlAttributes)}
       {...nodeWrapperProps}
       className={mcClassName}
       type="radio"
@@ -206,17 +213,19 @@ export function RadioEditor({ mcClassName, nodeWrapperProps, props }: ModuleComp
   )
 }
 
-export function SubmitEditor({ mcClassName, nodeWrapperProps, props }: ModuleComponentProps<SubmitProps>) {
+export function SubmitEditor({ mcClassName, nodeWrapperProps, props, children }: ModuleComponentProps<SubmitProps>) {
   const formId = normalizeIdentifierValue(props.formId)
+  const childCount = Array.isArray(children) ? children.length : children != null ? 1 : 0
   return (
     <button
+      {...htmlAttributesForReact(props.htmlAttributes)}
       {...nodeWrapperProps}
       className={mcClassName}
-      type="button"
+      type="submit"
       disabled={props.disabled}
       form={formId || undefined}
     >
-      {props.label}
+      {submitUsesChildren(childCount) ? children : props.label}
     </button>
   )
 }

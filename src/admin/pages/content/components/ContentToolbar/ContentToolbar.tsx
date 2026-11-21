@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { VersionHistoryDialog } from '@admin/shared/VersionHistoryDialog'
+import { Suspense, useState } from 'react'
 import { CalendarSolidIcon } from 'pixel-art-icons/icons/calendar-solid'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { CircleAlertSolidIcon } from 'pixel-art-icons/icons/circle-alert-solid'
 import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
+import { ArchiveRestoreSolidIcon } from 'pixel-art-icons/icons/archive-restore-solid'
 import { LoaderIcon } from 'pixel-art-icons/icons/loader'
 import { SaveSolidIcon } from 'pixel-art-icons/icons/save-solid'
 import { SendSolidIcon } from 'pixel-art-icons/icons/send-solid'
@@ -14,6 +16,7 @@ import {
   type PublishActionStatusTone,
 } from '@site/toolbar/PublishActionGroup'
 import { SchedulePublishDialog } from '@admin/modals/SchedulePublishDialog'
+import { useBranchPublishGate } from '@admin/state/branchStore'
 import type { SaveMessage } from '@content/hooks/useContentEntryDraft'
 
 interface ContentToolbarProps {
@@ -28,6 +31,8 @@ interface ContentToolbarProps {
   onSaveDraft: () => void
   onPublish: () => void
   onSchedule: (entry: DataRow) => void
+  /** Fires with the draft row after a published version is restored into it. */
+  onRestored: (entry: DataRow) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -163,6 +168,7 @@ export function ContentToolbar({
   onSaveDraft,
   onPublish,
   onSchedule,
+  onRestored,
 }: ContentToolbarProps) {
   const entryLabel = (selectedCollection?.singularLabel ?? 'entry').toLowerCase()
   // Destructure the derived view state so the JSX below keeps reading like
@@ -175,6 +181,10 @@ export function ContentToolbar({
   const isSaving = saveMessage === 'saving'
   const isPublishing = saveMessage === 'publishing'
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  // Publishing and scheduling only exist on main — disabled with the reason
+  // inline while a branch is active.
+  const branchGate = useBranchPublishGate()
 
   const menuItems: PublishActionMenuItem[] = [
     {
@@ -192,9 +202,17 @@ export function ContentToolbar({
       id: 'schedule-publish',
       label: `Schedule ${entryLabel}…`,
       icon: CalendarSolidIcon,
-      disabled: !selectedEntry || !canPublish || isPublishing,
+      disabled: !selectedEntry || !canPublish || isPublishing || branchGate.onBranch,
       onSelect: () => setScheduleDialogOpen(true),
       testId: 'toolbar-content-schedule-publish-action',
+    },
+    {
+      id: 'version-history',
+      label: 'Version history…',
+      icon: ArchiveRestoreSolidIcon,
+      disabled: !selectedEntry || !canSaveDraft,
+      onSelect: () => setHistoryOpen(true),
+      testId: 'toolbar-content-version-history-action',
     },
     {
       id: 'open-live',
@@ -215,15 +233,30 @@ export function ContentToolbar({
         statusLabel={isCleanPublished ? null : statusText}
         statusTone={statusTone}
         publishLabel={publishLabel}
-        publishAriaLabel={isCleanPublished ? 'Published' : `Publish ${entryLabel}`}
-        publishTitle={isCleanPublished ? 'Published' : `Publish ${entryLabel}`}
+        publishAriaLabel={
+          branchGate.reason
+            ? `Cannot publish: ${branchGate.reason}`
+            : isCleanPublished ? 'Published' : `Publish ${entryLabel}`
+        }
+        publishTitle={branchGate.reason ?? (isCleanPublished ? 'Published' : `Publish ${entryLabel}`)}
         publishState={publishState}
         publishBusy={isPublishing}
-        publishDisabled={!selectedEntry || !canPublish || isPublishing || isCleanPublished}
+        publishDisabled={!selectedEntry || !canPublish || isPublishing || isCleanPublished || branchGate.onBranch}
         publishIcon={PublishIcon}
         onPublish={onPublish}
         menuItems={menuItems}
       />
+      {selectedEntry && historyOpen && (
+        <Suspense fallback={null}>
+          <VersionHistoryDialog
+            rowId={selectedEntry.id}
+            entityLabel={entryLabel}
+            title={typeof selectedEntry.cells.title === 'string' ? selectedEntry.cells.title : null}
+            onClose={() => setHistoryOpen(false)}
+            onRestored={onRestored}
+          />
+        </Suspense>
+      )}
       {selectedEntry && (
         <SchedulePublishDialog
           open={scheduleDialogOpen}

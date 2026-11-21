@@ -1,21 +1,34 @@
+import { join as joinPath, resolve as resolvePath, sep as pathSeparator } from 'node:path'
 import { tryHandleAi } from './ai/handlers'
 import { handleMcpHttp, MCP_ENDPOINT_PATH } from './ai/mcp'
 import { tryHandleMcpOAuth } from './ai/mcp/oauth/handler'
 import { handleCmsRequest } from './handlers/cms'
+import { readPreviewAsset } from './publish/branchPreviewAssets'
+import {
+  tryServeBranchPreviewLink,
+  tryServeNotFoundPage,
+  tryServePublicRoute,
+  trySetupRedirect,
+} from './publish/publicRoutes'
 import type { DbClient } from './db/client'
-import { renderNotFoundResponse, renderPublicResolution } from './publish/publicRouter'
+import type { RouteHandler, ServerRuntime } from './serverRuntime'
 import { readStaticAsset } from './publish/staticArtefact'
 import { getLatestSnapshotForVersion } from './publish/publishedSnapshotCache'
 import { getPublishVersion, registerVersionedCacheReset } from './publish/publishState'
 import { prefetchMediaAssets } from './publish/mediaPrefetch'
-import { getSetupStatusCached } from './repositories/setup'
 import { getPublishedRuntimeAsset } from './repositories/runtimeAsset'
 import { handleLoopRequest, isLoopRuntimeAssetPath, serveLoopRuntimeAsset } from './handlers/cms/loop'
 import { handleHoleRequest, isHoleRuntimeAssetPath, serveHoleRuntimeAsset } from './handlers/cms/hole'
 import { handleModuleJsAssetRequest, isModuleJsAssetPath } from './handlers/cms/moduleJs'
 import { handlePublicFormRequest } from './forms/handler'
+import { handleMemberOAuthRequest } from './members/apps/handler'
+import { MEMBER_OAUTH_METADATA_PATH } from './members/apps/protocol'
+import { handleMemberRequest, MEMBERS_PATH_PREFIX } from './members/handlers'
+import { handlePublicPluginRouteRequest, PUBLIC_PLUGIN_PATH_PREFIX } from './plugins/publicRoutes'
 import { isRuntimePackagePath, tryServeRuntimePackage } from './publish/runtime/packageServer'
+import { restorePublishedRuntimeCache } from './publish/runtime/publishedCacheRestore'
 import { jsonResponse } from './http'
+import { tryServeManager } from './manager/handler'
 import { binaryResponse, toArrayBuffer } from './binary'
 import { hardenUploadResponse, serveAdminApp, serveStaticFile } from './static'
 import { registry } from '@core/module-engine'
@@ -24,33 +37,6 @@ import { buildPublishedSiteCssBundle } from './publish/siteCssBundle'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 
 const VITE_DEV_URL = 'http://localhost:5173'
-
-interface ServerRuntime {
-  db: DbClient
-  staticDir?: string
-  uploadsDir?: string
-  /**
-   * The raw `DATABASE_URL` the server booted with — forwarded down to
-   * CMS handlers that need to resolve the on-disk SQLite file (e.g. the
-   * storage dashboard widget).
-   */
-  databaseUrl?: string
-}
-
-/**
- * A route handler returns a `Response` if it owns the request, or `null` if
- * the URL/method doesn't match — the dispatcher walks the `routes` table and
- * returns the first non-null response. Prefix-namespaced handlers (e.g.
- * `/_instatic/css/`, `/_instatic/runtime/cache/`) absorb their entire namespace and emit
- * a 404 themselves rather than falling through, so unknown paths under a
- * known prefix can't accidentally match a later route.
- */
-type RouteHandler = (
-  req: Request,
-  runtime: ServerRuntime,
-  url: URL,
-  pathname: string,
-) => Promise<Response | null> | Response | null
 
 // ---------------------------------------------------------------------------
 // Dispatcher
@@ -64,6 +50,10 @@ type RouteHandler = (
  */
 const routes: readonly RouteHandler[] = [
   tryServeHealth,
+  // Manager API — `/_instatic/manager/v1/*`. Bearer-token gated and invisible
+  // (404) unless INSTATIC_MANAGER_TOKEN is set. Matched early: it never uses
+  // the admin session and owns its namespace exclusively.
+  tryServeManager,
   // OAuth discovery, dynamic client registration, and token exchange for
   // hosted MCP clients. These endpoints are public protocol surfaces; the
   // interactive consent step remains admin-session + step-up gated.
@@ -78,12 +68,20 @@ const routes: readonly RouteHandler[] = [
   // runtime rewrite. The site editor now POSTs `/admin/api/ai/chat/site`.
   tryServeAi,
   tryServeCmsApi,
+  // Branch preview links — `/_instatic/preview/<token>` sets the preview
+  // cookie, `/_instatic/preview/exit` clears it. Public GETs below then
+  // render the branch's draft while the cookie names a live link.
+  tryServeBranchPreviewLink,
   tryServeLoopRuntimeAsset,
   tryServeLoop,
   tryServeHoleRuntimeAsset,
   tryServeHole,
   tryServeModuleJsAsset,
   tryServePublicForm,
+  // Site members: sign-up, sign-in and account actions for published pages.
+  tryServeMembers,
+  // Plugin routes for the published site: public endpoints and member-only ones.
+  tryServePublicPluginRoute,
   tryServeRuntimeAsset,
   tryServeRuntimePackageNamespace,
   tryServeSiteCssNamespace,
@@ -191,6 +189,7 @@ function tryServeCmsApi(req: Request, runtime: ServerRuntime, _url: URL, pathnam
   return handleCmsRequest(req, runtime.db, {
     uploadsDir: runtime.uploadsDir,
     databaseUrl: runtime.databaseUrl,
+    collabRelay: runtime.collabRelay,
   })
 }
 
@@ -198,9 +197,9 @@ function tryServeCmsApi(req: Request, runtime: ServerRuntime, _url: URL, pathnam
  * The loop runtime is a fixed CMS asset, served before the per-site
  * runtime asset lookup so the request never falls through.
  */
-function tryServeLoopRuntimeAsset(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Response | null {
+function tryServeLoopRuntimeAsset(req: Request, _runtime: ServerRuntime, url: URL, pathname: string): Response | null {
   if (req.method !== 'GET' || !isLoopRuntimeAssetPath(pathname)) return null
-  return serveLoopRuntimeAsset()
+  return serveLoopRuntimeAsset(req, url)
 }
 
 function tryServeLoop(req: Request, runtime: ServerRuntime, url: URL, pathname: string): Promise<Response> | null {
@@ -213,9 +212,9 @@ function tryServeLoop(req: Request, runtime: ServerRuntime, url: URL, pathname: 
  * Registered before `tryServeHole` so the exact path is consumed here and
  * never falls through to the hole fragment handler.
  */
-function tryServeHoleRuntimeAsset(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Response | null {
+function tryServeHoleRuntimeAsset(req: Request, _runtime: ServerRuntime, url: URL, pathname: string): Response | null {
   if (req.method !== 'GET' || !isHoleRuntimeAssetPath(pathname)) return null
-  return serveHoleRuntimeAsset()
+  return serveHoleRuntimeAsset(req, url)
 }
 
 /**
@@ -242,6 +241,18 @@ function tryServePublicForm(req: Request, runtime: ServerRuntime, url: URL, path
   return handlePublicFormRequest(req, runtime.db, url)
 }
 
+function tryServeMembers(req: Request, runtime: ServerRuntime, url: URL, pathname: string): Promise<Response> | Response | null {
+  // The discovery document of sign-in for apps sits under /.well-known, as RFC 8414 puts it.
+  if (pathname === MEMBER_OAUTH_METADATA_PATH) return handleMemberOAuthRequest(req, runtime.db, url)
+  if (!pathname.startsWith(MEMBERS_PATH_PREFIX)) return null
+  return handleMemberRequest(req, runtime.db, url)
+}
+
+function tryServePublicPluginRoute(req: Request, runtime: ServerRuntime, url: URL, pathname: string): Promise<Response> | null {
+  if (!pathname.startsWith(PUBLIC_PLUGIN_PATH_PREFIX)) return null
+  return handlePublicPluginRouteRequest(req, runtime.db, url)
+}
+
 async function tryServeRuntimeAsset(req: Request, runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response | null> {
   if (req.method !== 'GET' || !pathname.startsWith('/_instatic/assets/')) return null
 
@@ -256,6 +267,15 @@ async function tryServeRuntimeAsset(req: Request, runtime: ServerRuntime, _url: 
   const hardening = {
     'x-content-type-options': 'nosniff',
     'content-security-policy': "default-src 'none'",
+  }
+
+  // Branch preview bundles live in memory and are never cached by the
+  // browser beyond their content-derived build id.
+  const previewAsset = readPreviewAsset(pathname)
+  if (previewAsset) {
+    return binaryResponse(previewAsset.bytes, {
+      headers: { 'content-type': previewAsset.contentType, 'cache-control': 'no-store', ...hardening },
+    })
   }
 
   // Disk-first: a full publish bakes the runtime JS into the active slot, so
@@ -320,9 +340,10 @@ function contentTypeForAssetPath(pathname: string): string | null {
  * The /_instatic/runtime/cache/ namespace is exclusive: unknown paths under it
  * 404 here rather than falling through to a later matcher.
  */
-async function tryServeRuntimePackageNamespace(req: Request, _runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response | null> {
+async function tryServeRuntimePackageNamespace(req: Request, runtime: ServerRuntime, _url: URL, pathname: string): Promise<Response | null> {
   if (!isRuntimePackagePath(pathname)) return null
-  return (await tryServeRuntimePackage(req, pathname)) ?? new Response('not found', { status: 404 })
+  const restore = (hash: string) => restorePublishedRuntimeCache(runtime.db, hash)
+  return (await tryServeRuntimePackage(req, pathname, restore)) ?? new Response('not found', { status: 404 })
 }
 
 /**
@@ -443,6 +464,12 @@ async function tryServeUpload(
   pathname: string,
 ): Promise<Response | null> {
   if (!runtime.uploadsDir || !pathname.startsWith('/uploads/')) return null
+  // The published slot lives under the uploads folder but is not an upload.
+  // Its pages are served through the public router, which knows who may see
+  // them; reading the baked files by path would walk around that.
+  if (isPublishedSlotUploadPath(runtime.uploadsDir, pathname)) {
+    return new Response('Not found', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } })
+  }
   const upload = await serveStaticFile(runtime.uploadsDir, pathname.slice('/uploads'.length), req)
   if (!upload) return null
   // Defense-in-depth: even though the upload handler now writes only
@@ -471,6 +498,24 @@ async function tryServeUpload(
   return hardened
 }
 
+/**
+ * True when an `/uploads/…` URL would read from the published slot. Judged on
+ * the file it resolves to (the same decode-and-resolve the static handler
+ * does), so `..` segments, encoded slashes and letter case cannot dodge it.
+ */
+export function isPublishedSlotUploadPath(uploadsDir: string, pathname: string): boolean {
+  let decoded: string
+  try {
+    decoded = decodeURIComponent(pathname.slice('/uploads'.length))
+  } catch {
+    return true // the static handler rejects a malformed path too
+  }
+  const root = resolvePath(uploadsDir)
+  const target = resolvePath(root, `.${decoded}`).toLowerCase()
+  const slot = joinPath(root, 'published').toLowerCase()
+  return target === slot || target.startsWith(`${slot}${pathSeparator}`)
+}
+
 async function tryServeAdminApp(
   req: Request,
   runtime: ServerRuntime,
@@ -487,48 +532,6 @@ async function tryServeAdminApp(
   // Admin SPA isn't served from this port (dev mode, or production missing a
   // build). Tell the developer where to actually find it.
   return adminUiNotBuiltResponse(pathname)
-}
-
-/**
- * Single entry for every visitor-facing HTML URL — stand-alone published
- * pages (`/about`), content rows rendered through their postType's entry
- * template (`/posts/hello-world`), and row-slug redirects.
- *
- * Resolution + render live in `server/publish/publicRouter.ts`.
- * `renderPublicResolution` handles the full request: Layer A disk
- * fast-path (pre-rendered static artefacts via `readArtefact`), then
- * `resolvePublicRoute`, then the live renderer + `applyPublishedHtmlPipeline`.
- */
-async function tryServePublicRoute(req: Request, runtime: ServerRuntime, url: URL, _pathname: string): Promise<Response | null> {
-  if (req.method !== 'GET') return null
-  return await renderPublicResolution(runtime.db, url, runtime.uploadsDir)
-}
-
-/**
- * On a fresh install with no admin user yet, bounce the visitor to /admin so
- * they land in the setup wizard instead of seeing a confusing 404. Returns
- * null when the install is already past setup.
- */
-async function trySetupRedirect(req: Request, runtime: ServerRuntime, _url: URL, _pathname: string): Promise<Response | null> {
-  if (req.method !== 'GET') return null
-  // Sticky memo: once setup completes, this stops querying. Without it every
-  // unmatched GET (bot probes, 404s) paid two COUNT queries forever.
-  const setupStatus = await getSetupStatusCached(runtime.db)
-  return setupStatus.needsSetup
-    ? new Response(null, { status: 302, headers: { location: '/admin' } })
-    : null
-}
-
-/**
- * Last route before the dispatcher's bare JSON 404: serve the site's designed
- * 404 page (the `notFound` template) for any GET no other route claimed.
- * Namespaced prefixes (`/admin/api/*`, `/_instatic/*`, `/uploads/*`) never
- * reach here — they absorb their namespace and emit their own 404s. Returns
- * null (→ JSON 404) when the published site has no notFound template.
- */
-async function tryServeNotFoundPage(req: Request, runtime: ServerRuntime, url: URL, _pathname: string): Promise<Response | null> {
-  if (req.method !== 'GET') return null
-  return await renderNotFoundResponse(runtime.db, url, runtime.uploadsDir)
 }
 
 // ---------------------------------------------------------------------------

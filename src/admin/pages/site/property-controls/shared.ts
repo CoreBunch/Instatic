@@ -4,6 +4,7 @@
  * Styles are now in controls.module.css — imported per-component.
  * This file only exports TypeScript interfaces.
  */
+import type { ReactNode } from 'react'
 import type { PropertyControlLayout } from '@core/module-engine'
 
 /** Props shared by every property control component. */
@@ -27,4 +28,9 @@ export interface ControlProps<T = unknown> {
    * defaults), so individual controls always receive a concrete value.
    */
   layout?: PropertyControlLayout
+  /**
+   * A row action for the label row (the bind-to-data affordance), handed
+   * to `ControlRow`'s `labelAction` slot. Absent when the prop cannot be bound.
+   */
+  labelAction?: ReactNode
 }

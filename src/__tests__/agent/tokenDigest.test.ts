@@ -40,8 +40,21 @@ function currentSuffix(): string {
 describe('token digest in the dynamic suffix', () => {
   it('emits the empty-state sentinel when no design system exists', () => {
     freshStore()
+    useEditorStore.setState((state) => {
+      delete state.site!.settings.fonts
+    })
     const suffix = currentSuffix()
     expect(suffix).toContain('Tokens: (none')
+    expect(suffix).toContain('site_set_color_tokens')
+  })
+
+  it('lists a new site\'s font role tokens and still asks for colors, type and spacing', () => {
+    freshStore()
+    const suffix = currentSuffix()
+    expect(suffix).toContain('--font-heading')
+    expect(suffix).toContain('--font-body')
+    expect(suffix).toContain('--font-mono')
+    expect(suffix).toContain('no colors, type or spacing yet')
     expect(suffix).toContain('site_set_color_tokens')
   })
 

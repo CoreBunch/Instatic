@@ -83,9 +83,9 @@ function makeFakeDb() {
     if (normalized.includes('select id, name, version, enabled')) {
       return { rows: [...plugins] as Row[], rowCount: plugins.length }
     }
-    // setPluginSettings — values[0]=settings_json, values[1]=id
+    // setPluginSettings — values[0]=settings_json, values[1]=updated_at, values[2]=id
     if (normalized.includes('update installed_plugins') && normalized.includes('set settings_json')) {
-      const row = plugins.find((plugin) => plugin.id === values[1])
+      const row = plugins.find((plugin) => plugin.id === values[2])
       if (!row) return { rows: [], rowCount: 0 }
       row.settings_json = values[0]
       row.updated_at = new Date('2026-05-01T10:07:00.000Z').toISOString()
@@ -117,17 +117,17 @@ function makeFakeDb() {
       else plugins.push(row)
       return { rows: [row as Row], rowCount: 1 }
     }
-    // setPluginEnabled — values[0]=enabled, values[1]=id (note: order changed from old pg API)
+    // setPluginEnabled — values[0]=enabled, values[1]=updated_at, values[2]=id
     if (normalized.includes('update installed_plugins set enabled')) {
-      const row = plugins.find((plugin) => plugin.id === values[1])
+      const row = plugins.find((plugin) => plugin.id === values[2])
       if (!row) return { rows: [], rowCount: 0 }
       row.enabled = values[0]
       row.updated_at = new Date('2026-05-01T10:05:00.000Z').toISOString()
       return { rows: [row as Row], rowCount: 1 }
     }
-    // setPluginLifecycleStatus — values[0]=lifecycleStatus, values[1]=lastError, values[2]=id
+    // setPluginLifecycleStatus — values[0]=lifecycleStatus, values[1]=lastError, values[2]=updated_at, values[3]=id
     if (normalized.includes('update installed_plugins set lifecycle_status')) {
-      const row = plugins.find((plugin) => plugin.id === values[2])
+      const row = plugins.find((plugin) => plugin.id === values[3])
       if (!row) return { rows: [], rowCount: 0 }
       row.lifecycle_status = values[0]
       row.last_error = values[1] ?? null
@@ -204,6 +204,15 @@ function makeFakeDb() {
     if (normalized.includes('delete from plugin_schedule_runs')) {
       return { rows: [], rowCount: 0 }
     }
+    // removePluginMail — the uninstall sweep of a plugin's template edits,
+    // queued email and limit counters. No plugin in these tests declares or sends email.
+    if (
+      normalized.includes('from mail_templates') ||
+      normalized.includes('from mail_queue') ||
+      normalized.includes('delete from mail_counters')
+    ) {
+      return { rows: [], rowCount: 0 }
+    }
     // clearPluginCrashes — values[0]=pluginId
     if (normalized.includes('delete from plugin_crash_events')) {
       const before = crashEvents.length
@@ -212,7 +221,12 @@ function makeFakeDb() {
       crashEvents.push(...remaining)
       return { rows: [], rowCount: before - remaining.length }
     }
-    // createPluginRecord — values[0..3]=id, pluginId, resourceId, dataJson
+    // createPluginRecord — values[0..4]=id, pluginId, resourceId, dataJson, uniqueKey
+    // installPluginWithRecordKeys: clears stored record keys of the declared
+    // resources (none of these plugins declares a uniqueField).
+    if (normalized.includes('update plugin_records set unique_key = null')) {
+      return { rows: [], rowCount: 0 }
+    }
     if (normalized.includes('insert into plugin_records')) {
       const now = new Date('2026-05-01T10:10:00.000Z').toISOString()
       const row = {
@@ -220,6 +234,8 @@ function makeFakeDb() {
         plugin_id: values[1],
         resource_id: values[2],
         data_json: values[3],
+        unique_key: values[4] ?? null,
+        version: 0,
         created_at: now,
         updated_at: now,
       }
@@ -234,6 +250,11 @@ function makeFakeDb() {
     // Post-activation schedule ghost sweep (disableSchedulesNotReclaimedSince)
     // — these tests register no schedules, so the sweep matches nothing.
     if (normalized.includes('update plugin_schedules')) {
+      return { rows: [], rowCount: 0 }
+    }
+    // Uninstall withdraws the plugin's app scopes (withdrawPluginAppScopes).
+    // No app is registered and no member signed in here, so both lists are empty.
+    if (normalized.includes('from member_app_grants') || normalized.includes('from member_apps')) {
       return { rows: [], rowCount: 0 }
     }
     throw new Error(`Unhandled SQL: ${sql}`)
@@ -269,21 +290,13 @@ function cmsRequest(
   url: string,
   init: { method?: string; body?: string; headers?: Record<string, string> } = {},
 ): Request {
-  const headers = new Map(
-    Object.entries(init.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]),
-  )
-  return {
-    url,
+  const req = new Request(url, {
     method: init.method ?? 'GET',
-    headers: {
-      get(name: string) {
-        return headers.get(name.toLowerCase()) ?? null
-      },
-    },
-    async json() {
-      return init.body ? JSON.parse(init.body) : {}
-    },
-  } as Request
+    body: init.body,
+  })
+  // happy-dom strips fetch-forbidden headers passed to the constructor.
+  for (const [name, value] of Object.entries(init.headers ?? {})) req.headers.set(name, value)
+  return req
 }
 
 function cmsFormRequest(
@@ -1290,7 +1303,8 @@ describe('CMS plugin handlers', () => {
   // The upgrade path detects an already-installed plugin id, runs the new
   // version's `migrate({ fromVersion }, api)` between the old version's
   // deactivate and the new version's activate, preserves settings + installed_at,
-  // drops the old version's asset dir on success, and rolls back to the prior
+  // keeps the old version's asset dir on disk (published pages still link it
+  // by version until the next publish sweeps it), and rolls back to the prior
   // version on activate failure.
 
   it('routes a same-id newer-version upload through the upgrade flow with migrate', async () => {
@@ -1390,13 +1404,16 @@ describe('CMS plugin handlers', () => {
       // installed_at preserved across the upgrade.
       expect(db.plugins[0].installed_at).toBe(installedAtBefore)
 
-      // Old version's asset dir was deleted; new version's is on disk.
+      // New version's assets are on disk — and so are the OLD version's.
+      // Published HTML links plugin frontend assets by version, and only a
+      // publish rewrites those links, so deleting here 404'd every baked page.
+      // The next publish retires the old dir (`sweepStalePluginVersionAssets`).
       await expect(readFile(
         join(uploadsDir, 'plugins/acme.upgrade/1.1.0/server/index.js'),
         'utf-8',
       )).resolves.toContain('migrate')
       const { existsSync } = await import('node:fs')
-      expect(existsSync(join(uploadsDir, 'plugins/acme.upgrade/1.0.0'))).toBe(false)
+      expect(existsSync(join(uploadsDir, 'plugins/acme.upgrade/1.0.0'))).toBe(true)
     } finally {
       hookBus.unregisterPlugin('test')
       await rm(uploadsDir, { recursive: true, force: true })
@@ -1514,6 +1531,69 @@ describe('CMS plugin handlers', () => {
     }
   })
 
+  it('re-uploading the SAME version takes the upgrade path, not the fresh one', async () => {
+    // Uploading a rebuilt package under an unchanged version number used to
+    // fall through both semver guards into `installFreshFromPackage` — the
+    // path written for a plugin that is not installed. That skipped the
+    // running version's `deactivate`, ran `install` a second time on a live
+    // plugin, and had no rollback if it threw.
+    const uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-reinstall-'))
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+    const manifest = {
+      id: 'acme.reinstall',
+      name: 'Reinstall Demo',
+      version: '1.0.0',
+      apiVersion: 1,
+      permissions: ['cms.routes'],
+      entrypoints: { server: 'server/index.js' },
+      resources: [],
+      adminPages: [],
+    }
+    const upload = async (body: string) => {
+      const form = new FormData()
+      form.set('file', pluginZip({
+        'plugin.json': JSON.stringify(manifest),
+        'server/index.js': body,
+      }))
+      form.set('grantedPermissions', JSON.stringify(['cms.routes']))
+      return await handleCmsRequest(
+        cmsFormRequest('http://localhost/admin/api/cms/plugins/package', form, { cookie }),
+        db,
+        { uploadsDir },
+      )
+    }
+
+    try {
+      expect((await upload('export function activate() {}')).status).toBe(201)
+
+      const again = await upload('export function activate() { globalThis.__v2 = true }')
+      expect(again.ok).toBe(true)
+
+      // The upgrade path reports the transition; the fresh path reports none.
+      // Both versions are the same string here, which is the point: the route
+      // recognised an existing install rather than treating it as new.
+      const body = await again.json() as { upgrade?: { fromVersion: string; toVersion: string } }
+      expect(body.upgrade).toEqual({ fromVersion: '1.0.0', toVersion: '1.0.0' })
+
+      // Exactly one row, still at the same version — a reinstall replaces, it
+      // does not duplicate.
+      expect(db.plugins.filter((p) => p.id === 'acme.reinstall')).toHaveLength(1)
+      expect(db.plugins[0].version).toBe('1.0.0')
+
+      // And the new bytes are on disk: with matching versions the upgrade's
+      // "drop the old version" sweep names the same directory it just wrote,
+      // so an unguarded sweep would delete the plugin it had installed.
+      const entry = await readFile(
+        join(uploadsDir, 'plugins/acme.reinstall/1.0.0/server/index.js'),
+        'utf8',
+      )
+      expect(entry).toContain('__v2')
+    } finally {
+      await rm(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
   it('rejects manifests targeting an unsupported apiVersion at the boundary', async () => {
     const db = makeFakeDb()
     const cookie = await createCookie(db)
@@ -1570,6 +1650,76 @@ describe('CMS plugin handlers', () => {
     // Cleanup so this test doesn't leak counter state into siblings.
     clearPluginCrashCounter(id)
   })
+
+  // ─── Auto-respawn after a crash: a failed re-activation ───────────────────
+
+  it('a re-activation that fails after a crash unloads the plugin and sets error', async () => {
+    const uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-respawn-'))
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+    const { handleWorkerCrash, clearPluginCrashCounter } = await import('../../../server/plugins/host/crashRecovery')
+    const { findPluginRouteAccess, unloadPluginInWorker } = await import('../../../server/plugins/host/rpc')
+    const { workers } = await import('../../../server/plugins/host/workerState')
+    const { writeFile } = await import('node:fs/promises')
+    const id = 'test.respawn'
+    const entry = join(uploadsDir, 'plugins', id, '1.0.0', 'server', 'index.js')
+    try {
+      const formData = new FormData()
+      formData.set('file', pluginZip({
+        'plugin.json': JSON.stringify({
+          id,
+          name: 'Respawn Demo',
+          version: '1.0.0',
+          apiVersion: 1,
+          permissions: ['cms.routes', 'cms.routes.public'],
+          entrypoints: { server: 'server/index.js' },
+          resources: [],
+          adminPages: [],
+        }),
+        'server/index.js': `
+          export async function activate(api) {
+            api.cms.routes.public.get('/ping', async () => ({ ok: true }))
+          }
+        `,
+      }))
+      formData.set('grantedPermissions', JSON.stringify(['cms.routes', 'cms.routes.public']))
+      const install = await handleCmsRequest(
+        cmsFormRequest('http://localhost/admin/api/cms/plugins/package', formData, { cookie }),
+        db,
+        { uploadsDir },
+      )
+      expect(install.status).toBe(201)
+      // What the server does at boot: load every installed plugin and
+      // register the recovery handler for this database.
+      const { activateInstalledServerPlugins } = await import('../../../server/plugins/runtime')
+      await activateInstalledServerPlugins(db, uploadsDir)
+      expect(findPluginRouteAccess(id, 'GET', '/ping')).not.toBeNull()
+
+      // The worker crashes; on the way back up, activate registers its route
+      // and then cannot finish.
+      await writeFile(entry, `
+        export async function activate(api) {
+          api.cms.routes.public.get('/ping', async () => ({ ok: true }))
+          await new Promise((r) => setTimeout(r, 20))
+          throw new Error('cannot start')
+        }
+      `)
+      handleWorkerCrash(id, 'boom')
+      const giveUpAt = Date.now() + 20_000
+      while (db.plugins[0].lifecycle_status !== 'error') {
+        if (Date.now() > giveUpAt) throw new Error('status never became error')
+        await new Promise((res) => setTimeout(res, 25))
+      }
+      expect(db.plugins[0].last_error).toContain('cannot start')
+      // Status and behaviour agree: the route it registered before failing is gone.
+      expect(findPluginRouteAccess(id, 'GET', '/ping')).toBeNull()
+      expect(workers.has(id)).toBe(false)
+      await unloadPluginInWorker(id)
+    } finally {
+      clearPluginCrashCounter(id)
+      await rm(uploadsDir, { recursive: true, force: true })
+    }
+  }, 60_000)
 
   // ─── Manual restart endpoint ──────────────────────────────────────────────
 

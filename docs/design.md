@@ -232,6 +232,7 @@ These are admin tokens. The published-site Framework engine also emits short spa
 | `--panel-radius`     | 12px  | Floating overlay panels (Spotlight, modals, popovers)        |
 | `--card-radius`      | 16px  | Borderless tile cards (Widget, dashboard cells, module inserter tiles) |
 | `--input-radius`     | 1em   | Pill-shaped inputs, classes / property chips                 |
+| `--radius-pill`      | 999px | Fully round dots, badges, and handles                        |
 | `--tooltip-radius`   | 6px   | Tooltips                                                     |
 
 Do not introduce ad-hoc radius values. Tile-card surfaces use `--card-radius`.
@@ -383,13 +384,16 @@ Every interactive control in the admin and editor goes through a primitive from 
 | Primitive            | When to use                                                                 |
 |----------------------|-----------------------------------------------------------------------------|
 | `Button`             | Every action button. Variants for primary / secondary / ghost / danger. Primary is the high-contrast inverse pill (`--btn-primary-*`: white-on-dark, ink-on-light) — the one visually loud action; secondary/ghost stay on the neutral overlay scale. |
-| `Input`              | Single-line text input. Pill radius, transparent fill, bordered.            |
+| `Input`              | Bordered single-line input with transparent fill and pill radius. Use `InputStepper` in its trailing slot for numeric text fields that display CSS units. |
 | `FormField`          | Label + description shell for form controls.                               |
 | `Switch`             | Boolean toggle.                                                             |
 | `Checkbox`           | Boolean within a list / form.                                               |
 | `Select`             | Dropdown selection of fixed options.                                        |
 | `SearchBar`          | Search input with magnifier icon and clear affordance.                      |
 | `ColorInput`         | Color picker with swatch + hex.                                             |
+| `SwatchRow`          | Inspector row with a fill or border preview, editor trigger and optional clear action. |
+| `FloatingPanel`      | Anchored, draggable editor for a property with several controls.            |
+| `ColorPicker`        | Solid and gradient editing, with a token palette supplied by the caller.   |
 | `FileUpload`         | Drop-zone + browse for file inputs.                                         |
 | `DateTimePicker`     | Date / time inputs.                                                         |
 | `RangeTabs`          | Tabbed numeric range selectors (e.g. spacing scales).                       |

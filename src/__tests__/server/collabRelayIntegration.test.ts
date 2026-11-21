@@ -14,6 +14,9 @@
  *   - `runPublishFlush` drains the persist debounce, so publish bakes the
  *     edit an admin made seconds earlier instead of losing it.
  */
+import type { DbClient } from '../../../server/db/client'
+import { requireCapability } from '../../../server/auth/authz'
+import { userDisplayLabel } from '@core/users/displayName'
 import { afterEach, describe, expect, it } from 'bun:test'
 import * as Y from 'yjs'
 import * as awarenessProtocol from 'y-protocols/awareness'
@@ -38,6 +41,7 @@ import {
   type CollabSocketLike,
 } from '@site/collab/collabProvider'
 import { createCollabRelay, type CollabRelay } from '../../../server/collab/relay'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
 import {
   createCollabSocketLayer,
   handleCollabSocketUpgrade,
@@ -82,13 +86,16 @@ interface Stack {
   homeId: string
 }
 
-async function startStack(): Promise<Stack> {
+async function startStack({ wrapRelay = (relay) => relay, wrapDb = (db) => db }: {
+  wrapRelay?: (relay: CollabRelay) => CollabRelay
+  wrapDb?: (db: DbClient) => DbClient
+} = {}): Promise<Stack> {
   const harness = await createCapabilityTestHarness()
   cleanups.push(() => harness.cleanup())
   const cookie = await harness.setupOwner()
   const relay = createCollabRelay(harness.db, { persistDebounceMs: PERSIST_DEBOUNCE_MS })
   cleanups.push(() => relay.destroy())
-  const socketLayer = createCollabSocketLayer(relay)
+  const socketLayer = createCollabSocketLayer(wrapRelay(relay), wrapDb(harness.db))
 
   const server = Bun.serve({
     port: 0,
@@ -102,7 +109,6 @@ async function startStack(): Promise<Stack> {
     },
     websocket: socketLayer.handlers,
   })
-  socketLayer.setPublisher(server)
   cleanups.push(() => server.stop(true))
 
   const { rows } = await harness.db<{ id: string }>`
@@ -168,7 +174,7 @@ function insertChildNode(doc: Y.Doc, nodeId: string, moduleId: string): void {
 describe('collab relay integration (real server, real sockets)', () => {
   it('two clients edit concurrently, converge, and the relay persists blob + derived JSON', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
 
     const clientA = connectClient(stack)
     const clientB = connectClient(stack)
@@ -200,16 +206,48 @@ describe('collab relay integration (real server, real sockets)', () => {
       return nodeLabel(restored, rootId) === 'Renamed by A'
     })
     await waitFor(async () => {
-      const row = await getDataRow(stack.harness.db, stack.homeId)
+      const row = await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId)
       if (!row) return false
       const page = pageFromRow(row)
       return page.nodes[rootId]?.label === 'Renamed by A' && page.nodes['node-from-b'] !== undefined
     })
   })
 
+  it('keeps the cells the doc does not own when it persists the derived row', async () => {
+    const stack = await startStack()
+    const docId = `page:main:${stack.homeId}`
+    // SEO lives on the row, never in the doc. Seeded as a collab-internal
+    // write so the roster's already-loaded doc is not reset under the client;
+    // what is under test is what the relay's own persist keeps on the row.
+    const seeded = (await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId))!
+    await saveDataRowDraft(
+      stack.harness.db,
+      MAIN_SCOPE,
+      stack.homeId,
+      { cells: { ...seeded.cells, seoTitle: 'Kept title', seoDescription: 'Kept description' }, slug: seeded.slug },
+      null,
+      null,
+      { collabInternal: true },
+    )
+
+    const client = connectClient(stack)
+    const bound = client.bind(docId)
+    await bound.whenSynced
+    const rootId = treeMap(bound.doc).get('rootNodeId') as string
+    setNodeLabel(bound.doc, rootId, 'Edited in the doc')
+
+    await waitFor(async () => {
+      const row = await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId)
+      return row !== null && pageFromRow(row).nodes[rootId]?.label === 'Edited in the doc'
+    })
+    const row = (await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId))!
+    expect(row.cells.seoTitle).toBe('Kept title')
+    expect(row.cells.seoDescription).toBe('Kept description')
+  })
+
   it('refuses a read-only edit AND resets the viewer so its own screen reverts', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
 
     const viewer = await stack.harness.createRoleUser({
       name: 'Read Only',
@@ -259,7 +297,7 @@ describe('collab relay integration (real server, real sockets)', () => {
 
   it('enforces per-category capabilities on partial writers and relays read-only presence', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
 
     const contentUser = await stack.harness.createRoleUser({
       name: 'Copy Editor',
@@ -316,7 +354,7 @@ describe('collab relay integration (real server, real sockets)', () => {
     const viewerUserId = viewerUser!.id
     const realIdentity = {
       id: viewerUserId,
-      name: viewerUser!.displayName,
+      name: userDisplayLabel(viewerUser!),
       color: peerColor(viewerUserId),
       avatarUrl: viewerUser!.avatarUrl,
       gravatarHash: viewerUser!.gravatarHash,
@@ -336,13 +374,13 @@ describe('collab relay integration (real server, real sockets)', () => {
     for (const [, state] of owner.awareness.getStates()) {
       const s = state as { user?: { id?: string; name?: string } }
       expect(s.user?.id).not.toBe('someone-else')
-      if (s.user?.id === viewerUserId) expect(s.user?.name).toBe(viewerUser!.displayName)
+      if (s.user?.id === viewerUserId) expect(s.user?.name).toBe(userDisplayLabel(viewerUser!))
     }
   })
 
   it('resets a doc when the row is written outside the relay', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
 
     const client = connectClient(stack)
     const bound = client.bind(docId)
@@ -354,8 +392,8 @@ describe('collab relay integration (real server, real sockets)', () => {
     // Out-of-relay write (imports, plugins, HTTP save): mutate the stored
     // JSON directly — the repository notifies, the relay drops the doc and
     // broadcasts FRAME_RESET.
-    const row = await getDataRow(stack.harness.db, stack.homeId)
-    await saveDataRowDraft(stack.harness.db, stack.homeId, {
+    const row = await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId)
+    await saveDataRowDraft(stack.harness.db, MAIN_SCOPE, stack.homeId, {
       cells: { ...row!.cells, title: 'Rewritten outside the relay' },
       slug: row!.slug,
     })
@@ -371,7 +409,7 @@ describe('collab relay integration (real server, real sockets)', () => {
 
   it('a reconnecting client catches up on edits it missed while offline', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
 
     const clientA = connectClient(stack)
     const clientB = connectClient(stack)
@@ -392,13 +430,13 @@ describe('collab relay integration (real server, real sockets)', () => {
 
   it('a peer cannot erase another peer\'s presence for everyone', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
 
     const identityOf = async (email: string) => {
       const user = (await findUserByEmail(stack.harness.db, email))!
       return {
         id: user.id,
-        name: user.displayName,
+        name: userDisplayLabel(user),
         color: peerColor(user.id),
         avatarUrl: user.avatarUrl,
         gravatarHash: user.gravatarHash,
@@ -475,7 +513,7 @@ describe('collab relay integration (real server, real sockets)', () => {
     // any row change we observe can ONLY have come from the explicit flush.
     const relay = createCollabRelay(harness.db, { persistDebounceMs: 60_000 })
     cleanups.push(() => relay.destroy())
-    const socketLayer = createCollabSocketLayer(relay)
+    const socketLayer = createCollabSocketLayer(relay, harness.db)
 
     const server = Bun.serve({
       port: 0,
@@ -489,7 +527,6 @@ describe('collab relay integration (real server, real sockets)', () => {
       },
       websocket: socketLayer.handlers,
     })
-    socketLayer.setPublisher(server)
     cleanups.push(() => server.stop(true))
 
     const { rows } = await harness.db<{ id: string }>`
@@ -504,7 +541,7 @@ describe('collab relay integration (real server, real sockets)', () => {
     }
 
     const client = connectClient(stack)
-    const bound = client.bind(`page:${homeId}`)
+    const bound = client.bind(`page:main:${homeId}`)
     await bound.whenSynced
     const rootId = treeMap(bound.doc).get('rootNodeId') as string
 
@@ -512,14 +549,14 @@ describe('collab relay integration (real server, real sockets)', () => {
     // edit reaches this peer, the relay has definitely applied it. Asserting on
     // the editing client's own doc would pass before the frame ever left it.
     const observer = connectClient(stack)
-    const boundObserver = observer.bind(`page:${homeId}`)
+    const boundObserver = observer.bind(`page:main:${homeId}`)
     await boundObserver.whenSynced
 
     setNodeLabel(bound.doc, rootId, 'Edited seconds before publish')
     await waitFor(() => nodeLabel(boundObserver.doc, rootId) === 'Edited seconds before publish')
 
     const labelInRow = async (): Promise<unknown> => {
-      const row = await getDataRow(harness.db, homeId)
+      const row = await getDataRow(harness.db, MAIN_SCOPE, homeId)
       return pageFromRow(row!).nodes[rootId]?.label
     }
 
@@ -537,7 +574,7 @@ describe('collab relay integration (real server, real sockets)', () => {
 
   it('refuses a stale lineage instead of merging a dead generation', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
 
     const client = connectClient(stack)
     const bound = client.bind(docId)
@@ -545,7 +582,7 @@ describe('collab relay integration (real server, real sockets)', () => {
     const rootId = treeMap(bound.doc).get('rootNodeId') as string
     setNodeLabel(bound.doc, rootId, 'Before the reset')
     await waitFor(async () => {
-      const row = await getDataRow(stack.harness.db, stack.homeId)
+      const row = await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId)
       return Boolean(row && pageFromRow(row).nodes[rootId]?.label === 'Before the reset')
     })
 
@@ -570,7 +607,7 @@ describe('collab relay integration (real server, real sockets)', () => {
 
   it('a frame stamped with a dead generation is answered with a reset, not applied', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
     const client = connectClient(stack)
     const bound = client.bind(docId)
     await bound.whenSynced
@@ -622,7 +659,7 @@ describe('collab relay integration (real server, real sockets)', () => {
   // direction that was silently dropping work.
   it('recovers edits authored while the socket was down, on reconnect', async () => {
     const stack = await startStack()
-    const docId = `page:${stack.homeId}`
+    const docId = `page:main:${stack.homeId}`
 
     const client = connectClient(stack)
     const bound = client.bind(docId)
@@ -649,8 +686,296 @@ describe('collab relay integration (real server, real sockets)', () => {
 
     // And it reaches storage, not just memory.
     await waitFor(async () => {
-      const row = await getDataRow(stack.harness.db, stack.homeId)
+      const row = await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId)
       return Boolean(row && pageFromRow(row).nodes[rootId]?.label === 'Written while offline')
     })
   })
+})
+
+/** Ping is queued behind the edit on this same socket, so no timing guess is needed. */
+async function settleSocket(socket: WebSocket): Promise<void> {
+  let settled = socket.readyState === WebSocket.CLOSED
+  const onClose = () => { settled = true }
+  const onMessage = (event: MessageEvent) => {
+    if (decodeCollabFrame(new Uint8Array(event.data as ArrayBuffer)).frameType === FRAME_PONG) settled = true
+  }
+  socket.addEventListener('close', onClose)
+  socket.addEventListener('message', onMessage)
+  if (socket.readyState === WebSocket.OPEN) {
+    socket.send(encodeCollabFrame(PRESENCE_DOC_ID, '', FRAME_PING, new Uint8Array()))
+  }
+  try { await waitFor(() => settled) } finally {
+    socket.removeEventListener('close', onClose)
+    socket.removeEventListener('message', onMessage)
+  }
+}
+
+describe('collab authorization changes on an existing socket', () => {
+  for (const writer of ['full', 'partial'] as const) {
+    for (const change of ['suspension', 'role removal', 'write removal', 'logout', 'expiry', 'deletion', 'role reassignment'] as const) {
+      it(`blocks persisted ${writer}-writer edits after ${change}`, async () => {
+        const stack = await startStack()
+        const editor = await stack.harness.createRoleUser({
+          name: 'Revocable Editor', slug: 'revocable-editor',
+          capabilities: writer === 'full'
+            ? ['site.read', 'site.structure.edit', 'site.content.edit', 'site.style.edit']
+            : ['site.read', 'site.structure.edit'],
+        })
+        const user = (await findUserByEmail(stack.harness.db, editor.email))!
+        const docId = `page:main:${stack.homeId}`
+        const client = connectClient(stack, editor.cookie)
+        const bound = client.bind(docId)
+        await bound.whenSynced
+        const rootId = treeMap(bound.doc).get('rootNodeId') as string
+        setNodeLabel(bound.doc, rootId, 'Authorized edit')
+        await settleSocket(client.lastSocket()!)
+        await stack.relay.flushAll()
+        expect(pageFromRow((await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId))!).nodes[rootId]?.label).toBe('Authorized edit')
+
+        if (change === 'suspension' || change === 'role reassignment') {
+          expect((await stack.harness.cms(`/admin/api/cms/users/${user.id}`, {
+            method: 'PATCH', cookie: stack.cookie,
+            json: change === 'suspension' ? { status: 'suspended' } : { roleId: 'member' },
+          })).status).toBe(200)
+        } else if (change === 'deletion') {
+          expect((await stack.harness.cms(`/admin/api/cms/users/${user.id}`, {
+            method: 'DELETE', cookie: stack.cookie,
+          })).status).toBe(200)
+        } else if (change === 'logout') {
+          expect((await stack.harness.cms('/admin/api/cms/logout', {
+            method: 'POST', cookie: editor.cookie,
+          })).status).toBe(200)
+        } else if (change === 'expiry') {
+          await stack.harness.db`update sessions set expires_at = ${new Date(0)} where user_id = ${user.id}`
+        } else {
+          expect((await stack.harness.cms(`/admin/api/cms/roles/${editor.roleId}`, {
+            method: 'PATCH', cookie: stack.cookie,
+            json: { capabilities: change === 'write removal' ? ['site.read'] : [] },
+          })).status).toBe(200)
+        }
+        const deniedStatus = ['role removal', 'write removal', 'role reassignment'].includes(change) ? 403 : 401
+        const request = new Request(`http://localhost${SITE_SOCKET_PATH}`)
+        request.headers.set('cookie', editor.cookie)
+        const denied = await requireCapability(request, stack.harness.db, 'site.structure.edit')
+        expect(denied).toBeInstanceOf(Response)
+        expect((denied as Response).status).toBe(deniedStatus)
+        if (change !== 'write removal') {
+          const handshake = await handleCollabSocketUpgrade(request, stack.harness.db, {
+            upgrade: () => { throw new Error('Revoked session must not upgrade') },
+          })
+          expect(handshake?.status).toBe(deniedStatus)
+        }
+
+        const originalSocket = client.lastSocket()!
+        expect(originalSocket.readyState).toBe(WebSocket.OPEN)
+        setNodeLabel(bound.doc, rootId, 'Unauthorized edit')
+        await settleSocket(originalSocket)
+        await stack.relay.flushAll()
+        const row = (await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId))!
+        expect(pageFromRow(row).nodes[rootId]?.label).toBe('Authorized edit')
+        expect(nodeLabel((await stack.relay.openDoc(docId)).doc, rootId)).toBe('Authorized edit')
+      })
+    }
+  }
+
+  for (const change of ['suspension', 'role removal', 'logout'] as const) {
+    it(`does not broadcast new document content after ${change} to an idle peer`, async () => {
+      const stack = await startStack()
+      const editor = await stack.harness.createRoleUser({
+        name: 'Revocable Reader', slug: 'revocable-reader', capabilities: ['site.read'],
+      })
+      const user = (await findUserByEmail(stack.harness.db, editor.email))!
+      const docId = `page:main:${stack.homeId}`
+      const owner = connectClient(stack)
+      const reader = connectClient(stack, editor.cookie)
+      const ownerDoc = owner.bind(docId)
+      const readerDoc = reader.bind(docId)
+      await ownerDoc.whenSynced
+      await readerDoc.whenSynced
+      const rootId = treeMap(ownerDoc.doc).get('rootNodeId') as string
+      const response = change === 'suspension'
+        ? await stack.harness.cms(`/admin/api/cms/users/${user.id}`, {
+          method: 'PATCH', cookie: stack.cookie, json: { status: 'suspended' },
+        })
+        : change === 'role removal'
+          ? await stack.harness.cms(`/admin/api/cms/roles/${editor.roleId}`, {
+            method: 'PATCH', cookie: stack.cookie, json: { capabilities: [] },
+          })
+          : await stack.harness.cms('/admin/api/cms/logout', { method: 'POST', cookie: editor.cookie })
+      expect(response.status).toBe(200)
+      const socket = reader.lastSocket()!
+      let received = false
+      let closed = false
+      socket.addEventListener('close', () => { closed = true })
+      readerDoc.doc.on('update', () => { received = nodeLabel(readerDoc.doc, rootId) === 'Private update after suspension' })
+      setNodeLabel(ownerDoc.doc, rootId, 'Private update after suspension')
+      await waitFor(() => received || closed)
+      expect(received).toBe(false)
+      expect(closed).toBe(true)
+    })
+  }
+
+  it('rechecks permissions after asynchronous document loading', async () => {
+    let hold = false
+    const entered = Promise.withResolvers<void>()
+    const resume = Promise.withResolvers<void>()
+    const stack = await startStack({ wrapRelay: (relay) => ({
+      ...relay,
+      openDoc: async (docId) => {
+        const bound = await relay.openDoc(docId)
+        if (hold) {
+          entered.resolve()
+          await resume.promise
+        }
+        return bound
+      },
+    }) })
+    const editor = await stack.harness.createRoleUser({
+      name: 'Delayed Editor', slug: 'delayed-editor',
+      capabilities: ['site.read', 'site.structure.edit', 'site.content.edit', 'site.style.edit'],
+    })
+    const user = (await findUserByEmail(stack.harness.db, editor.email))!
+    const docId = `page:main:${stack.homeId}`
+    const client = connectClient(stack, editor.cookie)
+    const bound = client.bind(docId)
+    await bound.whenSynced
+    await settleSocket(client.lastSocket()!)
+    const rootId = treeMap(bound.doc).get('rootNodeId') as string
+    const previous = nodeLabel(bound.doc, rootId)
+    hold = true
+    setNodeLabel(bound.doc, rootId, 'Edit delayed across suspension')
+    try {
+      await entered.promise
+      expect((await stack.harness.cms(`/admin/api/cms/users/${user.id}`, {
+        method: 'PATCH', cookie: stack.cookie, json: { status: 'suspended' },
+      })).status).toBe(200)
+    } finally { resume.resolve() }
+    await settleSocket(client.lastSocket()!)
+    expect(nodeLabel((await stack.relay.openDoc(docId)).doc, rootId)).toBe(previous)
+    await stack.relay.flushAll()
+    expect(pageFromRow((await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId))!).nodes[rootId]?.label).toBe(previous)
+  })
+
+  it('uses current category permissions for recovery step2 and keeps allowed edits working', async () => {
+    const stack = await startStack()
+    const editor = await stack.harness.createRoleUser({
+      name: 'Reduced Editor', slug: 'reduced-editor',
+      capabilities: ['site.read', 'site.structure.edit', 'site.content.edit', 'site.style.edit'],
+    })
+    const docId = `page:main:${stack.homeId}`
+    const client = connectClient(stack, editor.cookie)
+    const bound = client.bind(docId)
+    await bound.whenSynced
+    insertChildNode(bound.doc, 'copy-node', 'base.text')
+    await settleSocket(client.lastSocket()!)
+    expect((await stack.harness.cms(`/admin/api/cms/roles/${editor.roleId}`, {
+      method: 'PATCH', cookie: stack.cookie, json: { capabilities: ['site.read', 'site.content.edit'] },
+    })).status).toBe(200)
+    const socket = client.lastSocket()!
+    const authoritative = await stack.relay.openDoc(docId)
+    const fork = new Y.Doc()
+    cleanups.push(() => fork.destroy())
+    Y.applyUpdate(fork, Y.encodeStateAsUpdate(bound.doc))
+    insertChildNode(fork, 'forbidden-recovery-node', 'base.text')
+    const encoder = encoding.createEncoder()
+    syncProtocol.writeSyncStep2(encoder, fork)
+    socket.send(encodeCollabFrame(docId, authoritative.generation, FRAME_SYNC, encoding.toUint8Array(encoder)))
+    await settleSocket(socket)
+    expect((treeMap(authoritative.doc).get('nodes') as Y.Map<unknown>).has('forbidden-recovery-node')).toBe(false)
+    const rebound = client.bind(docId)
+    await rebound.whenSynced
+    const props = ((treeMap(rebound.doc).get('nodes') as Y.Map<unknown>).get('copy-node') as Y.Map<unknown>).get('props') as Y.Map<unknown>
+    props.set('text', 'Still allowed')
+    await settleSocket(socket)
+    await stack.relay.flushAll()
+    const page = pageFromRow((await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId))!)
+    expect(page.nodes['copy-node']?.props['text']).toBe('Still allowed')
+    expect(page.nodes['forbidden-recovery-node']).toBeUndefined()
+    expect(socket.readyState).toBe(WebSocket.OPEN)
+  })
+
+  it('fails closed when session validation is unavailable', async () => {
+    let unavailable = false
+    const stack = await startStack({ wrapDb: (db) => new Proxy(db, {
+      get(target, property) {
+        if (property === 'unsafe' && unavailable) {
+          return () => { throw new Error('Simulated authorization database outage') }
+        }
+        return Reflect.get(target, property)
+      },
+    }) })
+    const docId = `page:main:${stack.homeId}`
+    const client = connectClient(stack)
+    const bound = client.bind(docId)
+    await bound.whenSynced
+    await settleSocket(client.lastSocket()!)
+    const rootId = treeMap(bound.doc).get('rootNodeId') as string
+    const previous = nodeLabel(bound.doc, rootId)
+    const socket = client.lastSocket()!
+    let closeCode: number | undefined
+    socket.addEventListener('close', (event) => { closeCode = event.code })
+    unavailable = true
+    setNodeLabel(bound.doc, rootId, 'Edit during authorization outage')
+    await settleSocket(socket)
+    expect(closeCode).toBe(1011)
+    expect(nodeLabel((await stack.relay.openDoc(docId)).doc, rootId)).toBe(previous)
+    await stack.relay.flushAll()
+    expect(pageFromRow((await getDataRow(stack.harness.db, MAIN_SCOPE, stack.homeId))!).nodes[rootId]?.label).toBe(previous)
+  })
+
+})
+
+
+describe('collab socket lifecycle review', () => {
+  it('releases a document acquired after its socket has already closed', async () => {
+    const entered = Promise.withResolvers<void>()
+    const resume = Promise.withResolvers<void>()
+    let retained = false
+    let releases = 0
+    let prematureReleases = 0
+    const stack = await startStack({ wrapRelay: (relay) => ({
+      ...relay,
+      retain: async (docId) => {
+        entered.resolve()
+        await resume.promise
+        const bound = await relay.retain(docId)
+        retained = true
+        return bound
+      },
+      release: (docId) => {
+        if (!retained) prematureReleases++
+        releases++
+        relay.release(docId)
+      },
+    }) })
+    const client = connectClient(stack)
+    client.bind(`page:main:${stack.homeId}`)
+    try {
+      await entered.promise
+      const socket = client.lastSocket()!
+      client.destroy()
+      await waitFor(() => socket.readyState === WebSocket.CLOSED)
+    } finally { resume.resolve() }
+    await waitFor(() => retained && releases > 0)
+    expect(prematureReleases).toBe(0)
+    expect(releases).toBe(1)
+  })
+
+  it('delivers an 8 MiB stored document through session-authorized packets', async () => {
+    const stack = await startStack()
+    const viewer = await stack.harness.createRoleUser({
+      name: 'Large Document Reader', slug: 'large-doc-reader', capabilities: ['site.read'],
+    })
+    const docId = `page:main:${stack.homeId}`
+    const { doc } = await stack.relay.openDoc(docId)
+    const rootId = treeMap(doc).get('rootNodeId') as string
+    const label = 'x'.repeat(8 * 1024 * 1024)
+    setNodeLabel(doc, rootId, label)
+    await stack.relay.flushAll()
+    const client = connectClient(stack, viewer.cookie)
+    const bound = client.bind(docId)
+    await bound.whenSynced
+    expect(nodeLabel(bound.doc, rootId) === label).toBe(true)
+    expect(client.lastSocket()?.readyState).toBe(WebSocket.OPEN)
+  }, 10_000)
 })

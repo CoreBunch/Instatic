@@ -19,7 +19,7 @@
 
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../../db/client'
-import { isoDateOrNull } from '@core/utils/isoDate'
+import { isoDateOrNull, nowIso } from '@core/utils/isoDate'
 import {
   decryptSecret,
   encryptSecret,
@@ -36,6 +36,7 @@ import type {
   CredentialView,
   UpdateCredentialInput,
 } from './types'
+import { isUniqueViolation } from '../../db/errors'
 import type { AiAuthMode, AiProviderId } from '../runtime/types'
 import type { AiResolvedCredential } from '../drivers/types'
 
@@ -358,7 +359,7 @@ export async function updateCredentialForUser(
           iv = ${nextIv},
           base_url = ${nextBaseUrl},
           key_fingerprint = ${nextFingerprint},
-          updated_at = current_timestamp
+          updated_at = ${nowIso()}
       where id = ${credentialId} and user_id = ${userId}
       returning id, user_id, provider_id, auth_mode, display_label,
                 ciphertext, iv, base_url, key_fingerprint,
@@ -416,7 +417,7 @@ export async function touchCredentialLastUsed(
 ): Promise<void> {
   await db`
     update ai_provider_credentials
-    set last_used_at = current_timestamp
+    set last_used_at = ${nowIso()}
     where id = ${credentialId}
   `
 }
@@ -424,15 +425,6 @@ export async function touchCredentialLastUsed(
 // ---------------------------------------------------------------------------
 // Internals — error classification
 // ---------------------------------------------------------------------------
-
-function isUniqueViolation(err: unknown): boolean {
-  // PG sqlstate 23505 + SQLite "UNIQUE constraint failed". Match on message
-  // text to stay dialect-agnostic — repositories shouldn't import driver
-  // error classes.
-  if (!(err instanceof Error)) return false
-  const msg = err.message.toLowerCase()
-  return msg.includes('unique') || msg.includes('23505') || msg.includes('duplicate')
-}
 
 function isFkViolation(err: unknown): boolean {
   if (!(err instanceof Error)) return false

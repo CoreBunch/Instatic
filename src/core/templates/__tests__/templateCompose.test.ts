@@ -31,6 +31,17 @@ describe('composeTemplateChain', () => {
     expect(Object.keys(merged.nodes)).toEqual(['A_body', 'A_heading'])
   })
 
+  it('inherits settings from an outlet-less template without modifying either source', () => {
+    const outer = { ...aboutPage(), seo: { openGraph: { title: 'Template', siteName: 'Brand' }, robots: 'index', jsonLd: ['{}'] } }
+    const page = { ...aboutPage(), seo: { openGraph: { title: 'Page' }, jsonLd: ['{"name":"Page"}'] } }
+    expect(composeTemplateChain([outer], { kind: 'page', page }).seo).toEqual({
+      openGraph: { title: 'Page', siteName: 'Brand' }, robots: 'index', jsonLd: ['{"name":"Page"}'],
+    })
+    expect(composeTemplateChain([outer], { kind: 'page', page: aboutPage() }).seo).toEqual(outer.seo)
+    expect(outer.seo.openGraph.title).toBe('Template')
+    expect(page.seo.openGraph).toEqual({ title: 'Page' })
+  })
+
   it('splices a page into the everywhere layout outlet, dropping the page body wrapper', () => {
     const merged = composeTemplateChain([layout()], { kind: 'page', page: aboutPage() })
     expect(merged.rootNodeId).toBe('L_body')

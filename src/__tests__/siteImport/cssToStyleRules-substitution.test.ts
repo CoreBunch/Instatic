@@ -24,6 +24,45 @@ import {
 } from '@core/css-substitution'
 
 describe('cssToStyleRules — substitution declarations survive verbatim', () => {
+  it('preserves centered section padding and constrained wrappers using min/max', () => {
+    const { rules, warnings } = cssToStyleRules(`
+      .inner-page-wrap section { padding: 70px max(24px, calc((100% - 1120px)/2)); }
+      .wrapper { width: min(100% - 48px, 1160px); }
+      @media (max-width: 620px) {
+        .inner-page-wrap section { padding: 54px 20px; }
+        .wrapper { width: min(100% - 28px, 1220px); }
+      }
+    `)
+    const section = rules.find((rule) => rule.selector === '.inner-page-wrap section')!
+    expect(section.styles.padding).toBe('70px max(24px, calc((100% - 1120px)/2))')
+    expect(rules.find((rule) => rule.selector === '.wrapper')!.styles.width)
+      .toBe('min(100% - 48px, 1160px)')
+    expect(Object.values(section.contextStyles ?? {})[0]).toMatchObject({
+      paddingTop: '54px', paddingRight: '20px', paddingBottom: '54px', paddingLeft: '20px',
+    })
+    const wrapper = rules.find((rule) => rule.selector === '.wrapper')!
+    expect(Object.values(wrapper.contextStyles ?? {})[0]).toMatchObject({
+      width: 'min(100% - 28px, 1220px)',
+    })
+    expect(warnings).toHaveLength(0)
+  })
+
+  it('preserves clamp declarations used for fluid typography and spacing', () => {
+    const { rules, warnings } = cssToStyleRules(`
+      section { padding: clamp(4rem, 8vw, 9rem) 0; }
+      .section-header { margin-bottom: clamp(3rem, 5vw, 5rem); }
+      .track-card { padding: clamp(2rem, 4vw, 3.5rem); }
+      h2 { font-size: clamp(2.5rem, 5vw, 5rem); }
+    `)
+
+    const bySel = Object.fromEntries(rules.map((r) => [r.selector, r.styles]))
+    expect(bySel.section.padding).toBe('clamp(4rem, 8vw, 9rem) 0')
+    expect(bySel['.section-header'].marginBottom).toBe('clamp(3rem, 5vw, 5rem)')
+    expect(bySel['.track-card'].padding).toBe('clamp(2rem, 4vw, 3.5rem)')
+    expect(bySel.h2.fontSize).toBe('clamp(2.5rem, 5vw, 5rem)')
+    expect(warnings).toHaveLength(0)
+  })
+
   it('preserves shorthand+var declarations byte-faithfully', () => {
     const { rules, warnings } = cssToStyleRules(`
       .plan { padding: 40px; border-left: 1px solid var(--rule); }

@@ -1,27 +1,27 @@
 /**
- * Centralised emit helpers for the `content.entry.*` plugin event channel.
+ * Content entry lifecycle events — the plugin-facing `content.entry.*`
+ * hooks, emitted by every admin/plugin surface that creates, updates, or
+ * deletes a data row, plus the `content.entry.cells` filter that lets
+ * plugins normalize cells before persistence.
  *
- * Every code path that creates / updates / deletes a `data_row` should fire
- * the matching event so plugin listeners (SEO assistants, translators, search
- * indexers, etc.) can react. The payload carries an `actor` field so plugins
- * can avoid feedback loops on their own writes.
- *
- * Repository functions stay pure (no hook bus coupling); call sites in
- * `server/handlers/cms/*` and the publish-scheduler call these helpers
- * immediately after a successful mutation.
+ * Hooks describe the LIVE site: a write on a branch is invisible to plugins
+ * until it is merged into main, so every emitter is a no-op off `main`. The
+ * lookups below therefore only ever address main rows, whose physical and
+ * logical ids coincide.
  */
-
 import type { ContentEntryActor } from '@core/plugin-sdk'
 import { hookBus } from '@core/plugins/hookBus'
 import type { DbClient } from '../db/client'
+import { isMainScope, type BranchScope } from '../branches/scope'
 
-/** Look up the table slug for a row id — needed to populate the event payload. */
+/** Look up the table slug for a main row id — needed to populate the event payload. */
 async function resolveTableSlug(db: DbClient, rowId: string): Promise<string | null> {
   const { rows } = await db<{ slug: string }>`
     select data_tables.slug
     from data_rows
     join data_tables on data_tables.id = data_rows.table_id
     where data_rows.id = ${rowId}
+      and data_rows.branch_id = 'main'
     limit 1
   `
   return rows[0]?.slug ?? null
@@ -29,9 +29,11 @@ async function resolveTableSlug(db: DbClient, rowId: string): Promise<string | n
 
 export async function emitContentEntryCreated(
   db: DbClient,
+  scope: BranchScope,
   rowId: string,
   actor: ContentEntryActor,
 ): Promise<void> {
+  if (!isMainScope(scope)) return
   const tableSlug = await resolveTableSlug(db, rowId)
   if (!tableSlug) return
   await hookBus.emit('content.entry.created', { tableSlug, entryId: rowId, actor })
@@ -39,10 +41,12 @@ export async function emitContentEntryCreated(
 
 export async function emitContentEntryUpdated(
   db: DbClient,
+  scope: BranchScope,
   rowId: string,
   changedFieldIds: string[],
   actor: ContentEntryActor,
 ): Promise<void> {
+  if (!isMainScope(scope)) return
   const tableSlug = await resolveTableSlug(db, rowId)
   if (!tableSlug) return
   await hookBus.emit('content.entry.updated', {
@@ -55,9 +59,11 @@ export async function emitContentEntryUpdated(
 
 export async function emitContentEntryDeleted(
   db: DbClient,
+  scope: BranchScope,
   rowId: string,
   actor: ContentEntryActor,
 ): Promise<void> {
+  if (!isMainScope(scope)) return
   const tableSlug = await resolveTableSlug(db, rowId)
   if (!tableSlug) return
   await hookBus.emit('content.entry.deleted', { tableSlug, entryId: rowId, actor })

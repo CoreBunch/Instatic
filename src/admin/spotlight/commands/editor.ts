@@ -14,10 +14,12 @@
 
 import { StepUpCancelledMessage } from '@admin/shared/StepUp'
 import { publishCmsDraft } from '@core/persistence'
+import { reportPublishWarnings } from '@site/toolbar/reportPublishWarnings'
+import { isOnMainBranch } from '@admin/state/branchStore'
 import type { Command } from '../types'
 
 /** Mirrors `SITE_WRITE_CAPABILITIES` — any holder can save a draft. */
-const SITE_WRITE_CAPABILITIES = [
+export const SITE_WRITE_CAPABILITIES = [
   'site.structure.edit',
   'site.content.edit',
   'site.style.edit',
@@ -34,10 +36,14 @@ export function getEditorCommands(): Command[] {
       keywords: ['publish', 'deploy', 'live', 'production'],
       workspaces: ['site'],
       capability: 'pages.publish',
+      // Publishing only exists on main; on a branch the palette hides it.
+      // A visibility gate, not a relevance one: `when` would hand Publish a
+      // standing +250 on main and pin it above recently run commands.
+      available: () => isOnMainBranch(),
       run: async (ctx) => {
         ctx.closeSpotlight()
         try {
-          await ctx.runStepUp(() => publishCmsDraft())
+          void reportPublishWarnings(await ctx.runStepUp(() => publishCmsDraft()))
         } catch (err) {
           if (err instanceof Error && err.message === StepUpCancelledMessage) return
           console.error('[spotlight] publish failed:', err)

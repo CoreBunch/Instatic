@@ -1,6 +1,6 @@
 import { compareVariants, findGoogleFont, parseVariant } from '@core/fonts'
 import type { GoogleFontFamily } from '@core/fonts'
-import type { ImportGoogleFont } from './types'
+import type { GoogleFontRequest } from './types'
 
 const GOOGLE_FONT_STYLESHEET_HOST = 'fonts.googleapis.com'
 const CSS2_PATH = '/css2'
@@ -86,7 +86,7 @@ function variantsForAxisSpec(axisSpec: string | undefined, entry: GoogleFontFami
   return variants.length > 0 ? variants : defaultVariantFor(entry)
 }
 
-function parseFamilySpec(spec: string, url: URL): ImportGoogleFont | null {
+function parseFamilySpec(spec: string, url: URL): GoogleFontRequest | null {
   const colon = spec.indexOf(':')
   const family = (colon >= 0 ? spec.slice(0, colon) : spec).trim()
   const axisSpec = colon >= 0 ? spec.slice(colon + 1).trim() : undefined
@@ -100,8 +100,8 @@ function parseFamilySpec(spec: string, url: URL): ImportGoogleFont | null {
 }
 
 function mergeGoogleFont(
-  byFamily: Map<string, ImportGoogleFont>,
-  font: ImportGoogleFont,
+  byFamily: Map<string, GoogleFontRequest>,
+  font: GoogleFontRequest,
 ): void {
   const key = font.family.toLowerCase()
   const existing = byFamily.get(key)
@@ -121,8 +121,15 @@ function mergeGoogleFont(
  * panel uses, so imported font-family stacks work in the editor and publisher
  * through `site.settings.fonts.items`.
  */
-export function extractGoogleFontImports(cssSource: string): ImportGoogleFont[] {
-  const byFamily = new Map<string, ImportGoogleFont>()
+/**
+ * Harvests the Google-font `@import` requests of one CSS source before they
+ * are stripped. `stylesheetPath` is the stylesheet file the source belongs to
+ * (`ImportStylesheet.path`), or `null` for CSS converted into style rules.
+ */
+export type GoogleFontCollector = (cssSource: string, stylesheetPath: string | null) => void
+
+export function extractGoogleFontImports(cssSource: string): GoogleFontRequest[] {
+  const byFamily = new Map<string, GoogleFontRequest>()
   const sourceWithoutComments = cssSource.replace(CSS_COMMENT_RE, '')
 
   for (const match of sourceWithoutComments.matchAll(CSS_IMPORT_RE)) {

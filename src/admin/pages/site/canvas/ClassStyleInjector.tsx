@@ -38,8 +38,9 @@
  *   output genuinely differs per frame width.
  */
 
-import { useEffect } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { useEditorStore } from '@site/store/store'
+import { registry } from '@core/module-engine'
 import { styleRuleSelector, type ConditionDef, type StyleRule } from '@core/page-tree'
 import {
   collectBackgroundImagePaths,
@@ -55,7 +56,7 @@ import {
   generateForcedStateCSS,
   generatePreviewClassCSS,
 } from './canvasClassCss'
-import { resolveViewportUnitsForCanvas, type CanvasViewport } from './resolveViewportUnits'
+import { resolveViewportUnits, type Viewport } from '@core/utils/viewportUnits'
 
 interface ClassStyleInjectorProps {
   /**
@@ -68,9 +69,9 @@ interface ClassStyleInjectorProps {
    * Frame viewport used to resolve CSS viewport units (`vh`/`vw`/…) in class
    * styles to fixed px so they don't feed the iframe's grow-to-content height
    * loop. When omitted (non-iframe contexts), CSS is injected verbatim. See
-   * `resolveViewportUnits.ts`.
+   * `@core/utils/viewportUnits`.
    */
-  viewport?: CanvasViewport
+  viewport?: Viewport
 }
 
 // ---------------------------------------------------------------------------
@@ -99,12 +100,22 @@ const EMPTY_CONDITIONS: ConditionDef[] = []
  */
 const EMPTY_STYLE_RULES: Record<string, StyleRule> = {}
 
+// Stable registry subscription callbacks: a fresh `bind` per render would make
+// useSyncExternalStore unsubscribe and resubscribe on every render.
+const subscribeToModules = (listener: () => void) => registry.subscribe(listener)
+const moduleGeneration = () => registry.generation()
+
 export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjectorProps = {}) {
   // Subscribe to class registry — shallow equality so we only re-run when
   // the classes object reference changes (Mutative always creates a new ref on mutation)
   const classes = useEditorStore((s) => s.site?.styleRules ?? null)
+  // Classes a module declares it emits (`emittedClassNames`) count as used
+  // while the module is on the site. A plugin module pack can register after
+  // the canvas mounted, which changes nothing in the editor store, so
+  // subscribe to the registry too: the re-render re-reads the signature below.
+  useSyncExternalStore(subscribeToModules, moduleGeneration, moduleGeneration)
   const usedClassIdSignature = useEditorStore((s) =>
-    s.site ? usedStyleRuleIdSignature(s.site) : '',
+    s.site ? usedStyleRuleIdSignature(s.site, registry) : '',
   )
   const breakpoints = useEditorStore((s) => s.site?.breakpoints ?? EMPTY_BREAKPOINTS)
   const conditions = useEditorStore((s) => s.site?.conditions ?? EMPTY_CONDITIONS)
@@ -142,7 +153,7 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
 
     // Pin viewport units to the frame viewport (canvas-only) so class styles
     // using `vh`/`vmax`/… don't feed the iframe's grow-to-content height loop.
-    const forCanvas = (css: string) => (viewport ? resolveViewportUnitsForCanvas(css, viewport) : css)
+    const forCanvas = (css: string) => (viewport ? resolveViewportUnits(css, viewport) : css)
 
     const generated = generateCanvasClassCSS(
       canvasClasses,
@@ -210,17 +221,14 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
       previewEl.textContent = ''
       return
     }
-    const previewCss = generatePreviewClassCSS(cls, {
-      breakpointId: previewClassStyles.breakpointId ?? null,
-      styles: previewClassStyles.styles,
-    }, { mediaAssets: responsiveMediaAssets })
-    const resolvedPreviewCss = viewport ? resolveViewportUnitsForCanvas(previewCss, viewport) : previewCss
+    const previewCss = generatePreviewClassCSS(cls, previewClassStyles, breakpoints, conditions, { mediaAssets: responsiveMediaAssets })
+    const resolvedPreviewCss = viewport ? resolveViewportUnits(previewCss, viewport) : previewCss
     // Keep in the same @layer so the doubled-selector preview rule still wins
     // over the regular class rule within the layer (higher specificity).
     previewEl.textContent = resolvedPreviewCss
       ? `@layer user-authored {\n${resolvedPreviewCss}\n}`
       : ''
-  }, [targetDocument, viewport, classes, previewClassStyles, responsiveMediaAssets])
+  }, [targetDocument, viewport, classes, previewClassStyles, breakpoints, conditions, responsiveMediaAssets])
 
   // Forced state preview — when a state-pseudo selector (`.btn:hover`, …) is the
   // active selector, paint its declarations onto the selected node so the state
@@ -248,7 +256,7 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
     // Overlay an in-flight edit to the same rule into the context it targets so
     // dragging a control updates the forced preview live, at the right breakpoint.
     const inflight = previewClassStyles?.classId === activeClassId
-      ? { contextId: previewClassStyles.breakpointId ?? null, styles: previewClassStyles.styles }
+      ? { contextId: previewClassStyles.contextId ?? null, styles: previewClassStyles.styles }
       : null
     const forcedCss = generateForcedStateCSS(
       selectedNodeId,
@@ -258,7 +266,7 @@ export function ClassStyleInjector({ targetDocument, viewport }: ClassStyleInjec
       inflight,
       { mediaAssets: responsiveMediaAssets },
     )
-    const resolved = viewport ? resolveViewportUnitsForCanvas(forcedCss, viewport) : forcedCss
+    const resolved = viewport ? resolveViewportUnits(forcedCss, viewport) : forcedCss
     forceEl.textContent = resolved ? `@layer user-authored {\n${resolved}\n}` : ''
   }, [
     targetDocument,

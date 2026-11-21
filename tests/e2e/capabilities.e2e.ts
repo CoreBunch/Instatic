@@ -125,7 +125,7 @@ test.describe.serial('capability boundaries', () => {
       await personaPage.getByLabel('Search class style properties to add').fill('font size')
       const fontSizeInput = personaPage
         .getByTestId('css-property-row-fontSize')
-        .getByLabel('Font size')
+        .getByRole('textbox', { name: 'Font size', exact: true })
       await fontSizeInput.fill('23px')
       await fontSizeInput.blur()
       await expect(editableText).toHaveCSS('font-size', '23px')
@@ -519,9 +519,17 @@ test.describe.serial('content row move capability boundaries', () => {
       await createContentCollection(ownerPage, targetCollectionName, 'Target item')
       await createContentEntry(ownerPage, sourceCollectionName, 'Source item', entryTitle)
 
-      await createRole(ownerPage, personas.editor.roleName, ['Edit any content'])
+      // Reading a collection's rows needs a table-read capability on top of
+      // the content one (GHSA-x69h) — without it the explorer shows nothing
+      // and neither persona can get as far as the move controls this spec is
+      // actually about.
+      await createRole(ownerPage, personas.editor.roleName, [
+        'Edit any content',
+        'Browse custom tables',
+      ])
       await createRole(ownerPage, personas.mover.roleName, [
         'Edit any content',
+        'Browse custom tables',
         'Move rows between tables',
       ])
       for (const persona of Object.values(personas)) {

@@ -13,6 +13,7 @@
  */
 
 import { describe, it, expect } from 'bun:test'
+import { registry } from '@core/module-engine'
 import { bagToCSS, bagToInlineStyle, collectClassCSS, generateClassCSS } from '@core/publisher'
 import { classKindSelector, makeConditionDef } from '@core/page-tree'
 import type { StyleRule, Page, PageNode, SiteDocument } from '@core/page-tree'
@@ -127,6 +128,37 @@ describe('bagToCSS', () => {
   it('drops a syntactically invalid property name', () => {
     // Not a valid CSS identifier → never emitted.
     const css = bagToCSS({ 'has spaces': 'x', '1leading-digit': 'y' } as never)
+    expect(css).toBe('')
+  })
+
+  it('emits custom properties with underscores or a leading --_ as authored (#616)', () => {
+    // Webflow exports generate both forms; dropping them breaks every var().
+    const css = bagToCSS({
+      '--card_bg': '#0575d6',
+      '--_accent': '#fc834b',
+      '--brand---ds_mapped---background--page': '#fff',
+      '--plain-ok': '#161617',
+    } as never)
+    expect(css).toContain('--card_bg: #0575d6;')
+    expect(css).toContain('--_accent: #fc834b;')
+    expect(css).toContain('--brand---ds_mapped---background--page: #fff;')
+    expect(css).toContain('--plain-ok: #161617;')
+  })
+
+  it('keeps the case of a custom property name', () => {
+    // Custom properties are case-sensitive: `--brandColor` must not become
+    // `--brand-color`, or `var(--brandColor)` stops resolving.
+    const css = bagToCSS({ '--brandColor': 'red' } as never)
+    expect(css).toBe('  --brandColor: red;')
+  })
+
+  it('drops an invalid custom property name', () => {
+    const css = bagToCSS({ '--': 'a', '--has space': 'b', '--x;y': 'c', '--a:b': 'd' } as never)
+    expect(css).toBe('')
+  })
+
+  it('still rejects underscores in a standard property name', () => {
+    const css = bagToCSS({ font_size: '12px', '-_x': '1' } as never)
     expect(css).toBe('')
   })
 
@@ -662,6 +694,84 @@ describe('generateClassCSS', () => {
     expect(desktopIdx).toBeGreaterThan(tabletIdx)
   })
 
+  it('keeps min-width contexts narrowest-first when a max-width context sits between them', () => {
+    // Regression: width order is only defined between two contexts of the same
+    // query kind, so ordering used to fall back to registry index for a
+    // min-vs-max pair. That made the comparison non-transitive — the two
+    // min-width contexts below are never compared to each other, and the
+    // 1024px block was emitted before the 768px one. Both match above 1024px,
+    // specificity is equal, so the 768px block won and mobile-first inverted.
+    const breakpoints = [
+      { id: 'desktop', width: 1024, mediaQuery: '(min-width: 1024px)' },
+      { id: 'mobile', width: 900, mediaQuery: '(max-width: 900px)' },
+      { id: 'tablet', width: 768, mediaQuery: '(min-width: 768px)' },
+    ]
+    const classes = {
+      hero: makeClass('hero', { color: 'rgb(1, 2, 3)' }, {
+        desktop: { color: 'rgb(13, 14, 15)' },
+        mobile: { color: 'rgb(7, 8, 9)' },
+        tablet: { color: 'rgb(10, 11, 12)' },
+      }),
+    }
+    const css = generateClassCSS(classes, breakpoints)
+    const tabletIdx = css.indexOf('@media (min-width: 768px)')
+    const desktopIdx = css.indexOf('@media (min-width: 1024px)')
+    expect(tabletIdx).toBeGreaterThanOrEqual(0)
+    expect(desktopIdx).toBeGreaterThan(tabletIdx)
+  })
+
+  it('keeps max-width contexts widest-first when a min-width context sits between them', () => {
+    const breakpoints = [
+      { id: 'narrow', width: 600, mediaQuery: '(max-width: 600px)' },
+      { id: 'desktop', width: 1024, mediaQuery: '(min-width: 1024px)' },
+      { id: 'wide', width: 900, mediaQuery: '(max-width: 900px)' },
+    ]
+    const classes = {
+      hero: makeClass('hero', { color: 'rgb(1, 2, 3)' }, {
+        narrow: { color: 'rgb(4, 5, 6)' },
+        desktop: { color: 'rgb(13, 14, 15)' },
+        wide: { color: 'rgb(7, 8, 9)' },
+      }),
+    }
+    const css = generateClassCSS(classes, breakpoints)
+    const wideIdx = css.indexOf('@media (max-width: 900px)')
+    const narrowIdx = css.indexOf('@media (max-width: 600px)')
+    expect(wideIdx).toBeGreaterThanOrEqual(0)
+    expect(narrowIdx).toBeGreaterThan(wideIdx)
+  })
+
+  it('orders viewport contexts by the registry, not by contextStyles key order', () => {
+    // `contextStyles` is keyed in authoring order, which is not registry order.
+    // Emission must not depend on it: the same registry and the same overrides
+    // produce the same CSS whichever order the keys were written in.
+    const breakpoints = [
+      { id: 'desktop', width: 1024, mediaQuery: '(min-width: 1024px)' },
+      { id: 'mid', width: 1023, mediaQuery: '(max-width: 1023px)' },
+      { id: 'tablet', width: 768, mediaQuery: '(min-width: 768px)' },
+    ]
+    const overrides = {
+      desktop: { color: 'rgb(13, 14, 15)' },
+      mid: { color: 'rgb(7, 8, 9)' },
+      tablet: { color: 'rgb(10, 11, 12)' },
+    }
+    const authoredOneWay = generateClassCSS(
+      { hero: makeClass('hero', { color: 'rgb(1, 2, 3)' }, overrides) },
+      breakpoints,
+    )
+    const authoredAnother = generateClassCSS(
+      { hero: makeClass('hero', { color: 'rgb(1, 2, 3)' }, {
+        tablet: overrides.tablet,
+        desktop: overrides.desktop,
+        mid: overrides.mid,
+      }) },
+      breakpoints,
+    )
+    expect(authoredAnother).toBe(authoredOneWay)
+    expect(authoredOneWay.indexOf('@media (min-width: 1024px)')).toBeGreaterThan(
+      authoredOneWay.indexOf('@media (min-width: 768px)'),
+    )
+  })
+
   it('rewrites class background images with responsive image-set candidates', () => {
     const classes = {
       hero: makeClass('hero', { backgroundImage: "url('/uploads/hero.png')" }),
@@ -684,6 +794,7 @@ describe('generateClassCSS', () => {
 function makeSite(
   styleRules: SiteDocument['styleRules'],
   nodeClassIds: Record<string, string[]> = {},
+  files: SiteDocument['files'] = [],
 ): SiteDocument {
   const node: PageNode = {
     id: 'root',
@@ -722,12 +833,60 @@ function makeSite(
       shortcuts: {},
     },
     styleRules,
+    files,
     createdAt: 0,
     updatedAt: 0,
   }
 }
 
+function makeScript(path: string, content: string): SiteDocument['files'][number] {
+  return { id: path, path, type: 'script', content } as SiteDocument['files'][number]
+}
+
 describe('collectClassCSS', () => {
+  it('keeps a class no node carries when a runtime script names it', () => {
+    // The reason tree-shaking cannot work from node class ids alone: a modifier
+    // toggled by script is never authored onto a node, so publish saw it as
+    // dead and dropped it. The rule read back correctly everywhere up to
+    // publish, so the failure only showed on the live site.
+    const site = makeSite(
+      {
+        nav: makeClass('nav', { display: 'none' }),
+        'nav-open': makeClass('nav-open', { display: 'flex' }, {}, 'nav--open'),
+      },
+      { root: ['nav'] },
+      [makeScript('scripts/nav.js', "button.addEventListener('click', () => menu.classList.toggle('nav--open'))")],
+    )
+    const css = collectClassCSS(site, registry)
+    expect(css).toContain('.nav {')
+    expect(css).toContain('.nav--open {')
+    expect(css).toContain('display: flex')
+  })
+
+  it('still drops a class that neither a node nor a script references', () => {
+    const site = makeSite(
+      {
+        nav: makeClass('nav', { display: 'none' }),
+        'nav-open': makeClass('nav-open', { display: 'flex' }, {}, 'nav--open'),
+        orphan: makeClass('orphan', { color: 'red' }),
+      },
+      { root: ['nav'] },
+      [makeScript('scripts/nav.js', "menu.classList.toggle('nav--open')")],
+    )
+    const css = collectClassCSS(site, registry)
+    expect(css).toContain('.nav--open {')
+    expect(css).not.toContain('.orphan')
+  })
+
+  it('only counts script files, not other site file types', () => {
+    const site = makeSite(
+      { orphan: makeClass('orphan', { color: 'red' }) },
+      {},
+      [{ id: 'notes', path: 'docs/notes.md', type: 'doc', content: 'the orphan class is for later' } as SiteDocument['files'][number]],
+    )
+    expect(collectClassCSS(site, registry)).not.toContain('.orphan')
+  })
+
   it('emits user-authored CSS but skips framework-generated CSS', () => {
     const userClass = makeClass('user-class', { color: 'green' })
     const frameworkClass: StyleRule = {
@@ -750,7 +909,7 @@ describe('collectClassCSS', () => {
       { child1: [userClass.id, frameworkClass.id] },
     )
 
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
 
     expect(css).toContain('.user-class {')
     expect(css).toContain('color: green;')
@@ -760,7 +919,7 @@ describe('collectClassCSS', () => {
 
   it('returns empty string when no nodes have classIds', () => {
     const site = makeSite({ cls1: makeClass('cls1', { color: 'red' }) })
-    expect(collectClassCSS(site)).toBe('')
+    expect(collectClassCSS(site, registry)).toBe('')
   })
 
   it('only emits CSS for classes actually used by nodes (tree-shaking)', () => {
@@ -771,7 +930,7 @@ describe('collectClassCSS', () => {
       },
       { child1: ['used'] },
     )
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     expect(css).toContain('.used {')
     expect(css).not.toContain('.unused')
   })
@@ -791,10 +950,10 @@ describe('collectClassCSS', () => {
       { child: ['variant'] },
     )
 
-    expect(collectClassCSS(withDependency)).toContain(
+    expect(collectClassCSS(withDependency, registry)).toContain(
       '.group:hover .group-hover\\:block',
     )
-    expect(collectClassCSS(withoutDependency)).not.toContain('group-hover')
+    expect(collectClassCSS(withoutDependency, registry)).not.toContain('group-hover')
   })
 
   it('tree-shakes ambient fragments by known class dependencies', () => {
@@ -823,7 +982,7 @@ describe('collectClassCSS', () => {
       { child: ['used'] },
     )
 
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     expect(css).toContain('.used:hover')
     expect(css).not.toContain('.unused:hover')
     expect(css).toContain('body {')
@@ -837,7 +996,7 @@ describe('collectClassCSS', () => {
       },
       { child1: ['cls1'], child2: ['cls2'] },
     )
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     expect(css).toContain('.cls1')
     expect(css).toContain('.cls2')
   })
@@ -847,20 +1006,20 @@ describe('collectClassCSS', () => {
     // Insert </style> manually via name abuse — test the sanitizer, not the class gen
     // (bagToCSS already blocks javascript: etc; test the outer sanitizeModuleCSS wrapper)
     const site = makeSite({ evil: malicious }, { child1: ['evil'] })
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     expect(css).not.toMatch(/<\/style\s*>/)
   })
 
   it('gracefully handles missing class references in the registry', () => {
     const site = makeSite({}, { child1: ['nonexistent-id'] })
-    expect(() => collectClassCSS(site)).not.toThrow()
-    expect(collectClassCSS(site)).toBe('')
+    expect(() => collectClassCSS(site, registry)).not.toThrow()
+    expect(collectClassCSS(site, registry)).toBe('')
   })
 
   it('returns empty string when all used class styles are blocked by the sanitiser', () => {
     const evilClass = makeClass('evil', { backgroundImage: 'javascript:alert(1)' })
     const site = makeSite({ evil: evilClass }, { child1: ['evil'] })
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     // No valid declarations → collectClassCSS should return empty (or whitespace only)
     expect(css.trim()).toBe('')
   })

@@ -8,10 +8,9 @@
  * without downloading the instatic graph on first paint.
  */
 
-import { lazy, Suspense, useRef, type CSSProperties, type ReactNode, type SyntheticEvent } from 'react'
+import { LazySettingsModal as SettingsModal } from '@admin/modals/Settings/LazySettingsModal'
+import { Suspense, useRef, type CSSProperties, type ReactNode, type SyntheticEvent } from 'react'
 import { Toolbar } from '@site/toolbar/Toolbar'
-import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
-import { ConfirmDeleteProvider } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { SidebarResizeHandle } from '@admin/shared/SidebarResizeHandle'
 import { useEditorAppearancePreferences } from '@site/preferences/editorPreferences'
 import { useInstalledEditorPlugins } from '@admin/pages/plugins/hooks/useInstalledEditorPlugins'
@@ -30,11 +29,7 @@ import styles from '../AdminCanvasLayout/AdminCanvasLayout.module.css'
 import workspaceStyles from './AdminWorkspaceCanvasLayout.module.css'
 import rightSidebarStyles from '@site/sidebars/RightSidebar/RightSidebar.module.css'
 
-const SettingsModal = lazy(() =>
-  import('@admin/modals/Settings/SettingsModal').then((m) => ({ default: m.SettingsModal })),
-)
-
-type WorkspaceCanvasSection = Extract<AdminWorkspace, 'content' | 'data' | 'media'>
+type WorkspaceCanvasSection = Extract<AdminWorkspace, 'content' | 'data' | 'media' | 'branchReview'>
 
 interface AdminWorkspaceCanvasLayoutProps {
   workspace: WorkspaceCanvasSection
@@ -55,7 +50,8 @@ export function AdminWorkspaceCanvasLayout({
   const pluginBackgroundWorkEnabled = canRunPluginBackgroundWork(currentUser)
 
   useSiteSummary()
-  useWorkspaceLayoutPersistence(workspace)
+  // The merge review has no panels of its own; it reads the content workspace's stored layout.
+  useWorkspaceLayoutPersistence(workspace === 'branchReview' ? 'content' : workspace)
   useInstalledEditorPlugins(pluginBackgroundWorkEnabled)
   usePluginEventBridge(pluginBackgroundWorkEnabled)
 
@@ -80,38 +76,30 @@ export function AdminWorkspaceCanvasLayout({
         siteName={adminUiSiteName}
         faviconUrl={adminUiFaviconUrl}
         section={workspace}
-        adminNavigationSlot={(
-          <AdminSectionNavigation
-            section={workspace}
-            currentUser={currentUser}
-          />
-        )}
         rightSlot={toolbarRightSlot}
       />
 
-      <ConfirmDeleteProvider>
-        <div className={styles.editorBody}>
-          {contentSidebar ?? null}
-          <div
-            className={cn(styles.canvasStage, hasRightSidebar && styles.canvasStageRightSidebarOpen)}
-            data-right-sidebar-expanded={hasRightSidebar ? 'true' : 'false'}
-          >
-            <div className={styles.canvasContent} key={workspace}>
-              {contentCanvas}
-            </div>
-            {hasReopenableRightPanel && (
-              <WorkspaceRightPanelNotch
-                workspace={workspace}
-                onOpen={() => setRightPanel({ collapsed: false })}
-              />
-            )}
+      <div className={styles.editorBody}>
+        {contentSidebar ?? null}
+        <div
+          className={cn(styles.canvasStage, hasRightSidebar && styles.canvasStageRightSidebarOpen)}
+          data-right-sidebar-expanded={hasRightSidebar ? 'true' : 'false'}
+        >
+          <div className={styles.canvasContent} key={workspace}>
+            {contentCanvas}
           </div>
-          <WorkspaceRightSidebar
-            hidden={!rightPanelAvailable}
-            contentPanel={contentRightPanel}
-          />
+          {hasReopenableRightPanel && (
+            <WorkspaceRightPanelNotch
+              workspace={workspace}
+              onOpen={() => setRightPanel({ collapsed: false })}
+            />
+          )}
         </div>
-      </ConfirmDeleteProvider>
+        <WorkspaceRightSidebar
+          hidden={!rightPanelAvailable}
+          contentPanel={contentRightPanel}
+        />
+      </div>
 
       {settingsOpen && (
         <Suspense fallback={null}>

@@ -1,4 +1,5 @@
 import { isSafePackageName } from '@core/site-dependencies/packageNames'
+import { isRecord } from '@core/utils/isRecord'
 import type { SiteFile } from '@core/files/schemas'
 import type {
   LockedSiteDependency,
@@ -61,10 +62,6 @@ export const DEFAULT_SITE_RUNTIME: SiteRuntimeConfig = {
   dependencyLock: DEFAULT_SITE_DEPENDENCY_LOCK,
   scripts: {},
   styles: {},
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
 function finiteNumberOr(value: unknown, fallback: number): number {

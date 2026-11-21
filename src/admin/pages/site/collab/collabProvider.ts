@@ -34,6 +34,7 @@ import * as decoding from 'lib0/decoding'
 import * as syncProtocol from 'y-protocols/sync'
 import * as awarenessProtocol from 'y-protocols/awareness'
 import {
+  createCollabFrameReader,
   decodeCollabFrame,
   encodeCollabFrame,
   FRAME_AWARENESS,
@@ -43,10 +44,10 @@ import {
   FRAME_SYNC,
   PRESENCE_DOC_ID,
   REMOTE_ORIGIN,
+  SITE_SOCKET_PATH,
   decodeResetReason,
   type ResetReason,
 } from '@core/collab'
-import { collabSocketUrl } from './socketUrl'
 
 const RECONNECT_BASE_DELAY_MS = 1_000
 const RECONNECT_MAX_DELAY_MS = 30_000
@@ -95,6 +96,14 @@ export interface CollabProvider {
   canSend(): boolean
   /** Escape the backoff (which reaches 30s) when the user says the network is back. */
   reconnectNow(): void
+  /**
+   * Drop the current socket and open a new one at once, with no backoff. For
+   * when the session cookie was replaced (password re-confirmation rotates the
+   * session token): the server refuses the old socket on its next frame, so
+   * waiting for that close and then backing off leaves edits refused for over
+   * a second.
+   */
+  reopen(): void
   onStatus(listener: (status: CollabStatus) => void): () => void
   onReset(listener: CollabResetListener): () => void
   destroy(): void
@@ -109,6 +118,15 @@ interface BoundEntry {
    * client-created-row flow). See @core/collab/protocol.
    */
   generation: string
+  /**
+   * Local updates made before the lineage is known. The server refuses a
+   * write carrying `''` once its doc has content — and the doc has content
+   * as soon as the FIRST such write lands, so a second local change inside
+   * the bind round trip (a row created and placed, a seed in two
+   * transactions) would be reset as stale. Held here and sent as one update
+   * the moment the first inbound frame names the lineage.
+   */
+  pending: Uint8Array[]
   synced: boolean
   whenSynced: Promise<void>
   resolveSynced: () => void
@@ -127,13 +145,11 @@ export function createCollabProvider(
   const createSocket =
     opts.createSocket ??
     ((): CollabSocketLike => {
-      // Under `vite dev` the socket bypasses the proxy and dials the CMS port
-      // directly — see socketUrl.ts for why, and why the hostname is kept.
-      const devCmsPort = import.meta.env.DEV
-        ? String(import.meta.env.VITE_CMS_DEV_PORT ?? '3001')
-        : null
+      // Same origin in dev and production: under `vite dev` the proxy
+      // forwards the upgrade to the CMS (`ws: true` in vite.config.ts).
+      const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws'
       return new WebSocket(
-        collabSocketUrl(window.location, devCmsPort),
+        `${scheme}://${window.location.host}${SITE_SOCKET_PATH}`,
       ) as unknown as CollabSocketLike
     })
 
@@ -147,6 +163,7 @@ export function createCollabProvider(
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
   let pingTimer: ReturnType<typeof setInterval> | undefined
   let lastInboundAt = 0
+  const frameReader = createCollabFrameReader()
 
   const presenceDoc = new Y.Doc()
   const awareness = new awarenessProtocol.Awareness(presenceDoc)
@@ -201,18 +218,27 @@ export function createCollabProvider(
     const entry: BoundEntry = {
       doc,
       generation: '',
+      pending: [],
       synced: false,
       whenSynced,
       resolveSynced,
       updateHandler: (update, origin) => {
         if (origin === REMOTE_ORIGIN) return
-        const encoder = encoding.createEncoder()
-        syncProtocol.writeUpdate(encoder, update)
-        sendFrame(docId, FRAME_SYNC, encoding.toUint8Array(encoder))
+        if (entry.generation === '') {
+          entry.pending.push(update)
+          return
+        }
+        sendUpdate(docId, update)
       },
     }
     doc.on('update', entry.updateHandler)
     return entry
+  }
+
+  function sendUpdate(docId: string, update: Uint8Array): void {
+    const encoder = encoding.createEncoder()
+    syncProtocol.writeUpdate(encoder, update)
+    sendFrame(docId, FRAME_SYNC, encoding.toUint8Array(encoder))
   }
 
   const awarenessUpdateHandler = (
@@ -252,9 +278,15 @@ export function createCollabProvider(
       return
     }
     // Adopt the server's lineage from the first frame that names one, so every
-    // subsequent outbound frame is refusable if this doc is later reseeded.
+    // subsequent outbound frame is refusable if this doc is later reseeded —
+    // and release the local changes held back until now, as one update.
     if (entry.generation === '' && frame.generation !== '') {
       entry.generation = frame.generation
+      if (entry.pending.length > 0) {
+        const held = entry.pending
+        entry.pending = []
+        sendUpdate(frame.docId, held.length === 1 ? held[0]! : Y.mergeUpdates(held))
+      }
     }
     if (frame.frameType !== FRAME_SYNC) return
 
@@ -269,6 +301,27 @@ export function createCollabProvider(
       entry.synced = true
       entry.resolveSynced()
     }
+  }
+
+  /** Forget the current socket and everything scoped to it. */
+  function releaseSocket(): void {
+    frameReader.clear()
+    socket = null
+    clearInterval(pingTimer)
+    pingTimer = undefined
+  }
+
+  /**
+   * Close a socket whose events must no longer reach this provider. Callbacks
+   * are detached first, so a late browser event cannot restart the heartbeat,
+   * schedule a reconnect, or notify listeners.
+   */
+  function discardSocket(discarded: CollabSocketLike): void {
+    discarded.onopen = null
+    discarded.onmessage = null
+    discarded.onclose = null
+    discarded.onerror = null
+    discarded.close()
   }
 
   function connect(): void {
@@ -321,17 +374,24 @@ export function createCollabProvider(
     socket.onmessage = (event) => {
       lastInboundAt = Date.now()
       const { data } = event
-      if (data instanceof ArrayBuffer) handleFrame(new Uint8Array(data))
-      else if (data instanceof Uint8Array) handleFrame(data)
+      try {
+        const packet = data instanceof ArrayBuffer ? new Uint8Array(data) : data instanceof Uint8Array ? data : null
+        if (!packet) return
+        const frame = frameReader.read(packet)
+        if (frame) handleFrame(frame)
+      } catch (err) {
+        console.error('[collab] Invalid server frame:', err)
+        frameReader.clear()
+        setStatus('offline')
+        socket?.close()
+      }
     }
 
     // Errors always surface as a close — reconnect is scheduled there.
     socket.onerror = () => {}
 
     socket.onclose = () => {
-      socket = null
-      clearInterval(pingTimer)
-      pingTimer = undefined
+      releaseSocket()
       if (destroyed) return
       setStatus('offline')
       const delay =
@@ -390,6 +450,15 @@ export function createCollabProvider(
       attempts = 0
       connect()
     },
+    reopen: () => {
+      if (destroyed) return
+      clearTimeout(reconnectTimer)
+      attempts = 0
+      const previous = socket
+      releaseSocket()
+      if (previous) discardSocket(previous)
+      connect()
+    },
     onStatus: (listener) => {
       statusListeners.add(listener)
       return () => statusListeners.delete(listener)
@@ -399,6 +468,7 @@ export function createCollabProvider(
       return () => resetListeners.delete(listener)
     },
     destroy: () => {
+      frameReader.clear()
       destroyed = true
       clearTimeout(reconnectTimer)
       clearInterval(pingTimer)
@@ -407,18 +477,10 @@ export function createCollabProvider(
       awarenessProtocol.removeAwarenessStates(awareness, [awareness.clientID], 'destroy')
       awareness.destroy()
       for (const docId of [...bound.keys()]) unbind(docId)
+      // A socket can finish opening after the editor has already unmounted.
       const closingSocket = socket
       socket = null
-      if (closingSocket) {
-        // A socket can finish opening after the editor has already unmounted.
-        // Detach every callback before close so that late browser events cannot
-        // resurrect the heartbeat or notify listeners on a destroyed provider.
-        closingSocket.onopen = null
-        closingSocket.onmessage = null
-        closingSocket.onclose = null
-        closingSocket.onerror = null
-        closingSocket.close()
-      }
+      if (closingSocket) discardSocket(closingSocket)
       statusListeners.clear()
       resetListeners.clear()
     },

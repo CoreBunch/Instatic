@@ -1,9 +1,11 @@
+import { rm } from 'node:fs/promises'
 import { expect, test, type Browser, type Locator, type Page, type Response } from '@playwright/test'
 import { Type } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
 import {
   ANONYMOUS_STATE,
   PUBLIC_BASE_URL,
+  RUNTIME_CACHE_DIR,
   createPage,
   login,
   openCodePanel,
@@ -30,6 +32,7 @@ test.describe('runtime dependencies', () => {
   test('authors, resolves, publishes, and serves a runtime package import (SITE-014)', async ({
     page,
     browser,
+    request,
   }) => {
     test.setTimeout(120_000)
 
@@ -70,10 +73,19 @@ document.body.append(marker)
 
     await publishDraft(page)
 
-    await verifyPublishedRuntimeDependency({
+    const packageUrl = await verifyPublishedRuntimeDependency({
       browser,
       slug,
       marker,
+    })
+
+    await test.step('a visitor still gets the package after the cache folder is lost', async () => {
+      // What a recreated container or a cleaned temp folder does to a live
+      // site: the published page keeps pointing at the same package URL.
+      await rm(RUNTIME_CACHE_DIR, { recursive: true, force: true })
+      const response = await request.get(`${PUBLIC_BASE_URL}${packageUrl}`, { timeout: 75_000 })
+      expect(response.status()).toBe(200)
+      expect(response.headers()['content-type']).toContain('javascript')
     })
   })
 
@@ -124,6 +136,42 @@ document.body.dataset.site014MobileDependencyType = typeof leftPad
       await expect(page.getByLabel('Script imports').getByText(mobilePackage)).toHaveCount(0)
     })
   })
+
+  test('browses the registry and installs from a package page (SITE-014)', async ({ page }) => {
+    test.setTimeout(120_000)
+
+    await login(page)
+    await openSiteEditor(page)
+    await page.getByRole('button', { name: 'Open Dependencies panel' }).click()
+    const dependenciesPanel = page.getByTestId('dependencies-panel')
+    await expect(dependenciesPanel).toBeVisible()
+
+    // Search goes through the server-side registry proxy, never the browser.
+    // `pad-left` is tiny, live and not deprecated (deprecated packages are
+    // hidden from search), so the index lists it by name.
+    const search = dependenciesPanel.getByTestId('registry-search')
+    await search.fill('pad-left')
+    const result = dependenciesPanel.getByTestId('registry-result-pad-left')
+    await expect(result).toBeVisible({ timeout: 20_000 })
+    await result.click()
+
+    const detail = dependenciesPanel.getByTestId('package-detail-pad-left')
+    await expect(detail).toBeVisible()
+    await expect(detail.getByTestId('package-readme')).toBeVisible({ timeout: 20_000 })
+
+    await detail.getByTestId('dependency-install-pad-left').click()
+    await expect(detail.getByTestId('dependency-locked-pad-left')).toBeVisible({ timeout: 75_000 })
+
+    await test.step('remove it again so later specs start from the same manifest', async () => {
+      // Removing a dependency always confirms: it is a manifest change, not a
+      // canvas edit, so it does not defer to the confirm-before-delete preference.
+      await detail.getByTestId('dependency-remove-pad-left').click()
+      const confirm = page.getByRole('alertdialog', { name: 'Remove pad-left?' })
+      await expect(confirm).toBeVisible()
+      await confirm.getByRole('button', { name: 'Remove' }).click()
+      await expect(detail.getByTestId('dependency-install-pad-left')).toBeVisible()
+    })
+  })
 })
 
 async function createRuntimeScript(
@@ -161,7 +209,7 @@ async function verifyPublishedRuntimeDependency({
   browser: Browser
   slug: string
   marker: string
-}): Promise<void> {
+}): Promise<string> {
   const context = await browser.newContext()
   const visitor = await context.newPage()
   const runtimeCacheResponses: Response[] = []
@@ -202,6 +250,7 @@ async function verifyPublishedRuntimeDependency({
     expect(cacheResponse?.status()).toBe(200)
     expect(cacheResponse?.headers()['content-type']).toContain('javascript')
     expect(cacheResponse?.headers()['cache-control']).toContain('immutable')
+    return packageUrl
   } finally {
     await context.close()
   }

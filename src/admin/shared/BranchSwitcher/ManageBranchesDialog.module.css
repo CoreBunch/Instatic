@@ -1,0 +1,121 @@
+/* Manage branches dialog — one row per branch. */
+
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4xs);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.row {
+    --branch-accent: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+    min-height: 44px;
+    padding: var(--space-xs) var(--space-s);
+    border-radius: var(--radius);
+    background: var(--bg-surface-2);
+    color: var(--text);
+    font-size: var(--text-xs);
+}
+
+.rowCurrent {
+    background: var(--bg-surface-3);
+}
+
+.rowCreate {
+    border: 1px dashed var(--border);
+    background: transparent;
+}
+
+.icon {
+    display: inline-flex;
+    flex-shrink: 0;
+    color: var(--branch-accent);
+}
+
+.main {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--space-px);
+    min-width: 0;
+}
+
+.name {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    min-width: 0;
+    font-weight: 650;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.id {
+    padding: 0 var(--space-4xs);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface-3);
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    font-weight: 500;
+}
+
+.meta {
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-4xs);
+    flex-shrink: 0;
+}
+
+.createForm,
+.renameForm {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: var(--space-xs);
+    min-width: 0;
+}
+
+.createForm > :nth-child(2),
+.renameForm > :first-child {
+    flex: 1;
+    min-width: 0;
+}
+
+.createFrom {
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    white-space: nowrap;
+}
+
+/* A pill inside a shrink-to-fit flex row: its percentage max-width has no
+   definite box to resolve against (WebKit collapses the label to one letter),
+   and nothing here needs it to truncate. */
+.pill {
+    max-width: none;
+}
+
+.search {
+    margin-bottom: var(--space-s);
+}
+
+.empty {
+    padding: var(--space-m);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    text-align: center;
+}

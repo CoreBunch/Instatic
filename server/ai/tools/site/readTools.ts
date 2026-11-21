@@ -124,7 +124,7 @@ const listPostTypesTool: AiTool = {
     'List the routable post types a `postTypes` template can target. Each entry has { slug, label, routeBase, kind }; pass the `slug` values to site_set_page_template\'s `target.tableSlugs`. System tables, pages, components, layouts, and reusable data tables are excluded.',
   inputSchema: ListPostTypesInput,
   handler: async (_input, ctx) => {
-    const tables = await listDataTablesWithCounts(ctx.db)
+    const tables = await listDataTablesWithCounts(ctx.db, ctx.branch)
     const postTypes = tables
       .filter((t) => t.kind === 'postType' && t.routeBase.trim() !== '')
       .map((t) => ({
@@ -214,14 +214,17 @@ const listLoopSourcesTool: AiTool = {
       fields: source.fields.map(loopFieldToAgentField),
       filterSchema: source.filterSchema,
       orderByOptions: source.orderByOptions,
+      // Leave out data-direction to get this; set it only to override.
+      defaultDirection: source.defaultDirection ?? 'asc',
     }))
-    const tables = await listDataTablesWithCounts(ctx.db)
+    const tables = await listDataTablesWithCounts(ctx.db, ctx.branch)
     const dataMeta = buildDataMeta(tables)
     const dataRowsSource = loopSourceRegistry.get('data.rows')
     const dataRowsFields = dataRowsSource?.fields.map(loopFieldToAgentField) ?? []
     return {
       usage: {
-        loopElement: '<instatic-loop data-source-id="data.rows" data-table-id="<table id>" data-order-by="publishedAt" data-direction="desc" data-limit="3">...</instatic-loop>',
+        loopElement: '<instatic-loop data-source-id="data.rows" data-table-id="<table id>" data-order-by="publishedAt" data-limit="3">...</instatic-loop>',
+        direction: 'Omit data-direction to keep the source\'s own order (each source lists its defaultDirection). Add data-direction="asc" or "desc" only to override it.',
         tokenSyntax: '{currentEntry.field}',
         invalidTokenSyntax: '{{post.field}}',
       },

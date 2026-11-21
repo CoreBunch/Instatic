@@ -27,7 +27,8 @@ Building:
 Design system first:
 - A consistent design comes from TOKENS, not repeated literals. The dynamic suffix lists the site's current tokens (the "Tokens —" line); if it says "(none …)", there is no design system yet — establish one before/while building.
 - Create tokens with site_set_color_tokens (colors → var(--<slug>)), site_set_type_scale (font sizes → --text-*), site_set_spacing_scale (spacing → --space-*), site_set_font_tokens (typefaces → var(--<font-var>); pass googleFamily to install a web font). These are create-or-update — re-running with the same slug/variable patches in place.
-- Then REFERENCE the tokens in your CSS: color:var(--primary), font-size:var(--text-l), gap:var(--space-m), font-family:var(--font-heading). Don't emit raw hex/rgb, raw px for type/spacing, or a raw font-family when a token exists or should exist — make the token, then reference it. A few well-chosen tokens up front keep every section visually consistent.
+- Fonts use three ROLE tokens: font-heading (headings, display type), font-body (running text), font-mono (code, data, mono labels). New sites already have all three as system-font fallbacks. To change a typeface, update the role token (site_set_font_tokens with variable "font-heading" + googleFamily) instead of inventing a new font variable; add one only for a genuinely extra role.
+- Then REFERENCE the tokens in your CSS: color:var(--primary), font-size:var(--text-l), gap:var(--space-m), font-family:var(--font-heading) on headings and var(--font-body) on running text. Don't emit raw hex/rgb, raw px for type/spacing, or a raw font-family when a token exists or should exist — make the token, then reference it. A few well-chosen tokens up front keep every section visually consistent.
 
 Structure as HTML, styling as CSS:
 - Structure goes in site_insert_html/site_replace_node_html as semantic HTML. Style it with CSS in the SAME call: a <style> block and/or class= attributes (the importer turns these into reusable classes + ambient rules), referencing the design tokens above. This is the clean default; do NOT hand-build classes node-by-node.
@@ -54,11 +55,12 @@ Documents:
 Pages:
 - Homepage = page with slug "index". Set via site_rename_page with slug="index". Site must keep ≥1 page; site_delete_page of the last one fails.
 - Page ids appear in the dynamic suffix's "Pages:" line and in page/template document refs. Pass those verbatim to site_duplicate_page / site_delete_page / site_rename_page. NEVER invent a page id.
+- A page's <head> (description, canonical, social card, favicon, JSON-LD…) is its \`seo\` setting: read it from site_list_documents, change it with site_set_page_seo (pass the whole object; it replaces). Never put meta tags into the page body.
 - site_add_page makes the new page active and returns \`pageId\` + \`rootNodeId\`. To build into it, pass \`rootNodeId\` (NOT the pageId) as site_insert_html's parentId, then keep inserting. Don't call site_add_page twice for the same page — the slug is auto-uniqued, so a second call makes a second page.
 
 Loops (repeated CMS/data lists):
 - To create a real loop, call site_list_loop_sources first. Use the returned source ids, data table ids, orderBy options, and tokens.
-- In site_insert_html/site_replace_node_html, write \`<instatic-loop data-source-id="data.rows" data-table-id="<table id>" data-order-by="publishedAt" data-direction="desc" data-limit="3">...</instatic-loop>\`. The importer turns that custom element into a Loop; its children are the repeated card/row variants. Never put the loop INSIDE a \`<table>\`, \`<tbody>\` or \`<tr>\` — HTML parsing does not allow a custom element there, so it is moved out of the table and stripped of its rows, and the table publishes one blank row. Wrap the whole \`<table>\` in the loop, or render the rows as a list.
+- In site_insert_html/site_replace_node_html, write \`<instatic-loop data-source-id="data.rows" data-table-id="<table id>" data-order-by="publishedAt" data-limit="3">...</instatic-loop>\`. Leave out data-direction to keep the source's own order (site_list_loop_sources gives each source's defaultDirection); add it only to reverse that. The importer turns that custom element into a Loop; its children are the repeated card/row variants. Never put the loop INSIDE a \`<table>\`, \`<tbody>\` or \`<tr>\` — HTML parsing does not allow a custom element there, so it is moved out of the table and stripped of its rows, and the table publishes one blank row. Wrap the whole \`<table>\` in the loop, or render the rows as a list.
 - Inside a loop, use returned tokens exactly: \`{currentEntry.title}\`, \`{currentEntry.permalink}\`, \`{currentEntry.featuredMedia}\`. NEVER use \`{{post.title}}\`, \`{{post.url}}\`, or a made-up alias; invalid tokens render literally or empty.
 
 Templates (CMS layouts):
@@ -106,6 +108,10 @@ function describeTokenDigest(tokens: SnapshotTokens): string {
   }
   if (parts.length === 0) {
     return 'Tokens: (none — no design system yet; establish one first with site_set_color_tokens / site_set_type_scale / site_set_spacing_scale / site_set_font_tokens)'
+  }
+  // A new site starts with only the font role tokens: still no design system.
+  if (tokens.colors.length === 0 && tokens.typography.length === 0 && tokens.spacing.length === 0) {
+    parts.push('(no colors, type or spacing yet; establish them first with site_set_color_tokens / site_set_type_scale / site_set_spacing_scale)')
   }
   return `Tokens — ${parts.join('; ')}`
 }

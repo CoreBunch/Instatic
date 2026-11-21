@@ -24,7 +24,7 @@ export function GapInput({ value, isSet, onChange, onPreview, onClearPreview }: 
   const tokens = useSpacingTokens()
   return (
     <LabeledControl label="Gap" isSet={isSet}>
-      <TokenAwareInput
+      <TokenAwareInput adjustable minimum={0}
         aria-label="Gap"
         value={value}
         placeholder="0px"

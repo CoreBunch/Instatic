@@ -28,6 +28,13 @@ export const CORE_CAPABILITIES = [
   'site.structure.edit',
   'site.content.edit',
   'site.style.edit',
+  // Branches. `create` forks a branch and covers the branches the user
+  // forked: rename, delete, update from main, share and revoke a preview
+  // link. `manage` covers every branch, plus merging into main and declining
+  // a merge request; it does not fork on its own. Listing and switching
+  // branches only need `site.read`.
+  'site.branches.create',
+  'site.branches.manage',
   'pages.edit',
   'pages.publish',
   'content.create',
@@ -53,6 +60,13 @@ export const CORE_CAPABILITIES = [
   'users.manage',
   'roles.manage',
   'audit.read',
+  // Outgoing mail: the SMTP account every account email is sent through.
+  'mail.manage',
+  // Site members (people who sign in on the published site, not admin
+  // users): `read` lists and views them, `manage` changes them and the
+  // member settings.
+  'members.read',
+  'members.manage',
   // Data workspace — split from `content.manage`, and further split
   // system-vs-custom so a persona (e.g. "client") can see/manage custom tables
   // without ever seeing the internal system tables (posts/pages/components/

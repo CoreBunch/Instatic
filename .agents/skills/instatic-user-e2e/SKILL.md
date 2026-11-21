@@ -18,7 +18,7 @@ Treat browser-observed behavior as primary evidence. Use code, database, API, or
 - Read `docs/e2e/protocol.md` before running or changing the protocol.
 - Read `docs/e2e/feature-matrix.md` before choosing scenarios.
 - Use `docs/e2e/run-log-template.md` when writing a new run log.
-- Use the project-local `agent-browser` skill or the available in-app Browser tooling for browser control.
+- Use available browser tooling for browser control.
 
 ## Default Scope
 

@@ -400,7 +400,7 @@ describe('SiteExplorerPanel', () => {
     expect(treeDropCss).toContain('.dropInside')
     expect(css).toContain('.dragOverlayRow')
 
-    const beforeAfterBlock = treeDropCss.match(/\.dropBefore::before,\n\.dropAfter::after,\n\.dropRoot::after,\n\.rootDropGapActive::after\s*\{[^}]*\}/s)?.[0] ?? ''
+    const beforeAfterBlock = treeDropCss.match(/\.dropBefore::before,\r?\n\.dropAfter::after,\r?\n\.dropRoot::after,\r?\n\.rootDropGapActive::after\s*\{[^}]*\}/s)?.[0] ?? ''
     expect(beforeAfterBlock).toContain('position: absolute')
     expect(beforeAfterBlock).not.toMatch(/(?:^|\n)\s*(margin|padding)\b/)
 
@@ -1071,7 +1071,7 @@ describe('SiteExplorerPanel', () => {
     expect(screen.getByRole('textbox', { name: 'Rename Pricing' })).toBeDefined()
   })
 
-  it('edits a page slug through the Page settings dialog', () => {
+  it('edits a page slug through the Page settings dialog', async () => {
     loadSite()
     render(<SiteExplorerPanel sectionGroup="site" />)
 
@@ -1081,7 +1081,7 @@ describe('SiteExplorerPanel', () => {
     })
     fireEvent.click(screen.getByRole('menuitem', { name: /page settings/i }))
 
-    const slugInput = screen.getByLabelText('Slug') as HTMLInputElement
+    const slugInput = await screen.findByLabelText('Slug') as HTMLInputElement
     expect(slugInput.value).toBe('pricing')
 
     fireEvent.change(slugInput, { target: { value: 'plans-and-pricing' } })
@@ -1092,7 +1092,7 @@ describe('SiteExplorerPanel', () => {
     expect(updated?.title).toBe('Pricing')
   })
 
-  it('locks slug editing for the homepage in the Page settings dialog', () => {
+  it('locks slug editing for the homepage in the Page settings dialog', async () => {
     loadSite()
     render(<SiteExplorerPanel sectionGroup="site" />)
 
@@ -1102,7 +1102,7 @@ describe('SiteExplorerPanel', () => {
     })
     fireEvent.click(screen.getByRole('menuitem', { name: /page settings/i }))
 
-    const slugInput = screen.getByLabelText('Slug') as HTMLInputElement
+    const slugInput = await screen.findByLabelText('Slug') as HTMLInputElement
     expect(slugInput.disabled).toBe(true)
     expect(slugInput.value).toBe('index')
   })

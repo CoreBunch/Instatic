@@ -2,7 +2,7 @@
  * Browser runtime for Layer C server-island ("hole") lazy loading.
  *
  * Self-contained ES module — no dependencies, no TypeScript. The publisher
- * injects a `<script type="module" src="/_instatic/hole-runtime.js" defer>` tag
+ * injects a `<script type="module" src="/_instatic/hole-runtime.js?v=<contentHash>" defer>` tag
  * into pages that contain at least one `<instatic-hole>` placeholder.
  *
  * On load, the runtime uses `IntersectionObserver` with a 200 px root margin
@@ -17,7 +17,7 @@
  * to lazily reveal, so it is fetched eagerly on load.
  *
  * The fragment fetch URL is
- * `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<originating-page-url>`. The
+ * `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<originating-page-url>`. The
  * version parameter lets the hole endpoint detect stale placeholders after a
  * re-publish and return a lightweight sentinel instead of cached stale HTML.
  * The `u` parameter carries the visitor's actual page path + query string so
@@ -30,6 +30,7 @@
  * A fetch failure is silently swallowed — the author's skeleton content in the
  * placeholder continues to show as a meaningful fallback.
  */
+import { assetContentVersion } from './assetVersion'
 
 export function runInstaticHoleRuntime(): void {
   function instaticFetchHole(el: HTMLElement): void {
@@ -61,3 +62,9 @@ export function runInstaticHoleRuntime(): void {
 }
 
 export const HOLE_RUNTIME_JS = `(${runInstaticHoleRuntime.toString()})();`
+
+/**
+ * Content hash of the runtime, stamped as `?v=` on its script tag so a CMS
+ * upgrade that changes the runtime changes the URL browsers have cached.
+ */
+export const HOLE_RUNTIME_VERSION = assetContentVersion(HOLE_RUNTIME_JS)

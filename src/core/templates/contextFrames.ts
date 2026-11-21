@@ -18,6 +18,7 @@
  * resolver stays a one-line lookup at the binding site.
  */
 
+import type { CurrentMember } from '@core/members'
 import type { Page, SiteDocument } from '@core/page-tree'
 import { primaryTemplateTableSlug } from './templateMatching'
 
@@ -54,6 +55,36 @@ export interface RouteFrame {
   slug: string | null
   segments: string[]
   query: Record<string, string>
+}
+
+/**
+ * The signed-in member, for `member.*` bindings and show-when rules.
+ * `tags` is the list a show-when rule checks; `tagList` is the same tags as
+ * text, for a binding.
+ */
+export interface MemberFrame {
+  id: string
+  email: string
+  profile: Record<string, string>
+  tags: readonly string[]
+  tagList: string
+  /**
+   * The app waiting for this member's answer, on a page opened with an app's
+   * sign-in request in its address. Null everywhere else. The values come
+   * from the stored request, never from the address itself.
+   */
+  appRequest: MemberAppRequestFrame | null
+}
+
+export interface MemberAppRequestFrame {
+  /** The app's name, as the site owner registered it. */
+  name: string
+  /** What the app asks to see, as a sentence fragment. */
+  access: string
+  /** The host the answer is sent back to. */
+  returnsTo: string
+  /** What the app calls the device it runs on. The app's own word; empty when it gave none. */
+  device: string
 }
 
 // ---------------------------------------------------------------------------
@@ -120,4 +151,34 @@ export function buildRouteFrame(urlOrPath: string): RouteFrame {
     segments,
     query,
   }
+}
+
+/** A checkbox profile field reads as "yes" or blank, so a binding prints something sensible. */
+export function buildMemberFrame(
+  member: CurrentMember,
+  appRequest: MemberAppRequestFrame | null = null,
+): MemberFrame {
+  return {
+    id: member.id,
+    email: member.email,
+    profile: Object.fromEntries(
+      Object.entries(member.profile).map(([key, value]) => [key, typeof value === 'boolean' ? (value ? 'yes' : '') : value]),
+    ),
+    tags: member.tags,
+    tagList: member.tags.join(', '),
+    appRequest,
+  }
+}
+
+/**
+ * A stand-in member for the editor canvas, so an element bound to member
+ * data shows where the value will go instead of collapsing to nothing.
+ */
+export const PREVIEW_MEMBER_FRAME: MemberFrame = {
+  id: 'preview-member',
+  email: 'member@example.com',
+  profile: { name: 'Member name' },
+  tags: [],
+  tagList: 'tag',
+  appRequest: { name: 'App name', access: 'what the app asks to see', returnsTo: 'this device', device: 'Device name' },
 }

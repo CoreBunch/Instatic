@@ -118,6 +118,7 @@ export function useTypographyTokens(): ReadonlyArray<Token> {
 export function resolveTokenValue(
   raw: string,
   tokens: ReadonlyArray<Token>,
+  implicitUnit = 'px',
 ): string | undefined {
   const trimmed = raw.trim()
   if (!trimmed) return undefined
@@ -128,7 +129,7 @@ export function resolveTokenValue(
   )
   if (match) return match.valueExpr
 
-  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return `${trimmed}px`
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) return `${trimmed}${implicitUnit}`
   return trimmed
 }
 

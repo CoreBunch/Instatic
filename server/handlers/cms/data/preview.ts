@@ -25,17 +25,19 @@ import { resolveTemplateChain, composeTemplateChain } from '@core/templates'
 import { buildRouteFrame } from '@core/templates/contextFrames'
 import { publishPage } from '@core/publisher'
 import { buildSiteCssBundle } from '../../../publish/siteCssBundle'
-import { buildPublishedSiteModuleJsMap } from '../../../publish/moduleJsBundle'
-import { getPublishVersion } from '../../../publish/publishState'
-import { prefetchLoopData, publishedDataRowToLoopItem } from '../../../publish/loopPrefetch'
+import { buildPublishedSiteModuleJsMap, resolveModuleScripts } from '../../../publish/moduleJsBundle'
+import { prefetchLoopData, publishedDataRowToEntryItem } from '../../../publish/loopPrefetch'
+import { LOOP_RUNTIME_VERSION } from '../../../publish/loopRuntime'
 import { prefetchMediaAssets } from '../../../publish/mediaPrefetch'
 import { registry } from '@core/module-engine'
 import { getLatestPublishedSiteSnapshot } from '../../../repositories/publish'
 import { getDataRow, getDataTable } from '../../../repositories/data'
 import { applyPublishedHtmlPipeline } from '../../../publish/publishedHtmlPipeline'
 import { badRequest, jsonResponse, readValidatedBody } from '../../../http'
-import { canReadDataRow, canReadTable, forbidden, requireDataAccess } from './access'
+import { forbidden, requireDataAccess } from './access'
+import { canReadDataRow, canReadTable } from '../../../auth/dataAccess'
 import type { RouteParams } from '../routeTable'
+import type { BranchScope } from '../../../branches/scope'
 
 const CSS_ASSET_BASE_URL = '/_instatic/css/'
 const LOOP_ENDPOINT_BASE_URL = '/_instatic/loop/'
@@ -61,14 +63,15 @@ export async function handleRowPreview(
   req: Request,
   db: DbClient,
   params: RouteParams,
+  scope: BranchScope,
 ): Promise<Response> {
   const user = await requireDataAccess(req, db)
   if (user instanceof Response) return user
 
-  const row = await getDataRow(db, params.id)
+  const row = await getDataRow(db, scope, params.id)
   if (!row) return jsonResponse({ error: 'Row not found' }, { status: 404 })
 
-  const table = await getDataTable(db, row.tableId)
+  const table = await getDataTable(db, scope, row.tableId)
   if (!table) return jsonResponse({ error: 'Table not found' }, { status: 404 })
   // System-table rows need data.system.tables.read even to preview (GHSA-x69h).
   if (!canReadTable(user, table)) return jsonResponse({ error: 'Row not found' }, { status: 404 })
@@ -111,10 +114,12 @@ export async function handleRowPreview(
   const publicPath = buildEntryPublicPath(table.routeBase, draftPublishedRow.slug)
   const syntheticUrl = new URL(`http://localhost${publicPath}`)
   const templateContext = {
-    entryStack: [publishedDataRowToLoopItem(draftPublishedRow)],
+    entryStack: [await publishedDataRowToEntryItem(db, draftPublishedRow, table.fields)],
     route: buildRouteFrame(syntheticUrl.toString()),
   }
-  const loopData = await prefetchLoopData(merged, snapshot.site, db)
+  const loopData = await prefetchLoopData(merged, snapshot.site, db, undefined, {
+    branchId: scope.branchId,
+  })
   const mediaAssets = await prefetchMediaAssets(merged, snapshot.site, registry, db, {
     templateContext,
     loopData,
@@ -132,6 +137,7 @@ export async function handleRowPreview(
     loopData,
     mediaAssets,
     loopEndpointBaseUrl: LOOP_ENDPOINT_BASE_URL,
+    loopRuntimeVersion: LOOP_RUNTIME_VERSION,
   })
   const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
 
@@ -141,9 +147,7 @@ export async function handleRowPreview(
       pageId: merged.id,
       slug: merged.slug,
       siteId: snapshot.site.id,
-      cssBundle,
-      jsModuleIds: published.jsModuleIds.filter((id) => moduleJsMap.has(id)),
-      publishVersion: getPublishVersion(),
+      moduleScripts: resolveModuleScripts(published.jsModuleIds, moduleJsMap),
     },
     db,
   )

@@ -9,14 +9,15 @@
  * time. `isSafeUrl()` in `@core/html-sanitize` is the **enforcement** gate,
  * applied at HTML export time. Both read the scheme through the same
  * `urlScheme()` extractor so the two can never disagree about what a value's
- * scheme is — they differ only in which schemes they accept.
+ * scheme is.
  *
  * Allowlists:
- *   isValidUrl()       — https, http, mailto
+ *   isValidUrl()       — exactly the schemes `isSafeUrl()` keeps (http, https,
+ *                        mailto, tel, sms), read from that one list
  *   isValidImageUrl()  — https, http, data:image/* (inline base64 images)
  */
 
-import { urlScheme } from '@core/html-sanitize'
+import { isSafeUrl, urlScheme } from '@core/html-sanitize'
 
 /**
  * Well-formedness check, kept separate from the scheme decision.
@@ -44,14 +45,17 @@ function parses(v: string): boolean {
  * Returns true if `v` is a safe general-purpose URL for storing in site
  * props (e.g. a link href, a button href).
  *
- * Allows:  https:, http:, mailto:
+ * Allows:  every scheme the publisher keeps (`isSafeUrl()`): https:, http:,
+ *          mailto:, tel:, sms:
  * Rejects: javascript:, data:, ftp:, blob:, custom schemes, schemeless values,
  *          and malformed absolute URLs (`http://`, `https://exa mple.com`)
+ *
+ * The scheme decision is delegated to `isSafeUrl()` so the field can never
+ * reject a link the publisher would render, or accept one it would strip.
  */
 export function isValidUrl(v: string): boolean {
   if (!v) return true
-  const scheme = urlScheme(v)
-  if (scheme !== 'https:' && scheme !== 'http:' && scheme !== 'mailto:') return false
+  if (urlScheme(v) === null || !isSafeUrl(v)) return false
   return parses(v)
 }
 
@@ -76,4 +80,9 @@ export function isValidImageUrl(v: string): boolean {
   if (scheme === 'https:' || scheme === 'http:') return parses(v)
   if (scheme === 'data:') return v.trimStart().toLowerCase().startsWith('data:image/')
   return false
+}
+
+/** Strip trailing slashes so a base URL can be joined with `/<path>` without doubling. */
+export function stripTrailingSlashes(url: string): string {
+  return url.replace(/\/+$/, '')
 }

@@ -12,7 +12,7 @@ import { Dialog } from '@ui/components/Dialog'
 import { FileUpload } from '@ui/components/FileUpload'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
 import type { CmsMediaAsset } from '@core/persistence/cmsMedia'
-import { formatBytes } from '../../utils/formatBytes'
+import { formatBytes } from '@admin/lib/formatBytes'
 import styles from './ReplaceFileDialog.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
