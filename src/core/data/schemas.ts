@@ -334,6 +334,14 @@ export const DataTableSchema = Type.Object({
    */
   system: Type.Boolean(),
   createdByUserId: Type.Union([Type.String(), Type.Null()]),
+  /**
+   * Plugin id when the table was created through the plugin surface
+   * (`cms.content.tables.create`); null for user/import-created tables. The
+   * plugin host's `@own-created` contentAccess marker matches against this.
+   * OPTIONAL because `DataTableSchema` also validates bundle archives exported
+   * before the column existed — server reads always populate it.
+   */
+  createdByPluginId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
   updatedByUserId: Type.Union([Type.String(), Type.Null()]),
   /** ISO datetime string from DB */
   createdAt: Type.String(),
@@ -577,12 +585,15 @@ const UpdateDataTableInputSchema = Type.Object({
   pluralLabel: Type.Optional(Type.String()),
   primaryFieldId: Type.Optional(Type.String()),
   fields: Type.Optional(Type.Array(DataFieldSchema)),
+  appendFields: Type.Optional(Type.Array(DataFieldSchema)),
 })
 
 export type UpdateDataTableInput = Static<typeof UpdateDataTableInputSchema>
 
 const CreateDataRowInputSchema = Type.Object({
   cells: Type.Optional(DataRowCellsSchema),
+  /** Take the next free `<slug>-N` when the slug is in use, instead of failing. */
+  allocateSlug: Type.Optional(Type.Boolean()),
 })
 
 export type CreateDataRowInput = Static<typeof CreateDataRowInputSchema>

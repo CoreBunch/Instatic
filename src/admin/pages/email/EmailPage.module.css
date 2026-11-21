@@ -1,0 +1,249 @@
+/* Email workspace: the few pieces the shared settings-workspace styles do
+   not cover (delivery status tile, template editor and preview, activity
+   row details). */
+
+/* ── Delivery mode tile (Defaults) ───────────────────────────────────────── */
+.modeTile {
+  --modeColor: var(--text-subtle);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-l);
+  padding: var(--space-xl) var(--space-2xl);
+  border-radius: var(--card-radius);
+  background: var(--bg-surface-2);
+}
+
+.modeTile[data-mode="send"] {
+  --modeColor: var(--success);
+}
+
+.modeTile[data-mode="capture"] {
+  --modeColor: var(--warning);
+}
+
+.modeTile[data-mode="off"] {
+  --modeColor: var(--danger);
+}
+
+.modeDot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  margin-top: 0.45em;
+  border-radius: var(--radius-pill);
+  background: var(--modeColor);
+}
+
+.modeTitle {
+  margin: 0 0 var(--space-4xs);
+  font-size: var(--text-m);
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.modeBody,
+.notice {
+  margin: 0;
+  font-size: var(--text-s);
+  line-height: 1.5;
+  color: var(--text-subtle);
+}
+
+.notice {
+  padding: var(--space-l) var(--space-2xl);
+  border-radius: var(--panel-radius);
+  background: var(--bg-surface-2);
+}
+
+.notice strong {
+  color: var(--warning-text);
+}
+
+.actionHint {
+  font-size: var(--text-s);
+  color: var(--text-subtle);
+}
+
+/* ── Template editor ─────────────────────────────────────────────────────── */
+.headerActions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-s);
+}
+
+/* The editing canvas. The Write / Live switch sits in its top-left corner
+   (it positions itself), exactly as on the post canvas. */
+.canvas {
+  position: relative;
+  min-height: 420px;
+  padding: var(--space-8xl) var(--space-2xl) var(--space-4xl);
+  border-radius: var(--card-radius);
+  background: var(--bg-surface-2);
+}
+
+/* Live: the ground an inbox gives an email, in both admin themes. */
+.canvas[data-mode="live"] {
+  background: var(--email-preview-surface);
+}
+
+/* Same floating-chrome look as the mode switch, so it reads on the light
+   Live ground as well as the dark Write one. */
+.canvasTools {
+  position: absolute;
+  top: var(--space-3xs);
+  right: var(--space-3xs);
+  z-index: 24;
+  padding: var(--space-4xs);
+  border-radius: var(--panel-radius);
+  background: var(--bg-body);
+  box-shadow: 0 6px 18px var(--scrim-30);
+}
+
+.subjectInput {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+}
+
+.subjectInput::placeholder {
+  color: var(--text-subtle);
+}
+
+/* Write: the bare surface, like a post. */
+.writeStage {
+  display: grid;
+  gap: var(--space-2xl);
+  max-width: 680px;
+  margin: 0 auto;
+  color: var(--text-bright);
+  font-size: var(--text-3xl);
+}
+
+/* Live: the email as it is laid out when sent. The editor reads its colours
+   and sizes from tokens, so the card restates them with the email's own. */
+.emailStage {
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.emailCard {
+  --text: var(--email-preview-text);
+  --text-muted: var(--email-preview-muted);
+  --text-subtle: var(--email-preview-muted);
+  --text-xl: 16px;
+  --text-m: 14px;
+  --text-2xl: 18px;
+  --text-4xl: 21px;
+  --text-5xl: 25px;
+  --border: var(--email-preview-rule);
+  --bg-surface-3: var(--email-preview-surface);
+  padding: var(--space-5xl);
+  background: var(--email-preview-card);
+  color: var(--email-preview-text);
+}
+
+.emailCard a {
+  color: var(--email-preview-link);
+}
+
+.emailSubjectRow {
+  margin-bottom: var(--space-2xl);
+  padding-bottom: var(--space-xl);
+  border-bottom: 1px solid var(--email-preview-rule);
+  font-size: var(--text-xl);
+}
+
+.emailFooter {
+  margin: 0;
+  padding: var(--space-xl) var(--space-5xl) 0;
+  color: var(--email-preview-muted);
+  font-size: var(--text-s);
+}
+
+.warning {
+  margin: 0;
+  font-size: var(--text-s);
+  line-height: 1.5;
+  color: var(--warning-text);
+}
+
+.variableLabel {
+  flex: 1;
+  min-width: 0;
+}
+
+.variableToken {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+}
+
+/* ── Test-send and secret dialogs ────────────────────────────────────────── */
+.testDialog {
+  display: grid;
+  gap: var(--space-2xl);
+}
+
+.field {
+  display: grid;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.field > label {
+  font-size: var(--text-s);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.hint {
+  margin: 0;
+  font-size: var(--text-s);
+  line-height: 1.5;
+  color: var(--text-subtle);
+}
+
+.previewFrame {
+  display: grid;
+  gap: var(--space-px);
+  overflow: hidden;
+  border-radius: var(--panel-radius);
+  background: var(--border);
+}
+
+.previewSubject {
+  margin: 0;
+  padding: var(--space-l) var(--space-2xl);
+  background: var(--bg-surface-2);
+  font-size: var(--text-m);
+  font-weight: 600;
+  color: var(--text-bright);
+  overflow-wrap: anywhere;
+}
+
+.previewBody {
+  display: block;
+  width: 100%;
+  height: 360px;
+  border: 0;
+  background: var(--email-preview-surface);
+}
+
+/* SMTP service picker: one button per well-known mail service. */
+.presetRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-s);
+}
+
+/* Logo, then name: the gap is the only thing this changes on the button. */
+.presetRow .presetButton {
+  gap: var(--space-s);
+  padding-inline: var(--space-l);
+}

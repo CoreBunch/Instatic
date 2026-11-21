@@ -133,13 +133,30 @@ type SiteSettings = {
 
 `framework` holds the structured design token system (`src/core/framework/`). When present it carries:
 - `colors.tokens` — `FrameworkColorToken[]`, each with a slug (becomes a CSS var like `--primary`), light/dark values, utility generation flags (text/background/border/fill), shade/tint variant counts. Slugs are normalized by `normalizeFrameworkColorSlug` (trim, lowercase, strip leading `--`, replace non-alphanumeric runs with `-`). When two tokens normalize to the same root slug, the second receives a `-2` suffix, the third `-3`, and so on — resolved in generation order via `buildColorSlugMap` so the earlier token keeps the base name.
+  - **Theme scopes.** The light value is the default theme and goes into `:root`. A token with dark mode on (the Colors panel's "Alt color") also emits its alt value under theme scopes (`formatFrameworkColorThemeCss`, `src/core/framework/colors.ts`). The page is in the default theme unless `<html>` carries `theme-alt`, so nothing has to add a root class: an element with `theme-inverted` takes the alt values (the default values when the page is in `theme-alt`), and `theme-always-alt` / `theme-always-default` pin one theme wherever they sit, including inside an inverted section. A runtime toggle flips the whole page by adding or removing `theme-alt` on `<html>`. Sites with no dark-mode token emit no theme scopes at all.
 - `typography` — `FrameworkTypographySettings` with fluid scale groups, each emitting `font-size` vars + optional utility classes.
 - `spacing` — `FrameworkSpacingSettings` with fluid spacing scale groups, each emitting spacing vars + optional utility classes.
-- `preferences` — root font size (`rootFontSize`, constrained `>= 1` at schema level to guard the `px → rem` divisor), fluid clamp screen-width anchors (`minScreenWidth`, `maxScreenWidth`), `isRem` (emit `rem` vs `px`), and `treeShakeGeneratedFrameworkUtilities` flag.
+- `preferences` — root font size (`rootFontSize`, constrained `>= 1` at schema level to guard the `px → rem` divisor), fluid clamp screen-width anchors (`minScreenWidth`, `maxScreenWidth`), `isRem` (emit `rem` vs `px`), `treeShakeGeneratedFrameworkUtilities` flag, and `emitRootFontSize`.
+
+**Root font size.** Every rem token is converted against `rootFontSize` (10 in the Core preset), so the browser's root must match or each token renders `16 / rootFontSize` times larger than the scale says. With `emitRootFontSize: true`, `isRem` on, and `rootFontSize` not 16, the framework root CSS starts with `html { font-size: <rootFontSize / 16 * 100>%; }` (`62.5%` for 10). A percentage keeps a visitor's browser font-size preference working. The rule comes from `composeFrameworkRootCss` in `src/core/framework/generate.ts`, the one composer behind both `buildFrameworkPlan` (publisher) and `generateFrameworkRootCss` (canvas iframe), so editor and published page agree; it sits in `framework.css` before any authored CSS, so an authored `html` rule still wins. The editor chrome outside the canvas iframes never receives it.
+
+`emitRootFontSize` is optional with no fallback, and absent means off: sites saved before the field existed never had the rule and their pages were tuned to the larger rendering, so they keep rendering byte for byte as before. The Core preset (`buildCoreFrameworkSettings`) sets it to `true`, so a framework created through onboarding or **Manage framework** gets it. `mergeCoreFrameworkSettings` keeps an existing framework's preferences, and when it has none it adopts the preset's with `emitRootFontSize: false`. Site settings → Publishing → **Set the root font size** toggles it per site.
 
 The Colors / Framework Scale / Typography panels write to these sub-trees. All values are emitted into the published `framework.css` by `buildSiteFrameworkCss(site)` via `buildFrameworkPlan(settings)`, which returns the merged `:root` variable block and the locked utility classes from a single ordered traversal per family. (`generateFrameworkRootCss` / `generateFrameworkUtilityClasses` remain for single-output callers such as the canvas preview and the editor's class reconciler.)
 
-`fonts` is the installed font library and font-token contract (`src/core/fonts/`). `fonts.items` is the installed self-hosted font asset library (Google downloads and custom media-backed font files). `fonts.tokens` is the editable builder-facing contract: each token owns a stable CSS variable such as `font-primary`, an optional assigned `FontEntry` id, and a fallback stack. The publisher emits those as `:root { --font-primary: "Family", sans-serif; }`; editor controls should prefer `font-family: var(--font-primary)` over raw family names when the design should follow future font swaps.
+`fonts` is the installed font library and font-token contract (`src/core/fonts/`). `fonts.items` is the installed self-hosted font asset library (Google downloads and custom media-backed font files). `fonts.tokens` is the editable builder-facing contract: each token owns a stable CSS variable such as `font-heading`, an optional assigned `FontEntry` id, and a fallback stack. The publisher emits those as `:root { --font-heading: "Family", sans-serif; }`; editor controls should prefer `font-family: var(--font-heading)` over raw family names when the design should follow future font swaps.
+
+**Font role tokens** (`src/core/fonts/roles.ts`). Three role variables are the shared contract that imported pages, copied sections and the AI agent write against, so content made for one site renders in another:
+
+| Token | Name | Use | Seeded fallback |
+|-------|------|-----|-----------------|
+| `font-heading` | Heading | headings and display type | `system-ui, -apple-system, Segoe UI, Roboto, sans-serif` |
+| `font-body` | Body | running text | same system sans stack |
+| `font-mono` | Mono | code, data and mono labels | `ui-monospace, SFMono-Regular, Menlo, Consolas, monospace` |
+
+They are seeded fallback-only (no `familyId`), so a new site renders them without downloading anything; the user binds real families in the Fonts panel. Nothing styles `body` or headings with them automatically: the publisher reset pins `body` to the system stack and authored CSS opts in with `var(--font-body)` / `var(--font-heading)`.
+
+**New-site settings.** `createNewSiteSettings()` (`src/core/page-tree/siteSettings.ts`) is what every brand-new site starts with: `{ shortcuts: {}, fonts: { items: [], tokens: <the three role tokens> } }`. First-run setup writes it into the new shell (`newSiteShellStorage()` in `server/repositories/site.ts`) and the editor's draft bootstrap uses it through `createDefaultSiteDocument`. `DEFAULT_SITE_SETTINGS` (`{ shortcuts: {} }`) stays the read-time fallback for a stored shell without settings, so an existing site never gains tokens on upgrade. Applying the Core Framework preset (Full or Variables only) adds whichever role tokens a site lacks, matched by variable, and never changes tokens the site already has; choosing None leaves font tokens alone. Site import treats a role token that is still exactly as seeded as a placeholder: an imported `--font-body` fills it in place instead of being renamed (see [site-import.md](site-import.md) → `TokenConflict`).
 
 **Variable normalization** (`src/admin/pages/site/store/slices/site/fontActions.ts`): the `variable` field stores a slug without the leading `--`. User input is trimmed, lowercased, and invalid character runs replaced with `-`. Leading `--` is stripped before storage. Duplicate variables within a site are rejected. Examples: `--font Brand` → `font-brand`, `Editorial` → `font-editorial`.
 
@@ -190,6 +207,7 @@ type SiteFile = {
   blob?:      { mimeType: string; base64: string }  // binary payload for 'asset' only
   generated?: boolean         // auto-generated by scaffold; hidden until ejected
   ejected?:   boolean         // user has edited a generated file
+  importRecord?: { sourceHash: string; contentHash: string } // set by Site Import; see site-import.md "Re-importing a site"
   createdAt:  number
   updatedAt:  number
 }
@@ -316,7 +334,7 @@ type SitePackageJson = {
 }
 ```
 
-The CMS supports plugins that ship their own npm deps and runtime imports (e.g. `three`). When a site declares a dependency, `bun install` runs against a per-site workspace under `uploads/sites/<siteId>/runtime/`, producing a hashed cache directory the server serves at `/_instatic/runtime/cache/<hash>/...`. The runtime cache layout is owned by `src/core/site-runtime/` and served by `server/publish/runtime/`.
+The CMS supports plugins that ship their own npm deps and runtime imports (e.g. `three`). When a site declares a dependency, `bun install` runs in a workspace keyed by the lock's hash under the runtime cache directory (`RUNTIME_CACHE_DIR`, outside `UPLOADS_DIR`), which the server serves at `/_instatic/runtime/cache/<hash>/...`. The cache layout, its location and its restore-on-miss behaviour are owned by `server/publish/runtime/` and described in [`dependencies.md`](dependencies.md) → "The install cache".
 
 The Site → Dependencies panel edits this `package.json`: it browses the npm registry through the server proxy and installs into `dependencies` (or `devDependencies`) with a caret range. Every manifest change is picked up by `useAutoResolveDependencies`, which resolves the lock and runs `bun install`. Panel and proxy: [`dependencies.md`](dependencies.md).
 
@@ -569,8 +587,8 @@ seeds them from the stored JSON (the server is the ONLY seeder — fixed seed
 clientID, so two clients can never build divergent initial histories),
 persists each doc's update blob to `collab_documents` AND the derived row
 JSON to `data_rows`/site on a short debounce (~800 ms) — replacing only the
-cells the doc owns (`OWNED_CELLS` in `relayPersistence.ts`: title, slug, body
-and the template cells for pages; name, slug, body, params, classIds for
+cells the doc owns (`OWNED_CELLS` in `relayPersistence.ts`: title, slug, body,
+access and the template cells for pages; name, slug, body, params, classIds for
 components; name, slug, body, classes for layouts), so SEO, featured media,
 and plugin cells edited elsewhere survive every relay write — applies
 roster-driven soft-deletes, and RESETS docs whose row was written outside
@@ -586,7 +604,20 @@ bounded debounce window (at most ~800 ms with the default).
 frames `docId | frameType | payload` multiplex every doc over ONE WebSocket
 at `/admin/api/cms/site-socket` (y-protocols sync + awareness + reset).
 Upgrade is gated by a session with `site.read` and `originAllowed` (CSWSH
-defense). A read-only connection's update frames are dropped server-side
+defense). The socket keeps the original session hash and revalidates that
+session and current role for every incoming frame, again after asynchronous
+document loading before applying an update, and before every outgoing packet.
+Suspension, deletion, session revocation/expiry, or loss of `site.read` closes
+the connection on its next incoming or outgoing traffic (including heartbeat
+pings); idle sockets cannot receive new document or presence data after access
+is revoked. Write-only capability reductions keep read access, but every update
+and recovery step2 uses current grants, including the full-writer fast path.
+Checks fail closed if the authorization query fails. Already authorized work
+and bytes already handed to the transport are not recalled retroactively.
+Passive deliveries do not refresh the session's idle lifetime.
+Document ownership is registered after loading completes. If the socket closes
+during that load, the acquired reference is released immediately.
+A read-only connection's update frames are dropped server-side
 (its awareness/presence frames still relay — viewers are visible peers),
 and PARTIAL writers' update frames run through the per-category guard
 (`server/collab/updateGuard.ts`): fork the doc, apply, project both sides,
@@ -601,8 +632,28 @@ inbound frame names the lineage, then sends them as one update — so a row
 created and placed inside the bind round trip is never refused. Two more socket-level defenses: per-frame payload caps (64 KB
 awareness / 4 MB sync, plus the transport `maxPayloadLength`) drop oversized
 frames before any decode work, and every awareness frame is decoded and
-checked against the session — a state claiming another user's identity
-(`state.user.id !== session user`) is dropped, so presence can't be spoofed.
+checked against the session — a state whose identity (id, name, avatar,
+Gravatar hash) differs from the session's is dropped, so presence can't be
+spoofed. The session name is `userDisplayLabel(user)`
+(`src/core/users/displayName.ts`): the display name, or the email address
+when the admin has none ("Your name" is optional at setup). The editor
+publishes the same label, so collaborators see the **email address** of an
+admin without a display name. Before, such an admin published no presence
+at all: no cursor, no selection ring, and no "someone else is editing"
+guard.
+
+Stored snapshots can exceed a socket's outbound buffer. The server sends
+these through `collabFramePackets` in 256 KiB packets, waiting for drain
+between buffered sends. Broadcast updates use the same packet format and each
+recipient's authorized queue, not unchecked transport pub/sub. Authorization
+is rechecked after a drain wait before another packet is sent. A recipient
+with more than 16 MiB of queued broadcast frames is disconnected for normal
+state-vector recovery, so one slow reader cannot grow an unbounded backlog.
+The client reconstructs each complete frame before applying it to Yjs;
+interleaved transfers are bounded to four documents and 64 MiB total and
+discarded on disconnect. Incoming write and awareness caps remain unchanged.
+The shared framing code lives in `src/core/collab/frameTransfer.ts`;
+real-socket coverage lives in `collabLargeDelivery.test.ts`.
 
 **Client transport** (`src/admin/pages/site/collab/collabProvider.ts`): one
 socket, every bound doc multiplexed; local transactions send updates the
@@ -611,10 +662,18 @@ exponential backoff, and each (re)connect re-runs syncStep1 so Yjs state
 vectors pull exactly the missed delta. `usePersistence` HTTP-loads the
 document once for first paint, then connects the provider — edits gate on
 each doc's first sync so an unseeded doc can never receive local ops.
+The socket is authenticated by the session cookie it was opened with, and
+the server refuses it once that session is rotated. Password re-confirmation
+rotates the session token, so `StepUpProvider` raises
+`onSessionTokenRotated` (`@admin/shared/StepUp`) on success and
+`usePersistence` answers with `provider.reopen()`: the old socket is dropped
+and a new one opens at once on the new cookie, with no backoff.
+
 Before connection, `detachedCollabDocs.ts` retains row JSON and creates each
 local Y doc on first access. Seeds precede undo tracking; unused row seeds
 remain available for roster undo after deletion. Connecting replaces these
 local docs with server-seeded provider documents.
+
 Because every committed edit is a frame, burst-prone inputs coalesce before
 they commit: the `ColorInput` primitive throttles picker-drag change events
 (leading fire for instant clicks, one trailing fire with the final value),
@@ -641,10 +700,13 @@ positions** (`collab/caretPositions.ts`; pinned to CRDT items, so they stay
 correct while concurrent edits shift the text). Peers render selection
 rings, name tags, avatar cursors, a blinking character-precise caret with
 selection highlight inside the edited text, and a toolbar avatar stack
-(`PeerAvatarStack`). The pointer ships at 10 Hz with a movement deadband
-and a trailing flush; the receiving side eases the rendered cursor toward
-each sparse sample every animation frame (exponential smoothing, snap on
-oversized jumps), so motion stays glassy at a fraction of the wire rate.
+(`PeerAvatarStack`). Both surfaces show only other signed-in accounts.
+`awarenessState.ts` compares peer user IDs with the current admin session,
+so extra tabs or browsers signed in to the same account stay hidden. The
+toolbar shows one avatar per other account across the site, and the canvas
+shows presence on the open document. The pointer ships at 10 Hz with a
+movement deadband and a trailing flush. The receiving side uses exponential
+smoothing each animation frame and snaps the cursor on oversized jumps.
 Peer states are wire data — validated with TypeBox before rendering.
 
 MCP note: headless MCP reads hit the DB, so every headless read and
@@ -761,7 +823,7 @@ A plugin canvas module can then `import * as THREE from 'three'` and it resolves
 - [docs/reference/design-tokens.md](../reference/design-tokens.md) — editor token catalog
 - Source-of-truth files:
   - `src/core/page-tree/siteDocument.ts` — `SiteShellSchema`, `SiteDocument`, `parseSiteDocument`
-  - `src/core/page-tree/siteSettings.ts` — `SiteSettingsSchema`, `DEFAULT_SITE_SETTINGS`, `parseSiteSettings`
+  - `src/core/page-tree/siteSettings.ts` — `SiteSettingsSchema`, `DEFAULT_SITE_SETTINGS`, `createNewSiteSettings`, `parseSiteSettings`
   - `src/core/page-tree/breakpoint.ts` — `BreakpointSchema`, `DEFAULT_BREAKPOINTS`
   - `src/core/page-tree/condition.ts` — `ConditionDefSchema`, `conditionId`, `conditionLabel`, `makeConditionDef`, `parseConditions`
   - `src/core/page-tree/styleRule.ts` — `StyleRuleSchema`
@@ -769,6 +831,7 @@ A plugin canvas module can then `import * as THREE from 'three'` and it resolves
   - `src/core/framework/generate.ts` — `buildFrameworkPlan`, `generateFrameworkRootCss`, `generateFrameworkUtilityClasses`
   - `src/core/fonts/schemas.ts` — `SiteFontsSettingsSchema`, `FontEntry`, `FontToken`
   - `src/core/fonts/css.ts` — `generateFontsCss`
+  - `src/core/fonts/roles.ts` — `FONT_ROLES`, `buildFontRoleTokens`, `mergeFontRoleTokens`
   - `src/core/files/schemas.ts` — `SiteFileSchema`, `SiteFileType`, `SiteFileBlobSchema`
   - `src/core/site-dependencies/manifest.ts` — `SitePackageJsonSchema`
   - `src/core/site-runtime/schemas.ts` — `SiteRuntimeConfigSchema`

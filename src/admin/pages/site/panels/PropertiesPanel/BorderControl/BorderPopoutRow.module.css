@@ -1,0 +1,7 @@
+/* BorderPopoutRow — the border editor's popout body. The shell (width, tone,
+   border, radius, placement, drag) belongs to the shared FloatingPanel; only
+   the inset of the editor inside it is this file's business. */
+
+.popoutBody {
+    padding: var(--space-2xs) var(--space-l) var(--space-l);
+}

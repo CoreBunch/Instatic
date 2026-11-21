@@ -130,7 +130,7 @@ src/admin/pages/site/panels/AgentPanel/
 
 src/admin/pages/ai/
 ├── AiPage.tsx              — /admin/ai workspace; three tabs gated by ai.providers.manage + ai.audit.read
-├── AiPage.module.css
+├── ProviderMark.module.css     (provider logos; layout styles live in @admin/shared/SettingsWorkspace)
 └── tabs/
     ├── ProvidersTab.tsx    — CRUD for ai_credentials rows (provider-derived API key or endpoint credential shape)
     ├── DefaultsTab.tsx     — per-scope model defaults editor
@@ -368,16 +368,16 @@ Resolved server-side from the posted `SiteAgentSnapshot` or the data repositorie
 
 | Tool              | What it returns                                                         |
 |-------------------|-------------------------------------------------------------------------|
-| `site_list_documents`  | Editable document refs for pages, templates, and visual components. Each item includes `{ document: { type, id }, title, rootNodeId, active, current, summary, template? }`; pass those refs to `site_read_document` / `site_open_document` |
+| `site_list_documents`  | Editable document refs for pages, templates, and visual components. Each item includes `{ document: { type, id }, title, rootNodeId, active, current, summary, template?, seo? }`; pass those refs to `site_read_document` / `site_open_document` |
 | `site_list_modules`    | Module registry (id, name, category, props schema, defaults); `category` filter |
 | `site_list_breakpoints`| Configured breakpoints + active id                                      |
 | `site_list_post_types` | Routable collections eligible as a `postTypes` template target — `{ slug, label, routeBase, kind }` per entry, filtered to a non-empty `routeBase`. Queries the data repositories via `ctx.db` |
 | `site_list_loop_sources` | Loop source ids, source fields, order/filter options, and data-table field catalogs with valid `{currentEntry.field}` tokens. For post/custom table loops, use source id `data.rows`, the returned table `id` as `<instatic-loop data-table-id>`, and the returned tokens inside the loop body |
 | `site_list_tokens`     | Design tokens: colors (with shades/tints), typography/spacing scale steps, font tokens — each with CSS variable + utility classes; optional `family` filter (`colors`\|`typography`\|`spacing`\|`fonts`) |
 
-### Site browser tools — 29, browser-bridged
+### Site browser tools — 30, browser-bridged
 
-All 29 tools carry `execution: 'browser'` in their `AiTool` definition. The server emits `toolRequest`; the browser executor validates input with TypeBox, runs the store action or read helper, and POSTs the canonical `AiToolOutput` result back.
+All 30 tools carry `execution: 'browser'` in their `AiTool` definition. The server emits `toolRequest`; the browser executor validates input with TypeBox, runs the store action or read helper, and POSTs the canonical `AiToolOutput` result back.
 
 **Documents**
 
@@ -482,6 +482,7 @@ Agents should not use npm CDN URLs such as `esm.sh`, `unpkg`, or jsDelivr for pa
 | `site_delete_page`    | `{ pageId }`                      | none           | Delete page; fails if it would leave the site with 0 pages |
 | `site_rename_page`    | `{ pageId, title, slug? }`        | none           | Change title/slug; `slug="index"` makes this the homepage  |
 | `site_duplicate_page` | `{ pageId, title, slug? }`        | `{ pageId }`   | Deep-clone page (all nodes, props, class assignments)      |
+| `site_set_page_seo`   | `{ pageId, seo: PageSeo \| null }` | none           | Replace the page's `<head>` settings (search, social card, theme colours, favicon, extra meta / links, JSON-LD; see [publisher.md](publisher.md) → "Page head settings"). Read the current value from `site_list_documents`; `null` clears it. On a post-type template it is a pattern for every entry; on an everywhere layout it supplies defaults for matching pages and entries |
 
 **Templates (CMS layouts)**
 
@@ -521,7 +522,7 @@ Content-scope tools are registered under `server/ai/tools/content/`. They use th
 
 - `ContentAgentMount` builds a `ContentSnapshot` from the live Content workspace: visible `postType` collections, active collection id, active document fields/schema, and current user identity.
 - `contentAgentStore.ts` mounts a standalone `AgentSlice` instance per `ContentPage` mount. The Content workspace is hook-based rather than a global Zustand store, so the bridge is exposed through `contentBridgeHandle.ts`.
-- Server read tools hit the data, media, and user repositories through `ctx.db`; write tools are browser-bridged so unsaved draft state in `useContentEntryDraft` and the Tiptap body editor stay authoritative.
+- Server read tools hit the data, media, and user repositories through `ctx.db`, and every document read resolves the table family and row ownership through `server/auth/dataAccess.ts` for the calling identity (`ctx.userId` + `ctx.capabilities`), exactly as `GET /admin/api/cms/data/rows/:id` does: a `content.edit.own` caller sees only its own rows, and system-table rows need `data.system.tables.read`; write tools are browser-bridged so unsaved draft state in `useContentEntryDraft` and the Tiptap body editor stay authoritative.
 
 **Server-side content reads — 7**
 
@@ -550,6 +551,8 @@ Content-scope tools are registered under `server/ai/tools/content/`. They use th
 
 The content system prompt is markdown-native: it tells the model to exchange body content as standard markdown, to read schemas before writing unfamiliar fields, and to prefer `content_set_document_fields` for whole-post generation. The prompt is built with the same `[staticPrefix, SYSTEM_PROMPT_DYNAMIC_BOUNDARY, dynamicSuffix]` shape as the Site prompt so provider prompt caching works the same way.
 
+Snapshot frame readiness is event-driven: `waitForAgentRenderFrame` observes canvas mounts and readiness markers, with a 250 ms fallback poll. It retains the five-second deadline and rejects frames that become ready after it, including when background-tab timers are throttled.
+
 ### Heavy evidence — image channel + vision gating + elision
 
 `site_render_snapshot` (and `site_read_document` / `site_get_node_html`) return large payloads. Five rules keep them from exploding context (a screenshot inlined as base64 JSON text once pushed a single turn past 1M tokens):
@@ -577,7 +580,7 @@ Drivers that support explicit prompt-cache controls (Anthropic) apply `cache_con
 `SYSTEM_PROMPT_DYNAMIC_BOUNDARY` is the literal `'__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__'`, declared **once** in `server/ai/runtime/types.ts` and imported everywhere — prompt builders and every driver. A duplicate definition would silently break prompt caching on whichever driver drifted. Gated by `ai-driver-shared-helpers.test.ts`.
 
 **Static prefix key rules** (full text lives in `server/ai/tools/site/systemPrompt.ts`):
-- **Design system first.** Establish or reuse tokens before/while building (`site_set_color_tokens`, `site_set_type_scale`, `site_set_spacing_scale`, `site_set_font_tokens`), then reference them in CSS (`var(--<slug>)`, `var(--text-l)`, `var(--space-m)`, `var(--<font-var>)`) instead of raw hex/px/font-family. The dynamic suffix's `Tokens —` line shows what already exists; `(none …)` means no design system yet.
+- **Design system first.** Establish or reuse tokens before/while building (`site_set_color_tokens`, `site_set_type_scale`, `site_set_spacing_scale`, `site_set_font_tokens`), then reference them in CSS (`var(--<slug>)`, `var(--text-l)`, `var(--space-m)`, `var(--font-heading)`) instead of raw hex/px/font-family. Fonts use the role tokens `font-heading`, `font-body` and `font-mono`, which new sites already have; the prompt tells the model to change a typeface by updating the role token rather than inventing a new font variable. The dynamic suffix's `Tokens —` line shows what already exists; `(none …)` means no design system yet.
 - Structure as HTML (`site_insert_html` / `site_replace_node_html`); style with CSS in the same payload — a `<style>` block and/or `class=` attributes referencing the design tokens. The importer classifies selectors, so the agent never hand-builds classes at insert time.
 - `<style>` blocks inside imported HTML are parsed: class-bearing selectors become Selectors-panel classes while preserving complex selector text, class-free selectors (`a:hover`) become ambient rules, and supported `@keyframes` publish as raw keyframes CSS. `style=` attributes land on the node's inline styles. These are applied — not stripped.
 - CSS-only edits use an explicit `site_apply_css` operation: merge for additive patches, remove-properties for stale declarations, replace only with the selector's complete desired CSS, and delete for whole exact rules. Read the document first before destructive operations; grouped and ungrouped selectors are different identities.

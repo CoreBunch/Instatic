@@ -10,7 +10,7 @@
  * server-side streaming importer. Preview and import return standard JSON
  * envelopes validated with TypeBox via `readEnvelope`.
  */
-
+import { runtimeArchivePath } from '@core/data/bundlePublication'
 import { strFromU8, unzipSync } from 'fflate'
 import type { SiteBundle, BundlePreview, ImportResult, ImportStrategy, ExportRequest, ExportEstimate, ExportSummary, BundleImportSelection } from '@core/data/bundleSchema'
 import { SiteBundleSchema, BundlePreviewSchema, ImportResultSchema, ExportEstimateSchema, ExportSummarySchema } from '@core/data/bundleSchema'
@@ -309,8 +309,17 @@ export function parseSiteBundleArchive(bytes: Uint8Array): SiteBundle | null {
     }
   })
 
+  const publication = manifest.publication ? {
+    ...manifest.publication,
+    files: manifest.publication.files.map((file, index) => {
+      const bytes = entries[runtimeArchivePath(index)]
+      if (!bytes || bytes.byteLength !== file.sizeBytes) throw new SiteBundleParseError('Missing published runtime file', `/publication/files/${index}`)
+      return { ...file, bytesBase64: bytesToBase64(bytes) }
+    }),
+  } : undefined
   return parseValue(SiteBundleSchema, {
     ...manifest,
+    ...(publication ? { publication } : {}),
     ...(media ? { media } : {}),
   })
 }

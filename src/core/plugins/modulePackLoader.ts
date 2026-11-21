@@ -34,6 +34,7 @@ import type {
 import { assertPluginPermission } from '@core/plugin-sdk'
 import {
   pluginModuleToHostModule,
+  readEmittedClassNames,
   PluginModuleValidationError,
   type PluginModuleComponentFactory,
 } from './moduleAdapter'
@@ -158,6 +159,8 @@ export interface SandboxedModulePack {
     schema: Record<string, unknown>
     canHaveChildren?: boolean
     htmlTag?: string
+    /** As authored inside the VM; validated by `readEmittedClassNames`. */
+    emittedClassNames?: unknown
     hasPreview: boolean
     /** Package dependencies declared by the module — surfaced in the Dependencies Panel. */
     dependencies?: PluginModuleDependencies
@@ -203,6 +206,7 @@ export function activateSandboxedPluginModulePack(
       schema: meta.schema as unknown as PluginModuleDefinition['schema'],
       canHaveChildren: meta.canHaveChildren,
       htmlTag: meta.htmlTag,
+      ...readEmittedClassNames(manifest.id, meta.id, meta.emittedClassNames),
       ...(meta.dependencies ? { dependencies: meta.dependencies } : {}),
       ...(meta.editorRuntime ? { editorRuntime: meta.editorRuntime } : {}),
       render: (props, children) => pack.render(meta.id, props, children),

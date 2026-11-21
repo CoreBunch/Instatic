@@ -6,6 +6,7 @@ import {
   createPage,
   insertModuleViaPicker,
   login,
+  openLayersPanel,
   openSiteEditor,
   openSitePanel,
   publishDraft,
@@ -52,6 +53,7 @@ test.describe('forms', () => {
       await insertModuleViaPicker(page, 'base.submit')
       await setPropValue(page, 'label', 'Send lead')
 
+      await selectFormLayer(page)
       await insertModuleViaPicker(page, 'base.form-message')
       await selectPropertyOption(page, 'kind', 'Success')
 
@@ -105,10 +107,12 @@ test.describe('forms', () => {
       await insertModuleViaPicker(page, 'base.submit')
       await setPropValue(page, 'label', 'Send lead')
 
+      await selectFormLayer(page)
       await insertModuleViaPicker(page, 'base.form-message')
       await setPropValue(page, 'formId', formId)
       await selectPropertyOption(page, 'kind', 'Success')
 
+      await selectFormLayer(page)
       await insertModuleViaPicker(page, 'base.form-message')
       await setPropValue(page, 'formId', formId)
       await selectPropertyOption(page, 'kind', 'Error')
@@ -158,6 +162,19 @@ async function openBlankPage(
   await item.click()
   await expect(item).toHaveAttribute('aria-selected', 'true')
   return { name, slug }
+}
+
+/**
+ * Select the form node so the next inserted module lands inside the form.
+ * The submit button accepts children, so inserting while it is selected would
+ * nest the new module inside the button.
+ */
+async function selectFormLayer(page: Page): Promise<void> {
+  await openLayersPanel(page)
+  await page
+    .getByRole('tree', { name: 'Page element tree' })
+    .getByRole('treeitem', { name: 'Form', exact: true })
+    .click()
 }
 
 async function selectPropertyOption(

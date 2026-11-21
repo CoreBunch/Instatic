@@ -19,7 +19,8 @@
  * CONFIGURATION
  * -------------
  * Default config allows safe formatting tags (strong, em, u, a, ul, ol, li, p, br, h1-h6)
- * and blocks all script execution. Use `sanitizeRichtext(val, STRICT_CONFIG)` to strip
+ * and blocks all script execution. Published content paths use
+ * `RICHTEXT_CONTENT_CONFIG`, which also admits images. Use `sanitizeRichtext(val, STRICT_CONFIG)` to strip
  * all HTML tags and return plain text only (e.g. for meta fields, titles).
  *
  * @see Task #261 — Enforce DOMPurify at Properties Panel boundary
@@ -28,6 +29,7 @@
  */
 
 import DOMPurify, { type Config } from 'dompurify'
+import { normalizeUrlForParsing, urlScheme } from '@core/html-sanitize'
 
 type DOMPurifyHookNode = {
   tagName?: string
@@ -65,8 +67,10 @@ const hookedPurifiers = new WeakSet<object>()
 
 /**
  * Attribute post-pass, installed once per purifier: every link opens in a new
- * tab with `noopener`, and profiles that opt in (`_externalImagesOnly`) keep
- * only absolute http(s) images, stamped no-referrer + lazy. DOMPurify admits
+ * tab with `noopener`. Images (only in profiles that allow `<img>`) accept
+ * http(s) or same-origin relative paths; profiles that opt in
+ * (`_externalImagesOnly`) keep only absolute http(s) images, stamped
+ * no-referrer + lazy. DOMPurify admits
  * `data:` on <img> regardless of `ALLOWED_URI_REGEXP`, so the image rule
  * cannot be expressed in the config alone.
  */
@@ -77,11 +81,21 @@ function installAttributeHook(purifier: DOMPurifyRuntime): DOMPurifyRuntime {
         node.setAttribute?.('target', '_blank')
         node.setAttribute?.('rel', 'noopener noreferrer')
       }
-      if (node.tagName === 'IMG' && config._externalImagesOnly) {
+      if (node.tagName === 'IMG') {
         const src = node.getAttribute?.('src') ?? ''
-        if (!/^https?:\/\//i.test(src.replace(/\s+/g, ''))) node.removeAttribute?.('src')
-        node.setAttribute?.('referrerpolicy', 'no-referrer')
-        node.setAttribute?.('loading', 'lazy')
+        const scheme = urlScheme(src)
+        // Match browser URL normalization before checking relative authority forms.
+        // DOMPurify admits image data URIs even without ALLOWED_URI_REGEXP.
+        const normalized = normalizeUrlForParsing(src)
+        const absoluteHttp = (scheme === 'http:' || scheme === 'https:') && /^https?:\/\//i.test(normalized)
+        const relative = scheme === null && !normalized.startsWith('//')
+        if (normalized.includes('\\') || !(config._externalImagesOnly ? absoluteHttp : absoluteHttp || relative)) {
+          node.removeAttribute?.('src')
+        }
+        if (config._externalImagesOnly) {
+          node.setAttribute?.('referrerpolicy', 'no-referrer')
+          node.setAttribute?.('loading', 'lazy')
+        }
       }
     })
     hookedPurifiers.add(purifier)
@@ -150,6 +164,11 @@ function stripHtmlFallback(value: string): string {
 /**
  * Default richtext config — allows safe HTML formatting, blocks all scripts.
  * Suitable for user-authored HTML content (headings, paragraphs, lists, links).
+ *
+ * Deliberately image-free: admin surfaces such as the AI assistant chat
+ * renderer use this default, and a live remote `<img>` there would let a
+ * prompt-injected model response exfiltrate data through the image URL.
+ * Published content that needs images uses `RICHTEXT_CONTENT_CONFIG`.
  */
 const RICHTEXT_CONFIG: Config = {
   // Allow safe semantic/formatting tags
@@ -175,6 +194,24 @@ const RICHTEXT_CONFIG: Config = {
 }
 
 /**
+ * Content richtext config: the default set plus images and captions, for site
+ * content that is stored and published (entry bodies, richtext props, binding
+ * outputs, module placeholders). The attribute hook keeps an `<img src>` only
+ * when it is absolute http(s) or a same-origin relative path, so `data:`,
+ * `javascript:`, protocol-relative and backslash forms lose their `src`.
+ * Never use this profile for admin-only renderers of untrusted text (the AI
+ * chat), where a remote image is an exfiltration channel.
+ */
+export const RICHTEXT_CONTENT_CONFIG: SanitizerConfig = {
+  ...RICHTEXT_CONFIG,
+  ALLOWED_TAGS: [...(RICHTEXT_CONFIG.ALLOWED_TAGS ?? []), 'img', 'figure', 'figcaption'],
+  ALLOWED_ATTR: [
+    ...(RICHTEXT_CONFIG.ALLOWED_ATTR ?? []),
+    'src', 'alt', 'title', 'width', 'height', 'loading', 'decoding',
+  ],
+}
+
+/**
  * Strict config — strips ALL HTML tags; returns plain text only.
  * Use for single-line fields that should never contain markup.
  * Pass this to `sanitizeRichtext()` — it applies a post-strip pass to catch
@@ -191,6 +228,19 @@ export const PLAIN_TEXT_CONFIG: SanitizerConfig = {
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+/**
+ * Sanitize HTML and hand back the parsed tree instead of a string, for a
+ * caller that has rules of its own to apply to elements and attributes.
+ * Working on the tree the sanitizer itself parsed means there is no second
+ * reading of the markup that could disagree with the first. Null when no
+ * DOM-backed sanitizer is available.
+ */
+export function sanitizeToFragment(value: string, config: SanitizerConfig): DocumentFragment | null {
+  const purifier = getDOMPurify()
+  if (!purifier || typeof purifier.sanitize !== 'function') return null
+  return purifier.sanitize(value, { ...config, RETURN_DOM_FRAGMENT: true }) as DocumentFragment
+}
 
 /**
  * Sanitize a richtext prop value using DOMPurify.

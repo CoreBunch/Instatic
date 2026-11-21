@@ -11,6 +11,7 @@ interface ColorValueInputProps {
   ariaLabel: string
   /** Accessible label for the swatch trigger. */
   swatchLabel: string
+  richPicker?: boolean
   placeholder?: string
   disabled?: boolean
   /** Token to hide from the picker (e.g. the token currently being edited). */
@@ -45,6 +46,7 @@ export function ColorValueInput({
   value,
   ariaLabel,
   swatchLabel,
+  richPicker,
   placeholder,
   disabled,
   excludeTokenId,
@@ -100,6 +102,7 @@ export function ColorValueInput({
       disabled={disabled}
       inputLabel={ariaLabel}
       swatchLabel={swatchLabel}
+      richPicker={richPicker}
       placeholder={placeholder ?? '#000000 or rgb(...)'}
       excludeTokenId={excludeTokenId}
       fieldSize="sm"

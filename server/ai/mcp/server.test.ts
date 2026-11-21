@@ -214,6 +214,7 @@ describe('mcp server', () => {
       'ai.chat',
       'ai.tools.write',
       'content.edit.own',
+      'data.system.tables.read',
     ])
     const call = client.callTool({
       name: 'content_set_document_fields',

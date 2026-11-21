@@ -16,8 +16,8 @@ import { MediaWidget } from './MediaWidget'
 import { PagesWidget } from './PagesWidget'
 import { PluginsWidget } from './PluginsWidget'
 import { PostsWidget } from './PostsWidget'
-import { PublishQueueWidget } from './PublishQueueWidget'
-import { StatusWidget } from './StatusWidget'
+import { PublishLineupWidget } from './PublishLineupWidget'
+import { PublishingStatusWidget } from './PublishingStatusWidget'
 import { StorageWidget } from './StorageWidget'
 
 import { dashboardWidgetRegistry } from '@core/dashboard'
@@ -109,7 +109,7 @@ export function registerFirstPartyDashboardWidgets(): void {
     icon: CloudUploadSolidIcon,
     defaultSize: 4,
     tint: 'sky',
-    render: PublishQueueWidget,
+    render: PublishLineupWidget,
   })
 
   dashboardWidgetRegistry.register({
@@ -137,19 +137,19 @@ export function registerFirstPartyDashboardWidgets(): void {
   dashboardWidgetRegistry.register({
     id: 'status',
     ownerId: 'core',
-    name: 'Site status',
-    description: 'Uptime, builds, backups',
+    name: 'Publishing status',
+    description: 'Last publish and unpublished site changes',
     icon: ZapSolidIcon,
     defaultSize: 3,
     tint: 'mint',
-    render: StatusWidget,
+    render: PublishingStatusWidget,
   })
 
   dashboardWidgetRegistry.register({
     id: 'domain',
     ownerId: 'core',
     name: 'Domain',
-    description: 'DNS + SSL status',
+    description: 'Configured public URL',
     icon: GlobeSolidIcon,
     defaultSize: 3,
     tint: 'sky',

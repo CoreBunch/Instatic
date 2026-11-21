@@ -108,6 +108,17 @@ describe('validateSite — round-trip with representative fixture', () => {
     expect(result.settings.framework?.preferences?.rootFontSize).toBe(10)
     expect(result.settings.framework?.preferences?.isRem).toBe(true)
     expect(result.settings.framework?.preferences?.treeShakeGeneratedFrameworkUtilities).toBe(true)
+    // The fixture predates emitRootFontSize: it stays absent (off), never defaulted on.
+    expect(result.settings.framework?.preferences?.emitRootFontSize).toBeUndefined()
+  })
+
+  it('preserves an opted-in emitRootFontSize preference', () => {
+    const raw = loadFixture() as {
+      settings: { framework: { preferences: Record<string, unknown> } }
+    }
+    raw.settings.framework.preferences.emitRootFontSize = true
+    const result = validateSite(raw)
+    expect(result.settings.framework?.preferences?.emitRootFontSize).toBe(true)
   })
 })
 

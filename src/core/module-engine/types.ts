@@ -330,6 +330,19 @@ export interface ModuleDefinition<
   publishBehavior?: 'standard' | 'special' | 'transparent'
 
   /**
+   * Class names this module's published output may carry that no node's
+   * `classIds` names: classes `render()` writes into its own HTML, or that
+   * its frontend script toggles. Each entry is an exact class name or a
+   * `prefix*` (`commerce-checkout*` covers `commerce-checkout__total` and
+   * `commerce-checkout--busy`). The publisher's class tree-shaker keeps site
+   * class rules matching the declarations of every module placed on the site,
+   * so CSS written for the module's markup (often imported with the site)
+   * reaches the published stylesheet. Omit when the module's markup carries
+   * only node classes.
+   */
+  emittedClassNames?: readonly string[]
+
+  /**
    * When `true`, this module's render output varies per visitor request and
    * cannot be pre-rendered into a static disk artefact at publish time.
    *

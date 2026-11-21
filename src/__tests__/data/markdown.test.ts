@@ -3,8 +3,8 @@ import {
   firstMediaPathFromMarkdown,
   markdownToProseMirrorDoc,
   proseMirrorDocToMarkdown,
-  type JSONNode,
 } from '@core/markdown/markdownDocument'
+import type { JSONNode } from '@core/markdown/proseMirrorJson'
 import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
 
 describe('content markdown ↔ ProseMirror document', () => {
@@ -107,6 +107,54 @@ describe('content markdown ↔ ProseMirror document', () => {
       type: 'doc',
       content: [{ type: 'paragraph' }],
     })
+  })
+})
+
+describe('inline marks with whitespace at their edges', () => {
+  const text = (value: string, ...marks: string[]): JSONNode =>
+    marks.length > 0
+      ? { type: 'text', text: value, marks: marks.map((type) => ({ type })) }
+      : { type: 'text', text: value }
+  const paragraph = (...content: JSONNode[]): JSONNode => ({
+    type: 'doc',
+    content: [{ type: 'paragraph', content }],
+  })
+
+  // A double-click on Windows selects the word plus its trailing space, so
+  // the marked run is `word ` — CommonMark rejects `**word **` as emphasis.
+  it.each([
+    { mark: 'bold', before: 'a ', run: 'word ', after: 'b', markdown: 'a **word** b', html: '<p>a <strong>word</strong> b</p>' },
+    { mark: 'bold', before: 'a', run: ' word', after: 'b', markdown: 'a **word**b', html: '<p>a <strong>word</strong>b</p>' },
+    { mark: 'italic', before: 'a ', run: 'word ', after: 'b', markdown: 'a *word* b', html: '<p>a <em>word</em> b</p>' },
+    { mark: 'strike', before: 'a ', run: 'word ', after: 'b', markdown: 'a ~~word~~ b', html: '<p>a <del>word</del> b</p>' },
+    { mark: 'bold', before: 'a ', run: 'word', after: ' b', markdown: 'a **word** b', html: '<p>a <strong>word</strong> b</p>' },
+  ])('serialises a $mark run "$run" with its delimiters against the word', ({ mark, before, run, after, markdown, html }) => {
+    const serialised = proseMirrorDocToMarkdown(paragraph(text(before), text(run, mark), text(after)))
+    expect(serialised).toBe(markdown)
+    expect(renderMarkdownToHtml(serialised).trim()).toBe(html)
+  })
+
+  it('drops the mark from a run that is only whitespace', () => {
+    expect(proseMirrorDocToMarkdown(paragraph(text('a'), text(' ', 'bold'), text('b')))).toBe('a b')
+  })
+
+  it('keeps whitespace inside a mark that continues into the next run', () => {
+    const serialised = proseMirrorDocToMarkdown(
+      paragraph(text('a '), text('one ', 'bold'), text('two', 'bold', 'italic'), text(' c')),
+    )
+    expect(serialised).toBe('a **one *two*** c')
+    expect(renderMarkdownToHtml(serialised).trim()).toBe('<p>a <strong>one <em>two</em></strong> c</p>')
+  })
+
+  it('keeps a nested mark valid when its run starts with whitespace', () => {
+    const serialised = proseMirrorDocToMarkdown(paragraph(text('a', 'italic'), text(' b', 'bold', 'italic')))
+    expect(serialised).toBe('*a **b***')
+    expect(renderMarkdownToHtml(serialised).trim()).toBe('<p><em>a <strong>b</strong></em></p>')
+  })
+
+  it('re-parses the moved whitespace as unmarked text', () => {
+    const serialised = proseMirrorDocToMarkdown(paragraph(text('a '), text('word ', 'bold'), text('b')))
+    expect(markdownToProseMirrorDoc(serialised)).toEqual(paragraph(text('a '), text('word', 'bold'), text(' b')))
   })
 })
 

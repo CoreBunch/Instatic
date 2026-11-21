@@ -64,7 +64,10 @@ export const ContentTableSchemaSchema = Type.Composite([
 export type ContentTableSchema = Static<typeof ContentTableSchemaSchema>
 
 export const CreateContentTableInputSchema = Type.Object({
-  slug: Type.String(),
+  // Kebab-case only, matching the manifest slug rules. The leading-letter
+  // requirement also reserves the `@`-prefixed namespace for contentAccess
+  // markers (`@own-created`), so no real table can ever collide with one.
+  slug: Type.String({ pattern: '^[a-z][a-z0-9-]*$', maxLength: 80 }),
   name: Type.String(),
   kind: Type.Optional(DataTableKindSchema),
   routeBase: Type.Optional(Type.String()),
@@ -192,7 +195,20 @@ export const CONTENT_ACCESS_MODE_PERMISSIONS: Readonly<Record<ContentAccessMode,
   delete: 'cms.content.delete',
 }
 
+/**
+ * `contentAccess[].table` marker granting access to every table THIS plugin
+ * created at runtime via `cms.content.tables.create` (matched against the
+ * table's `createdByPluginId`, never by slug). Importer/migration plugins
+ * whose table names are chosen by the operator at runtime declare this
+ * instead of a slug they cannot know at packaging time.
+ *
+ * Orthogonal to the mode table above: that decides WHICH PERMISSION a mode
+ * needs, this decides WHICH TABLES an entry addresses.
+ */
+export const OWN_CREATED_TABLES_MARKER = '@own-created'
+
 export const ContentAccessEntrySchema = Type.Object({
+  /** A table slug, or `OWN_CREATED_TABLES_MARKER` for self-created tables. */
   table: Type.String(),
   modes: Type.Array(ContentAccessModeSchema, { minItems: 1 }),
 }, { additionalProperties: false })

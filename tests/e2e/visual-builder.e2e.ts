@@ -8,6 +8,7 @@ import {
   insertModuleViaPicker,
   insertNotchModule,
   login,
+  newestTemplatePriority,
   openLayersPanel,
   openSitePanel,
   openSiteEditor,
@@ -164,6 +165,34 @@ test.describe('visual builder', () => {
     await setPropValue(page, 'text', edited)
     await expect(canvasFrame(page).getByText(edited)).toBeVisible()
     await expect(canvasFrame(page).getByText(headline)).toHaveCount(0)
+  })
+
+  test('keeps the class picker inside the sidebar when a selector is very long (SITE-006)', async ({
+    page,
+  }) => {
+    // A ten-part grouped selector whose every part matches the selected Text node.
+    // Its chip's intrinsic width is far wider than the right sidebar.
+    const longSelector = Array.from(
+      { length: 10 },
+      (_, i) => `:where(body) p:not(.long-selector-guard-${i})`,
+    ).join(', ')
+
+    await openBlankPage(page, 'Builder long selector')
+    await insertNotchModule(page, 'text')
+    await setPropValue(page, 'text', 'Long selector headline')
+
+    const input = page.getByTestId('class-picker-input')
+    await input.fill(longSelector)
+    await page.getByTestId('class-picker-submit').click()
+    await expect(
+      page.getByRole('button', { name: `Deselect selector ${longSelector}` }),
+    ).toBeVisible()
+
+    const sidebarBox = await page.getByTestId('right-sidebar').boundingBox()
+    const inputBox = await input.boundingBox()
+    expect(sidebarBox).not.toBeNull()
+    expect(inputBox).not.toBeNull()
+    expect(inputBox!.x + inputBox!.width).toBeLessThanOrEqual(sidebarBox!.x + sidebarBox!.width)
   })
 
   test('undoes and redoes edits with buttons and shortcuts (BUILDER-005 / SITE-009)', async ({
@@ -509,7 +538,7 @@ test.describe('visual builder', () => {
         ).toBeDisabled({ timeout: 20_000 })
       })
 
-      await test.step('create a high-priority Posts template from the Site panel', async () => {
+      await test.step('create the newest-priority Posts template from the Site panel', async () => {
         await openSiteEditor(page)
         await openSitePanel(page)
         await page.getByRole('button', { name: 'New template', exact: true }).click()
@@ -521,7 +550,7 @@ test.describe('visual builder', () => {
         await dialog.getByLabel('Applies to').click()
         await page.getByRole('option', { name: 'Post types' }).click()
         await dialog.getByLabel('Posts').setChecked(true)
-        await dialog.getByLabel('Priority').fill('300')
+        await dialog.getByLabel('Priority').fill(String(newestTemplatePriority()))
         await dialog.getByRole('button', { name: 'Save' }).click()
 
         await expect(dialog).toBeHidden()
@@ -588,11 +617,7 @@ test.describe('visual builder', () => {
         await expect(selectorRow).toBeVisible()
         await selectorRow.click()
         await page.getByLabel('Search class style properties to add').fill('background color')
-        const backgroundInput = page
-          .getByTestId('css-property-row-backgroundColor')
-          .getByRole('textbox', { name: 'Background color', exact: true })
-        await backgroundInput.fill('#00aa55')
-        await backgroundInput.blur()
+        await setSolidFill(page, '#00aa55')
 
         await openLayersPanel(page)
         const containerRow = page
@@ -733,7 +758,7 @@ test.describe('visual builder', () => {
       await page.getByLabel('Search class style properties to add').fill('font size')
       const fontSizeInput = page
         .getByTestId('css-property-row-fontSize')
-        .getByLabel('Font size')
+        .getByRole('textbox', { name: 'Font size', exact: true })
       await fontSizeInput.fill('28px')
       await fontSizeInput.blur()
       await expect(canvasHeadline).toHaveCSS('font-size', '28px')
@@ -792,7 +817,7 @@ test.describe('visual builder', () => {
       await page.getByLabel('Search class style properties to add').fill('font size')
       const fontSizeInput = page
         .getByTestId('css-property-row-fontSize')
-        .getByLabel('Font size')
+        .getByRole('textbox', { name: 'Font size', exact: true })
       await fontSizeInput.fill('30px')
       await fontSizeInput.blur()
       await expect(canvasHeadline).toHaveCSS('font-size', '30px')
@@ -911,7 +936,7 @@ test.describe('visual builder', () => {
       await page.getByLabel('Search class style properties to add').fill('font size')
       const fontSizeInput = page
         .getByTestId('css-property-row-fontSize')
-        .getByLabel('Font size')
+        .getByRole('textbox', { name: 'Font size', exact: true })
       await fontSizeInput.fill('31px')
       await fontSizeInput.blur()
 
@@ -953,7 +978,7 @@ test.describe('visual builder', () => {
       await page.getByLabel('Search class style properties to add').fill('font size')
       let fontSizeInput = page
         .getByTestId('css-property-row-fontSize')
-        .getByLabel('Font size')
+        .getByRole('textbox', { name: 'Font size', exact: true })
       await fontSizeInput.fill('20px')
       await fontSizeInput.blur()
       await expect(desktopButton).toHaveCSS('font-size', '20px')
@@ -961,7 +986,7 @@ test.describe('visual builder', () => {
       await switchEditingContext(page, 'Mobile')
       fontSizeInput = page
         .getByTestId('css-property-row-fontSize')
-        .getByLabel('Font size')
+        .getByRole('textbox', { name: 'Font size', exact: true })
       await fontSizeInput.fill('33px')
       await fontSizeInput.blur()
 
@@ -1163,17 +1188,13 @@ test.describe('visual builder', () => {
       await styleSearch.fill('font size')
       const fontSizeInput = page
         .getByTestId('css-property-row-fontSize')
-        .getByLabel('Font size')
+        .getByRole('textbox', { name: 'Font size', exact: true })
       await fontSizeInput.fill('24px')
       await fontSizeInput.blur()
       await expect(desktopButton).toHaveCSS('font-size', '24px')
 
       await styleSearch.fill('background color')
-      const backgroundInput = page
-        .getByTestId('css-property-row-backgroundColor')
-        .getByRole('textbox', { name: 'Background color', exact: true })
-      await backgroundInput.fill(background)
-      await backgroundInput.blur()
+      await setSolidFill(page, background)
       await expect(desktopButton).toHaveCSS('background-color', expectedBackground)
 
       await styleSearch.fill('padding')
@@ -1477,4 +1498,13 @@ async function insertSavedLayoutViaPicker(page: Page, layoutName: string): Promi
 async function openSavedLayoutContextMenu(page: Page, layoutName: string): Promise<void> {
   await openSavedLayoutSection(page)
   await expectSavedLayoutItem(page, layoutName).click({ button: 'right' })
+}
+
+async function setSolidFill(page: Page, color: string) {
+  await page.getByRole('button', { name: 'Edit fill', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Fill', exact: true })
+  const field = dialog.getByRole('textbox', { name: 'Colour value (HEX)', exact: true })
+  await field.fill(color)
+  await field.press('Enter')
+  await dialog.getByRole('button', { name: 'Close fill editor' }).click()
 }

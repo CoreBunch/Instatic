@@ -119,6 +119,9 @@ function planWith(overrides: Partial<FrontendInjections>): FrontendInjections {
     hasExternalScript: false,
     hasInlineStyle: false,
     networkAllowedHosts: [],
+    inlineScriptHashes: [],
+    scriptOrigins: [],
+    frameOrigins: [],
     mediaCspOrigins: [],
     ...overrides,
   }
@@ -259,5 +262,19 @@ describe('publishPage — CSP frame-src from module cspSources', () => {
     const { html } = publishPage(page, makeSite(), reg)
     const csp = extractPublishedCsp(html)
     expect(csp).toContain('https://www.youtube-nocookie.com')
+  })
+
+  it('is insensitive to scriptOrigins / frameOrigins ordering', () => {
+    const forward = planWith({
+      scriptOrigins: ['a.example.com', '*.b.example.com'],
+      frameOrigins: ['pay.example.com', 'hooks.example.com'],
+    })
+    const reversed = planWith({
+      scriptOrigins: ['*.b.example.com', 'a.example.com'],
+      frameOrigins: ['hooks.example.com', 'pay.example.com'],
+    })
+    const csp = extractCsp(injectFrontendAssets(PAGE_WITH_CSP, forward))
+    expect(csp).toBe(extractCsp(injectFrontendAssets(PAGE_WITH_CSP, reversed)))
+    expect(csp).toContain('frame-src https://hooks.example.com https://pay.example.com;')
   })
 })

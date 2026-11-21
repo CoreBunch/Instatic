@@ -14,7 +14,7 @@
 import { Button } from '@ui/components/Button'
 import type { AnyModuleDefinition } from '@core/module-engine'
 import type { StyleRule } from '@core/page-tree'
-import { CLASS_STYLE_SECTIONS } from './cssControlTypes'
+import { orderedStyleSections } from './cssControlTypes'
 import styles from './StyleCategoryRail.module.css'
 
 // ---------------------------------------------------------------------------
@@ -117,7 +117,7 @@ export function StyleCategoryRail({
       )}
 
       {/* ── CSS category buttons ──────────────────────────────────────── */}
-      {CLASS_STYLE_SECTIONS.map((section) => {
+      {orderedStyleSections(definition?.inlineTextEdit != null).map((section) => {
         const SectionIcon = section.icon
         const setCount = sectionSetCounts.get(section.id) ?? 0
         const hasSetStyles = setCount > 0
@@ -130,7 +130,7 @@ export function StyleCategoryRail({
             pressed={activeAnchorId === section.id}
             onClick={() => onSectionClick(section.id)}
             disabled={stylesLocked}
-            aria-label={`Show ${section.title} styles`}
+            aria-label={section.id === 'styles' ? 'Show appearance styles' : `Show ${section.title} styles`}
             tooltip={stylesLocked ? disabledTooltip : section.title}
             className={styles.categoryRailButton}
             data-has-set-styles={hasSetStyles ? 'true' : undefined}

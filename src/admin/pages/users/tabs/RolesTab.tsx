@@ -46,6 +46,8 @@ import {
 import type { UsersPageData } from '../hooks/useUsersPageData'
 import styles from '../UsersPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { EmptyState } from '@ui/components/EmptyState'
+import { LockSolidIcon } from 'pixel-art-icons/icons/lock-solid'
 
 interface RolesTabProps {
   data: UsersPageData
@@ -306,7 +308,12 @@ export function RolesTab({ data, canManageRoles }: RolesTabProps) {
           </DataTableBody>
         </DataTable>
       ) : (
-        <p className={styles.emptyState}>No roles configured.</p>
+        <EmptyState
+          variant="centered"
+          icon={<LockSolidIcon size={28} />}
+          title="No roles configured"
+          description="A role decides what the users who hold it can do."
+        />
       )}
 
       {canManageRoles && dialogMode && (

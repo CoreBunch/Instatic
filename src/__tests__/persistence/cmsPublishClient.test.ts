@@ -7,10 +7,10 @@ describe('publishCmsDraft', () => {
 
     const result = await publishCmsDraft(async (input, init) => {
       calls.push({ input, init })
-      return new Response(JSON.stringify({ publishedPages: 2 }), { status: 200 })
+      return new Response(JSON.stringify({ publishedPages: 2, warnings: [] }), { status: 200 })
     })
 
-    expect(result).toEqual({ publishedPages: 2 })
+    expect(result).toEqual({ publishedPages: 2, warnings: [] })
     expect(calls[0]).toMatchObject({
       input: '/admin/api/cms/publish',
       init: { method: 'POST', credentials: 'include' },
@@ -26,16 +26,20 @@ describe('publishCmsDraft', () => {
 
   it('loads persisted CMS publish status with session credentials', async () => {
     const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = []
+    const { signal } = new AbortController()
 
-    const result = await getCmsPublishStatus(async (input, init) => {
-      calls.push({ input, init })
-      return new Response(JSON.stringify({
-        hasPublishedVersion: true,
-        draftMatchesPublished: true,
-        draftPages: 1,
-        publishedPages: 1,
-        lastPublishedAt: '2026-01-03T00:00:00.000Z',
-      }), { status: 200 })
+    const result = await getCmsPublishStatus({
+      signal,
+      fetchImpl: async (input, init) => {
+        calls.push({ input, init })
+        return new Response(JSON.stringify({
+          hasPublishedVersion: true,
+          draftMatchesPublished: true,
+          draftPages: 1,
+          publishedPages: 1,
+          lastPublishedAt: '2026-01-03T00:00:00.000Z',
+        }), { status: 200 })
+      },
     })
 
     expect(result.draftMatchesPublished).toBe(true)
@@ -43,5 +47,6 @@ describe('publishCmsDraft', () => {
       input: '/admin/api/cms/publish/status',
       init: { method: 'GET', credentials: 'include' },
     })
+    expect(calls[0]?.init?.signal).toBe(signal)
   })
 })

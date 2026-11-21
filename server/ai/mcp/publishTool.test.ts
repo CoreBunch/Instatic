@@ -6,9 +6,10 @@ import { createCapabilityTestHarness, type CapabilityTestHarness } from '../../.
 import { getDraftSite, saveDraftSite } from '../../repositories/site'
 import { readArtefact, readStaticAsset } from '../../publish/staticArtefact'
 import { createBearerConnection } from './connectors/store'
-import { generatePersonalAccessToken, hashMcpSecret } from './connectors/token'
+import { generatePersonalAccessToken } from './connectors/token'
 import { handleMcpHttp } from './transports/http'
 import { MAIN_SCOPE } from '../../branches/scope'
+import { hashOpaqueToken } from '../../oauth/secrets'
 
 interface AuditRow {
   action: string
@@ -96,7 +97,7 @@ describe('site_publish MCP tool', () => {
       userId,
       label: 'Publish regression',
       capabilities: ['ai.chat', 'ai.tools.write', 'pages.publish'],
-      tokenHash: await hashMcpSecret(token),
+      tokenHash: await hashOpaqueToken(token),
     })
     await callMcp(harness, uploadsDir, token, 'initialize', {
       protocolVersion: '2025-06-18',

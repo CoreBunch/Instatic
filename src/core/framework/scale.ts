@@ -36,6 +36,9 @@ const DEFAULT_MIN_SCREEN_WIDTH = 320
 const DEFAULT_MAX_SCREEN_WIDTH = 1400
 const DEFAULT_IS_REM = true
 const DEFAULT_TREE_SHAKE_GENERATED_FRAMEWORK_UTILITIES = true
+// Off by default: a site whose stored preferences predate the field must keep
+// rendering as it always has. New frameworks opt in through the Core preset.
+const DEFAULT_EMIT_ROOT_FONT_SIZE = false
 
 export interface FrameworkPreferences {
   rootFontSize: number
@@ -43,6 +46,7 @@ export interface FrameworkPreferences {
   maxScreenWidth: number
   isRem: boolean
   treeShakeGeneratedFrameworkUtilities: boolean
+  emitRootFontSize: boolean
 }
 
 export const DEFAULT_FRAMEWORK_PREFERENCES: FrameworkPreferences = {
@@ -51,6 +55,7 @@ export const DEFAULT_FRAMEWORK_PREFERENCES: FrameworkPreferences = {
   maxScreenWidth: DEFAULT_MAX_SCREEN_WIDTH,
   isRem: DEFAULT_IS_REM,
   treeShakeGeneratedFrameworkUtilities: DEFAULT_TREE_SHAKE_GENERATED_FRAMEWORK_UTILITIES,
+  emitRootFontSize: DEFAULT_EMIT_ROOT_FONT_SIZE,
 }
 
 /**
@@ -260,4 +265,33 @@ export function prependStep(steps: string): string {
   const arr = steps.split(',').filter(Boolean)
   const first = arr[0] ?? 'm'
   return [nextSizeBefore(first), ...arr].join(',')
+}
+
+/**
+ * Extend a scale to include a step on the canonical size ring. Include the
+ * intervening labels so separate imports reach the same sizes in either order.
+ * Inserting into an internal gap would change existing sizes, which are
+ * calculated from each label's distance from the base index.
+ */
+export function extendScaleToStep(
+  steps: string,
+  baseScaleIndex: number,
+  step: string,
+): { steps: string; baseScaleIndex: number } | null {
+  const labels = steps.split(',').map((label) => label.trim()).filter(Boolean)
+  if (labels.includes(step)) return { steps: labels.join(','), baseScaleIndex }
+  const rank = SIZE_RING.indexOf(step)
+  const ranks = labels.map(label => SIZE_RING.indexOf(label))
+  if (rank < 0 || ranks.length === 0 || ranks.some((value, index) => value < 0 || (index > 0 && value <= ranks[index - 1]))) {
+    return null
+  }
+  if (rank < ranks[0]) {
+    const added = SIZE_RING.slice(rank, ranks[0])
+    return { steps: [...added, ...labels].join(','), baseScaleIndex: baseScaleIndex + added.length }
+  }
+  const lastRank = ranks[ranks.length - 1]
+  if (rank > lastRank) {
+    return { steps: [...labels, ...SIZE_RING.slice(lastRank + 1, rank + 1)].join(','), baseScaleIndex }
+  }
+  return null
 }

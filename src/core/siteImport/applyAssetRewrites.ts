@@ -6,27 +6,24 @@
  * into all node props and CSS rule values), replace every occurrence with the
  * newly-uploaded `newUrl`.
  *
- * Two surfaces to rewrite:
- *   1. Page node props — string values for `src`, `href`, `srcset` that equal
+ * Three surfaces to rewrite:
+ *   1. Page node props — string values for `src`, `href`, `srcset`, `videoUrl`, `poster` that equal
  *      a FileMap key after normalisation by `assetPlan`, plus imported
  *      `htmlAttributes` bags such as `data-bg-src`.
  *   2. CSS rule `styles` and `contextStyles` — `url('key')` expressions where
  *      the URL payload is a normalised FileMap key.
+ *   3. Page head settings — favicon, Open Graph / Twitter image, and extra
+ *      link hrefs that equal a FileMap key.
  *
  * Idempotency: calling twice with the same map is safe — subsequent calls
  * simply look for the newUrl pattern in the plan and find no FileMap-key
  * matches, leaving everything unchanged.
  */
 
-import type { PageNode } from '@core/page-tree'
+import type { PageNode, PageSeo } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
 import type { ImportPlan, ImportStylesheet, NewStyleRule, ImportFontFamily } from './types'
-
-// ---------------------------------------------------------------------------
-// Props that may carry normalised FileMap keys in page nodes
-// ---------------------------------------------------------------------------
-
-const URL_BEARING_PROPS: ReadonlySet<string> = new Set(['src', 'href', 'srcset'])
+import { URL_BEARING_PROPS } from './assetPlan'
 
 // ---------------------------------------------------------------------------
 // Public function
@@ -50,10 +47,24 @@ export function applyAssetRewrites(
     pages: plan.pages.map((p) => ({
       ...p,
       nodeFragment: rewriteFragment(p.nodeFragment, rewriteMap),
+      seo: rewriteSeo(p.seo, rewriteMap),
     })),
     styleRules: plan.styleRules.map((r) => rewriteRule(r, rewriteMap)),
     fonts: (plan.fonts ?? []).map((f) => rewriteFontFamily(f, rewriteMap)),
     stylesheets: (plan.stylesheets ?? []).map((s) => rewriteStylesheet(s, rewriteMap)),
+  }
+}
+
+/** Swap every head-settings file URL that is a FileMap key for its uploaded media URL. */
+function rewriteSeo(seo: PageSeo | null, rewriteMap: Record<string, string>): PageSeo | null {
+  if (!seo) return null
+  const url = (value: string) => rewriteMap[value] ?? value
+  return {
+    ...seo,
+    ...(seo.favicon ? { favicon: { ...seo.favicon, href: url(seo.favicon.href) } } : {}),
+    ...(seo.openGraph?.image ? { openGraph: { ...seo.openGraph, image: url(seo.openGraph.image) } } : {}),
+    ...(seo.twitter?.image ? { twitter: { ...seo.twitter, image: url(seo.twitter.image) } } : {}),
+    ...(seo.links ? { links: seo.links.map((link) => ({ ...link, href: url(link.href) })) } : {}),
   }
 }
 

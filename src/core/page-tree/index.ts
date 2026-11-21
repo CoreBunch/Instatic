@@ -22,11 +22,30 @@ export {
 } from './operationSchema'
 export { PageSchema } from './page'
 export {
+  PageSeoSchema,
+  PAGE_HEAD_LINK_RELS,
+  PAGE_HEAD_PRELOAD_AS,
+  RESERVED_PAGE_META_NAMES,
+  parsePageSeo,
+  mergePageSeo,
+} from './pageSeo'
+export type {
+  PageSeo,
+  PageHeadLink,
+  PageHeadLinkRel,
+  PageHeadMeta,
+  PageHeadPreloadAs,
+  PageOpenGraph,
+  PageThemeColor,
+  PageTwitterCard,
+} from './pageSeo'
+export {
   CSSDeclarationPriorityBagSchema,
   StyleRuleOriginSchema,
   StyleRuleSchema,
   classKindSelector,
   classifySelectorCreateInput,
+  isRootScopeSelector,
   parseStyleRule,
 } from './styleRule'
 export {
@@ -69,10 +88,17 @@ export type {
 
 // Defaults
 export { DEFAULT_BREAKPOINTS, breakpointMediaQuery, defaultBreakpointMediaQuery } from './breakpoint'
-export { DEFAULT_SITE_SETTINGS } from './siteSettings'
+export { DEFAULT_SITE_SETTINGS, createNewSiteSettings } from './siteSettings'
 
 // Condition helpers
-export { conditionId, conditionLabel, makeConditionDef, parseConditions } from './condition'
+export {
+  ConditionDefSchema,
+  addMissingConditions,
+  conditionId,
+  conditionLabel,
+  makeConditionDef,
+  parseConditions,
+} from './condition'
 
 // Tolerant parsers — boundary helpers for persisted data.
 export { parseBreakpoint } from './breakpoint'
@@ -110,6 +136,7 @@ export {
   pagePublicPath,
   isHomePage,
   findHomePage,
+  uniquePageSlug,
 } from './slugs'
 export {
   makePageRef,
@@ -161,6 +188,9 @@ export { cloneNodeWithRemap } from './cloneNode'
 
 export { cloneScopedClassesForNodeMap } from './scopedClassClone'
 
+export { createStyleRuleOrderAllocator } from './styleRuleRegistry'
+export type { StyleRuleOrderAllocator } from './styleRuleRegistry'
+
 export {
   getNode,
   getNodeOrThrow,
@@ -175,6 +205,7 @@ export {
 } from './selectors'
 
 export {
+  validateCssClassName,
   assertValidCssClassName,
   styleRuleSelector,
   classNamesForClassIds,

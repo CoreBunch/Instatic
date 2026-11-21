@@ -22,6 +22,8 @@ import { NodeTreeSchema } from './treeSchema'
 import { PageNodeSchema, type PageNode, parsePageNode } from './pageNode'
 import { PageTemplateConfigSchema, parsePageTemplate } from './pageTemplate'
 import { reindexNodeParents } from './parentIndex'
+import { AccessRuleSchema, parseAccessRule } from '@core/members'
+import { PageSeoSchema, parsePageSeo } from './pageSeo'
 
 // ---------------------------------------------------------------------------
 // PageSchema
@@ -48,6 +50,18 @@ export const PageSchema = Type.Object({
    * Silently dropped if invalid — handled in parsePage.
    */
   template: Type.Optional(PageTemplateConfigSchema),
+  /**
+   * Who may open this page on the published site. Missing means anyone.
+   * A stored value that cannot be read becomes "nobody" in parsePage, never
+   * "anyone". Enforced by the public router; see docs/features/members.md.
+   */
+  access: Type.Optional(AccessRuleSchema),
+  /**
+   * Search, sharing and browser `<head>` settings. Missing means none: the
+   * publisher falls back to the site settings. An unreadable stored value
+   * keeps whatever parts of it still validate (see `parsePageSeo`).
+   */
+  seo: Type.Optional(PageSeoSchema),
 })
 
 export type Page = Static<typeof PageSchema>
@@ -92,6 +106,8 @@ export function parsePage(raw: unknown, pageIndex: number): Page {
   reindexNodeParents(nodes)
 
   const template = parsePageTemplate(r.template)
+  const access = parseAccessRule(r.access)
+  const seo = parsePageSeo(r.seo)
 
   return {
     id: r.id,
@@ -107,5 +123,7 @@ export function parsePage(raw: unknown, pageIndex: number): Page {
     nodes,
     rootNodeId: r.rootNodeId,
     ...(template !== null ? { template } : {}),
+    ...(access.level !== 'public' ? { access } : {}),
+    ...(seo ? { seo } : {}),
   }
 }

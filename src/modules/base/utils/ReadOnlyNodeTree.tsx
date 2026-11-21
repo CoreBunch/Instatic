@@ -39,7 +39,8 @@ import {
   resolveDynamicProps,
   type TemplateRenderDataContext,
 } from '@core/templates/dynamicBindings'
-import { useLoopPreviewItems } from '@site/canvas/useLoopPreviewItems'
+import { useLoopPreviewItems, useLoopPreviewNotice } from '@site/canvas/useLoopPreviewItems'
+import { LoopPreviewNotice } from '@site/canvas/LoopPreviewNotice'
 
 /**
  * Identifies the editable source a read-only region was composed from, so the
@@ -301,7 +302,8 @@ function ReadOnlyLoopIterationsPreview({
   templateContext,
 }: ReadOnlyLoopIterationsPreviewProps) {
   const items = useLoopPreviewItems(node, templateContext)
-  if (items.length === 0) return null
+  const notice = useLoopPreviewNotice(node.props)
+  if (items.length === 0) return notice ? <LoopPreviewNotice notice={notice} /> : null
 
   const baseStack = templateContext?.entryStack ?? []
   return (

@@ -16,13 +16,29 @@ export const PLUGIN_PERMISSION_VALUES = [
   // before they approve installation.
   'cms.routes.public',
   'cms.hooks',
+  // Site members — the people with an account on the published site.
+  // `read` sees who is signed in on the plugin's routes, looks members up and
+  // receives member events and adds to a member's data export; `write` invites or creates members; `tags` grants and
+  // withdraws the plugin's own access tags (what a member may open).
+  'members.read',
+  'members.write',
+  'members.tags',
+  // Visitors' IP addresses (personal data) on the plugin's routes: without
+  // it `ctx.ip` and `ctx.ipKey` are null.
+  'visitors.ip',
+  // Email — sending the plugin's own declared templates through the site's
+  // connector. `mail.send` reaches site members only; `mail.send.external`
+  // reaches any address.
+  'mail.send',
+  'mail.send.external',
   // CMS content — read/write/publish/delete the host's content tables
   // (`data_tables` + `data_rows`) through the `api.cms.content.*` surface.
   // Each mode is split so a typical plugin (SEO assistant, translator)
-  // doesn't carry the dangerous bits. The manifest must additionally list
-  // the targeted tables in `contentAccess[]`; the host fails closed without
-  // both the permission and the allowlist entry. See
-  // docs/features/plugin-system.md → "Content access".
+  // doesn't carry the dangerous bits. The manifest must additionally cover
+  // the targeted tables in `contentAccess[]` — by slug, or via the
+  // `@own-created` marker for tables the plugin created at runtime; the
+  // host fails closed without both the permission and a covering entry.
+  // See docs/features/plugin-system.md → "Content access".
   'cms.content.read',
   'cms.content.write',
   'cms.content.publish',
@@ -46,6 +62,12 @@ export const PLUGIN_PERMISSION_VALUES = [
   'editor.panels',
   'editor.store.read',
   'editor.store.write',
+  // Insert site fragments into the open document and apply themes to the
+  // site (`api.editor.fragments`): an insert adds classes, tokens,
+  // components, media and data tables the fragment needs, through the same
+  // flow as the editor's Insert fragment dialog; a theme replaces the site's
+  // design variables.
+  'editor.fragments',
   // Builder extensions
   'modules.register',
   'loops.register',

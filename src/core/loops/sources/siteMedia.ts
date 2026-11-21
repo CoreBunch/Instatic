@@ -167,6 +167,8 @@ export const SiteMediaSource: LoopEntitySource = {
     },
   },
 
+  // Newest first unless the author picks otherwise.
+  defaultDirection: 'desc',
   orderByOptions: [
     { id: 'createdAt', label: 'Upload date' },
     { id: 'filename', label: 'Filename' },
@@ -203,13 +205,5 @@ export const SiteMediaSource: LoopEntitySource = {
       items: rows.map(rowToLoopItem),
       totalItems,
     }
-  },
-
-  preview() {
-    // Editor-side preview is handled by the canvas via `useLoopPreviewItems`,
-    // which fetches real media assets through the CMS API. This source's
-    // synchronous `preview()` therefore returns [] — no placeholder
-    // thumbnails leak into the canvas.
-    return []
   },
 }

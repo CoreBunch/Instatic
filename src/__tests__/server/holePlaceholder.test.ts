@@ -34,7 +34,7 @@ describe('publishPage — staticPlaceholder injection and sanitisation', () => {
       }),
     })
 
-    const { html } = publishPage(page, site, reg, { publishVersion: 1 })
+    const { html } = publishPage(page, site, reg, { snapshotHash: '1' })
 
     // The placeholder content must appear inside the instatic-hole element
     expect(html).toContain('<instatic-hole')
@@ -59,7 +59,7 @@ describe('publishPage — staticPlaceholder injection and sanitisation', () => {
       }),
     })
 
-    const { html } = publishPage(page, site, reg, { publishVersion: 1 })
+    const { html } = publishPage(page, site, reg, { snapshotHash: '1' })
 
     // The instatic-hole must be an empty element (nothing between the tags)
     expect(html).toContain('<instatic-hole')
@@ -86,7 +86,7 @@ describe('publishPage — staticPlaceholder injection and sanitisation', () => {
       }),
     })
 
-    const { html } = publishPage(page, site, reg, { publishVersion: 1 })
+    const { html } = publishPage(page, site, reg, { snapshotHash: '1' })
 
     // The script tag must be stripped
     expect(html).not.toContain('<script>')
@@ -112,7 +112,7 @@ describe('publishPage — staticPlaceholder injection and sanitisation', () => {
       }),
     })
 
-    const { html } = publishPage(page, site, reg, { publishVersion: 1 })
+    const { html } = publishPage(page, site, reg, { snapshotHash: '1' })
 
     // Event handler attribute must be stripped
     expect(html).not.toContain('onerror')
@@ -136,7 +136,7 @@ describe('publishPage — staticPlaceholder injection and sanitisation', () => {
       }),
     })
 
-    const { html } = publishPage(page, site, reg, { publishVersion: 1 })
+    const { html } = publishPage(page, site, reg, { snapshotHash: '1' })
 
     // DOMPurify allows <div> and <p> tags with class attributes
     expect(html).toContain('skeleton-bar')

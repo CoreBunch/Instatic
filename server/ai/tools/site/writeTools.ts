@@ -44,6 +44,7 @@ import {
   RenamePageInputSchema,
   DuplicatePageInputSchema,
   SetPageTemplateInputSchema,
+  SetPageSeoInputSchema,
   ClearPageTemplateInputSchema,
   SetColorTokensInputSchema,
   SetFontTokensInputSchema,
@@ -314,6 +315,16 @@ const duplicatePageTool: AiTool = {
   inputSchema: DuplicatePageInputSchema,
 }
 
+const setPageSeoTool: AiTool = {
+  name: 'site_set_page_seo',
+  scope: 'site',
+  execution: 'browser',
+  requiredCapabilities: SITE_STRUCTURE_CAPS,
+  description:
+    "Replace a page's <head> settings (`seo`): title override, description, canonical, robots, colorScheme, themeColors [{color, media?}], favicon {href, type?}, openGraph {type,url,siteName,title,description,image,imageAlt}, twitter {card,site,creator,title,description,image}, meta [{attribute:'name'|'property', name, content}] for extra tags, links [{rel, href, type?, title?, hreflang?, media?, sizes?, as?, crossorigin?}] (rel: alternate, preload, prefetch, preconnect, dns-prefetch, icon, apple-touch-icon, mask-icon, manifest, author, license, me, help, search), and jsonLd (array of JSON-LD text blocks). Pass the COMPLETE object: it replaces the page's current settings (read them from site_list_documents `seo`); `null` clears them. Empty title/description fall back to the site settings. On a post-type template the object is a pattern for every entry: text, URL and JSON-LD values accept {currentEntry.*} tokens, the entry's own SEO title/description win, a canonical without a token becomes each entry's permalink, and robots applies to all entries. Templates override global head settings for their matching routes. Page fields override template fields. Use {page.title} | {site.name} for a shared title pattern.",
+  inputSchema: SetPageSeoInputSchema,
+}
+
 // ---------------------------------------------------------------------------
 // Template write tools — convert a page to/from a CMS template.
 //
@@ -368,7 +379,7 @@ const setFontTokensTool: AiTool = {
   execution: 'browser',
   requiredCapabilities: SITE_STYLE_CAPS,
   description:
-    'Create or update FONT tokens — named typefaces referenced as `var(--<variable>)`. Pass `googleFamily` (e.g. "Inter") to install a new Google web font (downloads the files, then binds the token to it); `variants` defaults to ["400","700"] and `subsets` to ["latin"]. Pass `familyId` to reference an already-installed family. Pass neither for a fallback-only/system token. Create-or-update is keyed by `variable` (defaults from `name`). Prefer exactly one of `googleFamily` or `familyId`; if both are sent, `googleFamily` wins and the stale `familyId` is ignored.',
+    'Create or update FONT tokens — named typefaces referenced as `var(--<variable>)`. Pass `googleFamily` (e.g. "Inter") to install a new Google web font (downloads the files, then binds the token to it); `variants` defaults to ["400","700"] and `subsets` to ["latin"]. Pass `familyId` to reference an already-installed family. Pass neither for a fallback-only/system token. Create-or-update is keyed by `variable` (defaults from `name`). Prefer the role variables `font-heading`, `font-body` and `font-mono`: new sites start with them as fallback-only system stacks, so setting a typeface means updating the role token. Prefer exactly one of `googleFamily` or `familyId`; if both are sent, `googleFamily` wins and the stale `familyId` is ignored.',
   inputSchema: SetFontTokensInputSchema,
 }
 
@@ -431,6 +442,7 @@ export const siteWriteTools: AiTool[] = [
   addPageTool,
   deletePageTool,
   renamePageTool,
+  setPageSeoTool,
   duplicatePageTool,
   setPageTemplateTool,
   clearPageTemplateTool,

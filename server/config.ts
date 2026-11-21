@@ -1,4 +1,7 @@
+import { join, resolve } from 'node:path'
+import { instanceStateDir } from './instanceDir'
 import { parseNpmRegistryUrl } from './registry/config'
+import { readManagerConfig, type ManagerConfig } from './manager/config'
 
 interface ServerConfig {
   port: number
@@ -17,6 +20,33 @@ interface ServerConfig {
   publicOrigins: string[]
   /** Registry every package read and install goes to; see `server/registry/config.ts`. */
   npmRegistryUrl: string
+  /** Manager API token + working directory; see `server/manager/config.ts`. */
+  manager: ManagerConfig
+  /** Where runtime npm packages are installed; see `readRuntimeCacheDir`. */
+  runtimeCacheDir: string
+}
+
+const DEFAULT_UPLOADS_DIR = './uploads'
+const DEFAULT_DATABASE_URL = 'sqlite:./.tmp/dev.db'
+
+/**
+ * Root of the runtime npm package cache (`server/publish/runtime/dependencyCache.ts`).
+ *
+ * Published pages load their packages from this directory on every visit, so
+ * the default is `runtime-cache/` in the instance state directory: beside the
+ * SQLite database, or beside the uploads directory for Postgres. It is not the
+ * OS temp folder, which the OS empties and a recreated container loses.
+ * `RUNTIME_CACHE_DIR` overrides it; keep an override outside `UPLOADS_DIR`.
+ */
+export function readRuntimeCacheDir(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const override = env.RUNTIME_CACHE_DIR?.trim()
+  if (override) return resolve(override)
+  return join(
+    instanceStateDir(env.UPLOADS_DIR ?? DEFAULT_UPLOADS_DIR, env.DATABASE_URL ?? DEFAULT_DATABASE_URL),
+    'runtime-cache',
+  )
 }
 
 function readCsvList(value: string | undefined): string[] {
@@ -100,15 +130,19 @@ export function resolvePublicOrigins(env: Record<string, string | undefined>): s
 export function readServerConfig(
   env: Record<string, string | undefined> = process.env,
 ): ServerConfig {
+  const uploadsDir = env.UPLOADS_DIR ?? DEFAULT_UPLOADS_DIR
+  const databaseUrl = env.DATABASE_URL ?? DEFAULT_DATABASE_URL
   return {
     port: Number(env.PORT ?? 3001),
     host: env.HOST ?? '0.0.0.0',
     shutdownToken: env.INSTATIC_SHUTDOWN_TOKEN ?? null,
-    databaseUrl: env.DATABASE_URL ?? 'sqlite:./.tmp/dev.db',
-    uploadsDir: env.UPLOADS_DIR ?? './uploads',
+    databaseUrl,
+    uploadsDir,
     staticDir: env.STATIC_DIR ?? './dist',
     trustedProxyCidrs: readCsvList(env.TRUSTED_PROXY_CIDRS),
     publicOrigins: resolvePublicOrigins(env),
     npmRegistryUrl: parseNpmRegistryUrl(env.NPM_REGISTRY_URL),
+    manager: readManagerConfig(env, uploadsDir, databaseUrl),
+    runtimeCacheDir: readRuntimeCacheDir(env),
   }
 }

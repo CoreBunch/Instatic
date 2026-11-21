@@ -1,10 +1,10 @@
-import { describe, test, expect } from 'bun:test'
+import { describe, test, expect, spyOn } from 'bun:test'
 import { createTestDb } from '../helpers/createTestDb'
 import { createDataRow } from '../../../server/repositories/data/rows/mutations'
 import { getDataRow } from '../../../server/repositories/data/rows/read'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { persistDataRowPublish } from '../../../server/repositories/data/publish'
-import { readPublishedSinceCount } from '../../../server/handlers/cms/dashboard/shared'
+import { readPagesStats } from '../../../server/repositories/dashboard'
 
 /**
  * `published_at >= ${sinceIso}` is a string comparison on SQLite. When the
@@ -21,7 +21,7 @@ describe('dashboard published-since window', () => {
     try {
       await db`insert into users (id, email, email_normalized, display_name, password_hash, role_id)
                values (${'u1'}, ${'a@example.com'}, ${'a@example.com'}, ${'A'}, ${'hash'}, ${'member'})`
-      const row = await createDataRow(db, MAIN_SCOPE, { tableId: 'posts', cells: { title: 'Boundary' }, slug: 'boundary' }, 'u1')
+      const row = await createDataRow(db, MAIN_SCOPE, { tableId: 'pages', cells: { title: 'Boundary' }, slug: 'boundary' }, 'u1')
       await persistDataRowPublish(db, row.id, 'u1')
 
       const published = await getDataRow(db, MAIN_SCOPE, row.id)
@@ -30,7 +30,11 @@ describe('dashboard published-since window', () => {
       // Start of the publish day itself: the strictest same-day cutoff.
       const since = `${publishedAt!.slice(0, 10)}T00:00:00.000Z`
 
-      expect(await readPublishedSinceCount(db, 'posts', since)).toBe(1)
+      const clock = spyOn(Date, 'now').mockReturnValue(Date.parse(since) + 7 * 86400000)
+      try {
+        const stats = await readPagesStats(db, { id: 'u1', capabilities: ['data.system.tables.read', 'content.edit.own'] })
+        expect(stats.deltaPublishedThisWeek).toBe(1)
+      } finally { clock.mockRestore() }
     } finally {
       await cleanup()
     }

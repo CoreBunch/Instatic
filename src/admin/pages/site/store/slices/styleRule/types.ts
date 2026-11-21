@@ -41,8 +41,8 @@ export interface ClassPreviewAssignment {
  */
 interface ClassStylesPreview {
   classId: string
-  /** Breakpoint id to scope the preview to, or null/undefined for the base styles. */
-  breakpointId?: string | null
+  /** Breakpoint or condition id to scope the preview to, or null/undefined for the base styles. */
+  contextId?: string | null
   styles: Partial<CSSPropertyBag>
 }
 
@@ -93,6 +93,12 @@ export interface StyleRuleSlice {
   clearPreviewNodeClass(nodeId?: string, classId?: string): void
 
   /** Transient style patch previewed on the canvas while hovering a suggestion. */
+  gradientPickerOpen: boolean
+  setGradientPickerOpen(open: boolean): void
+  radiusScope: 'all' | 'parts' | null
+  setRadiusScope(scope: 'all' | 'parts' | null): void
+  previewInlineStyles: { nodeId: string; styles: Partial<CSSPropertyBag> } | null
+  setPreviewInlineStyles(nodeId: string, styles: Partial<CSSPropertyBag> | null): void
   previewClassStyles: ClassStylesPreview | null
   setPreviewClassStyles(preview: ClassStylesPreview): void
   clearPreviewClassStyles(classId?: string): void
@@ -193,15 +199,6 @@ export interface StyleRuleSlice {
   removeClassContext(classId: string, contextId: string): void
 
   /**
-   * Fully remove a CSS property from a class — from base styles and from every
-   * per-context override. Used by the X / clear affordances on visual switchers
-   * (LayoutSection) where "clear this property" must mean "make it disappear"
-   * regardless of which context is active. No-ops (and does NOT push history)
-   * if the property isn't set anywhere.
-   */
-  removeClassStyleProperty(classId: string, property: keyof CSSPropertyBag): void
-
-  /**
    * Fully remove SEVERAL CSS properties from a class in a single undo step —
    * each from base styles and every per-context override. Used when one action
    * must prune a group of related properties at once (e.g. clearing `display`
@@ -251,6 +248,14 @@ export interface StyleRuleSlice {
    * skipped. No-op (no history entry) when nothing new would be added.
    */
   addNodeClasses(nodeId: string, classIds: string[]): void
+
+  /**
+   * Add or remove one classId on several nodes in ONE batched mutation. This
+   * is the transaction boundary for applying a selector to a canvas
+   * multi-selection, so one action produces one undo step. Ambient rules are
+   * never treated as class assignments; existing class order is preserved.
+   */
+  setNodeClassAssignments(nodeIds: string[], classId: string, assigned: boolean): void
 
   /** Remove a classId from a node's classIds (no-op if not present). */
   removeNodeClass(nodeId: string, classId: string): void

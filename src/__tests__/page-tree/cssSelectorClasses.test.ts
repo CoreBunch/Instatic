@@ -34,6 +34,14 @@ describe('CSS selector class tokens', () => {
     ).toEqual(['group', 'group-hover:block'])
   })
 
+  it('renames a class-word selector and preserves attribute comparisons with different semantics', () => {
+    const selector = '[class~="md:flex"] > [class~=other] [class~="md:flex" i][data-label=\'[class~=other]\']'
+    expect(extractCssSelectorClasses(selector).map((token) => token.name)).toEqual(['md:flex', 'other'])
+    expect(replaceCssSelectorClassName(selector, 'md:flex', 'confined')).toBe(
+      '.confined > [class~=other] [class~="md:flex" i][data-label=\'[class~=other]\']',
+    )
+  })
+
   it('uses the rightmost class as the binding subject', () => {
     expect(selectorBindingClassName('.group:hover .group-hover\\:block')).toBe(
       'group-hover:block',

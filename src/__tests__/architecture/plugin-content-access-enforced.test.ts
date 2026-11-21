@@ -7,12 +7,17 @@
  *     apiDispatch.ts (driven by `TARGET_PERMISSIONS`) before any handler runs,
  *     so every content target carries a `cms.content.*` permission in the map.
  *   - Every per-table handler (anything that takes a `tableSlug` arg) still
- *     calls `assertContentTableAccess` for the targeted slug + mode — the
- *     per-table check the central permission gate cannot express.
+ *     calls `assertContentTableAccess` for the resolved table + mode — the
+ *     per-table check the central permission gate cannot express. An entry
+ *     matches by slug or via the `@own-created` marker (resolved against the
+ *     table's `createdByPluginId`).
+ *   - `cms.content.tables.create` records the creating plugin on the table
+ *     row — the durable fact the `@own-created` marker resolves against.
  *
  * The matrix of (permission, mode) per handler is documented in the handler
  * header comment; this test enforces presence of the central pairing + the
- * per-table helper — finer-grained mode coverage is in the per-handler tests.
+ * per-table helper — finer-grained mode coverage is in the per-handler tests
+ * (`server/plugins/host/registry.test.ts`, `.../handlers/content.test.ts`).
  */
 
 import { describe, expect, it } from 'bun:test'
@@ -88,5 +93,23 @@ describe('plugin content handlers — access enforced', () => {
         `Per-table handler "${name}" must call assertContentTableAccess`,
       ).toBe(true)
     }
+  })
+
+  it('tables.create records the creating plugin; the marker resolves against it', async () => {
+    // The `@own-created` contentAccess marker is only sound if BOTH halves
+    // hold: the create handler stamps the host-authenticated plugin id on
+    // the table row, and the registry matcher resolves the marker against
+    // that stored creator (never against the slug).
+    const source = await read('server/plugins/host/handlers/content.ts')
+    const create = extractContentHandlers(source).find((h) => h.name === 'handleContentTablesCreate')
+    expect(create, 'handleContentTablesCreate must exist').toBeDefined()
+    expect(
+      create?.body.includes('createdByPluginId: msg.pluginId'),
+      'handleContentTablesCreate must record the caller as createdByPluginId',
+    ).toBe(true)
+
+    const registry = await read('server/plugins/host/registry.ts')
+    expect(registry).toContain('OWN_CREATED_TABLES_MARKER')
+    expect(registry).toContain('table.createdByPluginId === manifest.id')
   })
 })
