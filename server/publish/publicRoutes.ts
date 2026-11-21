@@ -3,6 +3,9 @@
  * branch preview of it), the first-run redirect, and the designed 404 page.
  * Split out of `server/router.ts` so the dispatcher stays a route table.
  */
+import { LLMS_DOCUMENT_PATH, llmsDocumentContent } from '@core/files/llmsDocument'
+import { getLatestPublishedSiteSnapshot } from '../repositories/publish'
+import { readStaticAsset } from './staticArtefact'
 import type { ServerRuntime } from '../serverRuntime'
 import {
   BRANCH_PREVIEW_EXIT_PATH,
@@ -29,8 +32,9 @@ import { renderNotFoundResponse, renderPublicResolution } from './publicRouter'
  * fast-path (pre-rendered static artefacts via `readArtefact`), then
  * `resolvePublicRoute`, then the live renderer + `applyPublishedHtmlPipeline`.
  */
-export async function tryServePublicRoute(req: Request, runtime: ServerRuntime, url: URL, _pathname: string): Promise<Response | null> {
+export async function tryServePublicRoute(req: Request, runtime: ServerRuntime, url: URL, pathname: string): Promise<Response | null> {
   if (req.method !== 'GET') return null
+  if (pathname === `/${LLMS_DOCUMENT_PATH}`) return serveLlmsDocument(runtime, pathname)
   // A visitor holding a live preview cookie sees the branch's draft instead
   // of the published site. A missing route on the branch falls through to
   // the 404 page, never to main's published page at that path.
@@ -102,4 +106,13 @@ export async function trySetupRedirect(req: Request, runtime: ServerRuntime, _ur
 export async function tryServeNotFoundPage(req: Request, runtime: ServerRuntime, url: URL, _pathname: string): Promise<Response | null> {
   if (req.method !== 'GET') return null
   return await renderNotFoundResponse(runtime.db, url, runtime.uploadsDir)
+}
+
+async function serveLlmsDocument(runtime: ServerRuntime, pathname: string): Promise<Response> {
+  const bytes = runtime.uploadsDir ? await readStaticAsset(runtime.uploadsDir, pathname) : null
+  const headers = { 'Content-Type': 'text/plain; charset=utf-8', 'X-Content-Type-Options': 'nosniff' }
+  if (bytes) return new Response(new Uint8Array(bytes), { headers })
+  const snapshot = await getLatestPublishedSiteSnapshot(runtime.db)
+  const text = snapshot && llmsDocumentContent(snapshot.site.files)
+  return text == null ? new Response('Not found', { status: 404, headers }) : new Response(text, { headers })
 }

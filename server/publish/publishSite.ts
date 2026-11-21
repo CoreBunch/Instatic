@@ -16,6 +16,7 @@
  * the sequencing, rendering, and disk artefacts. The dependency direction is
  * one-way: publish → repositories, never back.
  */
+import { LLMS_DOCUMENT_PATH, llmsDocumentContent } from '@core/files/llmsDocument'
 import { nanoid } from 'nanoid'
 import type { DataRow, DataRowVersion } from '@core/data/schemas'
 import type { SiteDocument } from '@core/page-tree'
@@ -232,6 +233,8 @@ async function publishSiteDocumentLocked(
       // walk no longer repeats per page. Only `userStyles` is page-scoped.
       const assetsByPath = new Map<string, Uint8Array>()
       const encoder = new TextEncoder()
+      const guide = llmsDocumentContent(publishedSite.files)
+      if (guide !== undefined) assetsByPath.set(`/${LLMS_DOCUMENT_PATH}`, encoder.encode(guide))
       const collectCssFiles = (cssBundle: SiteCssBundle): void => {
         for (const file of [cssBundle.reset, cssBundle.framework, cssBundle.style, cssBundle.userStyles]) {
           if (file.content.length === 0) continue

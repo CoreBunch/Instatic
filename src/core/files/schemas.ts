@@ -88,7 +88,7 @@ export const SiteFileSchema = Type.Object({
   ejected: Type.Optional(Type.Boolean()),
 
   /**
-   * Set when Site Import wrote this file (a script or a kept stylesheet):
+   * Set when Site Import wrote this file (a script, kept stylesheet or crawler guide):
    * `sourceHash` is the SHA-256 of the file as the bundle had it, before asset
    * URLs were rewritten; `contentHash` the SHA-256 of the content written.
    * A later import compares them to tell "the bundle changed this file" from

@@ -111,6 +111,10 @@ export async function commitImportPlan(
   signal?.throwIfAborted()
 
   await adapter.commit((tx) => {
+    if (rewrittenPlan.llmsDocument !== undefined) {
+      const warning = tx.importLlmsDocument(rewrittenPlan.llmsDocument)
+      if (warning) commitWarnings.push(warning)
+    }
     // Merge reusable conditions first so rule contextStyles keys resolve.
     if ((rewrittenPlan.conditions ?? []).length > 0) {
       tx.addConditions(rewrittenPlan.conditions)

@@ -171,6 +171,7 @@ export function createSiteImportAdapter(opts: AdapterCallbacks): SiteImportAdapt
       opts.onCommitStart?.()
       const ok = useEditorStore.getState().mutateAllPagesAndSite((_site, helpers) => {
         const tx: SiteImportTransaction = {
+          importLlmsDocument: helpers.importLlmsDocument,
           addPage: (input) => helpers.addPage(input),
           putStyleRule: (rule) => helpers.putStyleRule(rule),
           overwritePage: (id, input) => helpers.overwritePage(id, input),

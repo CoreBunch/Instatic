@@ -66,9 +66,11 @@
  *   (`http-equiv`, a script preload, an unknown `rel`, JSON-LD that is not
  *   JSON). Everything else in the head imports into `PagePlan.seo`.
  * - `head-file-not-hosted`: a head link points at a file in the archive that
- *   the media library cannot store (`llms.txt`, a web manifest). The link is
+ *   the media library cannot store (a nested `llms.txt`, a web manifest). The link is
  *   kept, pointing at the file's root-relative path, so it works once the
  *   file is served at that path; `path` names it.
+ * - `site-document-kept`: a locally created or edited guide takes precedence
+ *   over an incoming archive's root llms.txt.
  */
 type ImportWarningKind =
   | 'dropped-at-rule'
@@ -90,6 +92,7 @@ type ImportWarningKind =
   | 'script-order-conflict'
   | 'head-tag-dropped'
   | 'head-file-not-hosted'
+  | 'site-document-kept'
 
 export interface ImportWarning {
   kind: ImportWarningKind

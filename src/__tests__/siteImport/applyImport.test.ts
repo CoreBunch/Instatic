@@ -151,6 +151,7 @@ function makeMockAdapter(opts?: {
           ops.push({ type: 'overwriteColorTokens', args: { items }, id: '' })
           return items.map((i) => ({ slug: i.existingTokenId, value: i.value }))
         },
+        importLlmsDocument() { return undefined },
         addStylesheets(stylesheets) {
           ops.push({ type: 'addStylesheets', args: { stylesheets }, id: '' })
           return stylesheets.map((s) => ({ id: nextId(), path: s.path }))

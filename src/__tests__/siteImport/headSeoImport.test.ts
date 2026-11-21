@@ -119,6 +119,33 @@ describe('HTML import keeps the page head', () => {
     expect(dropped.some((message) => message.includes('not valid JSON'))).toBe(true)
   })
 
+  it('imports and refreshes a root guide, preserving a locally edited copy on reimport', async () => {
+    const guide = 'llms.txt'
+    const files: FileMap['files'] = {
+      'index.html': { bytes: enc.encode('<html><head><link rel="alternate" type="text/plain" href="/llms.txt"></head><body>Home</body></html>') },
+      'private.txt': { bytes: enc.encode('private') },
+    }
+    const adapter = createSiteImportAdapter({ sessionId: 'guide-test' })
+    const run = async (content: string) => {
+      files[guide] = { bytes: enc.encode(content) }
+      const plan = buildImportPlan({ fileMap: { files }, currentSite: useEditorStore.getState().site! })
+      expect(plan.pages[0]?.seo?.links?.[0]?.href).toBe('/llms.txt')
+      expect(plan.warnings.filter((warning) => warning.kind === 'head-file-not-hosted')).toEqual([])
+      return commitImportPlan(plan, adapter)
+    }
+
+    await run('# Guide')
+    const first = useEditorStore.getState().site!.files.find((file) => file.path === guide)!
+    await run('# Revised')
+    const docs = useEditorStore.getState().site!.files.filter((file) => file.path === guide || file.path === 'private.txt')
+    expect(docs).toHaveLength(1)
+    expect(docs[0]).toMatchObject({ id: first.id, content: '# Revised', type: 'doc' })
+    useEditorStore.getState().updateFileContent(first.id, '# Local')
+    const result = await run('# Incoming')
+    expect(result.warnings).toContainEqual(expect.objectContaining({ kind: 'site-document-kept', path: guide }))
+    expect(useEditorStore.getState().site!.files.find((file) => file.id === first.id)?.content).toBe('# Local')
+  })
+
   it('commits the settings onto the page with uploaded media URLs', async () => {
     const plan = buildImportPlan({ fileMap: fileMap(), currentSite: useEditorStore.getState().site! })
     const resolved = applyConflictResolutions(

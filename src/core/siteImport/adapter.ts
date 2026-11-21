@@ -97,6 +97,9 @@ export interface SiteImportAdapter {
  * inside a single `mutateActiveTreeAndSite` Mutative recipe.
  */
 export interface SiteImportTransaction {
+  /** Store the public guide, retaining any conflicting local edits. */
+  importLlmsDocument(content: string): ImportWarning | undefined
+
   /**
    * Add a new page with the given title, slug, and body content.
    *

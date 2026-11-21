@@ -11,6 +11,7 @@
  * threading more state through a 250-line body.
  */
 
+import { LLMS_DOCUMENT_PATH } from '@core/files/llmsDocument'
 import {
   classKindSelector,
   extractCssSelectorClasses,
@@ -209,7 +210,9 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
     crossSheetRenameTargets(crossSheetClasses),
   )
 
+  const guide = fileMap.files[LLMS_DOCUMENT_PATH]
   return {
+    ...(guide && { llmsDocument: new TextDecoder('utf-8', { ignoreBOM: true }).decode(guide.bytes) }),
     pages,
     styleRules,
     styleRuleSources,
