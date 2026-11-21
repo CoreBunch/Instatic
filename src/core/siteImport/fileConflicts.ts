@@ -6,7 +6,7 @@
  */
 
 import type { SiteDocument } from '@core/page-tree'
-import type { SiteScriptRuntimeConfig } from '@core/site-runtime'
+import type { SiteRuntimeConfig } from '@core/site-runtime'
 import type { SiteFile } from '@core/files/schemas'
 import { sha256Hex } from '@core/utils/sha256'
 import type { ImportScript, ImportStylesheet } from './types'
@@ -69,7 +69,7 @@ export function detectFileConflicts(
   return conflicts
 }
 
-function fileConflictState(file: SiteFile, imported: ImportScript | ImportStylesheet, runtime?: SiteScriptRuntimeConfig): FileConflictState {
+function fileConflictState(file: SiteFile, imported: ImportScript | ImportStylesheet, runtime?: SiteRuntimeConfig['scripts'][string]): FileConflictState {
   const record = file.importRecord
   if (!record) return file.content === imported.content ? 'unchanged' : 'differs'
   if (importSourceHash(imported) === record.sourceHash) return 'unchanged'
