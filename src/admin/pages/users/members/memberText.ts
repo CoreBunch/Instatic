@@ -31,6 +31,7 @@ const EVENT_LABEL: Record<string, string> = {
   deleted: 'Account deleted',
   created_by_plugin: 'Given an account by a plugin',
   invited: 'Invited by an administrator',
+  imported: 'Imported by an administrator',
   suspended: 'Suspended by an administrator',
   unsuspended: 'Restored by an administrator',
   signed_out_by_admin: 'Signed out everywhere by an administrator',

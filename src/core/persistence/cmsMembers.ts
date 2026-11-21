@@ -8,6 +8,8 @@ import {
   MemberAppListResponseSchema,
   MemberAppSchema,
   MemberDetailResponseSchema,
+  MemberImportPreviewResponseSchema,
+  MemberImportResultResponseSchema,
   MemberInviteResponseSchema,
   MemberListResponseSchema,
   MemberSettingsResponseSchema,
@@ -16,6 +18,10 @@ import {
   type MemberApp,
   type MemberAppListResponse,
   type MemberDetail,
+  type MemberExportFormat,
+  type MemberImportPreview,
+  type MemberImportRequest,
+  type MemberImportResult,
   type MemberListItem,
   type MemberListResponse,
   type MemberSettings,
@@ -104,6 +110,33 @@ export function signOutCmsMember(id: string): Promise<MemberDetail> {
 /** Everything the site holds about the member, plugins' sections included, as a JSON file. */
 export function downloadCmsMemberData(id: string): Promise<Blob> {
   return apiBlobRequest(memberPath(id, '/export'), { fallbackMessage: "The member's data could not be downloaded" })
+}
+
+/** Every member as one CSV or JSON file (asks for step-up). */
+export function downloadAllCmsMembers(format: MemberExportFormat): Promise<Blob> {
+  return apiBlobRequest(`${MEMBERS_PATH}/export`, { query: { format }, fallbackMessage: 'The members could not be exported' })
+}
+
+/** What importing the file would do: new, existing and invalid rows. Changes nothing. */
+export async function previewCmsMemberImport(request: MemberImportRequest): Promise<MemberImportPreview> {
+  const body = await apiRequest(`${MEMBERS_PATH}/import/preview`, {
+    method: 'POST',
+    body: request,
+    schema: MemberImportPreviewResponseSchema,
+    fallbackMessage: 'The file could not be read',
+  })
+  return body.preview
+}
+
+/** Import the file (asks for step-up). */
+export async function importCmsMembers(request: MemberImportRequest): Promise<MemberImportResult> {
+  const body = await apiRequest(`${MEMBERS_PATH}/import`, {
+    method: 'POST',
+    body: request,
+    schema: MemberImportResultResponseSchema,
+    fallbackMessage: 'The members could not be imported',
+  })
+  return body.result
 }
 
 /** Signs the member out of one app; `grantId` is the connected app's `id`. */

@@ -42,6 +42,12 @@ export const memberLimits = {
   exportPerMember: new RateLimiter({ limit: 3, windowMs: HOUR }),
   /** Member data downloads by one administrator. */
   adminExportPerUser: new RateLimiter({ limit: 30, windowMs: HOUR }),
+  /** Exports of every member by one administrator. */
+  adminExportAllPerUser: new RateLimiter({ limit: 5, windowMs: HOUR }),
+  /** Import previews by one administrator: each one reads the whole file. */
+  adminImportPreviewPerUser: new RateLimiter({ limit: 60, windowMs: HOUR }),
+  /** Imports applied by one administrator. */
+  adminImportPerUser: new RateLimiter({ limit: 10, windowMs: HOUR }),
   /** Current-password checks for a signed-in member. */
   reauthPerMember: new RateLimiter({ limit: 8, windowMs: 15 * MINUTE }),
 }
