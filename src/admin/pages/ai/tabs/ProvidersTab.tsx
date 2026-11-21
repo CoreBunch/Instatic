@@ -39,6 +39,7 @@ const API_KEY_PLACEHOLDER: Partial<Record<ProviderId, string>> = {
   anthropic: 'sk-ant-...',
   openai: 'sk-...',
   openrouter: 'sk-or-...',
+  requesty: 'sk-... or rqsty-...',
   'openai-compatible': 'sk-... (optional)',
 }
 
