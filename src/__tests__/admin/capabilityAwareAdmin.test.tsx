@@ -1,16 +1,57 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from '@admin/lib/routing'
+import { MemoryRouter, Route, Routes, useLocation } from '@admin/lib/routing'
+import { PublishLineupWidget } from '@admin/pages/dashboard/widgets/PublishLineupWidget'
 import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
 import { AdminSessionProvider } from '@admin/session'
 import { StepUpProvider } from '@admin/shared/StepUp'
+import { switchBranch, useBranchStore } from '@admin/state/branchStore'
 import { ContentPage } from '@content/ContentPage'
+import type { PublishLineupStats } from '@core/dashboard'
 import type { CmsCurrentUser } from '@core/persistence'
 import { useEditorStore } from '@site/store/store'
 import { makeSite } from '../fixtures'
 
 const originalFetch = globalThis.fetch
 const now = '2026-05-07T10:00:00.000Z'
+
+it('opens the main entry by row id and uses Data for pages without Site access', async () => {
+  const stats: PublishLineupStats = {
+    rows: [
+      {
+        id: 'article&1', tableSlug: 'articles', tableKind: 'postType', slug: 'draft-slug',
+        path: '/news/live-slug', status: 'published', at: now,
+      },
+      { id: 'home', tableSlug: 'pages', tableKind: 'page', slug: 'index', path: '/', status: 'draft', at: null },
+    ],
+  }
+  const originalBranch = useBranchStore.getState().activeBranchId
+  switchBranch('lineup-preview')
+  try {
+    globalThis.fetch = async () => json(stats)
+    const Location = () => {
+      const { pathname, search } = useLocation()
+      return <output>{pathname + search}</output>
+    }
+    render(
+      <MemoryRouter initialEntries={['/admin/dashboard']}>
+        <AdminSessionProvider user={currentUser(['dashboard.read', 'data.system.tables.read', 'data.custom.tables.read', 'content.edit.own'])}>
+          <PublishLineupWidget span={6} editing={false} />
+          <Location />
+        </AdminSessionProvider>
+      </MemoryRouter>,
+    )
+    const article = await screen.findByRole('link', { name: /^\/news\/live-slug/ })
+    const home = screen.getByRole('link', { name: /^\/ draft$/ })
+    expect(home.getAttribute('href')).toBe('/admin/data?table=pages&row=home&branch=main')
+    expect(article.getAttribute('href')).toBe('/admin/content?table=articles&row=article%261&branch=main')
+    fireEvent.click(article)
+    await screen.findByText('/admin/content?table=articles&row=article%261', { exact: true })
+    expect(useBranchStore.getState().activeBranchId).toBe('main')
+  } finally {
+    switchBranch(originalBranch)
+  }
+})
 
 function currentUser(capabilities: string[]): CmsCurrentUser {
   return {

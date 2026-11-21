@@ -67,6 +67,15 @@ export function jsonField(column: string, field: string, dialect: Dialect): Json
   return Object.freeze({ __brand: 'JsonFieldExpr', sql } as const)
 }
 
+/** Extract an object field for hydration through a `*_json` SQL alias. */
+export function jsonObjectField(column: string, field: string, dialect: Dialect): JsonFieldExpr {
+  const value = jsonField(column, field, dialect).sql
+  const type = dialect === 'postgres'
+    ? `jsonb_typeof(${column}->'${field}')`
+    : `json_type(${column}, '$.${field}')`
+  return Object.freeze({ __brand: 'JsonFieldExpr', sql: `case when ${type} = 'object' then ${value} end` } as const)
+}
+
 /** The JSON scalar types a typed comparison can target. */
 export type JsonScalarKind = 'text' | 'number' | 'boolean'
 

@@ -63,6 +63,7 @@ const LabelPropsSchema = Type.Object({
   text: Type.String({ default: 'Label' }),
   targetMode: Type.Union([Type.Literal('auto'), Type.Literal('explicit')], { default: 'auto' }),
   targetId: Type.String({ default: '' }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type LabelProps = Static<typeof LabelPropsSchema>
@@ -96,6 +97,7 @@ const InputPropsSchema = Type.Object({
   minLength: Type.Number({ default: 0 }),
   maxLength: Type.Number({ default: 0 }),
   pattern: Type.String({ default: '' }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type InputProps = Static<typeof InputPropsSchema>
@@ -112,6 +114,7 @@ const TextareaPropsSchema = Type.Object({
   rows: Type.Number({ default: 4 }),
   minLength: Type.Number({ default: 0 }),
   maxLength: Type.Number({ default: 0 }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type TextareaProps = Static<typeof TextareaPropsSchema>
@@ -123,6 +126,7 @@ const SelectPropsSchema = Type.Object({
   required: Type.Boolean({ default: false }),
   disabled: Type.Boolean({ default: false }),
   multiple: Type.Boolean({ default: false }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type SelectProps = Static<typeof SelectPropsSchema>
@@ -132,6 +136,7 @@ const OptionPropsSchema = Type.Object({
   label: Type.String({ default: 'Option' }),
   selected: Type.Boolean({ default: false }),
   disabled: Type.Boolean({ default: false }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type OptionProps = Static<typeof OptionPropsSchema>
@@ -139,6 +144,7 @@ type OptionProps = Static<typeof OptionPropsSchema>
 const OptionGroupPropsSchema = Type.Object({
   label: Type.String({ default: 'Group' }),
   disabled: Type.Boolean({ default: false }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type OptionGroupProps = Static<typeof OptionGroupPropsSchema>
@@ -151,6 +157,7 @@ const ChoicePropsSchema = Type.Object({
   checked: Type.Boolean({ default: false }),
   required: Type.Boolean({ default: false }),
   disabled: Type.Boolean({ default: false }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type ChoiceProps = Static<typeof ChoicePropsSchema>
@@ -165,6 +172,7 @@ const SubmitPropsSchema = Type.Object({
    */
   name: Type.String({ default: '' }),
   value: Type.String({ default: '' }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type SubmitProps = Static<typeof SubmitPropsSchema>
@@ -285,6 +293,7 @@ export const LabelModule: ModuleDefinition<LabelProps> = {
       { label: 'Explicit', value: 'explicit' },
     ] },
     targetId: { type: 'text', label: 'Target ID', condition: { field: 'targetMode', eq: 'explicit' } },
+    htmlAttributes: htmlAttributesControl(),
   },
   propsSchema: LabelPropsSchema,
   defaults: Value.Create(LabelPropsSchema),
@@ -292,9 +301,9 @@ export const LabelModule: ModuleDefinition<LabelProps> = {
   htmlTag: 'label',
   render: (props) => {
     if (props.targetMode === 'explicit' && props.targetId) {
-      return { html: `<label for="${props.targetId}">${props.text}</label>` }
+      return { html: `<label for="${props.targetId}"${htmlAttributesAttr(props.htmlAttributes)}>${props.text}</label>` }
     }
-    return { html: `<label data-instatic-label-target="auto">${props.text}</label>` }
+    return { html: `<label data-instatic-label-target="auto"${htmlAttributesAttr(props.htmlAttributes)}>${props.text}</label>` }
   },
 }
 
@@ -326,7 +335,7 @@ export const InputModule: ModuleDefinition<InputProps> = {
     ['minlength', positiveNumber(props.minLength)],
     ['maxlength', positiveNumber(props.maxLength)],
     ['pattern', props.pattern],
-  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}>` }),
+  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}${htmlAttributesAttr(props.htmlAttributes)}>` }),
 }
 
 export const TextareaModule: ModuleDefinition<TextareaProps> = {
@@ -350,6 +359,7 @@ export const TextareaModule: ModuleDefinition<TextareaProps> = {
     rows: { type: 'number', label: 'Rows' },
     minLength: { type: 'number', label: 'Minimum length' },
     maxLength: { type: 'number', label: 'Maximum length' },
+    htmlAttributes: htmlAttributesControl(),
   },
   propsSchema: TextareaPropsSchema,
   defaults: Value.Create(TextareaPropsSchema),
@@ -364,7 +374,7 @@ export const TextareaModule: ModuleDefinition<TextareaProps> = {
     ['rows', props.rows],
     ['minlength', positiveNumber(props.minLength)],
     ['maxlength', positiveNumber(props.maxLength)],
-  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}>${props.value}</textarea>` }),
+  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}${htmlAttributesAttr(props.htmlAttributes)}>${props.value}</textarea>` }),
 }
 
 export const SelectModule: ModuleDefinition<SelectProps> = {
@@ -383,6 +393,7 @@ export const SelectModule: ModuleDefinition<SelectProps> = {
     required: { type: 'toggle', label: 'Required' },
     disabled: { type: 'toggle', label: 'Disabled' },
     multiple: { type: 'toggle', label: 'Multiple' },
+    htmlAttributes: htmlAttributesControl(),
   },
   propsSchema: SelectPropsSchema,
   defaults: Value.Create(SelectPropsSchema),
@@ -394,7 +405,7 @@ export const SelectModule: ModuleDefinition<SelectProps> = {
       ['data-instatic-field-id', props.fieldId],
       ['name', props.name || props.fieldId],
       ['id', props.id],
-    ])}${booleanAttrs(props, ['required', 'disabled', 'multiple'])}>${renderedChildren.join('')}</select>`,
+    ])}${booleanAttrs(props, ['required', 'disabled', 'multiple'])}${htmlAttributesAttr(props.htmlAttributes)}>${renderedChildren.join('')}</select>`,
   }),
 }
 
@@ -412,6 +423,7 @@ export const OptionModule: ModuleDefinition<OptionProps> = {
     label: { type: 'text', label: 'Label' },
     selected: { type: 'toggle', label: 'Selected' },
     disabled: { type: 'toggle', label: 'Disabled' },
+    htmlAttributes: htmlAttributesControl(),
   },
   propsSchema: OptionPropsSchema,
   defaults: Value.Create(OptionPropsSchema),
@@ -420,7 +432,7 @@ export const OptionModule: ModuleDefinition<OptionProps> = {
   // `value` is emitted even when empty: an option with no value attribute
   // submits its own text instead, so dropping `value=""` turns the neutral
   // "any" choice into a filter value named after its label.
-  render: (props) => ({ html: `<option value="${String(props.value ?? '')}"${booleanAttrs(props, ['selected', 'disabled'])}>${props.label}</option>` }),
+  render: (props) => ({ html: `<option value="${String(props.value ?? '')}"${booleanAttrs(props, ['selected', 'disabled'])}${htmlAttributesAttr(props.htmlAttributes)}>${props.label}</option>` }),
 }
 
 export const OptionGroupModule: ModuleDefinition<OptionGroupProps> = {
@@ -435,13 +447,14 @@ export const OptionGroupModule: ModuleDefinition<OptionGroupProps> = {
   schema: {
     label: { type: 'text', label: 'Label' },
     disabled: { type: 'toggle', label: 'Disabled' },
+    htmlAttributes: htmlAttributesControl(),
   },
   propsSchema: OptionGroupPropsSchema,
   defaults: Value.Create(OptionGroupPropsSchema),
   component: OptionGroupEditor,
   htmlTag: 'optgroup',
   render: (props, renderedChildren) => ({
-    html: `<optgroup${attrs([['label', props.label]])}${booleanAttrs(props, ['disabled'])}>${renderedChildren.join('')}</optgroup>`,
+    html: `<optgroup${attrs([['label', props.label]])}${booleanAttrs(props, ['disabled'])}${htmlAttributesAttr(props.htmlAttributes)}>${renderedChildren.join('')}</optgroup>`,
   }),
 }
 
@@ -477,6 +490,7 @@ export const SubmitModule: ModuleDefinition<SubmitProps> = {
     formId: { type: 'text', label: 'Form ID override', normalize: 'identifier' },
     name: { type: 'text', label: 'Name', placeholder: 'Sent only when this button is pressed', normalize: 'identifier' },
     value: { type: 'text', label: 'Value', condition: { field: 'name', notEq: '' } },
+    htmlAttributes: htmlAttributesControl(),
   },
   propsSchema: SubmitPropsSchema,
   defaults: Value.Create(SubmitPropsSchema),
@@ -488,7 +502,7 @@ export const SubmitModule: ModuleDefinition<SubmitProps> = {
       : props.label
     const name = normalizeIdentifierValue(props.name)
     return {
-      html: `<button type="submit"${attrs([['form', normalizeIdentifierValue(props.formId)], ['name', name], ['value', name ? props.value : '']])}${booleanAttrs(props, ['disabled'])}>${content}</button>`,
+      html: `<button type="submit"${attrs([['form', normalizeIdentifierValue(props.formId)], ['name', name], ['value', name ? props.value : '']])}${booleanAttrs(props, ['disabled'])}${htmlAttributesAttr(props.htmlAttributes)}>${content}</button>`,
     }
   },
 }
@@ -556,6 +570,7 @@ function inputLikeSchema(typeLabel: string): ModuleDefinition<InputProps>['schem
     minLength: { type: 'number', label: 'Minimum length' },
     maxLength: { type: 'number', label: 'Maximum length' },
     pattern: { type: 'text', label: 'Pattern' },
+    htmlAttributes: htmlAttributesControl(),
   }
 }
 
@@ -582,6 +597,7 @@ function choiceModule(args: {
       checked: { type: 'toggle', label: 'Checked' },
       required: { type: 'toggle', label: 'Required' },
       disabled: { type: 'toggle', label: 'Disabled' },
+      htmlAttributes: htmlAttributesControl(),
     },
     propsSchema: ChoicePropsSchema,
     defaults: Value.Create(ChoicePropsSchema),
@@ -594,7 +610,7 @@ function choiceModule(args: {
         ['name', props.name || props.fieldId],
         ['id', props.id],
         ['value', props.value],
-      ])}${booleanAttrs(props, ['checked', 'required', 'disabled'])}>`,
+      ])}${booleanAttrs(props, ['checked', 'required', 'disabled'])}${htmlAttributesAttr(props.htmlAttributes)}>`,
     }),
   }
 }

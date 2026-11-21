@@ -16,7 +16,7 @@ import { MediaWidget } from './MediaWidget'
 import { PagesWidget } from './PagesWidget'
 import { PluginsWidget } from './PluginsWidget'
 import { PostsWidget } from './PostsWidget'
-import { PublishQueueWidget } from './PublishQueueWidget'
+import { PublishLineupWidget } from './PublishLineupWidget'
 import { PublishingStatusWidget } from './PublishingStatusWidget'
 import { StorageWidget } from './StorageWidget'
 
@@ -109,7 +109,7 @@ export function registerFirstPartyDashboardWidgets(): void {
     icon: CloudUploadSolidIcon,
     defaultSize: 4,
     tint: 'sky',
-    render: PublishQueueWidget,
+    render: PublishLineupWidget,
   })
 
   dashboardWidgetRegistry.register({

@@ -41,6 +41,7 @@
  * domain (none today) reuse one fetch.
  */
 import type { TSchema, TProperties } from '@sinclair/typebox'
+import { PublishLineupStatsSchema } from '@core/dashboard'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { ApiError, apiRequest } from '@core/http'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
@@ -85,22 +86,6 @@ const DashboardPluginRowSchema = looseObject({
   iconUrl: Type.Union([Type.String(), Type.Null()]),
 })
 export type DashboardPluginRow = Static<typeof DashboardPluginRowSchema>
-
-const DashboardPublishLineupRowSchema = looseObject({
-  id: Type.String(),
-  /** Public path (`/blog/sandbox-deep-dive`). */
-  path: Type.String(),
-  status: Type.Union([Type.Literal('scheduled'), Type.Literal('published'), Type.Literal('draft')]),
-  /**
-   * ISO datetime relevant to the status:
-   *   - scheduled → future scheduled_publish_at
-   *   - published → past published_at
-   *   - draft     → null
-   * The widget renders this as a relative-time label client-side.
-   */
-  at: Type.Union([Type.String(), Type.Null()]),
-})
-export type DashboardPublishLineupRow = Static<typeof DashboardPublishLineupRowSchema>
 
 const DashboardActivityActorSchema = looseObject({
   displayName: Type.String(),
@@ -151,11 +136,6 @@ const DashboardPluginsStatsSchema = looseObject({
   rows: Type.Array(DashboardPluginRowSchema),
 })
 type DashboardPluginsStats = Static<typeof DashboardPluginsStatsSchema>
-
-const DashboardPublishLineupStatsSchema = looseObject({
-  rows: Type.Array(DashboardPublishLineupRowSchema),
-})
-type DashboardPublishLineupStats = Static<typeof DashboardPublishLineupStatsSchema>
 
 /**
  * Storage widget payload. Mirrors `StorageStats` on the server (see
@@ -271,8 +251,12 @@ export function useStorageStats() {
 }
 
 /** Publish Lineup widget. Three small queries against `data_rows`. */
-export function usePublishLineupStats(): DashboardPublishLineupStats | null {
-  return useDashboardEndpoint('publish-lineup', DashboardPublishLineupStatsSchema)
+export function usePublishLineupStats() {
+  return useAsyncResource(
+    (signal) => fetchDashboardEndpoint('publish-lineup', PublishLineupStatsSchema, signal),
+    [],
+    { swallowErrors: true },
+  )
 }
 
 /** Activity widget. The heaviest endpoint — a 50-row `audit_events` scan. */

@@ -8,7 +8,7 @@
 import type { StyleRule, ConditionDef, PageSeo } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
 import type { FontDisplay, FontFileFormat } from '@core/fonts'
-import type { SiteScriptFormat } from '@core/site-runtime'
+import type { SiteScriptFormat, SiteScriptPlacement } from '@core/site-runtime'
 import type { ImportWarning } from './warnings'
 import type {
   PageConflict,
@@ -198,6 +198,8 @@ export interface ImportScript {
   content: string
   /** Loader semantics from the source HTML. Classic scripts bypass bundling. */
   format: SiteScriptFormat
+  /** `'head'` only when every page runs it as a blocking `<head>` script. */
+  placement: SiteScriptPlacement
   /** HTML FileMap sources that linked this script. */
   pageSources: string[]
   /** Final committed page IDs. Filled by `commitImportPlan` before adapter call. */
@@ -280,23 +282,17 @@ export interface ImportStylesheet {
  * A script tag discovered while planning one HTML page, preserving source
  * order across inline executable JavaScript and external `<script src>` tags.
  */
-export type PageScript =
-  | {
-    kind: 'external'
-    /** FileMap path of the linked JavaScript file. */
-    path: string
-    /** Loader semantics from the source HTML. */
-    format: SiteScriptFormat
-  }
-  | {
-    kind: 'inline'
-    /** Stable synthetic SiteFile path derived from the source HTML file. */
-    path: string
-    /** Inline JavaScript source. */
-    content: string
-    /** Loader semantics from the source HTML. */
-    format: SiteScriptFormat
-  }
+export type PageScript = {
+  /** Loader semantics from the source HTML. */
+  format: SiteScriptFormat
+  /** Where the page ran it: a blocking `<head>` script, or after the body. */
+  placement: SiteScriptPlacement
+} & (
+  /** `path`: the linked FileMap file. */
+  | { kind: 'external'; path: string }
+  /** `path`: a stable synthetic SiteFile path derived from the HTML file. */
+  | { kind: 'inline'; path: string; content: string }
+)
 
 // ---------------------------------------------------------------------------
 // Phase 2 — Site-import pipeline types

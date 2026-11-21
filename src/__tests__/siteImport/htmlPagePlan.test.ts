@@ -186,8 +186,29 @@ describe('makeHtmlPagePlan', () => {
   it('resolves linked script paths with classic/module format', () => {
     const { pagePlan } = makeHtmlPagePlan('index.html', new TextDecoder().decode(fileMap.files['index.html']!.bytes), fileMap)
     expect(pagePlan.scripts).toEqual([
-      { kind: 'external', path: 'scripts/vendor.js', format: 'classic' },
-      { kind: 'external', path: 'scripts/app.js', format: 'module' },
+      { kind: 'external', path: 'scripts/vendor.js', format: 'classic', placement: 'body-end' },
+      { kind: 'external', path: 'scripts/app.js', format: 'module', placement: 'body-end' },
+    ])
+  })
+
+  it('keeps a blocking classic head script in the head and defers the rest', () => {
+    const html = `<html><head>
+      <script src="scripts/vendor.js"></script>
+      <script>document.documentElement.classList.add('js')</script>
+      <script src="scripts/app.js" defer></script>
+      <script async>window.a = 1</script>
+      <script src="scripts/vendor.js" type="module"></script>
+    </head><body><script src="scripts/app.js"></script></body></html>`
+
+    const { pagePlan } = makeHtmlPagePlan('index.html', html, fileMap)
+
+    expect(pagePlan.scripts.map((s) => [s.path, s.format, s.placement])).toEqual([
+      ['scripts/vendor.js', 'classic', 'head'],
+      ['index.html-inline-script-1.js', 'classic', 'head'],
+      ['scripts/app.js', 'classic', 'body-end'],
+      ['index.html-inline-script-2.js', 'classic', 'head'],
+      ['scripts/vendor.js', 'module', 'body-end'],
+      ['scripts/app.js', 'classic', 'body-end'],
     ])
   })
 
@@ -208,15 +229,17 @@ describe('makeHtmlPagePlan', () => {
         path: 'index.html-inline-script-1.js',
         content: "var duration = '500', easing = 'swing';",
         format: 'classic',
+        placement: 'body-end',
       },
-      { kind: 'external', path: 'scripts/vendor.js', format: 'classic' },
+      { kind: 'external', path: 'scripts/vendor.js', format: 'classic', placement: 'body-end' },
       {
         kind: 'inline',
         path: 'index.html-inline-script-2.js',
         content: 'window.inlineModuleLoaded = true',
         format: 'module',
+        placement: 'body-end',
       },
-      { kind: 'external', path: 'scripts/app.js', format: 'module' },
+      { kind: 'external', path: 'scripts/app.js', format: 'module', placement: 'body-end' },
     ])
   })
 

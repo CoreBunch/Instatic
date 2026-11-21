@@ -54,6 +54,7 @@
  *   after the punctuation-insensitive fallback match. The reference is left
  *   pointing at its original path, so the page imports with a broken image
  *   rather than losing the element. One warning per distinct missing path.
+ * - `missing-svg-sprite`: an SVG icon reference could not be expanded.
  * - `asset-folder-failed`: the asset uploaded and its URL was rewritten, but
  *   placing it under the folder that mirrors its bundle path failed (folder
  *   listing or creation rejected). The asset sits at the media root; the user
@@ -83,6 +84,7 @@ type ImportWarningKind =
   | 'asset-folder-failed'
   | 'font-install-failed'
   | 'external-font'
+  | 'missing-svg-sprite'
   | 'unresolved-asset'
   | 'dependency-version-kept'
   | 'script-order-conflict'

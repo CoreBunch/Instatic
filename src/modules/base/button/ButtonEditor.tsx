@@ -34,7 +34,7 @@ export const ButtonEditor: React.FC<ModuleComponentProps<ButtonStoredProps>> = (
         ...nodeWrapperProps,
         ...attributes,
         href: anchor.href,
-        target: props.target,
+        target: props.target || undefined,
         rel: rel ?? undefined,
         className: mcClassName,
         ...(inlineEdit ? inlineEditableElementProps(inlineEdit) : {}),
