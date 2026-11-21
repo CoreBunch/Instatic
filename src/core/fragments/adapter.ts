@@ -2,9 +2,10 @@
  * FragmentInsertAdapter — the I/O `commitFragmentPlan` needs, as an interface.
  *
  * The engine stays headless; the editor implements this against the CMS API
- * and its store (`src/admin/modals/InsertFragment/createFragmentInsertAdapter.ts`),
- * tests implement it in memory, and a future plugin API can implement it with
- * its own media resolver.
+ * and its store (`src/admin/modals/InsertFragment/createFragmentInsertAdapter.ts`,
+ * shared by the Insert fragment dialog and `api.editor.fragments`; the caller
+ * supplies media bytes through `readMediaBytes`), and tests implement it in
+ * memory.
  *
  * Interface only — no implementation here.
  */

@@ -14,7 +14,7 @@
  * prompt and retries instead of failing the insert.
  */
 
-import type { FragmentInsertAdapter } from '@core/fragments'
+import type { FragmentInsertAdapter, FragmentInsertPlacement } from '@core/fragments'
 import { installCmsGoogleFont, registerCustomFont } from '@core/persistence/cmsFonts'
 import { findCmsMediaByContentHash, uploadCmsMediaAsset } from '@core/persistence/cmsMedia'
 import {
@@ -27,7 +27,11 @@ import { useEditorStore } from '@site/store/store'
 
 type RunStepUp = <T>(action: () => Promise<T>) => Promise<T>
 
-export function createFragmentInsertAdapter(runStepUp: RunStepUp, assertCurrentTarget: () => void): FragmentInsertAdapter {
+export function createFragmentInsertAdapter(
+  runStepUp: RunStepUp,
+  assertCurrentTarget: () => void,
+  placement: FragmentInsertPlacement = 'after-selection',
+): FragmentInsertAdapter {
   const write: RunStepUp = (action) => runStepUp(() => {
     assertCurrentTarget()
     return action()
@@ -69,7 +73,7 @@ export function createFragmentInsertAdapter(runStepUp: RunStepUp, assertCurrentT
 
     async commit(plan) {
       assertCurrentTarget()
-      const result = useEditorStore.getState().insertFragment(plan)
+      const result = useEditorStore.getState().insertFragment(plan, placement)
       if (!result) {
         throw new Error('The editor could not place the fragment here. Select where it should go and try again.')
       }

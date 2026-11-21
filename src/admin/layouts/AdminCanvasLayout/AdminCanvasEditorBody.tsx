@@ -11,6 +11,7 @@ import { CodeEditorPanel, CodeEditorSkeleton } from '@admin/pages/site/code-edit
 import { useActiveLivePath } from '@admin/pages/site/hooks/useActiveLivePath'
 import { usePluginLoopSources } from '@site/hooks/usePluginLoopSources'
 import { useAutoResolveDependencies } from '@admin/pages/site/hooks/useAutoResolveDependencies'
+import { useBindPluginFragmentsApi } from '@admin/modals/InsertFragment/useBindPluginFragmentsApi'
 import { LayoutNameDialog } from '@admin/pages/site/dialogs/LayoutNameDialog'
 import { PropertiesPanel } from '@admin/pages/site/panels/PropertiesPanel'
 import { LeftSidebar } from '@admin/pages/site/sidebars/LeftSidebar'
@@ -63,6 +64,9 @@ export function AdminCanvasEditorBody({
   useActiveLivePath()
   // Plugins' loop sources for the Loop module's picker and the canvas.
   usePluginLoopSources()
+  // Plugins with `editor.fragments` insert into the document open here, for
+  // a user who can edit the draft site.
+  useBindPluginFragmentsApi(canEditDraftSite)
 
   const propertiesPanelMode = useEditorStore((s) => s.propertiesPanelMode)
   const rightSidebarExpanded = useEditorStore(selectRightSidebarExpanded)

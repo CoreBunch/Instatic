@@ -54,6 +54,7 @@ export function planTokens(
   fragment: SiteFragment,
   report: FragmentInsertReport,
   warnings: FragmentWarning[],
+  colorSources: Record<string, string> = {},
 ): TokenPlan {
   const now = Date.now()
   const framework = site.settings.framework
@@ -71,8 +72,16 @@ export function planTokens(
     }
     slugs.add(slug)
     colorOrder += 1
-    colorTokens.push({ ...structuredClone(token), id: nanoid(), slug, order: colorOrder, createdAt: now, updatedAt: now })
+    // The caller may fill a missing colour from one of the site's own, so a
+    // section's band takes the site's surface rather than the kit's.
+    const sourceSlug = colorSources[slug] ? normalizeFrameworkColorSlug(colorSources[slug]) : null
+    const source = sourceSlug ? existingColors.find((t) => normalizeFrameworkColorSlug(t.slug) === sourceSlug) : undefined
+    const values = source
+      ? { lightValue: source.lightValue, darkValue: source.darkValue, darkModeEnabled: source.darkModeEnabled }
+      : {}
+    colorTokens.push({ ...structuredClone(token), ...values, id: nanoid(), slug, order: colorOrder, createdAt: now, updatedAt: now })
     report.colors.added.push(slug)
+    if (source) report.colors.filled.push({ slug, from: source.slug })
   }
 
   // ── Scale steps ────────────────────────────────────────────────────────────
