@@ -6,6 +6,8 @@
  * navigation land in M3/M4 — this component is the first interactive surface.
  */
 import {
+  useEffect,
+  useEffectEvent,
   useState,
   type ChangeEvent,
   type DragEvent,
@@ -196,6 +198,61 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
     writeMediaAssetDragData(event.dataTransfer, dragIds)
   }
 
+  /**
+   * Select everything currently on screen.
+   *
+   * "Everything" is `visibleAssets` — what the active folder, filter, search
+   * and trash toggle have already narrowed to — not the whole library. That is
+   * what every file manager means by Select All, and it is the only reading
+   * that makes the trash view's "select all, then delete" safe: it cannot
+   * reach past the filter into live assets.
+   */
+  const allVisibleSelected =
+    workspace.visibleAssets.length > 0
+    && workspace.visibleAssets.every((asset) => workspace.selectedAssetIds.has(asset.id))
+
+  /** Select every visible asset, or clear the selection when it already covers them. */
+  function toggleSelectAllVisible() {
+    if (workspace.visibleAssets.length === 0) return
+    if (allVisibleSelected) {
+      workspace.clearSelection()
+      return
+    }
+    workspace.addToSelection(workspace.visibleAssets.map((asset) => asset.id))
+  }
+
+  // Ctrl/Cmd+A, the shortcut people try first. Document-level because the grid
+  // is a plain div with no tabindex, so a React `onKeyDown` would only fire
+  // while focus happened to sit on a tile.
+  //
+  // Ignored while focus is in a text field — the browser's own select-all is
+  // what someone typing in the search box means — and while any dialog is
+  // open, so a rename or a delete confirmation keeps its own select-all.
+  const selectAllEvent = useEffectEvent(() => toggleSelectAllVisible())
+  useEffect(() => {
+    function onKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key !== 'a' && event.key !== 'A') return
+      if (!(isMacLike() ? event.metaKey : event.ctrlKey)) return
+      const target = event.target
+      if (
+        target instanceof HTMLInputElement
+        || target instanceof HTMLTextAreaElement
+        || (target instanceof HTMLElement && target.isContentEditable)
+      ) return
+      // Only a real MODAL takes the shortcut away. `aria-modal` is what marks
+      // one: `Dialog` sets it, the floating windows do not. Matching
+      // `role="dialog"` instead disabled the shortcut almost everywhere in
+      // Media, because selecting a single asset opens the viewer window — and
+      // that carries `role="dialog"` while deliberately leaving the grid
+      // usable behind it.
+      if (document.querySelector('[aria-modal="true"]')) return
+      event.preventDefault()
+      selectAllEvent()
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [])
+
   function handleFolderDragStart(folder: CmsMediaFolder, event: DragEvent<HTMLButtonElement>) {
     if (!canWrite) {
       event.preventDefault()
@@ -346,6 +403,30 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
           groupLabel="Filter media type"
           trailing={(
             <div role="group" aria-label="Media view" className={styles.viewGroup}>
+              {/* Discoverability for Ctrl/Cmd+A. The shortcut is the one people
+                  reach for, but only if they already know it exists — and the
+                  trash is where it matters most, because emptying it was
+                  otherwise a file-at-a-time job. */}
+              <Button
+                variant="ghost"
+                size="xs"
+                pressed={allVisibleSelected}
+                tooltip={
+                  allVisibleSelected
+                    ? 'Clear selection'
+                    : `Select all ${workspace.visibleAssets.length}`
+                }
+                aria-label={
+                  allVisibleSelected
+                    ? 'Clear selection'
+                    : `Select all ${workspace.visibleAssets.length} items`
+                }
+                disabled={workspace.visibleAssets.length === 0}
+                onClick={toggleSelectAllVisible}
+              >
+                <CheckIcon size={13} />
+                <span>{allVisibleSelected ? 'None' : 'All'}</span>
+              </Button>
               <SortMenu
                 value={workspace.filters.sort}
                 onChange={workspace.setSort}
