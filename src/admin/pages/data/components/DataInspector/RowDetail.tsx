@@ -7,6 +7,7 @@ import { RelationPickerDialog } from '@admin/pages/data/components/RelationPicke
 import { useDataRowDraft } from '@admin/pages/data/hooks/useDataRowDraft'
 import { emptyCellValue } from '@admin/pages/data/utils/fieldDefaults'
 import type { DataTable, DataRow, DataRowCells } from '@core/data/schemas'
+import { readDisplayTitle } from '@core/data/cells'
 import type { DataField } from '@core/data/schemas'
 import styles from './DataInspector.module.css'
 
@@ -15,6 +16,7 @@ import styles from './DataInspector.module.css'
 // ---------------------------------------------------------------------------
 
 interface RowDetailProps {
+  mobile: boolean
   row: DataRow
   table: DataTable
   tables: DataTable[]
@@ -32,6 +34,7 @@ interface RowDetailProps {
 }
 
 export interface DataRowDraftState {
+  hasSavedChanges: boolean
   isDirty: boolean
   isSaving: boolean
   saveError: string | null
@@ -82,12 +85,6 @@ function authorDisplayName(row: DataRow): string {
   if (user?.displayName) return user.displayName
   if (user?.email) return user.email
   return '—'
-}
-
-function primaryDisplayValue(row: DataRow, table: DataTable): string {
-  const v = row.cells[table.primaryFieldId]
-  if (typeof v === 'string' && v.length > 0) return v
-  return row.id
 }
 
 // ---------------------------------------------------------------------------
@@ -210,6 +207,7 @@ function DataRowForm({
 
   const reportDraftState = useEffectEvent(() => {
     onDraftStateChange?.({
+      hasSavedChanges: draft.hasSavedChanges,
       isDirty: draft.isDirty,
       isSaving: draft.isSaving,
       saveError: draft.saveError,
@@ -219,7 +217,7 @@ function DataRowForm({
   useEffect(() => {
     reportDraftState()
     return () => onDraftStateChange?.(null)
-  }, [draft.isDirty, draft.isSaving, draft.saveError, onDraftStateChange])
+  }, [draft.hasSavedChanges, draft.isDirty, draft.isSaving, draft.saveError, onDraftStateChange])
 
   return (
     <>
@@ -300,6 +298,7 @@ function DataRowForm({
 // ---------------------------------------------------------------------------
 
 export function RowDetail({
+  mobile,
   row,
   table,
   tables,
@@ -316,7 +315,7 @@ export function RowDetail({
 
   // Pick the right action for the header card based on kind. The handlers
   // are wired at the DataPage level; here we just dispatch on `kind`.
-  const primaryValue = primaryDisplayValue(row, table)
+  const primaryValue = readDisplayTitle(row.cells, table)
   let headerCard: ReactElement | null = null
 
   if (table.kind === 'postType') {
@@ -350,10 +349,11 @@ export function RowDetail({
 
   return (
     <>
+      {mobile && !showHeader && <h2 className={styles.rowTitle}>{primaryValue}</h2>}
       {showHeader && (
         <div className={styles.section}>
           {headerCard}
-          <RowMetaBlock row={row} />
+          {!mobile && <RowMetaBlock row={row} />}
         </div>
       )}
       <DataRowForm
@@ -366,6 +366,7 @@ export function RowDetail({
         onOpenEditor={formOpenEditor}
         onDraftStateChange={onDraftStateChange}
       />
+      {mobile && showHeader && <div className={styles.section}><RowMetaBlock row={row} /></div>}
     </>
   )
 }

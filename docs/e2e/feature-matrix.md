@@ -44,6 +44,14 @@ PUBLISH-002 note: `page-management.e2e.ts` schedules a newly-created active page
 
 PUBLISH-004 note: `hole-publication.e2e.ts` creates and publishes query-bound text through the editor, publishes an unrelated post through the authenticated row API, and reloads the page in a fresh visitor context. The text must remain visible after the fragment response. `holePublication.test.ts` covers the same failure with real SQLite/PostgreSQL storage, cache bumps, and process-state reset.
 
+## Data workspace
+
+| ID | Priority | Auto | Area | User Goal | Setup | Path | Expected Outcome | Watch For |
+|---|---:|:---:|---|---|---|---|---|---|
+| DATA-003 | P1 | partial | Row editing | Update a row on a phone | Editable post | Search, tap the row, edit its title, return to the grid, reload | The draft persists and returning preserves the filter | cropped fields, leaving after a failed save |
+
+`data-mobile.e2e.ts` exercises this flow at 320px and retries a failed draft save before returning to the table.
+
 ## Admin Shell And Account
 
 | ID | Priority | Auto | Area | User Goal | Setup | Path | Expected Outcome | Watch For |
