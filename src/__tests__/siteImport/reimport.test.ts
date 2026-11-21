@@ -291,6 +291,23 @@ describe('commitImportPlan — scripts and media arriving again', () => {
     expect(site.packageJson.dependencies.dayjs).toBe('1.11.10')
   })
 
+  it('updates timing and placement when only the script tag changes across imports', async () => {
+    await importBundle(bundleWithFiles())
+    const [script] = scriptFiles()
+    const runtime = () => useEditorStore.getState().site!.runtime!.scripts![script!.id]
+    expect(runtime()).toMatchObject({ placement: 'head', timing: 'immediate' })
+
+    const deferred = bundleWithFiles()
+    const html = deferred.files['about.html']!
+    html.bytes = enc.encode(new TextDecoder().decode(html.bytes).replace('<script src=', '<script defer src='))
+    await importBundle(deferred, withPageResolution('overwrite'))
+    expect(runtime()).toMatchObject({ placement: 'body-end', timing: 'dom-ready' })
+
+    await importBundle(bundleWithFiles(), withPageResolution('overwrite'))
+    expect(runtime()).toMatchObject({ placement: 'head', timing: 'immediate' })
+    expect(scriptFiles()).toHaveLength(1)
+  })
+
   it('keeps the load order the site already gives a replaced script', async () => {
     await importBundle(bundleWithFiles())
     const [script] = scriptFiles()

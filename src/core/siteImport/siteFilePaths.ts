@@ -8,6 +8,7 @@
  */
 
 import { isSafePath, normalizePath } from '@core/files/pathValidation'
+import type { SiteScriptFormat, SiteScriptPlacement } from '@core/site-runtime'
 import type { SiteFile } from '@core/files/schemas'
 import { sha256Hex } from '@core/utils/sha256'
 
@@ -19,9 +20,14 @@ import { sha256Hex } from '@core/utils/sha256'
  */
 export function importSourceHash(item: {
   content: string
+  format?: SiteScriptFormat
+  placement?: SiteScriptPlacement
   dependencies?: { name: string; version: string }[]
 }): string {
   const deps = (item.dependencies ?? []).map((d) => `${d.name}@${d.version}`).toSorted()
+  if (item.format && (item.format !== 'classic' || item.placement === 'head')) {
+    return sha256Hex(JSON.stringify([item.content, deps, item.format, item.placement]))
+  }
   return sha256Hex(deps.length > 0 ? `${item.content}\n${deps.join('\n')}` : item.content)
 }
 

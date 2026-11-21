@@ -86,7 +86,7 @@ describe('detectConflicts — site files already present', () => {
       { id: 'f-kit', path: 'css/kit.css', type: 'style' as const, content: 'y', createdAt: 1, updatedAt: 1 },
     ],
   }
-  const script = (path: string, content = ''): ImportScript => ({ path, content, format: 'classic', pageSources: [], priority: 100 })
+  const script = (path: string, content = ''): ImportScript => ({ path, content, format: 'classic', placement: 'body-end', pageSources: [], priority: 100 })
   const sheet = (path: string, content = ''): ImportStylesheet => ({ path, content, pageSources: [], priority: 0 })
 
   it('flags a script or stylesheet whose path the site already has, reusing it when the content is the same', () => {
