@@ -215,6 +215,7 @@ export function planFragmentInsert(target: FragmentInsertTarget, fragment: SiteF
     customProperties,
     conditions,
     colorTokens: tokens.colorTokens,
+    scaleGroups: tokens.scaleGroups,
     scaleSteps: tokens.scaleSteps,
     fontFamilies: tokens.fontFamilies,
     fontTokens: tokens.fontTokens,

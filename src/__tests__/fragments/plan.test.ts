@@ -6,12 +6,14 @@ import { describe, expect, it } from 'bun:test'
 import {
   FRAGMENT_PROPERTIES_ORIGIN,
   FragmentInsertError,
+  applyResolvedFragment,
   extractFragment,
   planFragmentInsert,
+  resolveFragmentPlan,
   type FragmentInsertPlan,
   type SiteFragment,
 } from '@core/fragments'
-import { generateFrameworkUtilityClasses } from '@core/framework'
+import { generateFrameworkRootCss, generateFrameworkUtilityClasses } from '@core/framework'
 import { buildFontRoleTokens } from '@core/fonts'
 import type { PageNode } from '@core/page-tree'
 import { makeNode, makePage, makeSite } from '../fixtures'
@@ -318,8 +320,65 @@ describe('planFragmentInsert — empty site, pages and guards', () => {
     expect(plan.report.tables.created.sort()).toEqual(['contact', 'projects'])
     expect(plan.report.tables.rows).toBe(2)
     expect(plan.media.map((m) => m.id).sort()).toEqual(['media-bg', 'media-cover', 'media-font', 'media-photo'])
-    expect(plan.report.warnings.filter((w) => w.code === 'missing-scale-group').map((w) => w.subject).sort()).toEqual(['space', 'text'])
+    expect(plan.report.warnings.filter((w) => w.code === 'missing-scale-group')).toEqual([])
+    expect(plan.scaleGroups.typography.map(group => group.namingConvention)).toEqual(['text'])
+    expect(plan.scaleGroups.spacing.map(group => group.namingConvention)).toEqual(['space'])
     expect(plan.customProperties?.properties).toEqual({ '--radius': '12px', '--shadow': '0 0 4px var(--primary-50)' })
+  })
+
+  it('creates scale groups from names-only fragments and renders the same sizes in either import order', () => {
+    const sections = ['6xl', '7xl'].map(step => ({
+      ...fragment,
+      tokens: {
+        colors: [],
+        fontTokens: [],
+        fontFamilies: [],
+        customProperties: {},
+        typeSteps: [{ convention: 'text', step }],
+        spaceSteps: [{ convention: 'space', step: '2xl' }],
+      },
+    }))
+    const insert = (orderedSections: SiteFragment[]) => {
+      const page = makePage({ id: 'home' })
+      const site = makeSite({ pages: [page] })
+      for (const [index, section] of orderedSections.entries()) {
+        const plan = planFragmentInsert({ site, tables: [], document: { kind: 'page', pageId: page.id } }, section)
+        const resolved = resolveFragmentPlan(plan, {
+          mediaUrlByPath: new Map(), tableIdMap: new Map(), fontEntryByFamilyId: new Map(),
+        })
+        const result = applyResolvedFragment(site, resolved, { tree: site.pages[0], parentId: page.rootNodeId })
+        if (index === 0) expect(result.frameworkChanged).toBe(true)
+      }
+      const framework = site.settings.framework!
+      expect(framework.typography?.groups).toHaveLength(1)
+      expect(framework.spacing?.groups).toHaveLength(1)
+      expect(framework.preferences?.rootFontSize).toBe(16)
+      expect(generateFrameworkUtilityClasses(framework)).toEqual({})
+      return generateFrameworkRootCss(framework)
+    }
+    const css = insert(sections)
+    expect(css).not.toContain('html {')
+    expect(css).toContain('--text-7xl: clamp(')
+    expect(css).toContain('--space-2xl: clamp(')
+    expect(insert(sections.toReversed())).toBe(css)
+  })
+
+  it('keeps the configured sizes at an internal gap and leaves a disabled scale disabled', () => {
+    const site = makeTargetSite()
+    const framework = site.settings.framework!
+    Object.assign(framework.typography!.groups[0], { steps: 'xs,m,xl', baseScaleIndex: 1 })
+    framework.spacing!.isDisabled = true
+    const { plan } = planIntoTarget(site, {
+      ...fragment,
+      tokens: {
+        ...fragment.tokens,
+        typeSteps: [{ convention: 'text', step: 's' }],
+      },
+    })
+    expect(plan.scaleGroups).toEqual({ typography: [], spacing: [] })
+    expect(plan.scaleSteps).toEqual([])
+    expect(plan.report.warnings.filter(warning => warning.code === 'scale-step-not-added')).toHaveLength(1)
+    expect(framework.typography!.groups[0].steps).toBe('xs,m,xl')
   })
 
   it('a page fragment adds its own page with a unique slug and links to itself', async () => {

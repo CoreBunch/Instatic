@@ -4,8 +4,8 @@
  *   - colours match by normalised slug; a missing one is added with the
  *     fragment's FULL definition (generation flags included) so the variants
  *     the fragment reads exist;
- *   - type and space steps the site's group lacks are inserted into that
- *     group at their canonical position, keeping its base, ratio and sizes;
+ *   - missing type and space groups use the framework defaults; existing
+ *     scales extend only where their existing sizes can be preserved;
  *   - font tokens match by variable; a missing one comes with its family
  *     (an existing family of the same name is reused);
  *   - other custom properties the site does not define land in the
@@ -16,8 +16,12 @@ import { nanoid } from 'nanoid'
 import type { SiteDocument, StyleRule } from '@core/page-tree'
 import {
   generateFrameworkColorVariableSets,
-  insertScaleStep,
+  extendScaleToStep,
+  getVariableName,
+  makeFreshSpacingGroup,
+  makeFreshTypographyGroup,
   normalizeFrameworkColorSlug,
+  resolveFrameworkPreferences,
 } from '@core/framework'
 import type {
   FrameworkColorToken,
@@ -25,7 +29,7 @@ import type {
   FrameworkSpacingGroup,
   FrameworkTypographyGroup,
 } from '@core/framework-schema'
-import { normalizeFontTokenVariable, type FontToken } from '@core/fonts'
+import { fontTokenCssVariable, normalizeFontTokenVariable, type FontToken } from '@core/fonts'
 import { collectVarNames, declaredFontFamilies, forEachString, nodeContent, ruleContent } from './references'
 import { indexSiteVariables, type ScaleFamily } from './siteVariables'
 import type { FragmentScaleStep, SiteFragment } from './schema'
@@ -33,6 +37,7 @@ import type {
   FragmentInsertReport,
   PlannedCustomProperties,
   PlannedFontFamily,
+  PlannedScaleGroups,
   PlannedScaleSteps,
 } from './planTypes'
 import type { FragmentWarning } from './warnings'
@@ -42,6 +47,7 @@ export const FRAGMENT_PROPERTIES_ORIGIN = 'instatic:fragment-properties'
 
 export interface TokenPlan {
   colorTokens: FrameworkColorToken[]
+  scaleGroups: PlannedScaleGroups
   scaleSteps: PlannedScaleSteps[]
   /** The site's framework settings as they will be after the insert. */
   nextFramework: FrameworkSettings | undefined
@@ -86,17 +92,43 @@ export function planTokens(
 
   // ── Scale steps ────────────────────────────────────────────────────────────
   const scaleSteps: PlannedScaleSteps[] = []
-  const typography = framework?.typography ? structuredClone(framework.typography) : undefined
-  const spacing = framework?.spacing ? structuredClone(framework.spacing) : undefined
-  addSteps('typography', typography, fragment.tokens.typeSteps, scaleSteps, report, warnings)
-  addSteps('spacing', spacing, fragment.tokens.spaceSteps, scaleSteps, report, warnings)
+  const typography = structuredClone(framework?.typography ?? { groups: [] })
+  const spacing = structuredClone(framework?.spacing ?? { groups: [] })
+  const colors = { tokens: [...existingColors, ...colorTokens] }
+  const variablesBySource = indexSiteVariables({
+    settings: { ...site.settings, framework: { ...framework, colors } },
+    styleRules: site.styleRules,
+  })
+  const reserved = new Set<string>([
+    ...variablesBySource.scaleStepByVar.keys(),
+    ...variablesBySource.colorTokenIdByVar.keys(),
+    ...variablesBySource.fontTokenByVar.keys(),
+  ])
+  for (const token of fragment.tokens.fontTokens) {
+    const variable = fontTokenCssVariable(token.variable)
+    if (variable) reserved.add(variable)
+  }
+  const scaleContext = { reserved, updates: scaleSteps, report, warnings }
+  const scaleGroups: PlannedScaleGroups = {
+    typography: planScale('typography', typography, fragment.tokens.typeSteps,
+      (name, order) => makeFreshTypographyGroup(name === 'text' ? 'Typography' : name, name, order), scaleContext),
+    spacing: planScale('spacing', spacing, fragment.tokens.spaceSteps,
+      (name, order) => makeFreshSpacingGroup(name === 'space' ? 'Spacing' : name, name, order), scaleContext),
+  }
+  if ((scaleGroups.typography.length || scaleGroups.spacing.length) && !framework?.preferences
+    && !framework?.typography?.groups.length && !framework?.spacing?.groups.length) {
+    // A scale added to a blank site should use the browser's normal rem size
+    // for conversions. Keep the document's own root font size in the cascade.
+    scaleGroups.preferences = { ...resolveFrameworkPreferences(undefined), rootFontSize: 16 }
+  }
 
-  const nextFramework: FrameworkSettings | undefined = framework || colorTokens.length > 0
+  const nextFramework: FrameworkSettings | undefined = framework || colors.tokens.length || typography.groups.length || spacing.groups.length
     ? {
-        ...(framework ?? { colors: { tokens: [] } }),
-        colors: { tokens: [...existingColors, ...colorTokens] },
-        ...(typography ? { typography } : {}),
-        ...(spacing ? { spacing } : {}),
+        ...framework,
+        colors,
+        ...(scaleGroups.preferences ? { preferences: scaleGroups.preferences } : {}),
+        ...(framework?.typography || typography.groups.length ? { typography } : {}),
+        ...(framework?.spacing || spacing.groups.length ? { spacing } : {}),
       }
     : undefined
 
@@ -151,33 +183,38 @@ export function planTokens(
     return { ...rest, id: nanoid(), ...(familyId ? { familyId } : {}), order: fontOrder, createdAt: now, updatedAt: now }
   })
 
-  return { colorTokens, scaleSteps, nextFramework, fontFamilies, fontTokens }
+  return { colorTokens, scaleGroups, scaleSteps, nextFramework, fontFamilies, fontTokens }
 }
 
-function addSteps(
+function planScale<Group extends FrameworkTypographyGroup | FrameworkSpacingGroup>(
   family: ScaleFamily,
-  settings: { groups: (FrameworkTypographyGroup | FrameworkSpacingGroup)[]; isDisabled?: boolean } | undefined,
+  settings: { groups: Group[]; isDisabled?: boolean },
   wanted: FragmentScaleStep[],
-  out: PlannedScaleSteps[],
-  report: FragmentInsertReport,
-  warnings: FragmentWarning[],
-): void {
-  const missingConventions = new Set<string>()
+  makeGroup: (convention: string, order: number) => Group,
+  { reserved, updates, report, warnings }: {
+    reserved: Set<string>
+    updates: PlannedScaleSteps[]
+    report: FragmentInsertReport
+    warnings: FragmentWarning[]
+  },
+): Group[] {
+  const addedGroups: Group[] = []
+  const disabledConventions = new Set<string>()
+  let order = settings.groups.reduce((highest, group) => Math.max(highest, group.order), -1)
   for (const { convention, step } of wanted) {
-    const group = settings && !settings.isDisabled
-      ? settings.groups.find((g) => g.namingConvention === convention && !g.isDisabled)
-      : undefined
-    if (!group) {
-      if (!missingConventions.has(convention)) {
-        missingConventions.add(convention)
+    const existing = settings.groups.find(group => group.namingConvention === convention)
+    if (settings.isDisabled || existing?.isDisabled) {
+      if (!disabledConventions.has(convention)) {
+        disabledConventions.add(convention)
         warnings.push({
           code: 'missing-scale-group',
-          message: `The site has no ${family} scale named "${convention}"; styles reading --${convention}-* fall back.`,
+          message: `The "${convention}" ${family} scale is disabled, so the fragment cannot add its steps.`,
           subject: convention,
         })
       }
       continue
     }
+    const group = existing ?? makeGroup(convention, order + 1)
     if (group.mode === 'fluid_manual') {
       if (!group.manualSizes?.some((size) => size.name === `${convention}-${step}`)) {
         warnings.push({
@@ -188,27 +225,38 @@ function addSteps(
       }
       continue
     }
-    const next = insertScaleStep(group.steps, group.baseScaleIndex, step)
-    if (!next) {
+    const next = extendScaleToStep(group.steps, group.baseScaleIndex, step)
+    const existingSteps = new Set(existing?.steps.split(',').map(label => label.trim()))
+    const newVariables = next?.steps.split(',')
+      .filter(label => !existingSteps.has(label))
+      .map(label => getVariableName(convention, label)) ?? []
+    if (!next || newVariables.some(name => !/^--[\w-]+$/.test(name) || reserved.has(name))) {
       warnings.push({
         code: 'scale-step-not-added',
-        message: `"${step}" has no canonical place in the "${group.name}" scale (${group.steps}).`,
+        message: `Adding "${step}" to the "${group.name}" scale would conflict with the site's variables or existing sizes.`,
         subject: `${convention}-${step}`,
       })
       continue
     }
-    if (next.steps === group.steps) continue
-    group.steps = next.steps
-    group.baseScaleIndex = next.baseScaleIndex
-    const planned = out.find((p) => p.family === family && p.groupId === group.id)
+    if (existing && next.steps === group.steps) continue
+    Object.assign(group, next)
+    for (const name of newVariables) reserved.add(name)
+    report.steps.added.push({ family, convention, step })
+    if (!existing) {
+      order = group.order
+      settings.groups.push(group)
+      addedGroups.push(group)
+    }
+    if (addedGroups.includes(group)) continue
+    const planned = updates.find((p) => p.family === family && p.groupId === group.id)
     if (planned) {
       planned.steps = next.steps
       planned.baseScaleIndex = next.baseScaleIndex
     } else {
-      out.push({ family, groupId: group.id, steps: next.steps, baseScaleIndex: next.baseScaleIndex })
+      updates.push({ family, groupId: group.id, steps: next.steps, baseScaleIndex: next.baseScaleIndex })
     }
-    report.steps.added.push({ family, convention, step })
   }
+  return addedGroups
 }
 
 /**

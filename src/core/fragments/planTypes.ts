@@ -4,7 +4,7 @@
  */
 
 import type { ConditionDef, Page, PageNode, SiteDocument, StyleRule } from '@core/page-tree'
-import type { FrameworkColorToken } from '@core/framework-schema'
+import type { FrameworkColorToken, FrameworkPreferencesSettings, FrameworkSpacingGroup, FrameworkTypographyGroup } from '@core/framework-schema'
 import type { FontEntry, FontToken } from '@core/fonts'
 import type { VisualComponent } from '@core/visualComponents'
 import type { DataField, DataTable } from '@core/data/schemas'
@@ -77,6 +77,12 @@ export interface PlannedScaleSteps {
   baseScaleIndex: number
 }
 
+export interface PlannedScaleGroups {
+  typography: FrameworkTypographyGroup[]
+  spacing: FrameworkSpacingGroup[]
+  preferences?: FrameworkPreferencesSettings
+}
+
 /**
  * Root custom properties the site lacks. They live in ONE engine-owned
  * ambient `:root` rule (`origin.source === FRAGMENT_PROPERTIES_ORIGIN`): the
@@ -137,6 +143,7 @@ export interface FragmentInsertPlan {
   customProperties: PlannedCustomProperties | null
   conditions: ConditionDef[]
   colorTokens: FrameworkColorToken[]
+  scaleGroups: PlannedScaleGroups
   scaleSteps: PlannedScaleSteps[]
   fontFamilies: PlannedFontFamily[]
   fontTokens: FontToken[]
