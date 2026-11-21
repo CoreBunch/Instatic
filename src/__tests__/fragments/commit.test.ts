@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'bun:test'
 import {
+  FRAGMENT_PROPERTIES_ORIGIN,
   FragmentCommitError,
   applyResolvedFragment,
   commitFragmentPlan,
@@ -149,7 +150,7 @@ describe('commitFragmentPlan — into a populated site', () => {
     expect(Object.values(page.nodes).find((n) => n.moduleId === 'base.visual-component-ref')!.props.componentId).toBe('t-vc-card')
 
     // The engine-owned :root rule holds the custom property the site lacked.
-    const owned = Object.values(site.styleRules).find((r) => r.description === 'Custom properties added by inserted fragments')!
+    const owned = Object.values(site.styleRules).find((r) => r.origin?.source === FRAGMENT_PROPERTIES_ORIGIN)!
     expect(owned.styles).toEqual({ '--shadow': '0 0 4px var(--primary-50)' })
     // The user's own :root rule is untouched.
     expect(site.styleRules['t-root'].styles).toEqual({ '--radius': '2px' })

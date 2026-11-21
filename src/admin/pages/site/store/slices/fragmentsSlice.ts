@@ -8,6 +8,11 @@
  * framework utility classes are regenerated in the same recipe when the
  * insert added a colour or a scale step.
  *
+ * `applyTheme` does the same for a resolved theme (`applyResolvedTheme`):
+ * colours, fonts, scale groups and root custom properties in one undo step,
+ * framework classes regenerated when a colour or scale group changed. It
+ * needs no open document: a theme never touches nodes.
+ *
  * Placement (`FragmentInsertPlacement`), in the document the plan was made
  * for:
  * - `after-selection` (the default, and the Insert fragment dialog's only
@@ -23,10 +28,12 @@
 
 import {
   applyResolvedFragment,
+  applyResolvedTheme,
   type FragmentApplyResult,
   type FragmentInsertDocument,
   type FragmentInsertPlacement,
   type ResolvedFragmentPlan,
+  type ResolvedThemePlan,
 } from '@core/fragments'
 import type { NodeTree, PageNode } from '@core/page-tree'
 import {
@@ -54,6 +61,12 @@ interface FragmentsSlice {
    * refused the edit.
    */
   insertFragment: (plan: ResolvedFragmentPlan, placement?: FragmentInsertPlacement) => FragmentApplyResult | null
+
+  /**
+   * Apply a resolved theme in ONE undo step. Returns false when no site is
+   * loaded or the collab write gate refused the edit.
+   */
+  applyTheme: (plan: ResolvedThemePlan) => boolean
 }
 
 declare module '@site/store/types' {
@@ -128,6 +141,14 @@ export const createFragmentsSlice: EditorStoreSliceCreator<FragmentsSlice> = (se
       const rootId = (result as FragmentApplyResult | null)?.rootIds[0]
       if (rootId) get().selectNode(rootId)
       return result
+    },
+
+    applyTheme: (plan) => {
+      if (!get().site) return false
+      return mutateSite((site) => {
+        const applied = applyResolvedTheme(site, plan)
+        if (applied.frameworkChanged) reconcileFrameworkClasses(site)
+      })
     },
   }
 }

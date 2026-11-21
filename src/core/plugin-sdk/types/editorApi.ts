@@ -62,10 +62,11 @@ export interface EditorPluginApi {
       transaction: (mutate: (store: EditorStore) => void) => void
     }
     /**
-     * Insert site fragments into the open document, or plan one as a dry
-     * run. Requires the `editor.fragments` permission. Works while the site
-     * editor has a document open; elsewhere `insert` resolves
-     * `{ ok: false, stage: 'unavailable' }` and `plan` `{ ok: false }`.
+     * Insert site fragments into the open document, apply a theme to the
+     * site, or plan either as a dry run. Requires the `editor.fragments`
+     * permission. Works while the site editor is open; elsewhere `insert`
+     * and `applyTheme` resolve `{ ok: false, stage: 'unavailable' }`, and
+     * `plan` and `planTheme` `{ ok: false }`.
      */
     fragments: EditorFragmentsApi
     /**

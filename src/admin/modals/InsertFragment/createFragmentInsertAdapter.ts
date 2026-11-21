@@ -1,20 +1,27 @@
 /**
- * createFragmentInsertAdapter — wires `commitFragmentPlan` to the CMS API and
- * the editor store.
+ * createFragmentInsertAdapter / createThemeApplyAdapter — wire
+ * `commitFragmentPlan` and `commitThemePlan` to the CMS API and the editor
+ * store. Both share the media and font half (`createFragmentAssetAdapter`).
  *
  * Media: reuse an asset only when its content hash matches. Otherwise send
  * the bytes through the same upload endpoint as the Media workspace.
  * Fonts: Google families through the Typography panel's installer, custom
  * families registered from the uploaded files.
  * Tables and rows: the Data API; a published fragment row is published.
- * Commit: `insertFragment` on the editor store — one undo step.
+ * Commit: `insertFragment` on the editor store at the caller's placement,
+ * or `applyTheme`, in one undo step.
  *
  * Every server write runs through `runStepUp`: creating a table is a
  * sensitive action, and a `step_up_required` answer opens the password
  * prompt and retries instead of failing the insert.
  */
 
-import type { FragmentInsertAdapter, FragmentInsertPlacement } from '@core/fragments'
+import type {
+  FragmentAssetAdapter,
+  FragmentInsertAdapter,
+  FragmentInsertPlacement,
+  ThemeApplyAdapter,
+} from '@core/fragments'
 import { installCmsGoogleFont, registerCustomFont } from '@core/persistence/cmsFonts'
 import { findCmsMediaByContentHash, uploadCmsMediaAsset } from '@core/persistence/cmsMedia'
 import {
@@ -27,15 +34,14 @@ import { useEditorStore } from '@site/store/store'
 
 type RunStepUp = <T>(action: () => Promise<T>) => Promise<T>
 
-export function createFragmentInsertAdapter(
-  runStepUp: RunStepUp,
-  assertCurrentTarget: () => void,
-  placement: FragmentInsertPlacement = 'after-selection',
-): FragmentInsertAdapter {
-  const write: RunStepUp = (action) => runStepUp(() => {
+function guardWrite(runStepUp: RunStepUp, assertCurrentTarget: () => void): RunStepUp {
+  return (action) => runStepUp(() => {
     assertCurrentTarget()
     return action()
   })
+}
+
+function createFragmentAssetAdapter(write: RunStepUp, assertCurrentTarget: () => void): FragmentAssetAdapter {
   return {
     async findMedia(media) {
       assertCurrentTarget()
@@ -55,6 +61,17 @@ export function createFragmentInsertAdapter(
     installGoogleFont: (request) => write(() => installCmsGoogleFont(request)),
 
     registerCustomFont: (request) => write(() => registerCustomFont(request)),
+  }
+}
+
+export function createFragmentInsertAdapter(
+  runStepUp: RunStepUp,
+  assertCurrentTarget: () => void,
+  placement: FragmentInsertPlacement = 'after-selection',
+): FragmentInsertAdapter {
+  const write = guardWrite(runStepUp, assertCurrentTarget)
+  return {
+    ...createFragmentAssetAdapter(write, assertCurrentTarget),
 
     async createTable(input) {
       const table = await write(() => createCmsDataTable(input))
@@ -78,6 +95,19 @@ export function createFragmentInsertAdapter(
         throw new Error('The editor could not place the fragment here. Select where it should go and try again.')
       }
       return result
+    },
+  }
+}
+
+export function createThemeApplyAdapter(runStepUp: RunStepUp, assertCurrentTarget: () => void): ThemeApplyAdapter {
+  return {
+    ...createFragmentAssetAdapter(guardWrite(runStepUp, assertCurrentTarget), assertCurrentTarget),
+
+    async commit(plan) {
+      assertCurrentTarget()
+      if (!useEditorStore.getState().applyTheme(plan)) {
+        throw new Error('The editor could not apply the theme. Reload the site editor and try again.')
+      }
     },
   }
 }

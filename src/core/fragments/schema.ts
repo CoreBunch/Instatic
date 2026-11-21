@@ -53,7 +53,7 @@ const FragmentKindSchema = Type.Union([
 export type FragmentKind = Static<typeof FragmentKindSchema>
 
 /** Free-form provenance: which library, item and build produced the fragment. */
-const FragmentOriginSchema = Type.Object({
+export const FragmentOriginSchema = Type.Object({
   source: Type.Optional(Type.String()),
   item: Type.Optional(Type.String()),
   build: Type.Optional(Type.String()),
@@ -111,7 +111,7 @@ const FragmentTableSchema = Type.Object({
 })
 export type FragmentTable = Static<typeof FragmentTableSchema>
 
-const FragmentMediaSchema = Type.Object({
+export const FragmentMediaSchema = Type.Object({
   /** Source media id — what media cells of carried rows hold. */
   id: Type.String({ minLength: 1 }),
   /** SHA-256 of the bytes, lowercase hex. Absent when the extractor had no bytes. */

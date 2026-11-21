@@ -109,8 +109,8 @@ export function fragmentProgressLine({ phase, done, total, label }: FragmentProg
   return 'Placing the fragment'
 }
 
-/** The insert was aborted, or the user closed the password prompt a table write asked for. */
-export function isFragmentInsertCancel(err: unknown): boolean {
+/** An insert or theme was aborted, or the user closed the password prompt a server write asked for. */
+export function isFragmentCommitCancel(err: unknown): boolean {
   if (isAbortError(err)) return true
   const cause = err instanceof Error ? err.cause : undefined
   return cause instanceof Error && cause.message === StepUpCancelledMessage
@@ -129,7 +129,7 @@ export function toastFragmentInserted(result: FragmentInsertResult): void {
 
 /** The toast after a failed or cancelled insert. */
 export function toastFragmentInsertFailed(err: unknown): void {
-  if (isFragmentInsertCancel(err)) {
+  if (isFragmentCommitCancel(err)) {
     pushToast({ kind: 'info', title: 'Insert cancelled', body: 'Files already uploaded stay in the media library.' })
     return
   }

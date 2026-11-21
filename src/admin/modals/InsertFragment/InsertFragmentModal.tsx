@@ -24,7 +24,7 @@ import { FragmentReport } from './FragmentReport'
 import {
   commitFragmentForEditor,
   fragmentProgressLine,
-  isFragmentInsertCancel,
+  isFragmentCommitCancel,
   loadFragmentFile,
   planFragmentForEditor,
   toastFragmentInsertFailed,
@@ -81,7 +81,7 @@ async function insert(
     setStep({ kind: 'done', loaded, result })
     toastFragmentInserted(result)
   } catch (err) {
-    if (!isFragmentInsertCancel(err)) console.error('[InsertFragmentModal] insert failed:', err)
+    if (!isFragmentCommitCancel(err)) console.error('[InsertFragmentModal] insert failed:', err)
     toastFragmentInsertFailed(err)
     setStep({ kind: 'review', loaded, plan })
   }

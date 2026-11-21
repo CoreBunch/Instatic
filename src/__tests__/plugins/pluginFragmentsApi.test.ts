@@ -1,19 +1,34 @@
 /**
  * api.editor.fragments: a plugin with `editor.fragments` inserts a site
  * fragment into the open document through the same flow as the Insert
- * fragment dialog (plan, media through the plugin's reader, one undo step).
+ * fragment dialog (plan, media through the plugin's reader, one undo step),
+ * and applies site themes on the same machinery.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { bindPluginRuntimeFragmentsHost, createEditorPluginApi } from '@core/plugins/runtime'
 import type { EditorPluginApi, FragmentMedia, FragmentPreviewStyles, PluginManifest } from '@core/plugin-sdk'
-import { extractFragment, fragmentSourceFromSite, planFragmentInsert, type SiteFragment } from '@core/fragments'
+import {
+  extractFragment,
+  extractTheme,
+  fragmentSourceFromSite,
+  planFragmentInsert,
+  type SiteFragment,
+  type SiteTheme,
+} from '@core/fragments'
 import type { StyleRule } from '@core/page-tree'
 import { useEditorStore } from '@site/store/store'
 import { fragmentInsertDocument } from '@site/store/slices/fragmentsSlice'
-import { insertFragmentForPlugin, planFragmentForPlugin, watchFragmentPreviewStyles } from '@admin/modals/InsertFragment/pluginFragmentsHost'
+import {
+  applyThemeForPlugin,
+  insertFragmentForPlugin,
+  planFragmentForPlugin,
+  planThemeForPlugin,
+  watchFragmentPreviewStyles,
+} from '@admin/modals/InsertFragment/pluginFragmentsHost'
 import { __resetToastBusForTests, subscribeToasts, type Toast } from '@ui/components/Toast/toastBus'
 import { makeNode, makePage, makeSite } from '../fixtures'
+import { makeSourceSite, mediaBytesFor, sourceWithBytes } from '../fragments/fixtures'
 import '@modules/base/index'
 
 const manifest: PluginManifest = {
@@ -132,6 +147,8 @@ beforeEach(() => {
     insert: (input) => insertFragmentForPlugin(input, (action) => action()),
     plan: planFragmentForPlugin,
     watchPreviewStyles: watchFragmentPreviewStyles,
+    applyTheme: (input) => applyThemeForPlugin(input, (action) => action()),
+    planTheme: planThemeForPlugin,
   })
 })
 
@@ -305,5 +322,102 @@ describe('api.editor.fragments', () => {
     const outcome = await api().editor.fragments.insert({ fragment: await bannerFragment(), readMediaBytes: () => null })
     expect(outcome).toMatchObject({ ok: false, stage: 'unavailable' })
     expect(await api().editor.fragments.plan({ fragment: await bannerFragment() })).toMatchObject({ ok: false })
+  })
+})
+
+/**
+ * The fragment fixtures' source theme without its custom font (no font
+ * endpoints to stub), plus a root `--texture` pointing at an image the
+ * target's library lacks.
+ */
+async function textureTheme(): Promise<SiteTheme> {
+  const site = makeSourceSite()
+  site.settings.fonts = { items: [], tokens: [] }
+  site.styleRules['cls-root'].styles['--texture'] = "url('/uploads/bg.jpg')"
+  return (await extractTheme(sourceWithBytes(site))).theme
+}
+
+const readThemeBytes = (media: FragmentMedia) => mediaBytesFor(media.id)
+
+describe('api.editor.fragments themes', () => {
+  it('is denied without the editor.fragments permission', async () => {
+    const denied = api(['editor.code'])
+    await expect(denied.editor.fragments.applyTheme({ theme: await textureTheme(), readMediaBytes: readThemeBytes }))
+      .rejects.toThrow('requires permission "editor.fragments"')
+    await expect(denied.editor.fragments.planTheme({ theme: await textureTheme() }))
+      .rejects.toThrow('requires permission "editor.fragments"')
+  })
+
+  it('planTheme reports what would change without changing the store', async () => {
+    const site = useEditorStore.getState().site
+    const outcome = await api().editor.fragments.planTheme({ theme: await textureTheme() })
+    if (!outcome.ok) throw new Error(outcome.message)
+    expect(outcome.report.customProperties.added.map((p) => p.name)).toContain('--texture')
+    expect(outcome.report.media.total).toBe(1)
+    expect(useEditorStore.getState().site).toBe(site)
+    expect(uploads).toEqual([])
+  })
+
+  it('applyTheme replaces the design variables, uploads what it needs and undoes in one step', async () => {
+    const before = useEditorStore.getState().site!
+    const outcome = await api().editor.fragments.applyTheme({ theme: await textureTheme(), readMediaBytes: readThemeBytes })
+    if (!outcome.ok) throw new Error(outcome.message)
+    expect(uploads).toEqual(['bg.jpg'])
+    expect(outcome.report.media).toEqual({ total: 1, uploaded: 1, reused: 0 })
+    const after = useEditorStore.getState().site!
+    expect(after.settings.framework!.colors.tokens.find((t) => t.slug === 'primary')?.lightValue).toBe('#3366ff')
+    expect(Object.values(after.styleRules).some((r) => r.styles['--texture'] === "url('/uploads/library/bg.jpg')")).toBe(true)
+    expect(after.pages).toEqual(before.pages)
+    expect(toasts.map((t) => t.title)).toEqual(['Theme applied'])
+
+    useEditorStore.getState().undo()
+    const undone = useEditorStore.getState().site!
+    expect(undone.settings).toEqual(before.settings)
+    expect(undone.styleRules).toEqual(before.styleRules)
+  })
+
+  it('a malformed theme: planTheme resolves not ok, applyTheme rejects', async () => {
+    const plan = await api().editor.fragments.planTheme({ theme: { format: 'instatic-fragment' } })
+    expect(plan.ok).toBe(false)
+    await expect(api().editor.fragments.applyTheme({ theme: { format: 'instatic-fragment' }, readMediaBytes: () => null }))
+      .rejects.toThrow()
+  })
+
+  it('rejects a malformed input shape', async () => {
+    const theme = await textureTheme()
+    await expect(api().editor.fragments.applyTheme({ theme } as never)).rejects.toThrow('applyTheme: input.readMediaBytes must be a function')
+    await expect(api().editor.fragments.planTheme({} as never)).rejects.toThrow('planTheme: input.theme is required')
+    await expect(api().editor.fragments.applyTheme({ theme, readMediaBytes: readThemeBytes, silent: 'yes' as never }))
+      .rejects.toThrow('input.silent must be a boolean')
+  })
+
+  it('a media failure resolves with its stage and leaves the site untouched', async () => {
+    const before = useEditorStore.getState().site
+    const outcome = await api().editor.fragments.applyTheme({ theme: await textureTheme(), readMediaBytes: () => null, silent: true })
+    expect(outcome).toMatchObject({ ok: false, stage: 'media' })
+    expect(useEditorStore.getState().site).toBe(before)
+    expect(toasts).toEqual([])
+  })
+
+  it('leaves the new destination untouched if the site changes during a theme download', async () => {
+    const theme = await textureTheme()
+    const nextSite = makeSite({ pages: [makePage({ id: 'other-site' })] })
+    const outcome = await api().editor.fragments.applyTheme({
+      theme,
+      readMediaBytes: (media) => {
+        useEditorStore.setState({ site: nextSite })
+        return readThemeBytes(media)
+      },
+    })
+    expect(outcome).toMatchObject({ ok: false, stage: 'media', message: expect.stringContaining('destination changed') })
+    expect(uploads).toEqual([])
+    expect(useEditorStore.getState().site).toBe(nextSite)
+  })
+
+  it('without an open site editor it resolves unavailable', async () => {
+    unbind()
+    const outcome = await api().editor.fragments.applyTheme({ theme: await textureTheme(), readMediaBytes: readThemeBytes })
+    expect(outcome).toMatchObject({ ok: false, stage: 'unavailable' })
+    expect(await api().editor.fragments.planTheme({ theme: await textureTheme() })).toMatchObject({ ok: false })
   })
 })

@@ -13,7 +13,7 @@
  */
 
 import { nanoid } from 'nanoid'
-import type { SiteDocument } from '@core/page-tree'
+import type { SiteDocument, StyleRule } from '@core/page-tree'
 import {
   generateFrameworkColorVariableSets,
   insertScaleStep,
@@ -37,7 +37,7 @@ import type {
 } from './planTypes'
 import type { FragmentWarning } from './warnings'
 
-/** `origin.source` of the engine-owned `:root` rule that holds inserted custom properties. */
+/** `origin.source` of the engine-owned `:root` rule that holds inserted (and applied theme) custom properties. */
 export const FRAGMENT_PROPERTIES_ORIGIN = 'instatic:fragment-properties'
 
 export interface TokenPlan {
@@ -271,9 +271,14 @@ export function planCustomProperties(
   }
   if (Object.keys(missing).length === 0) return null
 
-  const owned = Object.values(site.styleRules).find(
-    (rule) => rule.kind === 'ambient' && rule.selector === ':root' && rule.origin?.source === FRAGMENT_PROPERTIES_ORIGIN,
-  )
+  const owned = findOwnedPropertiesRule(site.styleRules)
   if (owned) return { ruleId: owned.id, order: owned.order, properties: missing }
   return { ruleId: nanoid(), order: allocateOrder(), properties: missing }
+}
+
+/** The engine-owned `:root` rule inserted fragments and applied themes write into, if the site has one. */
+export function findOwnedPropertiesRule(styleRules: Record<string, StyleRule>): StyleRule | undefined {
+  return Object.values(styleRules).find(
+    (rule) => rule.kind === 'ambient' && rule.selector === ':root' && rule.origin?.source === FRAGMENT_PROPERTIES_ORIGIN,
+  )
 }

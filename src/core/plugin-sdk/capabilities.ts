@@ -126,8 +126,8 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
   },
   {
     permission: 'editor.fragments',
-    label: 'Insert site fragments',
-    description: 'Allows the plugin to insert sections, pages and components into the open document from fragment files it supplies. An insert can add classes, colours, fonts and components to the site, upload media files and create data tables; anything the site already has stays as it is. One undo removes the inserted content; uploaded files and created tables stay.',
+    label: 'Insert site fragments and apply themes',
+    description: 'Allows the plugin to insert sections, pages and components into the open document from fragment files it supplies, and to apply design themes to the site. An insert can add classes, colours, fonts and components to the site, upload media files and create data tables; anything the site already has stays as it is. A theme replaces the site\'s colours, font tokens, type and spacing scales and root custom properties with its own, and can upload font files. One undo reverts an insert or a theme; uploaded files and created tables stay.',
     risk: 'high',
     surfaces: ['editor'],
   },

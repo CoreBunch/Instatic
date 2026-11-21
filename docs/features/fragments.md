@@ -1,6 +1,6 @@
 # Site Fragments
 
-The portable format for a piece of an Instatic site, and the engine that cuts one out of a site and inserts it into another.
+The portable format for a piece of an Instatic site, and the engine that cuts one out of a site and inserts it into another. The same engine carries **themes**: a site's design variables without its content, applied to another site (see [Themes](#themes)).
 
 A fragment is one versioned file that carries a section (one or more sibling subtrees), a whole page, or a Visual Component, together with everything it needs to render the same in any other Instatic site: the style rules its nodes use and the ambient rules built on them, the conditions those rules key on, the component closure, the design tokens its styles read, the data tables its loops and forms use, its media, and its internal page links. `extractFragment` builds one from a site; `planFragmentInsert` decides what an insert adds to a site (the site's own version of anything always wins); `commitFragmentPlan` carries the plan out with one undo step.
 
@@ -10,12 +10,13 @@ A fragment is one versioned file that carries a section (one or more sibling sub
 
 - Code: `src/core/fragments/` (headless, no React/admin/server imports, transitively; gated by `fragments-headless.test.ts`). Barrel: `@core/fragments`. A Bun script can import it by path: `import { extractFragment } from '<instatic>/src/core/fragments'`.
 - Format: `SiteFragmentSchema` (`format: 'instatic-fragment'`, `version: 1`) in `schema.ts`; `parseSiteFragment(unknown)` is the boundary.
-- Package file: a zip with `fragment.json` + `media/<sha256>.<ext>` (`writeFragmentPackage` / `readFragmentPackage`, fflate). Media bytes are never inlined in the JSON.
+- Package file: a zip with `fragment.json` (a theme: `theme.json`) + `media/<sha256>.<ext>` (`writeFragmentPackage` / `readFragmentPackage`, `writeThemePackage` / `readThemePackage`, fflate). Media bytes are never inlined in the JSON.
 - Sources: `fragmentSourceFromBundleArchive(zipBytes)` (the Export site archive), `fragmentSourceFromBundle(bundle)` (manifest or JSON bundle), `fragmentSourceFromSite(site, { tables, rows, media })` (a live editor document).
 - Pipeline: `extractFragment` → `parseSiteFragment` (or `readFragmentPackage`) → `planFragmentInsert` (pure) → `commitFragmentPlan` (server work, then ONE store transaction).
 - Merge rule: the site always wins. Classes, components and tables match by name/slug and the site's version is reused untouched; tokens match by name and are only added when missing; everything added gets fresh ids.
 - Editor entry point: Spotlight **Insert fragment from file…** (`editor.insertFragment`) opens `InsertFragmentModal`: pick a package, review the plan, Insert, read what was added. One Cmd+Z removes the whole insert.
-- Plugin entry point: `api.editor.fragments.insert` / `.plan` (permission `editor.fragments`), the same plan and commit as the dialog with a caller-supplied `readMediaBytes` and a `placement`. See [plugin-system.md](plugin-system.md#inserting-site-fragments-editorfragments).
+- Plugin entry point: `api.editor.fragments.insert` / `.plan` (permission `editor.fragments`), the same plan and commit as the dialog with a caller-supplied `readMediaBytes` and a `placement`. See [plugin-system.md](plugin-system.md#inserting-site-fragments-and-applying-themes-editorfragments).
+- Themes: `extractTheme` → `parseSiteTheme` (or `readThemePackage`) → `planThemeApply` (pure) → `commitThemePlan`. The one place the engine overwrites: the theme's colours, font tokens, scale groups and root custom properties replace the site's. Plugin entry point: `api.editor.fragments.applyTheme` / `.planTheme`.
 - Paste, saved layouts, HTML import and site import do not use fragments and behave exactly as before.
 
 ---
@@ -41,19 +42,25 @@ src/core/fragments/
 ├── planData.ts       tables, referencedMedia
 ├── resolve.ts        resolveFragmentPlan (media URLs, table ids, font ids)
 ├── apply.ts          applyResolvedFragment (writes a resolved plan into a SiteDocument)
-├── adapter.ts        FragmentInsertAdapter (interface only)
-├── commit.ts         commitFragmentPlan, FragmentCommitError
+├── adapter.ts        FragmentAssetAdapter, FragmentInsertAdapter, ThemeApplyAdapter (interfaces only)
+├── commit.ts         commitFragmentPlan, FragmentCommitError; resolveMedia + installFonts (shared with themes)
+├── themeSchema.ts    SiteThemeSchema, parseSiteTheme
+├── extractTheme.ts   extractTheme
+├── planTheme.ts      planThemeApply, ThemeApplyPlan, ThemeApplyReport
+├── applyTheme.ts     resolveThemePlan, applyResolvedTheme
+├── commitTheme.ts    commitThemePlan
 └── warnings.ts       FragmentWarning codes
 
 src/admin/modals/InsertFragment/
 ├── InsertFragmentModal.tsx         pick → review → insert → report
 ├── FragmentReport.tsx              the review / result report
 ├── fragmentInsertFlow.ts           load file, plan against the open document, commit, toasts
-├── createFragmentInsertAdapter.ts  CMS API + editor store implementation of the adapter
-├── pluginFragmentsHost.ts          api.editor.fragments (insert / plan / watchPreviewStyles) on the same flow
+├── themeApplyFlow.ts               plan a theme against the open site, commit, toasts
+├── createFragmentInsertAdapter.ts  CMS API + editor store implementation of both adapters
+├── pluginFragmentsHost.ts          fragment insert, preview styles and theme APIs
 └── useBindPluginFragmentsApi.ts    binds that host into the plugin runtime while the editor is open
 
-src/admin/pages/site/store/slices/fragmentsSlice.ts   insertFragment + dialog flag
+src/admin/pages/site/store/slices/fragmentsSlice.ts   insertFragment, applyTheme + dialog flag
 src/admin/spotlight/commands/fragments.ts             editor.insertFragment
 ```
 
@@ -159,9 +166,48 @@ E. adapter.commit(resolved)   ONE store transaction
 
 ## Inserting from a plugin
 
-A plugin with `editor.fragments` calls `api.editor.fragments.insert({ fragment, readMediaBytes, placement?, signal?, onProgress?, silent? })` or the dry run `api.editor.fragments.plan({ fragment })`. Both run on the dialog's own functions (`planFragmentForEditor`, `commitFragmentForEditor` in `fragmentInsertFlow.ts`), so the merge rules, step-up prompt, undo step and result toast are the same. The plugin supplies the bytes (`readMediaBytes`), which is only called for media the plan adds that the library lacks. Failures resolve as `{ ok: false, stage, message }`; a fragment `parseSiteFragment` refuses rejects `insert`. Full API: [plugin-system.md](plugin-system.md#inserting-site-fragments-editorfragments).
+A plugin with `editor.fragments` calls `api.editor.fragments.insert({ fragment, readMediaBytes, placement?, signal?, onProgress?, silent? })` or the dry run `api.editor.fragments.plan({ fragment })`. Both run on the dialog's own functions (`planFragmentForEditor`, `commitFragmentForEditor` in `fragmentInsertFlow.ts`), so the merge rules, step-up prompt, undo step and result toast are the same. The plugin supplies the bytes (`readMediaBytes`), which is only called for media the plan adds that the library lacks. Failures resolve as `{ ok: false, stage, message }`; a fragment `parseSiteFragment` refuses rejects `insert`. Full API: [plugin-system.md](plugin-system.md#inserting-site-fragments-and-applying-themes-editorfragments).
 
 `watchPreviewStyles` lets a plugin preview a fragment with the destination’s current shared styles, including classes that no page uses yet. The preview receives both the stylesheet and its exact selector bindings.
+
+---
+
+## Themes
+
+A theme is a site's design variables without its content. Fragments never overwrite what a site has; a theme is the one place where overwriting is the point: applying it replaces the site's values.
+
+```ts
+SiteTheme = {
+  format: 'instatic-theme', version: 1,
+  origin?: { source?, item?, build? },
+  colors: FrameworkColorToken[],                       // full definitions, generation flags included
+  fontTokens: FontToken[], fontFamilies: FontEntry[],  // a token's familyId names one of fontFamilies
+  typography: FrameworkTypographyGroup[],              // matched by namingConvention
+  spacing: FrameworkSpacingGroup[],
+  customProperties: Record<'--name', string>,          // from the root-scope ambient rules (:root, html, body)
+  media: FragmentMedia[],                              // custom font files, assets a custom property points at
+}
+```
+
+`parseSiteTheme` checks the shape, then that colour slugs, font token variables, family ids, scale conventions (per family) and media ids are unique and every token's `familyId` is in `fontFamilies`. Errors are `FragmentParseError`.
+
+**Extract.** `extractTheme(source, { origin? })` takes the same sources as `extractFragment` and returns `{ theme, mediaBytes, warnings }`. Root custom properties come from `indexSiteVariables` (last root rule in cascade order wins); media from `collectMedia`, as for a fragment. A token bound to a family the library lacks travels without its `familyId` (`missing-font-family`).
+
+**Plan.** `planThemeApply({ site }, theme)` is pure and returns a `ThemeApplyPlan` with a `ThemeApplyReport` (`before` → `after` for everything changed; a value equal to the site's is listed as `kept`, never as changed):
+
+| What | Rule | Report |
+|---|---|---|
+| Colours | Matched by normalised slug. The site token keeps its id, slug, order and category and takes the theme's light and dark values, dark-mode flag and generation flags. A missing colour is added after the site's. | `colors.changed` (`slug`, `before`/`after` light, dark, dark-mode), `added`, `kept` |
+| Font tokens | Matched by variable. The site token keeps its id, name and order, is rebound to the theme's family and takes its fallback stack. A missing token is added. The family is reused when the site has one of the same name, else installed (Google families through the Typography panel's installer, custom ones registered from their uploaded files). | `fonts.tokensRebound` (`variable`, `before`/`after` family name), `tokensAdded`, `tokensKept`, `familiesToInstall`, `familiesReused` |
+| Scale groups | Matched by `namingConvention` per family. The site group keeps its id, name, order, class generators and disabled flag and takes the theme's mode, min, max (size and ratio), steps, base index and manual sizes. A missing group is added (without generators). Steps the replaced group loses are a `scale-step-removed` warning. | `scales.changed` (`family`, `convention`, `before`/`after` min/max size and ratio, steps, base step), `added`, `kept` |
+| Custom properties | A property a site root-scope rule declares is overwritten in the rule that declares it (`indexSiteVariables().rootCustomPropertyRuleIds`). Anything else goes into the engine-owned `:root` rule (`FRAGMENT_PROPERTIES_ORIGIN`), created when missing. | `customProperties.changed` (`name`, `before`, `after`), `added`, `kept` |
+| Media | Files of families to install and assets changed properties reference. | `media.total` (`uploaded` / `reused` after commit) |
+
+Nodes, classes, pages, components and tables are never touched.
+
+**Commit.** `commitThemePlan(plan, adapter, { readMediaBytes, signal?, onProgress? })` runs the fragment commit's own `resolveMedia` and `installFonts` (a `ThemeApplyAdapter` is the `FragmentAssetAdapter` plus `commit`), then `resolveThemePlan` (media URLs into property values, installed family ids into tokens), then ONE `adapter.commit(resolved)`. A failed upload throws `FragmentCommitError('media')` before the commit: the site is untouched. A family that fails to install is a `font-install-failed` warning: a rebound token keeps its current family, an added one falls back to its stack. The editor's commit is `applyTheme(resolved)` (`fragmentsSlice.ts`): `applyResolvedTheme` inside `mutateSite`, matching colours, tokens and groups again by slug, variable and convention, plus `reconcileFrameworkClasses` when a colour or scale group changed. One undo step reverts the whole theme.
+
+Themes have no editor dialog: plugins apply them through `api.editor.fragments.applyTheme` ([plugin-system.md](plugin-system.md#inserting-site-fragments-and-applying-themes-editorfragments)).
 
 ---
 
@@ -179,7 +225,7 @@ const { fragment, mediaBytes, warnings } = await extractFragment(source, { pageI
 await Bun.write('section.zip', writeFragmentPackage(fragment, mediaBytes))
 ```
 
-Bun resolves the `@core/*` aliases from the repo's `tsconfig.json`. `planFragmentInsert` runs the same way against any `SiteDocument`.
+Bun resolves the `@core/*` aliases from the repo's `tsconfig.json`. `planFragmentInsert` runs the same way against any `SiteDocument`. A theme is the same three lines with `extractTheme(source)` and `writeThemePackage(theme, mediaBytes)`.
 
 ---
 
@@ -187,10 +233,10 @@ Bun resolves the `@core/*` aliases from the repo's `tsconfig.json`. `planFragmen
 
 | Pattern | Use instead |
 |---|---|
-| Overwriting a site class, component, token or table from a fragment | The site always wins; report what was kept |
+| Overwriting a site class, component, token or table from a fragment | The site always wins; report what was kept (only a theme overwrites, and only design variables) |
 | Inlining media bytes in `fragment.json` | `media[].src` + the package zip |
 | Classifying `var(--x)` with a hand-written regex | `indexSiteVariables` (the framework's generators) |
-| Writing inserted custom properties into a user's `:root` rule | The engine-owned rule (`FRAGMENT_PROPERTIES_ORIGIN`) |
+| Writing inserted custom properties into a user's `:root` rule | The engine-owned rule (`FRAGMENT_PROPERTIES_ORIGIN`); a theme overwrites a property only in the root rule that already declares it |
 | Store writes outside `adapter.commit` | One transaction, one undo step |
 | React, admin or server imports anywhere in `src/core/fragments/` (even transitively) | Keep it headless; `fragments-headless.test.ts` |
 
@@ -202,6 +248,6 @@ Bun resolves the `@core/*` aliases from the repo's `tsconfig.json`. `planFragmen
 - [site-import.md](site-import.md) — whole-site imports; shares `createStyleRuleOrderAllocator`, `isRootScopeSelector` and `addMissingConditions` (`@core/page-tree`)
 - [site-transfer.md](site-transfer.md) — the export archive `fragmentSourceFromBundleArchive` reads
 - [visual-components.md](visual-components.md), [loops.md](loops.md), [cms-native-forms.md](cms-native-forms.md), [media.md](media.md)
-- Source of truth: `src/core/fragments/schema.ts`, `src/core/fragments/plan.ts`, `src/core/fragments/commit.ts`
-- Tests: `src/__tests__/fragments/`, `src/__tests__/editor-store/insertFragment.test.ts`, `src/__tests__/admin/insertFragmentModal.test.tsx`, `src/__tests__/plugins/pluginFragmentsApi.test.ts`
+- Source of truth: `src/core/fragments/schema.ts`, `src/core/fragments/plan.ts`, `src/core/fragments/commit.ts`, `src/core/fragments/themeSchema.ts`, `src/core/fragments/planTheme.ts`
+- Tests: `src/__tests__/fragments/` (`theme.test.ts` for themes), `src/__tests__/editor-store/insertFragment.test.ts`, `src/__tests__/editor-store/applyTheme.test.ts`, `src/__tests__/admin/insertFragmentModal.test.tsx`, `src/__tests__/plugins/pluginFragmentsApi.test.ts`
 - Gate: `src/__tests__/architecture/fragments-headless.test.ts`

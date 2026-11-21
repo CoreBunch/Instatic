@@ -16,3 +16,14 @@ export function captureFragmentTarget(): () => void {
     }
   }
 }
+
+/** Pin a site-wide theme to the site and branch open when the user started it. */
+export function captureThemeTarget(): () => void {
+  const { site } = useEditorStore.getState()
+  const branch = collabBranchId()
+  return () => {
+    if (useEditorStore.getState().site !== site || collabBranchId() !== branch) {
+      throw new Error('The destination changed. Review the theme again before applying it.')
+    }
+  }
+}

@@ -34,6 +34,8 @@ export interface SiteVariableIndex {
   fontTokenByVar: Map<string, FontToken>
   /** `--name` → value declared on a root-scope ambient rule (last in cascade wins). */
   rootCustomProperties: Map<string, string>
+  /** `--name` → id of the root-scope ambient rule that value comes from. */
+  rootCustomPropertyRuleIds: Map<string, string>
 }
 
 export function indexSiteVariables(site: {
@@ -79,6 +81,7 @@ export function indexSiteVariables(site: {
   }
 
   const rootCustomProperties = new Map<string, string>()
+  const rootCustomPropertyRuleIds = new Map<string, string>()
   const rootRules = Object.values(site.styleRules)
     .filter((rule) => rule.kind === 'ambient' && isRootScopeSelector(rule.selector))
     .sort((a, b) => a.order - b.order)
@@ -86,9 +89,10 @@ export function indexSiteVariables(site: {
     for (const [property, value] of Object.entries(rule.styles)) {
       if (property.startsWith('--') && typeof value === 'string') {
         rootCustomProperties.set(property, value)
+        rootCustomPropertyRuleIds.set(property, rule.id)
       }
     }
   }
 
-  return { colorTokenIdByVar, scaleStepByVar, fontTokenByVar, rootCustomProperties }
+  return { colorTokenIdByVar, scaleStepByVar, fontTokenByVar, rootCustomProperties, rootCustomPropertyRuleIds }
 }

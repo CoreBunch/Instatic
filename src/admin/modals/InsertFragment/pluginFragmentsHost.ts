@@ -2,12 +2,12 @@
  * The site editor's implementation of `api.editor.fragments` (the plugin
  * runtime checks the permission and the input shape, then calls here).
  *
- * Same flow as the Insert fragment dialog: `planFragmentForEditor` against
- * the open document, then `commitFragmentForEditor` (media through the
- * plugin's `readMediaBytes`, server writes through the step-up prompt, ONE
- * store transaction at the requested placement). Failures resolve as an
- * outcome; only a fragment `parseSiteFragment` refuses rejects, since that is
- * a malformed input.
+ * Inserts use the Insert fragment dialog's flow: `planFragmentForEditor`
+ * against the open document, then `commitFragmentForEditor` (media through
+ * the plugin's `readMediaBytes`, server writes through the step-up prompt,
+ * ONE store transaction at the requested placement). Themes use
+ * `planThemeForEditor` / `commitThemeForEditor` the same way. Failures
+ * resolve as an outcome. Malformed input rejects an insert or apply request.
  *
  * Loaded on the first plugin call (`useBindPluginFragmentsApi` imports it
  * lazily), so the planner stays out of the editor body's chunk.
@@ -17,6 +17,9 @@ import {
   FragmentCommitError,
   FragmentInsertError,
   parseSiteFragment,
+  parseSiteTheme,
+  type SiteTheme,
+  type ThemeApplyPlan,
 } from '@core/fragments'
 import type {
   FragmentInsertFailureStage,
@@ -25,6 +28,11 @@ import type {
   FragmentPlanInput,
   FragmentPlanOutcome,
   FragmentPreviewStylesListener,
+  ThemeApplyFailureStage,
+  ThemeApplyInput,
+  ThemeApplyOutcome,
+  ThemePlanInput,
+  ThemePlanOutcome,
 } from '@core/plugin-sdk'
 import { styleRuleSelector, type SiteDocument } from '@core/page-tree'
 import { generateCanvasClassCSS } from '@site/canvas/canvasClassCss'
@@ -33,13 +41,14 @@ import { useEditorStore } from '@site/store/store'
 import { fragmentInsertDocument } from '@site/store/slices/fragmentsSlice'
 import {
   commitFragmentForEditor,
-  isFragmentInsertCancel,
+  isFragmentCommitCancel,
   planFragmentForEditor,
   toastFragmentInsertFailed,
   toastFragmentInserted,
   type EditorFragmentPlan,
 } from './fragmentInsertFlow'
-import { captureFragmentTarget } from './fragmentInsertTarget'
+import { captureFragmentTarget, captureThemeTarget } from './fragmentInsertTarget'
+import { commitThemeForEditor, planThemeForEditor, toastThemeApplied, toastThemeApplyFailed } from './themeApplyFlow'
 
 export function watchFragmentPreviewStyles(onChange: FragmentPreviewStylesListener): () => void {
   let previous: SiteDocument | null | undefined
@@ -102,7 +111,7 @@ async function planForActiveDocument(
 }
 
 function failureStage(err: unknown): FragmentInsertFailureStage {
-  if (isFragmentInsertCancel(err)) return 'cancelled'
+  if (isFragmentCommitCancel(err)) return 'cancelled'
   if (err instanceof FragmentCommitError) return err.stage
   return 'commit'
 }
@@ -156,6 +165,78 @@ export async function insertFragmentForPlugin(
       ok: false,
       stage,
       message: stage === 'cancelled' ? 'The insert was cancelled.' : getErrorMessage(err, 'Unknown insert error'),
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Themes
+// ---------------------------------------------------------------------------
+
+type ThemePlanAttempt =
+  | { ok: true; plan: ThemeApplyPlan }
+  | { ok: false; stage: 'unavailable' | 'plan'; message: string }
+
+function planThemeForSite(theme: SiteTheme, assertCurrentTarget: () => void): ThemePlanAttempt {
+  if (!useEditorStore.getState().site) {
+    return { ok: false, stage: 'unavailable', message: 'Open the site editor to apply a theme.' }
+  }
+  try {
+    assertCurrentTarget()
+    return { ok: true, plan: planThemeForEditor(theme) }
+  } catch (err) {
+    return { ok: false, stage: 'plan', message: `Could not plan the theme: ${getErrorMessage(err, 'unknown error')}` }
+  }
+}
+
+export async function planThemeForPlugin(
+  input: ThemePlanInput,
+  assertCurrentTarget = captureThemeTarget(),
+): Promise<ThemePlanOutcome> {
+  let theme: SiteTheme
+  try {
+    theme = parseSiteTheme(input.theme)
+  } catch (err) {
+    return { ok: false, message: getErrorMessage(err, 'The theme is not valid.') }
+  }
+  const attempt = planThemeForSite(theme, assertCurrentTarget)
+  return attempt.ok ? { ok: true, report: attempt.plan.report } : { ok: false, message: attempt.message }
+}
+
+export async function applyThemeForPlugin(
+  input: ThemeApplyInput,
+  runStepUp: RunStepUp,
+  assertCurrentTarget = captureThemeTarget(),
+): Promise<ThemeApplyOutcome> {
+  const announce = input.silent !== true
+  // Throws FragmentParseError for a malformed theme: a malformed input rejects.
+  const attempt = planThemeForSite(parseSiteTheme(input.theme), assertCurrentTarget)
+  if (!attempt.ok) {
+    if (announce) toastThemeApplyFailed(new Error(attempt.message))
+    return attempt
+  }
+  if (input.signal?.aborted) {
+    return { ok: false, stage: 'cancelled', message: 'The theme was cancelled.' }
+  }
+  try {
+    const result = await commitThemeForEditor(attempt.plan, {
+      readMediaBytes: input.readMediaBytes,
+      runStepUp,
+      assertCurrentTarget,
+      signal: input.signal,
+      onProgress: input.onProgress,
+    })
+    if (announce) toastThemeApplied(result)
+    return { ok: true, report: result.report }
+  } catch (err) {
+    if (announce) toastThemeApplyFailed(err)
+    const stage: ThemeApplyFailureStage = isFragmentCommitCancel(err)
+      ? 'cancelled'
+      : err instanceof FragmentCommitError ? 'media' : 'commit'
+    return {
+      ok: false,
+      stage,
+      message: stage === 'cancelled' ? 'The theme was cancelled.' : getErrorMessage(err, 'Unknown theme error'),
     }
   }
 }

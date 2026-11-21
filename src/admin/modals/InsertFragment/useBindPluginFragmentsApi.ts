@@ -1,15 +1,15 @@
 /**
- * Binds `api.editor.fragments` for plugins while the site editor body is
- * mounted and the user can edit the draft site (`enabled`). The host closes
- * over the admin shell's step-up runner (table writes may ask for the
- * password) and loads the insert flow on first use, so the planner stays out
- * of the editor body's chunk.
+ * Binds `api.editor.fragments` (inserts and themes) for plugins while the
+ * site editor body is mounted and the user can edit the draft site
+ * (`enabled`). The host closes over the admin shell's step-up runner (server
+ * writes may ask for the password) and loads the insert and theme flows on
+ * first use, so the planners stay out of the editor body's chunk.
  */
 
 import { useEffect, useRef } from 'react'
 import { bindPluginRuntimeFragmentsHost } from '@core/plugins/runtime'
 import { useStepUp } from '@admin/shared/StepUp'
-import { captureFragmentTarget } from './fragmentInsertTarget'
+import { captureFragmentTarget, captureThemeTarget } from './fragmentInsertTarget'
 
 const loadHost = () => import('./pluginFragmentsHost')
 
@@ -58,6 +58,14 @@ export function useBindPluginFragmentsApi(enabled: boolean): void {
       async plan(input) {
         const target = captureFragmentTarget()
         return (await loadHost()).planFragmentForPlugin(input, target)
+      },
+      async applyTheme(input) {
+        const target = captureThemeTarget()
+        return (await loadHost()).applyThemeForPlugin(input, confirm, target)
+      },
+      async planTheme(input) {
+        const target = captureThemeTarget()
+        return (await loadHost()).planThemeForPlugin(input, target)
       },
     })
     return () => {

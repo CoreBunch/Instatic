@@ -62,9 +62,11 @@ export const PLUGIN_PERMISSION_VALUES = [
   'editor.panels',
   'editor.store.read',
   'editor.store.write',
-  // Insert site fragments into the open document (`api.editor.fragments`):
-  // adds classes, tokens, components, media and data tables the fragment
-  // needs, through the same flow as the editor's Insert fragment dialog.
+  // Insert site fragments into the open document and apply themes to the
+  // site (`api.editor.fragments`): an insert adds classes, tokens,
+  // components, media and data tables the fragment needs, through the same
+  // flow as the editor's Insert fragment dialog; a theme replaces the site's
+  // design variables.
   'editor.fragments',
   // Builder extensions
   'modules.register',

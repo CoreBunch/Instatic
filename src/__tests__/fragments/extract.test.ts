@@ -11,19 +11,12 @@ import {
   sha256Hex,
   writeFragmentPackage,
 } from '@core/fragments'
-import { pageToCells } from '@core/data/pageFromRow'
-import { visualComponentToCells } from '@core/data/componentFromRow'
-import type { DataRow } from '@core/data/schemas'
-import type { SiteBundle } from '@core/data/bundleSchema'
 import {
   SOURCE_FRAMEWORK,
-  SOURCE_ROWS,
-  SOURCE_TABLES,
   extractFromSource,
   frameworkClassId,
-  makeSourceSite,
+  makeSourceBundle,
   mediaBytesFor,
-  sourceMediaWithBytes,
 } from './fixtures'
 
 // Extraction does not mutate its result, so the section tests share one.
@@ -144,54 +137,8 @@ describe('extractFragment — page and component', () => {
 })
 
 describe('extractFragment — bundle source', () => {
-  function bundle(): SiteBundle {
-    const site = makeSourceSite()
-    const { pages, visualComponents, layouts: _layouts, ...shell } = site
-    const asRow = (id: string, tableId: string, slug: string, cells: Record<string, unknown>): DataRow => ({
-      ...SOURCE_ROWS[0],
-      id,
-      tableId,
-      slug,
-      cells,
-    })
-    return {
-      schemaVersion: 1,
-      exportedAt: '2026-10-13T00:00:00.000Z',
-      site: shell,
-      tables: [
-        { ...SOURCE_TABLES[0], id: 'pages', slug: 'pages', name: 'Pages', kind: 'page', system: true },
-        { ...SOURCE_TABLES[0], id: 'components', slug: 'components', name: 'Components', kind: 'component', system: true },
-        ...SOURCE_TABLES,
-      ],
-      rows: [
-        ...pages.map((p) => asRow(p.id, 'pages', p.slug, pageToCells(p))),
-        ...visualComponents.map((vc) => asRow(vc.id, 'components', vc.id, visualComponentToCells(vc))),
-        ...SOURCE_ROWS,
-      ],
-      media: sourceMediaWithBytes().map((m) => ({
-        id: m.id,
-        filename: m.filename,
-        mimeType: m.mimeType,
-        sizeBytes: m.sizeBytes ?? 0,
-        altText: m.alt ?? '',
-        caption: '',
-        title: '',
-        tags: [],
-        width: m.width ?? null,
-        height: m.height ?? null,
-        durationMs: null,
-        dominantColor: null,
-        blurHash: null,
-        storagePath: m.path.replace('/uploads/', ''),
-        posterPath: null,
-        folderIds: [],
-        bytesBase64: btoa(new TextDecoder().decode(mediaBytesFor(m.id))),
-      })),
-    }
-  }
-
   it('extracts the same closure from a site-transfer bundle', async () => {
-    const fromBundle = await extractFragment(fragmentSourceFromBundle(bundle()), { pageId: 'page-home', rootNodeIds: ['hero'] })
+    const fromBundle = await extractFragment(fragmentSourceFromBundle(makeSourceBundle()), { pageId: 'page-home', rootNodeIds: ['hero'] })
     const fromSite = section
     expect(fromBundle.fragment.styleRules.map((r) => r.id)).toEqual(fromSite.fragment.styleRules.map((r) => r.id))
     expect(fromBundle.fragment.components.map((c) => c.id).sort()).toEqual(['vc-badge', 'vc-card'])

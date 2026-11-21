@@ -194,11 +194,11 @@ export function planFragmentInsert(target: FragmentInsertTarget, fragment: SiteF
   }
 
   report.nodes = Object.keys(nodes).length
-  const media = referencedMedia(fragment, {
+  const media = referencedMedia(fragment.media, {
     nodes: Object.values(nodes),
     components,
     rules: styleRules,
-    customProperties: customProperties?.properties,
+    customProperties: customProperties ? [customProperties.properties] : [],
     fontFamilies: tokens.fontFamilies,
     tables,
   })

@@ -112,7 +112,7 @@ export async function collectMedia(
     tables: FragmentTable[]
     fontFamilies: FontEntry[]
     customProperties: Record<string, string>
-    components: VisualComponent[]
+    components?: VisualComponent[]
   },
   warnings: FragmentWarning[],
 ): Promise<{ media: FragmentMedia[]; mediaBytes: Map<string, Uint8Array> }> {
@@ -125,7 +125,7 @@ export async function collectMedia(
   for (const rule of closure.styleRules) forEachString(ruleContent(rule), scan)
   for (const node of closure.allNodes) forEachString(nodeContent(node), scan)
   forEachString(closure.customProperties, scan)
-  for (const component of closure.components) forEachString(component.params, scan)
+  for (const component of closure.components ?? []) forEachString(component.params, scan)
 
   const ids = new Set<string>()
   for (const path of foundPaths) {

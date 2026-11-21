@@ -348,7 +348,7 @@ The store is composed of **14 slices**, each created by a factory in `store/slic
 | `clipboardSlice`       | Copy / cut / paste of layer subtrees, persisted editor-wide                |
 | `inlineEditSlice`      | `activeInlineEdit` — the canvas inline text-edit session (double-click to edit) |
 | `layoutsSlice`         | Saved layouts: save / insert / rename / delete                             |
-| `fragmentsSlice`       | Insert fragment dialog flag + `insertFragment` (one undo step) — see [`features/fragments.md`](features/fragments.md) |
+| `fragmentsSlice`       | Insert fragment dialog flag + `insertFragment` and `applyTheme` (one undo step each) — see [`features/fragments.md`](features/fragments.md) |
 
 The combined `EditorStore` type lives at `store/types.ts` so each slice can import it without going through `store.ts` (this eliminates the historical store ↔ slice cycles).
 
