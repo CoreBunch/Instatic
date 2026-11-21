@@ -34,6 +34,7 @@ import {
   listDataTablesWithCounts,
   softDeleteDataTable,
   updateDataTable,
+  appendDataTableFields,
   createDataRow,
   getDataRowBySlug,
   nextFreeDataRowSlug,
@@ -281,6 +282,20 @@ async function handleTableItem(
   if (req.method === 'PATCH') {
     const body = await readValidatedBody(req, TablePatchBodySchema)
     if (!body) return badRequest('Invalid table payload')
+
+    if (body.appendFields !== undefined) {
+      if (Object.keys(body).length !== 1 || !Array.isArray(body.appendFields)) {
+        return badRequest('Provide only the fields to append')
+      }
+      const fields = normalizeDataTableFields(body.appendFields)
+      if (table.system && fields.some(field => field.builtIn)) {
+        return badRequest('System tables cannot add built-in fields')
+      }
+      const updated = await appendDataTableFields(db, scope, tableId, fields, user.id)
+      if (!updated) return jsonResponse({ error: 'Table not found' }, { status: 404 })
+      await recordTableAuditEvent(db, user, req, 'data.table.update', updated)
+      return jsonResponse({ table: updated })
+    }
 
     const update = buildTablePatch(body, user.id)
     if ('error' in update) return badRequest(update.error)

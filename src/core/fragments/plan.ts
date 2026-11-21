@@ -33,6 +33,7 @@ import {
   extractCssSelectorClasses,
   reindexNodeParents,
   removeNodeSubtrees,
+  styleRuleSelector,
   uniquePageSlug,
   type NodeTree,
   type PageNode,
@@ -107,7 +108,11 @@ export function planFragmentInsert(target: FragmentInsertTarget, fragment: SiteF
     for (const node of Object.values(vc.tree.nodes)) for (const classId of node.classIds) usedClassIds.add(classId)
   }
   const { styleRules, classIdMap } = planRules(site, fragment, usedClassIds, tokens, allocateOrder, scopeNodeId, report, warnings)
-  const classIdRemap = (id: string) => classIdMap.get(id) ?? null
+  const remapClasses = (ids: string[]) => [...new Set(ids.flatMap(id => classIdMap.get(id) ?? []))]
+  const clone = (node: PageNode, id: string, idMap: Map<string, string>) => ({
+    ...cloneNodeWithRemap(node, { newId: id, idMap }),
+    classIds: remapClasses(node.classIds),
+  })
 
   // ── Conditions ─────────────────────────────────────────────────────────────
   const conditionIds = new Set((site.conditions ?? []).map((c) => c.id))
@@ -120,7 +125,7 @@ export function planFragmentInsert(target: FragmentInsertTarget, fragment: SiteF
 
   // ── Page (kind 'page' only) ────────────────────────────────────────────────
   const page = fragment.kind === 'page' && fragment.page
-    ? { id: nanoid(), title: fragment.page.title, slug: uniquePageSlug(fragment.page.slug, site.pages) }
+    ? { ...structuredClone(fragment.page), id: nanoid(), slug: uniquePageSlug(fragment.page.slug, site.pages) }
     : undefined
   if (page) report.page = { title: page.title, slug: page.slug }
 
@@ -147,7 +152,7 @@ export function planFragmentInsert(target: FragmentInsertTarget, fragment: SiteF
   for (const [oldId, newId] of nodeIdMap) {
     const node = fragment.nodes[oldId]
     if (!node) continue
-    nodes[newId] = rewrite(cloneNodeWithRemap(node, { newId, idMap: nodeIdMap, classIdRemap }))
+    nodes[newId] = rewrite(clone(node, newId, nodeIdMap))
   }
   const roots = fragment.roots.map((id) => nodeIdMap.get(id)!).filter(Boolean)
   reindexNodeParents(nodes)
@@ -159,7 +164,7 @@ export function planFragmentInsert(target: FragmentInsertTarget, fragment: SiteF
     const idMap = vcNodeIdMaps.get(vc.id)!
     const treeNodes: Record<string, PageNode> = {}
     for (const [oldId, newId] of idMap) {
-      treeNodes[newId] = rewrite(cloneNodeWithRemap(vc.tree.nodes[oldId] as PageNode, { newId, idMap, classIdRemap }))
+      treeNodes[newId] = rewrite(clone(vc.tree.nodes[oldId] as PageNode, newId, idMap))
     }
     reindexNodeParents(treeNodes)
     dropDanglingRefs(treeNodes, vcIdMap, site, warnings)
@@ -167,10 +172,8 @@ export function planFragmentInsert(target: FragmentInsertTarget, fragment: SiteF
       ...structuredClone(vc),
       id: vcIdMap.get(vc.id)!,
       tree: { nodes: treeNodes, rootNodeId: idMap.get(vc.tree.rootNodeId)! },
-      classIds: vc.classIds.flatMap((id) => {
-        const mapped = classIdRemap(id)
-        return mapped ? [mapped] : []
-      }),
+      classIds: remapClasses(vc.classIds),
+      params: mapStrings(vc.params, text => rewritePageRefs(text, resolveLink)),
       createdAt: Date.now(),
     }
   })
@@ -193,7 +196,8 @@ export function planFragmentInsert(target: FragmentInsertTarget, fragment: SiteF
   const media = referencedMedia(fragment, {
     nodes: Object.values(nodes),
     components,
-    rules: [...styleRules],
+    rules: styleRules,
+    customProperties: customProperties?.properties,
     fontFamilies: tokens.fontFamilies,
     tables,
   })
@@ -308,22 +312,25 @@ function planRules(
   scopeNodeId: (id: string) => string | undefined,
   report: FragmentInsertReport,
   warnings: FragmentWarning[],
-): { styleRules: StyleRule[]; classIdMap: Map<string, string> } {
+): { styleRules: StyleRule[]; classIdMap: Map<string, string[]> } {
   const frameworkByName = new Map<string, string>()
   for (const cls of Object.values(generateFrameworkUtilityClasses(tokens.nextFramework))) {
     frameworkByName.set(cls.name, cls.id)
   }
-  const classByName = new Map<string, string>()
-  const ambientSelectors = new Set<string>()
+  const classByName = new Map<string, string[]>()
+  const siteSelectors = new Set<string>()
   for (const rule of Object.values(site.styleRules)) {
-    if (rule.kind === 'ambient') ambientSelectors.add(rule.selector)
-    else if (!rule.scope && !rule.id.startsWith(FRAMEWORK_ID_PREFIX) && !classByName.has(rule.name)) {
-      classByName.set(rule.name, rule.id)
+    if (rule.scope) continue
+    siteSelectors.add(styleRuleSelector(rule))
+    if (rule.kind === 'class' && !rule.id.startsWith(FRAMEWORK_ID_PREFIX)) {
+      const matches = classByName.get(rule.name) ?? []
+      matches.push(rule.id)
+      classByName.set(rule.name, matches)
     }
   }
 
   const now = Date.now()
-  const classIdMap = new Map<string, string>()
+  const classIdMap = new Map<string, string[]>()
   const styleRules: StyleRule[] = []
   const add = (rule: StyleRule, id: string, extra: Partial<StyleRule> = {}) => {
     const { origin: _origin, generated: _generated, ...rest } = structuredClone(rule)
@@ -345,7 +352,7 @@ function planRules(
     if (rule.kind === 'ambient' ? !ambientNeeded(rule) : !usedClassIds.has(rule.id)) continue
     if (rule.id.startsWith(FRAMEWORK_ID_PREFIX)) {
       const id = frameworkByName.get(rule.name)
-      if (id) classIdMap.set(rule.id, id)
+      if (id) classIdMap.set(rule.id, [id])
       else {
         warnings.push({
           code: 'framework-class-dropped',
@@ -359,29 +366,35 @@ function planRules(
       const nodeId = scopeNodeId(rule.scope.nodeId)
       if (!nodeId) continue
       const id = nanoid()
-      classIdMap.set(rule.id, id)
+      classIdMap.set(rule.id, [id])
       add(rule, id, { scope: { ...rule.scope, nodeId } })
       continue
     }
     if (rule.kind === 'class') {
-      const existing = frameworkByName.get(rule.name) ?? classByName.get(rule.name)
+      const frameworkId = frameworkByName.get(rule.name)
+      const existing = frameworkId ? [frameworkId] : classByName.get(rule.name)
       if (existing) {
         classIdMap.set(rule.id, existing)
         report.rules.reused.push(rule.name)
         continue
       }
       const id = nanoid()
-      classIdMap.set(rule.id, id)
-      classByName.set(rule.name, id)
-      add(rule, id)
+      classIdMap.set(rule.id, [id])
+      // A matching ambient selector already supplies the site's declarations.
+      // The fragment still needs a bindable class name on its nodes.
+      add(rule, id, siteSelectors.has(styleRuleSelector(rule)) ? {
+        styles: {},
+        contextStyles: {},
+        stylePriorities: undefined,
+        contextStylePriorities: undefined,
+      } : {})
       report.rules.added.push(rule.name)
       continue
     }
-    if (ambientSelectors.has(rule.selector)) {
+    if (siteSelectors.has(styleRuleSelector(rule))) {
       report.rules.ambientKept.push(rule.selector)
       continue
     }
-    ambientSelectors.add(rule.selector)
     add(rule, nanoid())
     report.rules.ambientAdded.push(rule.selector)
   }

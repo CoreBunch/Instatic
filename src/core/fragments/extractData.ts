@@ -3,6 +3,7 @@
  * every media asset the carried content, fonts and rows reference.
  */
 
+import type { VisualComponent } from '@core/visualComponents'
 import type { PageNode, StyleRule } from '@core/page-tree'
 import type { FontEntry } from '@core/fonts'
 import type { DataRow, DataTable } from '@core/data/schemas'
@@ -110,6 +111,8 @@ export async function collectMedia(
     allNodes: PageNode[]
     tables: FragmentTable[]
     fontFamilies: FontEntry[]
+    customProperties: Record<string, string>
+    components: VisualComponent[]
   },
   warnings: FragmentWarning[],
 ): Promise<{ media: FragmentMedia[]; mediaBytes: Map<string, Uint8Array> }> {
@@ -121,6 +124,8 @@ export async function collectMedia(
 
   for (const rule of closure.styleRules) forEachString(ruleContent(rule), scan)
   for (const node of closure.allNodes) forEachString(nodeContent(node), scan)
+  forEachString(closure.customProperties, scan)
+  for (const component of closure.components) forEachString(component.params, scan)
 
   const ids = new Set<string>()
   for (const path of foundPaths) {

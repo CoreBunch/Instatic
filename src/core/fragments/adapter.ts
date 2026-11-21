@@ -25,8 +25,7 @@ export interface FragmentMediaRef {
 export interface FragmentInsertAdapter {
   /**
    * An asset already in the site's library that is the same file, or null.
-   * The media library stores no content hash, so the editor matches by
-   * filename, byte size and MIME type.
+   * The editor reuses an asset only when its content hash matches.
    */
   findMedia(media: FragmentMedia): Promise<FragmentMediaRef | null>
 
@@ -48,8 +47,8 @@ export interface FragmentInsertAdapter {
   /** Create a data table. Returns the server-minted id. */
   createTable(input: PlannedTableCreate['input']): Promise<{ id: string }>
 
-  /** Replace a table's field list (used to append missing fields). */
-  updateTableFields(tableId: string, fields: DataField[]): Promise<void>
+  /** Add fields the current table does not already have. */
+  appendTableFields(tableId: string, fields: DataField[]): Promise<void>
 
   /**
    * Create one row (its slug comes from its `slug` cell, as for any row);

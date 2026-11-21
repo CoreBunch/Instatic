@@ -126,7 +126,7 @@ Every id is a SOURCE id. `media[].path` is the exact string the content uses (`/
 | Font tokens | Matched by variable; existing wins (a new site's seeded `font-heading`/`font-body`/`font-mono` roles are kept). A missing token is added; its family is reused by name or installed. Families are only installed when an added token binds to them or a carried rule names them. |
 | Custom properties | Added only when the site defines no such variable (root rules, colours, scales, font tokens). They go into ONE engine-owned ambient `:root` rule (`origin.source === FRAGMENT_PROPERTIES_ORIGIN`); later inserts add to it. A user-authored `:root` rule is never edited. |
 | Components | Matched by name (the storage slug `vcSlugFromName`); the site's component wins and instances point at it. Only components reached through added ones are added. Instances of components neither carried nor present are stripped (warning). |
-| Tables | Matched by slug; the site's table wins, its rows are not touched and the fragment's rows are not added; fields it lacks (by id) are appended. A missing table is created with schema and rows. Relation fields survive only when their target table is carried; relation cells never travel. |
+| Tables | Matched by slug; the site's table wins, its rows are not touched and the fragment's rows are not added; fields it lacks (by id) are appended atomically against the current table schema. A missing table is created with schema and rows. Relation fields survive only when their target table is carried; relation cells never travel. |
 | Media | Only what the landing content uses (rows of reused tables excluded). |
 | Links | A `cms:page:<id>` whose slug the site has is remapped to that page (a page fragment's links to itself follow it); any other becomes `#` (reported). Links in rows of created tables are rewritten the same way. |
 | Pages | Only a page fragment adds a page, with a unique slug (`uniquePageSlug`). |
@@ -139,7 +139,7 @@ Every id is a SOURCE id. `media[].path` is the exact string the content uses (`/
 `commitFragmentPlan(plan, adapter, { readMediaBytes, signal?, onProgress? })`:
 
 ```text
-A. media    adapter.findMedia (filename + size + MIME, the library has no hash) or adapter.uploadMedia
+A. media    adapter.findMedia (matching SHA-256) or adapter.uploadMedia
 B. fonts    adapter.installGoogleFont / adapter.registerCustomFont (from the uploaded files)
 C. tables   adapter.createTable (+ createRow, published rows published), adapter.updateTableFields
 D. resolveFragmentPlan   media paths → URLs, fragment table ids → created ids, family ids → installed ids

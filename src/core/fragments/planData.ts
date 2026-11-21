@@ -51,7 +51,6 @@ export function planTables(
         fragmentTableId: table.id,
         tableId: existing.id,
         slug: table.slug,
-        existingFields: existing.fields,
         addFields,
       })
       tableIdMap.set(table.id, existing.id)
@@ -109,6 +108,7 @@ export function referencedMedia(
     nodes: PageNode[]
     components: VisualComponent[]
     rules: StyleRule[]
+    customProperties?: Record<string, string>
     fontFamilies: PlannedFontFamily[]
     tables: PlannedTable[]
   },
@@ -118,7 +118,11 @@ export function referencedMedia(
   const find = createPathFinder(byPath.keys())
   const scan = (text: string) => find(text, found)
   for (const node of parts.nodes) forEachString(nodeContent(node), scan)
-  for (const vc of parts.components) for (const node of Object.values(vc.tree.nodes)) forEachString(nodeContent(node), scan)
+  for (const vc of parts.components) {
+    forEachString(vc.params, scan)
+    for (const node of Object.values(vc.tree.nodes)) forEachString(nodeContent(node), scan)
+  }
+  forEachString(parts.customProperties, scan)
   for (const rule of parts.rules) forEachString(ruleContent(rule), scan)
 
   const ids = new Set<string>()

@@ -120,6 +120,8 @@ export function applyResolvedFragment(
   if (plan.page) {
     const page = addPage(site, plan.page.title, plan.page.slug)
     page.id = plan.page.id
+    if (plan.page.access) page.access = structuredClone(plan.page.access)
+    if (plan.page.seo) page.seo = structuredClone(plan.page.seo)
     page.nodes = { ...plan.nodes }
     page.rootNodeId = plan.roots[0]
     syncSlotInstancesIn(site, page.nodes, Object.keys(page.nodes))

@@ -33,6 +33,7 @@ export const TablePatchBodySchema = Type.Partial(Type.Object({
   pluralLabel: Type.String(),
   primaryFieldId: Type.String(),
   fields: Type.Unknown(),
+  appendFields: Type.Unknown(),
 }))
 
 export const TableAccessBodySchema = Type.Object({ access: AccessRuleSchema })

@@ -198,7 +198,7 @@ async function writeTables(
   try {
     // Created tables first, relation fields to a table not created yet held
     // back, so every relation can point at a real id.
-    const deferred: { tableId: string; fields: DataField[]; withRelations: DataField[] }[] = []
+    const deferred: { tableId: string; fields: DataField[] }[] = []
     for (const table of plan.tables) {
       if (table.action !== 'create') continue
       options.signal?.throwIfAborted()
@@ -207,7 +207,7 @@ async function writeTables(
       const created = await adapter.createTable({ ...table.input, fields: ready.map((f) => withTableIds(f, tableIdMap)) })
       tableIdMap.set(table.fragmentTableId, created.id)
       if (ready.length !== table.input.fields.length) {
-        deferred.push({ tableId: created.id, fields: ready, withRelations: table.input.fields })
+        deferred.push({ tableId: created.id, fields: table.input.fields.filter(field => !ready.includes(field)) })
       }
       for (const row of table.rows) {
         options.signal?.throwIfAborted()
@@ -219,16 +219,13 @@ async function writeTables(
       done += 1
     }
     for (const item of deferred) {
-      await adapter.updateTableFields(item.tableId, item.withRelations.map((f) => withTableIds(f, tableIdMap)))
+      await adapter.appendTableFields(item.tableId, item.fields.map((f) => withTableIds(f, tableIdMap)))
     }
     for (const table of plan.tables) {
       if (table.action !== 'reuse' || table.addFields.length === 0) continue
       options.signal?.throwIfAborted()
       options.onProgress?.({ phase: 'tables', done, total, label: table.slug })
-      await adapter.updateTableFields(table.tableId, [
-        ...table.existingFields,
-        ...table.addFields.map((f) => withTableIds(f, tableIdMap)),
-      ])
+      await adapter.appendTableFields(table.tableId, table.addFields.map((f) => withTableIds(f, tableIdMap)))
       done += 1
     }
   } catch (err) {

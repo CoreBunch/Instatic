@@ -585,6 +585,7 @@ const UpdateDataTableInputSchema = Type.Object({
   pluralLabel: Type.Optional(Type.String()),
   primaryFieldId: Type.Optional(Type.String()),
   fields: Type.Optional(Type.Array(DataFieldSchema)),
+  appendFields: Type.Optional(Type.Array(DataFieldSchema)),
 })
 
 export type UpdateDataTableInput = Static<typeof UpdateDataTableInputSchema>

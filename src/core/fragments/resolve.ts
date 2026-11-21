@@ -7,7 +7,7 @@
 
 import type { FontEntry } from '@core/fonts'
 import type { PageNode } from '@core/page-tree'
-import { createPathReplacer, mapNodeStrings, mapRuleStrings, remapTableRefs } from './references'
+import { createPathReplacer, mapNodeStrings, mapRuleStrings, mapStrings, remapTableRefs } from './references'
 import type { FragmentInsertPlan } from './planTypes'
 
 /** The plan with every reference resolved; what the store transaction applies. */
@@ -45,7 +45,7 @@ export function resolveFragmentPlan(plan: FragmentInsertPlan, resolution: Fragme
   const components = plan.components.map((vc) => {
     const treeNodes: Record<string, PageNode> = {}
     for (const [id, node] of Object.entries(vc.tree.nodes)) treeNodes[id] = resolveNode(node as PageNode)
-    return { ...vc, tree: { ...vc.tree, nodes: treeNodes } }
+    return { ...vc, params: mapStrings(vc.params, replacePaths), tree: { ...vc.tree, nodes: treeNodes } }
   })
 
   const fontTokens = plan.fontTokens.map((token) => {

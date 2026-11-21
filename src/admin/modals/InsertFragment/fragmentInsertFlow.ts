@@ -18,6 +18,8 @@ import {
 import { listCmsDataTables } from '@core/persistence/cmsData'
 import { useEditorStore } from '@site/store/store'
 import { fragmentInsertDocument } from '@site/store/slices/fragmentsSlice'
+import { collabBranchId } from '@site/store/slices/site/collabBranch'
+import { isSameActiveDocument } from '@site/store/slices/uiSlice'
 import { createFragmentInsertAdapter } from './createFragmentInsertAdapter'
 
 export interface LoadedFragment {
@@ -50,25 +52,48 @@ export async function loadFragmentFile(file: File): Promise<LoadedFragment> {
   return { fileName: file.name, fragment: pkg.fragment, readMedia: pkg.readMedia }
 }
 
-/** Plan the insert against the open document and the site's data tables. */
-export async function planLoadedFragment(loaded: LoadedFragment): Promise<FragmentInsertPlan> {
-  const tables = await listCmsDataTables()
+export type EditorFragmentPlan = FragmentInsertPlan & {
+  assertCurrentTarget(): void
+}
+
+/** Plan against the destination as it was when the editor started this operation. */
+export async function planLoadedFragment(
+  loaded: LoadedFragment,
+  assertCurrentTarget = captureFragmentTarget(),
+): Promise<EditorFragmentPlan> {
+  assertCurrentTarget()
   const state = useEditorStore.getState()
   if (!state.site) throw new Error('The site is still loading.')
-  return planFragmentInsert(
-    { site: state.site, tables, document: fragmentInsertDocument(state) ?? undefined },
-    loaded.fragment,
-  )
+  const tables = loaded.fragment.tables.length > 0 ? await listCmsDataTables() : []
+  assertCurrentTarget()
+  return {
+    ...planFragmentInsert({ site: state.site, tables, document: fragmentInsertDocument(state) ?? undefined }, loaded.fragment),
+    assertCurrentTarget,
+  }
+}
+
+export function captureFragmentTarget(): () => void {
+  const state = useEditorStore.getState()
+  const branch = collabBranchId()
+  const document = fragmentInsertDocument(state)
+  return () => {
+    const current = useEditorStore.getState()
+    if (current.site !== state.site || collabBranchId() !== branch
+      || !isSameActiveDocument(document, fragmentInsertDocument(current))) {
+      throw new Error('The destination changed. Review the fragment again before inserting it.')
+    }
+  }
 }
 
 export function runFragmentInsert(
   loaded: LoadedFragment,
-  plan: FragmentInsertPlan,
+  plan: EditorFragmentPlan,
   runStepUp: <T>(action: () => Promise<T>) => Promise<T>,
   signal: AbortSignal,
   onProgress: (line: string) => void,
 ): Promise<FragmentInsertResult> {
-  return commitFragmentPlan(plan, createFragmentInsertAdapter(runStepUp), {
+  plan.assertCurrentTarget()
+  return commitFragmentPlan(plan, createFragmentInsertAdapter(runStepUp, plan.assertCurrentTarget), {
     readMediaBytes: loaded.readMedia,
     signal,
     onProgress: ({ phase, done, total, label }) => {

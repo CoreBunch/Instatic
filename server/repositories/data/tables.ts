@@ -385,6 +385,41 @@ export async function updateDataTable(
   return rows[0] ? mapTable(rows[0]) : null
 }
 
+/** Add missing fields against the latest schema while holding the row lock. */
+export async function appendDataTableFields(
+  db: DbClient,
+  scope: BranchScope,
+  tableId: string,
+  additions: DataField[],
+  actorUserId: string,
+): Promise<DataTable | null> {
+  return db.transaction(async (tx) => {
+    // An UPDATE obtains the row lock in Postgres and the write lock in SQLite.
+    const { rows } = await tx<{ logical_id: string }>`
+      update data_tables
+      set updated_at = updated_at
+      where id = ${physicalId(scope.branchId, tableId)}
+        and branch_id = ${scope.branchId}
+        and deleted_at is null
+      returning logical_id
+    `
+    if (rows.length === 0) return null
+    const table = await getDataTable(tx, scope, tableId)
+    if (!table) return null
+    const existing = new Set(table.fields.map(field => field.id))
+    const missing = additions.filter(field => {
+      if (existing.has(field.id)) return false
+      existing.add(field.id)
+      return true
+    })
+    if (missing.length === 0) return table
+    return updateDataTable(tx, scope, tableId, {
+      fields: [...table.fields, ...missing],
+      updatedByUserId: actorUserId,
+    })
+  })
+}
+
 /**
  * Insert a table only if its id does not already exist. Returns `true` when
  * the table was inserted, `false` when it was skipped (id conflict). Used by

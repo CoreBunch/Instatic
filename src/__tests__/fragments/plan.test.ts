@@ -73,6 +73,46 @@ describe('planFragmentInsert — classes and rules', () => {
     expect(plan.report.rules.ambientAdded).toEqual(['.page-wrap .hero-title', '@keyframes fade'])
   })
 
+  it('preserves source variants and maps a reused class to all destination variants', () => {
+    const section = structuredClone(fragment)
+    const original = section.styleRules.find(rule => rule.name === 'hero' && rule.kind === 'class')!
+    const hover = { ...original, id: 'source-hover', selector: '.hero:hover', order: original.order + 1 }
+    section.styleRules.push(hover)
+    section.nodes.hero.classIds.push(hover.id)
+    const empty = makeSite({ pages: [makePage({ id: 't-home' })] })
+    const added = planIntoTarget(empty, section).plan
+    expect(added.styleRules.filter(rule => rule.name === 'hero' && rule.kind === 'class').map(rule => rule.selector))
+      .toEqual(['.hero', '.hero:hover'])
+    expect(added.nodes[added.roots[0]].classIds).toContain(added.styleRules.find(rule => rule.selector === '.hero:hover')!.id)
+
+    const destination = makeTargetSite()
+    destination.styleRules['target-hover'] = { ...destination.styleRules['t-hero'], id: 'target-hover', selector: '.hero:hover' }
+    const reused = planIntoTarget(destination, section).plan
+    expect(reused.nodes[reused.roots[0]].classIds.filter(id => ['t-hero', 'target-hover'].includes(id)))
+      .toEqual(['t-hero', 'target-hover'])
+    expect(reused.styleRules.some(rule => rule.selector === '.hero:hover')).toBe(false)
+  })
+
+  it('keeps exact destination selectors and preserves repeated source layers for missing selectors', () => {
+    const section = structuredClone(fragment)
+    const base = section.styleRules.find(rule => rule.name === 'hero' && rule.kind === 'class')!
+    section.styleRules.push(
+      { ...base, id: 'ambient-one', kind: 'ambient', selector: '.hero', styles: { borderRadius: '1px' } },
+      { ...base, id: 'ambient-two', kind: 'ambient', selector: '.hero', styles: { borderRadius: '2px' }, order: base.order + 1 },
+    )
+    const target = makeTargetSite()
+    const kept = planIntoTarget(target, section).plan
+    expect(kept.styleRules.filter(rule => rule.selector === '.hero')).toEqual([])
+    const owned = target.styleRules['t-hero']
+    target.styleRules['t-hero'] = { ...owned, kind: 'ambient' }
+    expect(planIntoTarget(target, section).plan.styleRules.find(rule => rule.selector === '.hero')?.styles).toEqual({})
+
+    delete target.styleRules['t-hero']
+    const added = planIntoTarget(target, section).plan
+    expect(added.styleRules.filter(rule => rule.kind === 'ambient' && rule.selector === '.hero').map(rule => rule.styles.borderRadius))
+      .toEqual(['1px', '2px'])
+  })
+
   it('clones scoped module-style rules onto the new node ids', () => {
     const { plan } = planIntoTarget()
     const scoped = plan.styleRules.find((r) => r.scope)
@@ -218,6 +258,19 @@ describe('planFragmentInsert — components, tables, links, media', () => {
     // cover.jpg is only used by rows of the reused projects table, which are
     // not added; bg.jpg only by the fragment's `hero`, and the site's wins.
     expect(plan.media.map((m) => m.id).sort()).toEqual(['media-font', 'media-photo'])
+  })
+
+  it('carries media referenced by a root variable only when the destination needs it', async () => {
+    const source = makeSourceSite()
+    source.pages[0].nodes.photo.props.src = ''
+    source.styleRules['cls-root'].styles['--hero-photo'] = 'url(/uploads/photo.jpg)'
+    source.styleRules['cls-hero-title'].styles.backgroundImage = 'var(--hero-photo)'
+    const picked = await extractFragment(sourceWithBytes(source), { pageId: 'page-home', rootNodeIds: ['hero'] })
+    expect(picked.fragment.media.some(media => media.id === 'media-photo')).toBe(true)
+    const target = makeTargetSite()
+    expect(planIntoTarget(target, picked.fragment).plan.media.some(media => media.id === 'media-photo')).toBe(true)
+    target.styleRules['t-root'].styles['--hero-photo'] = 'none'
+    expect(planIntoTarget(target, picked.fragment).plan.media.some(media => media.id === 'media-photo')).toBe(false)
   })
 
   it('repeats the outside dependencies the extractor found', () => {

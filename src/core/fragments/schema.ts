@@ -31,12 +31,14 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 import {
   ConditionDefSchema,
   PageNodeSchema,
+  PageSeoSchema,
   StyleRuleSchema,
   assertValidNodeTree,
   type PageNode,
 } from '@core/page-tree'
 import { VisualComponentSchema } from '@core/visual-components-schema'
 import { FrameworkColorTokenSchema } from '@core/framework-schema'
+import { AccessRuleSchema } from '@core/members'
 import { FontEntrySchema, FontTokenSchema } from '@core/fonts'
 import { DataFieldSchema } from '@core/data/schemas'
 
@@ -162,6 +164,8 @@ export const SiteFragmentSchema = Type.Object({
   page: Type.Optional(Type.Object({
     title: Type.String(),
     slug: Type.String(),
+    access: Type.Optional(AccessRuleSchema),
+    seo: Type.Optional(PageSeoSchema),
   })),
   component: Type.Optional(Type.Object({
     id: Type.String({ minLength: 1 }),

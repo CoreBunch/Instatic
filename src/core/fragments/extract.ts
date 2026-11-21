@@ -133,12 +133,12 @@ export async function extractFragment(
   // ── 8. Media ───────────────────────────────────────────────────────────────
   const { media, mediaBytes } = await collectMedia(
     source,
-    { styleRules, allNodes, tables, fontFamilies: tokens.fontFamilies },
+    { styleRules, allNodes, tables, fontFamilies: tokens.fontFamilies, customProperties: tokens.customProperties, components },
     warnings,
   )
 
   // ── 9. Links ───────────────────────────────────────────────────────────────
-  const links = collectLinks(site.pages, allNodes, tables, warnings)
+  const links = collectLinks(site.pages, allNodes, components, tables, warnings)
 
   const fragment: SiteFragment = {
     format: SITE_FRAGMENT_FORMAT,
@@ -147,7 +147,12 @@ export async function extractFragment(
     ...(options.origin ? { origin: options.origin } : {}),
     roots,
     nodes,
-    ...(picked.page && kind === 'page' ? { page: { title: picked.page.title, slug: picked.page.slug } } : {}),
+    ...(picked.page && kind === 'page' ? { page: {
+      title: picked.page.title,
+      slug: picked.page.slug,
+      ...(picked.page.access ? { access: structuredClone(picked.page.access) } : {}),
+      ...(picked.page.seo ? { seo: structuredClone(picked.page.seo) } : {}),
+    } } : {}),
     ...(picked.component ? { component: picked.component } : {}),
     styleRules,
     conditions,
@@ -280,12 +285,14 @@ function collectComponents(
 function collectLinks(
   pages: readonly Page[],
   allNodes: PageNode[],
+  components: VisualComponent[],
   tables: FragmentTable[],
   warnings: FragmentWarning[],
 ): FragmentLink[] {
   const ids = new Set<string>()
   const scan = (text: string) => collectPageRefIds(text, ids)
   for (const node of allNodes) forEachString(nodeContent(node), scan)
+  for (const component of components) forEachString(component.params, scan)
   for (const table of tables) for (const row of table.rows ?? []) forEachString(row.cells, scan)
 
   const links: FragmentLink[] = []

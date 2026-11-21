@@ -9,6 +9,7 @@ import {
   FragmentCommitError,
   applyResolvedFragment,
   commitFragmentPlan,
+  extractFragment,
   planFragmentInsert,
   type FragmentInsertAdapter,
   type FragmentMedia,
@@ -19,7 +20,7 @@ import type { FontEntry } from '@core/fonts'
 import type { PageNode, SiteDocument } from '@core/page-tree'
 import { reconcileFrameworkClasses } from '@site/store/slices/site/framework/reconcile'
 import { makePage, makeSite } from '../fixtures'
-import { TARGET_TABLES, extractFromSource, makeTargetSite, mediaBytesFor } from './fixtures'
+import { TARGET_TABLES, extractFromSource, makeSourceSite, makeTargetSite, mediaBytesFor, sourceWithBytes } from './fixtures'
 
 interface MemoryServer {
   library: { id: string; url: string; filename: string; mimeType: string; sizeBytes: number }[]
@@ -71,8 +72,9 @@ function memoryAdapter(site: SiteDocument, tables: DataTable[], placement: { pag
       server.tables.push(table)
       return { id: table.id }
     },
-    async updateTableFields(tableId: string, fields: DataField[]) {
-      server.tables.find((t) => t.id === tableId)!.fields = fields
+    async appendTableFields(tableId: string, fields: DataField[]) {
+      const table = server.tables.find((item) => item.id === tableId)!
+      table.fields.push(...fields.filter(field => !table.fields.some(existing => existing.id === field.id)))
     },
     async createRow(tableId, row) {
       server.rows.push({ tableId, status: row.status, cells: row.cells })
@@ -217,14 +219,19 @@ describe('commitFragmentPlan — into an empty site', () => {
     }
   })
 
-  it('a page fragment becomes a new page', async () => {
-    const { fragment } = await extractFromSource({ pageId: 'page-home' })
+  it('a page fragment becomes a new page with its member access and SEO intact', async () => {
+    const source = makeSourceSite()
+    source.pages[0].access = { level: 'members', onDeny: 'login' }
+    source.pages[0].seo = { robots: 'noindex' }
+    const { fragment } = await extractFragment(sourceWithBytes(source), { pageId: 'page-home' })
     const site = makeTargetSite()
     const plan = planFragmentInsert({ site, tables: TARGET_TABLES }, fragment)
     const { adapter } = memoryAdapter(site, TARGET_TABLES, { pageId: 't-home', parentId: 't-body' })
     const result = await commitFragmentPlan(plan, adapter, { readMediaBytes: readBytes(fragment) })
     const page = site.pages.find((p) => p.id === result.pageId)!
     expect(page.slug).toBe('index-2')
+    expect(page.access).toEqual(source.pages[0].access)
+    expect(page.seo).toEqual(source.pages[0].seo)
     expect(page.nodes[page.rootNodeId].moduleId).toBe('base.body')
     expect(Object.keys(page.nodes)).toHaveLength(Object.keys(fragment.nodes).length)
   })

@@ -16,20 +16,27 @@ import { Dialog } from '@ui/components/Dialog'
 import { FileUpload } from '@ui/components/FileUpload'
 import { pushToast } from '@ui/components/Toast'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
-import type { FragmentInsertPlan, FragmentInsertResult } from '@core/fragments'
+import type { FragmentInsertResult } from '@core/fragments'
 import { isAbortError } from '@core/http'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { useEditorStore } from '@site/store/store'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { FragmentReport } from './FragmentReport'
-import { loadFragmentFile, planLoadedFragment, runFragmentInsert, type LoadedFragment } from './fragmentInsertFlow'
+import {
+  captureFragmentTarget,
+  loadFragmentFile,
+  planLoadedFragment,
+  runFragmentInsert,
+  type EditorFragmentPlan,
+  type LoadedFragment,
+} from './fragmentInsertFlow'
 import styles from './InsertFragmentModal.module.css'
 
 type Step =
   | { kind: 'pick' }
   | { kind: 'reading'; fileName: string }
-  | { kind: 'review'; loaded: LoadedFragment; plan: FragmentInsertPlan }
-  | { kind: 'running'; loaded: LoadedFragment; plan: FragmentInsertPlan; line: string }
+  | { kind: 'review'; loaded: LoadedFragment; plan: EditorFragmentPlan }
+  | { kind: 'running'; loaded: LoadedFragment; plan: EditorFragmentPlan; line: string }
   | { kind: 'done'; loaded: LoadedFragment; result: FragmentInsertResult }
 
 type SetStep = (next: Step | ((current: Step) => Step)) => void
@@ -39,8 +46,9 @@ type SetStep = (next: Step | ((current: Step) => Step)) => void
 async function readAndPlan(file: File, setStep: SetStep): Promise<void> {
   setStep({ kind: 'reading', fileName: file.name })
   try {
+    const assertCurrentTarget = captureFragmentTarget()
     const loaded = await loadFragmentFile(file)
-    const plan = await planLoadedFragment(loaded)
+    const plan = await planLoadedFragment(loaded, assertCurrentTarget)
     setStep({ kind: 'review', loaded, plan })
   } catch (err) {
     console.error('[InsertFragmentModal] reading the fragment failed:', err)
@@ -57,7 +65,7 @@ function isStepUpCancel(err: unknown): boolean {
 
 async function insert(
   loaded: LoadedFragment,
-  plan: FragmentInsertPlan,
+  plan: EditorFragmentPlan,
   runStepUp: ReturnType<typeof useStepUp>['runStepUp'],
   controller: AbortController,
   setStep: SetStep,

@@ -3,7 +3,7 @@
  * `commitFragmentPlan` executes, and what the user is shown.
  */
 
-import type { ConditionDef, PageNode, SiteDocument, StyleRule } from '@core/page-tree'
+import type { ConditionDef, Page, PageNode, SiteDocument, StyleRule } from '@core/page-tree'
 import type { FrameworkColorToken } from '@core/framework-schema'
 import type { FontEntry, FontToken } from '@core/fonts'
 import type { VisualComponent } from '@core/visualComponents'
@@ -38,7 +38,6 @@ export interface PlannedTableReuse {
   tableId: string
   slug: string
   /** The table's current fields; `addFields` are appended to them. */
-  existingFields: DataField[]
   addFields: DataField[]
 }
 
@@ -108,7 +107,7 @@ export interface FragmentInsertReport {
 export interface FragmentInsertPlan {
   kind: FragmentKind
   document?: FragmentInsertDocument
-  page?: { id: string; title: string; slug: string }
+  page?: Pick<Page, 'id' | 'title' | 'slug' | 'access' | 'seo'>
   roots: string[]
   nodes: Record<string, PageNode>
   styleRules: StyleRule[]
