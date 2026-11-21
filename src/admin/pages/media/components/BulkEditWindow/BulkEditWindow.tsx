@@ -11,6 +11,7 @@
  */
 import { useState } from 'react'
 import { Button } from '@ui/components/Button'
+import { Dialog } from '@ui/components/Dialog'
 import { Input, Textarea } from '@ui/components/Input'
 import { canDeleteMedia, canWriteMedia } from '@admin/access'
 import { useCurrentAdminUser } from '@admin/sessionContext'
@@ -143,10 +144,39 @@ async function runRestoreAll(
   }
 }
 
+/**
+ * Permanent deletion for a whole selection.
+ *
+ * Same per-asset loop as its Trash / Restore siblings — `purgeAsset` is a
+ * single-id endpoint like the other two, so no server work is needed. The
+ * trash view offered Restore but no counterpart, which left emptying the
+ * trash a one-file-at-a-time job through the preview window.
+ */
+async function runPurgeAll(
+  assets: UseMediaWorkspaceResult['selectedAssets'],
+  workspace: UseMediaWorkspaceResult,
+  setBusy: (v: boolean) => void,
+  setProgress: (v: { done: number; total: number } | null) => void,
+): Promise<void> {
+  const count = assets.length
+  try {
+    let done = 0
+    for (const asset of assets) {
+      await workspace.purgeAsset(asset.id)
+      done += 1
+      setProgress({ done, total: count })
+    }
+  } finally {
+    setBusy(false)
+    setTimeout(() => setProgress(null), 800)
+  }
+}
+
 export function BulkEditWindow({ workspace, open, onClose }: BulkEditWindowProps) {
   const currentUser = useCurrentAdminUser()
   const [plan, setPlan] = useState<BatchPlan>(EMPTY_PLAN)
   const [busy, setBusy] = useState(false)
+  const [purgeConfirmOpen, setPurgeConfirmOpen] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
 
   const assets = workspace.selectedAssets
@@ -181,6 +211,19 @@ export function BulkEditWindow({ workspace, open, onClose }: BulkEditWindowProps
   }
 
   const anyTrashed = assets.some((a) => a.deletedAt !== null)
+  // Only the trashed members are purgeable — `purgeAsset` 400s on an asset
+  // that has not been soft-deleted. The confirmation counts these AND the
+  // purge runs on these, so a mixed selection deletes exactly what the
+  // dialog promised and never fires a request bound to fail.
+  const purgeable = assets.filter((a) => a.deletedAt !== null)
+  const trashedCount = purgeable.length
+
+  async function purgeAll() {
+    if (!canDelete || busy || trashedCount === 0) return
+    setBusy(true)
+    setProgress({ done: 0, total: trashedCount })
+    await runPurgeAll(purgeable, workspace, setBusy, setProgress)
+  }
   const anyActive = assets.some((a) => a.deletedAt === null)
 
   return (
@@ -322,9 +365,48 @@ export function BulkEditWindow({ workspace, open, onClose }: BulkEditWindowProps
                 <span>Restore</span>
               </Button>
             )}
+            {canDelete && anyTrashed && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setPurgeConfirmOpen(true)}
+                disabled={busy}
+              >
+                <TrashSolidIcon size={13} />
+                <span>Delete permanently</span>
+              </Button>
+            )}
           </div>
         </section>
       )}
+      <Dialog
+        open={purgeConfirmOpen}
+        onClose={() => setPurgeConfirmOpen(false)}
+        tone="danger"
+        eyebrow="Cannot be undone"
+        title={`Delete ${trashedCount} ${trashedCount === 1 ? 'file' : 'files'} permanently?`}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPurgeConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setPurgeConfirmOpen(false)
+                void purgeAll()
+              }}
+            >
+              Delete permanently
+            </Button>
+          </>
+        }
+      >
+        <p>
+          This removes each file and every generated size from disk. Any page
+          still referencing one will render a broken image.
+        </p>
+      </Dialog>
     </FloatingWindow>
   )
 }

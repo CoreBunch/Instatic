@@ -250,7 +250,7 @@ test.describe.serial('media capability boundaries', () => {
       const menu = personaPage.getByRole('menu', { name: 'Media item options' })
       await expect(menu.getByText('Copy URL')).toBeVisible()
       await expect(menu.getByText('Rename')).toHaveCount(0)
-      await expect(menu.getByText('Delete')).toHaveCount(0)
+      await expect(menu.getByText('Move to Trash')).toHaveCount(0)
       await personaPage.keyboard.press('Escape')
 
       await asset.click()
@@ -275,7 +275,7 @@ test.describe.serial('media capability boundaries', () => {
       await asset.click({ button: 'right' })
       const menu = personaPage.getByRole('menu', { name: 'Media item options' })
       await expect(menu.getByText('Rename')).toBeVisible()
-      await expect(menu.getByText('Delete')).toHaveCount(0)
+      await expect(menu.getByText('Move to Trash')).toHaveCount(0)
       await personaPage.keyboard.press('Escape')
 
       await asset.click()
@@ -300,7 +300,7 @@ test.describe.serial('media capability boundaries', () => {
       const menu = personaPage.getByRole('menu', { name: 'Media item options' })
       await expect(menu.getByText('Copy URL')).toBeVisible()
       await expect(menu.getByText('Rename')).toHaveCount(0)
-      await expect(menu.getByText('Delete')).toHaveCount(0)
+      await expect(menu.getByText('Move to Trash')).toHaveCount(0)
       await personaPage.keyboard.press('Escape')
 
       await asset.click()
@@ -349,10 +349,10 @@ test.describe.serial('media capability boundaries', () => {
       await asset.click({ button: 'right' })
       const activeMenu = personaPage.getByRole('menu', { name: 'Media item options' })
       await expect(activeMenu.getByText('Rename')).toHaveCount(0)
-      await expect(activeMenu.getByRole('menuitem', { name: 'Delete' })).toBeVisible()
+      await expect(activeMenu.getByRole('menuitem', { name: 'Move to Trash' })).toBeVisible()
       await Promise.all([
         waitForMediaDelete(personaPage),
-        activeMenu.getByRole('menuitem', { name: 'Delete' }).click(),
+        activeMenu.getByRole('menuitem', { name: 'Move to Trash' }).click(),
       ])
       await expect(personaPage.getByRole('button', { name: `Open ${deleteFilename}` })).toHaveCount(0)
 
@@ -362,10 +362,14 @@ test.describe.serial('media capability boundaries', () => {
       await trashedAsset.click({ button: 'right' })
       const trashMenu = personaPage.getByRole('menu', { name: 'Media item options' })
       await expect(trashMenu.getByText('Restore')).toHaveCount(0)
-      await expect(trashMenu.getByRole('menuitem', { name: 'Delete' })).toBeVisible()
+      await expect(trashMenu.getByRole('menuitem', { name: 'Delete permanently' })).toBeVisible()
+      // Purging cannot be undone, so the Trash menu asks before it happens.
+      await trashMenu.getByRole('menuitem', { name: 'Delete permanently' }).click()
+      const purgeConfirm = personaPage.getByRole('alertdialog', { name: `Delete "${deleteFilename}" permanently?` })
+      await expect(purgeConfirm).toBeVisible()
       await Promise.all([
         waitForMediaDelete(personaPage),
-        trashMenu.getByRole('menuitem', { name: 'Delete' }).click(),
+        purgeConfirm.getByRole('button', { name: 'Delete permanently' }).click(),
       ])
       await expect(personaPage.getByRole('button', { name: `Open ${deleteFilename}` })).toHaveCount(0)
       await expect(personaPage.getByText('Trash is empty')).toBeVisible()
