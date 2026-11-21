@@ -33,6 +33,14 @@ import {
   type SiteRuntimeConfig,
 } from '@core/site-runtime'
 
+function importedScriptRuntime(script: ImportScript) {
+  return {
+    format: script.format,
+    placement: script.placement,
+    timing: script.placement === 'head' ? 'immediate' as const : DEFAULT_SCRIPT_RUNTIME_CONFIG.timing,
+  }
+}
+
 export function addImportedScripts(
   site: Draft<SiteDocument>,
   siteRuntime: Draft<SiteRuntimeConfig> | undefined,
@@ -45,10 +53,7 @@ export function addImportedScripts(
   return commitFiles(site, scripts, 'script', (script, id, pageIds) => {
     const config = {
       ...DEFAULT_SCRIPT_RUNTIME_CONFIG,
-      format: script.format,
-      placement: script.placement,
-      // A head script blocks the parser and runs as soon as it loads.
-      timing: script.placement === 'head' ? 'immediate' as const : DEFAULT_SCRIPT_RUNTIME_CONFIG.timing,
+      ...importedScriptRuntime(script),
       priority: script.priority,
       scope: pageIds.length > 0
         ? { type: 'pages' as const, pageIds }
@@ -174,7 +179,7 @@ export function reuseImportedFiles(
       entry.scope = widenScope(entry.scope, item.pageIds)
       // The load order stays the site's: an import's priorities only rank the
       // files of that import, not this file against the rest of the site.
-      if (script && replacement && 'format' in replacement) script.format = replacement.format
+      if (script && replacement && 'format' in replacement) Object.assign(script, importedScriptRuntime(replacement))
     }
     reused.push({ id: file.id, path: file.path })
   }

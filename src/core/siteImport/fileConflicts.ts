@@ -6,6 +6,7 @@
  */
 
 import type { SiteDocument } from '@core/page-tree'
+import type { SiteScriptRuntimeConfig } from '@core/site-runtime'
 import type { SiteFile } from '@core/files/schemas'
 import { sha256Hex } from '@core/utils/sha256'
 import type { ImportScript, ImportStylesheet } from './types'
@@ -55,7 +56,7 @@ export function detectFileConflicts(
     const file = matchesDestination ? occupant : bySource.get(`${kind}:${path}`)
     if (!file || claimed.has(file.id)) continue
     claimed.add(file.id)
-    const state = fileConflictState(file, item)
+    const state = fileConflictState(file, item, site.runtime?.scripts?.[file.id])
     conflicts.push({
       kind,
       path,
@@ -68,9 +69,12 @@ export function detectFileConflicts(
   return conflicts
 }
 
-function fileConflictState(file: SiteFile, imported: ImportScript | ImportStylesheet): FileConflictState {
+function fileConflictState(file: SiteFile, imported: ImportScript | ImportStylesheet, runtime?: SiteScriptRuntimeConfig): FileConflictState {
   const record = file.importRecord
   if (!record) return file.content === imported.content ? 'unchanged' : 'differs'
   if (importSourceHash(imported) === record.sourceHash) return 'unchanged'
+  // Older import records hashed the script bytes and dependencies only.
+  if ('format' in imported && runtime?.format === imported.format && runtime.placement === imported.placement
+    && importSourceHash({ content: imported.content, dependencies: imported.dependencies }) === record.sourceHash) return 'unchanged'
   return sha256Hex(file.content ?? '') === record.contentHash ? 'changed' : 'edited'
 }
