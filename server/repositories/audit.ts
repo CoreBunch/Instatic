@@ -70,6 +70,10 @@ const AuditActionSchema = Type.Union([
   Type.Literal('member.signout'),
   // An administrator downloaded a member's data (GET /members/:id/export).
   Type.Literal('member.export'),
+  // An administrator downloaded every member (GET /members/export); metadata: format, count.
+  Type.Literal('member.export_all'),
+  // An administrator imported members from a file (POST /members/import); metadata: the counts.
+  Type.Literal('member.import'),
   Type.Literal('member.delete'),
   Type.Literal('member.tag.grant'),
   Type.Literal('member.tag.revoke'),

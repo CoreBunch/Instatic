@@ -59,8 +59,8 @@ export function MemberDetailPanel({
 
       {member.status === 'pending' && (
         <p className={ld.notice} data-tone="warning">
-          Not finished yet: this person has not confirmed their address. They were invited, signed up, or were given an
-          account by a plugin. A sign-in link, a password reset or an invitation confirms it.
+          Not finished yet: this person has not confirmed their address. They were invited, signed up, imported from a
+          file, or given an account by a plugin. A sign-in link, a password reset or an invitation confirms it.
         </p>
       )}
       {member.status === 'suspended' && (

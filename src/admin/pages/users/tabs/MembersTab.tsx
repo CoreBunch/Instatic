@@ -47,8 +47,12 @@ import { TagPill } from '@ui/components/TagPill'
 import { pushToast } from '@ui/components/Toast'
 import { PlugSolidIcon } from 'pixel-art-icons/icons/plug-solid'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
+import { UploadIcon } from 'pixel-art-icons/icons/upload'
+import { SaveSolidIcon } from 'pixel-art-icons/icons/save-solid'
 import { Settings2SolidIcon } from 'pixel-art-icons/icons/settings-2-solid'
 import { forgetMemberProfileFields } from '@admin/shared/DataBindingPicker/cache'
+import { ExportMembersDialog } from '../members/ExportMembersDialog'
+import { ImportMembersDialog } from '../members/ImportMembersDialog'
 import { InvitationLinkDialog } from '../members/InvitationLinkDialog'
 import { InviteMemberDialog } from '../members/InviteMemberDialog'
 import { MemberAppsDialog } from '../members/MemberAppsDialog'
@@ -96,7 +100,7 @@ export function MembersTab({
   const [more, setMore] = useState<{ key: string; members: MemberListItem[]; nextOffset: number | null } | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [dialog, setDialog] = useState<'invite' | 'settings' | 'apps' | null>(null)
+  const [dialog, setDialog] = useState<'invite' | 'settings' | 'apps' | 'export' | 'import' | null>(null)
   // A link the admin asked for, shown once so they can pass it on.
   const [invitationLink, setInvitationLink] = useState<{ email: string; link: string } | null>(null)
   // A change to the selected member answers with the member as it now stands.
@@ -149,6 +153,11 @@ export function MembersTab({
       : !linkAvailable
         ? 'The site does not know its public address yet, so it cannot make invitation links. Set PUBLIC_ORIGIN on the server.'
         : undefined
+
+  const counts = list.data?.counts
+  const manageBlocked = canManage ? undefined : 'Your role cannot export or import members'
+  // Invitations from an import take the same checks as the Invite button, and email.
+  const importInvitationBlocked = inviteBlocked ?? (mailAvailable ? undefined : 'Outgoing email is not set up, so an import cannot send invitations. Set up a connector and a sender under Email.')
 
   function clearFilters() {
     setStatus('all')
@@ -268,8 +277,6 @@ export function MembersTab({
     }
   }
 
-  const counts = list.data?.counts
-
   return (
     <section className={styles.section} aria-labelledby="members-title">
       <div className={styles.sectionHeader}>
@@ -297,6 +304,28 @@ export function MembersTab({
           >
             <PlugSolidIcon size={12} aria-hidden="true" />
             Apps
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => setDialog('import')}
+            disabled={!settings.data || manageBlocked !== undefined}
+            tooltip={manageBlocked}
+          >
+            <UploadIcon size={12} aria-hidden="true" />
+            Import
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => setDialog('export')}
+            disabled={!counts || counts.all === 0 || manageBlocked !== undefined}
+            tooltip={manageBlocked ?? (counts && counts.all === 0 ? 'There are no members to export yet' : undefined)}
+          >
+            <SaveSolidIcon size={12} aria-hidden="true" />
+            Export all
           </Button>
           <Button
             type="button"
@@ -472,6 +501,20 @@ export function MembersTab({
           mailAvailable={mailAvailable}
           onClose={() => setDialog(null)}
           onInvite={(email, tags, delivery) => void invite(email, tags, delivery)}
+        />
+      )}
+      {dialog === 'export' && counts && (
+        <ExportMembersDialog total={counts.all} onClose={() => setDialog(null)} onExported={onChanged} />
+      )}
+      {dialog === 'import' && (
+        <ImportMembersDialog
+          invitationBlocked={importInvitationBlocked}
+          onClose={() => setDialog(null)}
+          onImported={() => {
+            setMore(null)
+            list.refresh()
+            onChanged()
+          }}
         />
       )}
       {invitationLink && (

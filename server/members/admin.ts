@@ -54,7 +54,7 @@ function isPending(member: Pick<MemberRecord, 'passwordHash' | 'emailVerifiedAt'
   return member.passwordHash === null && member.emailVerifiedAt === null
 }
 
-function adminStatus(member: Pick<MemberRecord, 'status' | 'passwordHash' | 'emailVerifiedAt'>): MemberAdminStatus {
+export function adminStatus(member: Pick<MemberRecord, 'status' | 'passwordHash' | 'emailVerifiedAt'>): MemberAdminStatus {
   if (member.status === 'suspended') return 'suspended'
   return isPending(member) ? 'pending' : 'active'
 }
@@ -79,7 +79,7 @@ interface ListRow {
   created_at: Date | string
 }
 
-function profileName(profile: unknown): string {
+export function profileName(profile: unknown): string {
   if (!profile || typeof profile !== 'object') return ''
   const name = (profile as Record<string, unknown>).name
   return typeof name === 'string' ? name : ''
@@ -102,7 +102,7 @@ function toListItem(row: ListRow, tags: string[]): MemberListItem {
 }
 
 /** Numbered (`$1`) or positional (`?`) placeholders, collected with their values. */
-function parameters(db: DbClient) {
+export function parameters(db: DbClient) {
   const values: unknown[] = []
   return {
     values,
@@ -114,7 +114,7 @@ function parameters(db: DbClient) {
 }
 
 /** The tags each of these members holds right now, by member id. */
-async function activeTagsFor(db: DbClient, memberIds: readonly string[]): Promise<Map<string, string[]>> {
+export async function activeTagsFor(db: DbClient, memberIds: readonly string[]): Promise<Map<string, string[]>> {
   const byMember = new Map<string, string[]>()
   if (memberIds.length === 0) return byMember
   const params = parameters(db)

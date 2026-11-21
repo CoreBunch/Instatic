@@ -370,6 +370,8 @@ export type MemberEventKind =
   | 'app_disconnected'
   // Done by a plugin (`metadata.plugin` names it), not by the member.
   | 'created_by_plugin'
+  // Created by an administrator's import (no password, nothing emailed unless invited).
+  | 'imported'
   // Done by an administrator, not by the member.
   | 'invited'
   | 'suspended'

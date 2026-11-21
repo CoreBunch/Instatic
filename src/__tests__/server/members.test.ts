@@ -21,6 +21,7 @@ import {
   listMembersForAdmin,
   setMemberSuspended,
 } from '../../../server/members/admin'
+import { applyMemberImport, existingMemberEmails, memberExportStream, parseMemberImport } from '../../../server/members/bulk'
 import { publishMemberPages } from '../helpers/memberPages'
 
 const ORIGIN = 'http://localhost'
@@ -889,6 +890,27 @@ describe('site members', () => {
       expect(await deleteMemberAsAdmin(t.db, taken.id)).toBe(true)
       expect(await deleteMemberAsAdmin(t.db, taken.id)).toBe(false)
       expect((await listMembersForAdmin(t.db)).counts.all).toBe(1)
+    })
+
+    it('exports and imports members the same on both databases', async () => {
+      const ada = await make('ada@example.com', 'Ada')
+      await make('pending@example.com', '', null)
+      await grantMemberTag(t.db, { memberId: ada.id, tag: 'pro', source: 'admin', expiresAt: null })
+
+      const text = await new Response(memberExportStream(t.db, 'json')).text()
+      const exported = (JSON.parse(text) as { members: Array<{ email: string; status: string; tags: string[] }> }).members
+      expect(exported.map((m) => [m.email, m.status, m.tags]).sort()).toEqual([
+        ['ada@example.com', 'active', ['pro']],
+        ['pending@example.com', 'pending', []],
+      ])
+
+      const parsed = parseMemberImport('csv', 'email,tags\nADA@example.com,vip\nnew@example.com,vip\n', [], [])
+      if (!parsed.ok) throw new Error(parsed.error)
+      expect([...(await existingMemberEmails(t.db, parsed.rows))]).toEqual(['ada@example.com'])
+      const result = await applyMemberImport(t.db, parsed, { existing: 'tags', invite: null })
+      expect(result).toMatchObject({ created: 1, tagged: 1, failed: 0 })
+      expect((await listActiveMemberTags(t.db, ada.id)).sort()).toEqual(['pro', 'vip'])
+      expect(await findMemberByEmail(t.db, 'new@example.com')).toMatchObject({ passwordHash: null, emailVerifiedAt: null })
     })
   })
 
