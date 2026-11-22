@@ -8,7 +8,7 @@ This is the path for mail the core sends itself (account emails, tests). It is b
 
 ## TL;DR
 
-- **Connectors** are accounts mail is sent through. Six kinds: four **one-key** providers set up with a single API key (**Resend**, **Postmark**, **Mailgun**, **Brevo**), **Amazon SES**, and **SMTP** for any other mail server. No provider SDKs: SMTP goes through `nodemailer`, every other kind is one HTTPS request. The HTTPS kinds also work on hosts that block the SMTP ports.
+- **Connectors** are accounts mail is sent through. Seven kinds: four **one-key** providers set up with a single API key (**Resend**, **Postmark**, **Mailgun**, **Brevo**), **Amazon SES**, **SMTP** for any other mail server, and **Sendmail** for a command on the server that the operator enables. No provider SDKs: SMTP and sendmail go through `nodemailer`, every other kind is one HTTPS request. The HTTPS kinds also work on hosts that block the SMTP ports.
 - **Defaults** choose the one connector the site sends through, plus the sender name, sender address and reply-to.
 - **Templates** are a subject and a Markdown body with `{variables}`, edited in place in the post editor (`TiptapBodyEditor`) with the same Write / Live switch as a post. Only edited templates are stored; the built-in wording lives in code.
 - **Activity** is the delivery log: per-period totals and a volume chart, search and filters, and a detail panel for each email.
@@ -38,6 +38,7 @@ server/mail/
 ├── defaults.ts                — the mail_settings row
 ├── templates.ts               — mail_templates: owner edits over the catalogue
 ├── smtpDriver.ts              — SMTP delivery, address guard, From header
+├── sendmailDriver.ts          — delivery through the operator's sendmail command
 ├── sesDriver.ts               — Amazon SES v2 SendEmail, Signature Version 4
 ├── apiDrivers.ts              — Resend, Postmark, Mailgun, Brevo: one POST each
 ├── activity.ts                — mail_outbox (2000 newest rows kept per sender)
@@ -59,6 +60,7 @@ A connector row holds a `kind`, a public `config_json` and one encrypted secret.
 |---|---|---|
 | `smtp` | `host`, `port`, `username` | password (may be empty for an open local relay) |
 | `ses` | `region`, `accessKeyId` | secret access key |
+| `sendmail` | none | none |
 
 `resolveConnector` is the only function that decrypts a secret. `toView` is the only projection that leaves the server. The first connector added becomes the default automatically.
 
@@ -68,6 +70,8 @@ A connector row holds a `kind`, a public `config_json` and one encrypted secret.
 - Port 465 uses implicit TLS. Every other port must upgrade with STARTTLS before authenticating.
 - An IP literal is rejected as a host.
 - `MAIL_ALLOW_PRIVATE_HOSTS=1` lifts the public-address rule and makes STARTTLS opportunistic, for a relay on the same machine or network. It is an environment variable, not an admin setting: only someone who can already configure the server can point mail at the internal network. The connector form names the variable only when the typed host reads as local (`looksLikeLocalMailHost`: no dot, a local-only suffix, or a private IPv4 address); the server's refusal names it in every case.
+
+**Sendmail** (`sendmailDriver.ts`) runs the command named by `MAIL_SENDMAIL_PATH` (an absolute path) as `path -i -f <from> <recipient>` through nodemailer's sendmail transport, with the message on stdin and no shell. For a host relay that keeps the SMTP login and picks the relay by the Unix user Instatic runs as. The path is an environment variable, not part of the connector: only someone who can configure the server can make it run a command. While it is unset the server refuses to add the kind (`sendmailAvailable` in the overview) and the admin does not list it. Exit statuses follow sysexits: 75 and the other temporary ones (69, 71, 73, 74, Postfix's generic 1), a timeout (30 s) and a signal retry the message; a command that cannot be started (ENOENT, EACCES, 126, 127), 77 and 78 pause delivery as the connector's fault; any other status is final. The command's output never reaches the admin.
 
 **SES** (`sesDriver.ts`) posts to `email.<region>.amazonaws.com`. The region is validated against a strict pattern when the connector is saved, so the host is always an AWS one. `signAwsRequest` is tested against AWS's published Signature Version 4 example.
 

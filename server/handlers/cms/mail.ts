@@ -56,6 +56,7 @@ import {
   sendConnectorTest,
   sendSiteMail,
 } from '../../mail/send'
+import { sendmailPath } from '../../mail/sendmailDriver'
 import { MailDeliveryError, privateMailHostsAllowed } from '../../mail/smtpDriver'
 import {
   getMailTemplate,
@@ -81,6 +82,7 @@ async function readOverview(db: DbClient): Promise<MailOverview> {
     defaults,
     publicOrigin: configuredPublicOrigin(),
     privateHostsAllowed: privateMailHostsAllowed(),
+    sendmailAvailable: sendmailPath() !== null,
   }
 }
 
@@ -117,6 +119,9 @@ async function handleCreateConnector(req: Request, db: DbClient): Promise<Respon
   if (user instanceof Response) return user
   const input = await readValidatedBody(req, MailConnectorInputSchema)
   if (!input) return badRequest('Invalid connector')
+  if (input.kind === 'sendmail' && sendmailPath() === null) {
+    return badRequest('The sendmail connector is off. Set MAIL_SENDMAIL_PATH on the server to the absolute path of a sendmail command.')
+  }
   const connector = await createMailConnector(db, input, user.id)
   // The first connector becomes the one the site sends through, so adding
   // one is enough to get going; the owner can pick another under Defaults.
@@ -156,6 +161,7 @@ async function handleSetSecret(req: Request, db: DbClient, params: RouteParams):
   if (user instanceof Response) return user
   const input = await readValidatedBody(req, MailConnectorSecretInputSchema)
   if (!input) return badRequest('Invalid secret')
+  if ((await getMailConnector(db, params.id))?.kind === 'sendmail') return badRequest('The sendmail connector has no secret')
   if (!(await setMailConnectorSecret(db, params.id, input.secret))) return notFound('Connector')
   // A new secret lifts a pause: what was held can go out now.
   wakeMailQueue()

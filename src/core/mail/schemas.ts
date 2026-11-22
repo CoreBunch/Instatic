@@ -23,11 +23,13 @@ export const MailAddressSchema = Type.String({
 // ─── Connectors ────────────────────────────────────────────────────────────
 
 /**
- * `smtp` and `ses` take several values. The rest are "one-key" connectors:
- * a provider's own HTTP API, set up with a single API key, sent over HTTPS
- * (so they also work where a host blocks the SMTP ports).
+ * `smtp` and `ses` take several values. `resend`, `postmark`, `mailgun` and
+ * `brevo` are "one-key" connectors: a provider's own HTTP API, set up with a
+ * single API key, sent over HTTPS (so they also work where a host blocks the
+ * SMTP ports). `sendmail` hands mail to a local command the operator names
+ * in the environment (`MAIL_SENDMAIL_PATH`) and takes no secret.
  */
-export const MAIL_CONNECTOR_KINDS = ['smtp', 'ses', 'resend', 'postmark', 'mailgun', 'brevo'] as const
+export const MAIL_CONNECTOR_KINDS = ['smtp', 'ses', 'resend', 'postmark', 'mailgun', 'brevo', 'sendmail'] as const
 export const MailConnectorKindSchema = Type.Union(MAIL_CONNECTOR_KINDS.map((kind) => Type.Literal(kind)))
 export type MailConnectorKind = (typeof MAIL_CONNECTOR_KINDS)[number]
 
@@ -55,6 +57,9 @@ export type SesConnectorConfig = Static<typeof SesConnectorConfigSchema>
 export const KeyOnlyConnectorConfigSchema = Type.Object({}, { additionalProperties: false })
 export type KeyOnlyConnectorConfig = Static<typeof KeyOnlyConnectorConfigSchema>
 
+/** The sendmail command is named by the operator's environment, never by a connector. */
+export const SendmailConnectorConfigSchema = KeyOnlyConnectorConfigSchema
+
 export const MailgunConnectorConfigSchema = Type.Object(
   {
     /** The sending domain set up in Mailgun; it becomes part of the API path. */
@@ -74,6 +79,7 @@ export const MAIL_CONNECTOR_CONFIG_SCHEMAS = {
   postmark: KeyOnlyConnectorConfigSchema,
   mailgun: MailgunConnectorConfigSchema,
   brevo: KeyOnlyConnectorConfigSchema,
+  sendmail: SendmailConnectorConfigSchema,
 } as const
 
 const ConnectorLabelSchema = Type.String({ minLength: 1, maxLength: 80, pattern: SINGLE_LINE })
@@ -121,6 +127,15 @@ export const MailConnectorInputSchema = Type.Union([
     },
     { additionalProperties: false },
   ),
+  Type.Object(
+    {
+      kind: Type.Literal('sendmail'),
+      label: ConnectorLabelSchema,
+      config: SendmailConnectorConfigSchema,
+      secret: Type.Literal(''),
+    },
+    { additionalProperties: false },
+  ),
 ])
 export type MailConnectorInput = Static<typeof MailConnectorInputSchema>
 
@@ -150,6 +165,7 @@ export const MailConnectorSchema = Type.Union([
   Type.Object({ ...ConnectorCommon, kind: Type.Literal('postmark'), config: KeyOnlyConnectorConfigSchema }),
   Type.Object({ ...ConnectorCommon, kind: Type.Literal('brevo'), config: KeyOnlyConnectorConfigSchema }),
   Type.Object({ ...ConnectorCommon, kind: Type.Literal('mailgun'), config: MailgunConnectorConfigSchema }),
+  Type.Object({ ...ConnectorCommon, kind: Type.Literal('sendmail'), config: SendmailConnectorConfigSchema }),
 ])
 export type MailConnector = Static<typeof MailConnectorSchema>
 
@@ -192,6 +208,8 @@ export const MailOverviewSchema = Type.Object({
   publicOrigin: Type.Union([Type.String(), Type.Null()]),
   /** The operator allowed private-network SMTP relays (`MAIL_ALLOW_PRIVATE_HOSTS`). */
   privateHostsAllowed: Type.Boolean(),
+  /** The operator named a sendmail command (`MAIL_SENDMAIL_PATH`), so the `sendmail` kind can be added. */
+  sendmailAvailable: Type.Boolean(),
 })
 export type MailOverview = Static<typeof MailOverviewSchema>
 

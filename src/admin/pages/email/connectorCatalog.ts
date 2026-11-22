@@ -89,7 +89,32 @@ export const CONNECTOR_SPECS: readonly ConnectorSpec[] = [
     secretHint: 'Stored encrypted and never displayed again.',
     logo: null,
   },
+  {
+    kind: 'sendmail',
+    label: 'Sendmail',
+    shortLabel: 'A command on this server',
+    description:
+      'Hand mail to the sendmail command this server\'s operator enabled, such as a local Postfix relay that holds the SMTP login. Instatic stores no credentials for it.',
+    secretLabel: 'Secret',
+    secretName: 'secret',
+    secretHint: 'None. The command is set by the operator in MAIL_SENDMAIL_PATH.',
+    logo: null,
+  },
 ]
+
+/** Whether a connector kind has a secret to enter. */
+export function connectorTakesSecret(kind: MailConnectorKind): boolean {
+  return kind !== 'sendmail'
+}
+
+/**
+ * The kinds the owner can add. `sendmail` runs a command, which only the
+ * operator can allow (`MAIL_SENDMAIL_PATH`), so it is offered only when the
+ * server reports it.
+ */
+export function addableConnectorSpecs(sendmailAvailable: boolean): readonly ConnectorSpec[] {
+  return sendmailAvailable ? CONNECTOR_SPECS : CONNECTOR_SPECS.filter((spec) => spec.kind !== 'sendmail')
+}
 
 export function getConnectorSpec(kind: MailConnectorKind): ConnectorSpec {
   return CONNECTOR_SPECS.find((spec) => spec.kind === kind) ?? CONNECTOR_SPECS[0]
@@ -167,6 +192,7 @@ export function connectorEndpoint(connector: MailConnector): string {
     case 'smtp': return `${connector.config.host}:${connector.config.port}`
     case 'ses': return `SES, ${connector.config.region}`
     case 'mailgun': return `Mailgun, ${connector.config.domain}`
+    case 'sendmail': return 'Local sendmail command'
     default: return getConnectorSpec(connector.kind).label
   }
 }

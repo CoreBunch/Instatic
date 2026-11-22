@@ -29,6 +29,7 @@ import { recordMail } from './activity'
 import { noteConnectorUse, resolveConnector, type ResolvedConnector } from './connectors'
 import { getMailDefaults } from './defaults'
 import { sendViaBrevo, sendViaMailgun, sendViaPostmark, sendViaResend } from './apiDrivers'
+import { sendViaSendmail } from './sendmailDriver'
 import { sendViaSes } from './sesDriver'
 import { formatFromHeader, MailDeliveryError, sendViaSmtp, type MailRetry, type OutgoingMail } from './smtpDriver'
 import { describeWordingProblem, getMailTemplate, siteMailVariables } from './templates'
@@ -80,6 +81,7 @@ const carryMail: MailCarrier = (connector, sender, mail) => {
     case 'postmark': return sendViaPostmark(connector.secret, sender, mail)
     case 'mailgun': return sendViaMailgun(connector.config, connector.secret, sender, mail)
     case 'brevo': return sendViaBrevo(connector.secret, sender, mail)
+    case 'sendmail': return sendViaSendmail(sender, mail)
   }
 }
 

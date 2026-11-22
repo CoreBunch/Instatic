@@ -17,7 +17,7 @@ import type { MailConnector, MailConnectorInput } from '@core/mail'
 import { createCmsMailConnector } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { ConnectorGlyph, ConnectorMark } from '../ConnectorMark'
-import { looksLikeLocalMailHost, SMTP_PRESETS, type ConnectorSpec, type SmtpPreset } from '../connectorCatalog'
+import { connectorTakesSecret, looksLikeLocalMailHost, SMTP_PRESETS, type ConnectorSpec, type SmtpPreset } from '../connectorCatalog'
 import styles from '../EmailPage.module.css'
 
 const MAILGUN_REGIONS = [
@@ -58,7 +58,11 @@ export function ConnectorSetupPanel({
         <div className={ws.detailSectionHeader}>
           <div>
             <h3>Connection details</h3>
-            <p>The {spec.secretName} is encrypted before it is stored and never shown again.</p>
+            <p>
+              {connectorTakesSecret(spec.kind)
+                ? `The ${spec.secretName} is encrypted before it is stored and never shown again.`
+                : 'Nothing secret is stored. The command is set by the operator in MAIL_SENDMAIL_PATH.'}
+            </p>
           </div>
         </div>
         <AddConnectorForm spec={spec} privateHostsAllowed={privateHostsAllowed} onCreated={onCreated} />
@@ -112,6 +116,8 @@ function AddConnectorForm({
         return { kind: 'ses', label: name, config: { region: region.trim(), accessKeyId: accessKeyId.trim() }, secret }
       case 'mailgun':
         return { kind: 'mailgun', label: name, config: { domain: domain.trim(), region: mailgunRegion }, secret: secret.trim() }
+      case 'sendmail':
+        return { kind: 'sendmail', label: name, config: {}, secret: '' }
       default:
         return { kind: spec.kind, label: name, config: {}, secret: secret.trim() }
     }
@@ -262,22 +268,24 @@ function AddConnectorForm({
         </>
       )}
 
-      <div className={ws.providerSetupField}>
-        <label htmlFor={ids.secret}>
-          {spec.secretLabel}
-          {spec.kind === 'smtp' && !preset && <span>Optional</span>}
-        </label>
-        <div>
-          <Input
-            id={ids.secret}
-            value={secret}
-            onChange={(event) => setSecret(event.currentTarget.value)}
-            required={spec.kind !== 'smtp' || preset !== null}
-            {...SECRET_INPUT_PROPS}
-          />
-          <p>{spec.kind === 'smtp' && preset ? preset.passwordHint : spec.secretHint}</p>
+      {connectorTakesSecret(spec.kind) && (
+        <div className={ws.providerSetupField}>
+          <label htmlFor={ids.secret}>
+            {spec.secretLabel}
+            {spec.kind === 'smtp' && !preset && <span>Optional</span>}
+          </label>
+          <div>
+            <Input
+              id={ids.secret}
+              value={secret}
+              onChange={(event) => setSecret(event.currentTarget.value)}
+              required={spec.kind !== 'smtp' || preset !== null}
+              {...SECRET_INPUT_PROPS}
+            />
+            <p>{spec.kind === 'smtp' && preset ? preset.passwordHint : spec.secretHint}</p>
+          </div>
         </div>
-      </div>
+      )}
 
       <div className={ws.providerSetupActions}>
         <Button type="submit" variant="primary" size="md" busy={busy}>

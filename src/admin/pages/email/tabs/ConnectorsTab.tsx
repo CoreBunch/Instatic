@@ -24,7 +24,7 @@ import {
 } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { ConnectorMark } from '../ConnectorMark'
-import { CONNECTOR_SPECS, connectorLogo, getConnectorSpec } from '../connectorCatalog'
+import { addableConnectorSpecs, connectorLogo, connectorTakesSecret, getConnectorSpec } from '../connectorCatalog'
 import { ConnectorSetupPanel } from './ConnectorSetup'
 import styles from '../EmailPage.module.css'
 
@@ -55,13 +55,14 @@ export function ConnectorsTab({
   const [removing, setRemoving] = useState(false)
 
   const connectors = overview?.connectors ?? []
+  const specs = addableConnectorSpecs(overview?.sendmailAvailable ?? false)
   const effective: Selection =
-    selection ?? (connectors[0] ? { kind: 'connector', id: connectors[0].id } : { kind: 'add', connectorKind: CONNECTOR_SPECS[0].kind })
+    selection ?? (connectors[0] ? { kind: 'connector', id: connectors[0].id } : { kind: 'add', connectorKind: specs[0].kind })
   const selected = effective.kind === 'connector'
     ? connectors.find((connector) => connector.id === effective.id)
     : undefined
   // A selected connector that has since been removed falls back to the setup panel.
-  const addKind = effective.kind === 'add' ? effective.connectorKind : selected ? null : CONNECTOR_SPECS[0].kind
+  const addKind = effective.kind === 'add' ? effective.connectorKind : selected ? null : specs[0].kind
 
   async function handleRemove(connector: MailConnector) {
     setRemoving(true)
@@ -129,7 +130,7 @@ export function ConnectorsTab({
           )}
 
           <SettingsListSection label="Add connector">
-            {CONNECTOR_SPECS.map((spec) => {
+            {specs.map((spec) => {
               const active = addKind === spec.kind
               return (
                 <Button
@@ -330,9 +331,11 @@ function ConnectorDetail({
       <section className={ws.detailSection}>
         <div className={ws.detailSectionHeader}>
           <div><h3>Connection</h3></div>
-          <Button type="button" variant="ghost" size="sm" onClick={() => setDialog('secret')}>
-            {connector.secretNeedsReentry ? `Enter ${secretName}` : `Replace ${secretName}`}
-          </Button>
+          {connectorTakesSecret(connector.kind) && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setDialog('secret')}>
+              {connector.secretNeedsReentry ? `Enter ${secretName}` : `Replace ${secretName}`}
+            </Button>
+          )}
         </div>
         <dl className={ws.connectionDetails}>
           {connector.kind === 'smtp' ? (
@@ -353,10 +356,14 @@ function ConnectorDetail({
               <DetailRow label="Region" value={connector.config.region === 'eu' ? 'EU' : 'US'} />
               <DetailRow label="Sent over" value="HTTPS, to Mailgun's API" />
             </>
+          ) : connector.kind === 'sendmail' ? (
+            <DetailRow label="Sent over" value="The sendmail command on this server" />
           ) : (
             <DetailRow label="Sent over" value={`HTTPS, to ${spec.label}'s API`} />
           )}
-          <DetailRow label={spec.secretLabel} value={connector.hasSecret ? 'Stored encrypted' : 'None'} />
+          {connectorTakesSecret(connector.kind) && (
+            <DetailRow label={spec.secretLabel} value={connector.hasSecret ? 'Stored encrypted' : 'None'} />
+          )}
           <DetailRow
             label="Last used"
             value={connector.lastUsedAt ? new Date(connector.lastUsedAt).toLocaleString() : 'Not used yet'}
