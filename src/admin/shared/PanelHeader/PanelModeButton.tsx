@@ -1,5 +1,5 @@
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
-import { OpenSolidIcon } from 'pixel-art-icons/icons/open-solid'
+import { PictureInPictureIcon } from 'pixel-art-icons/icons/picture-in-picture'
 import { Button } from '@ui/components/Button'
 import type { PanelMode } from '@admin/state/workspaceLayoutStorage'
 import styles from './PanelModeButton.module.css'
@@ -40,7 +40,7 @@ export function PanelModeButton({
           aria-hidden="true"
         />
       ) : (
-        <OpenSolidIcon size={12} aria-hidden="true" />
+        <PictureInPictureIcon size={12} aria-hidden="true" />
       )}
     </Button>
   )
