@@ -538,7 +538,8 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
                 <Button
                   variant="primary"
                   size="lg"
-                  onPointerDown={(event) => event.preventDefault()}
+                  // Keep the inline editor focused until click. Canceling pointerdown also suppresses a WebKit touch click.
+                  onMouseDown={(event) => event.preventDefault()}
                   onClick={() => {
                     endInlineEdit()
                     clearSelection()

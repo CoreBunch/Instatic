@@ -38,7 +38,7 @@ Use this matrix to choose agent-browser audit scope. Rows are user goals. Keep s
 
 | PUBLISH-004 | P0 | ✅ | Dynamic publishing | Publish a post without blanking other pages | Published page with query-bound text | Publish unrelated post, reload anonymous page | Dynamic text remains visible | cache bump, restart, replaced snapshot, visitor isolation |
 
-EDIT-001 phone coverage in `site-mobile-text.e2e.ts` selects an existing text block, opens its properties and layer actions, edits in the mobile frame, taps Done, and checks the revised text after reload.
+EDIT-001 phone coverage in `site-mobile-text.e2e.ts` selects an existing text block, opens its properties and layer actions, edits in the mobile frame, checks that the Edit text and Done buttons share a corner center with the toolbar, taps Done, and checks the revised text after reload.
 
 Core owner lifecycle note: `core-owner-lifecycle.e2e.ts` logs in from a clean context, signs out and back in, inserts homepage text, saves and reloads the draft, publishes with step-up, verifies the anonymous public page, then saves a later unpublished draft and verifies the public route still shows the last published text. SAVE-001 mobile coverage in `page-management.e2e.ts` saves an isolated page, switches to 390x844, reloads, reopens the saved page, verifies the saved text, and verifies the narrow toolbar keeps publish actions reachable without document-level horizontal overflow.
 

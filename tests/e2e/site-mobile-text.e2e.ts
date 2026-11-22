@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator } from '@playwright/test'
 import { canvasFrame, canvasFrameForBreakpoint, createPage, insertNotchModule, openSiteEditor, setPropValue } from './helpers'
 
 test.use({ hasTouch: true })
@@ -25,14 +25,30 @@ test('edits text on the phone canvas and returns to the page (EDIT-001)', async 
   await page.getByTestId('panel-close-properties').tap()
   await actions.getByRole('button', { name: 'Layer actions' }).tap()
   await expect(page.getByRole('button', { name: 'Drag selected layers' })).toBeVisible()
-  await actions.getByRole('button', { name: 'Edit text' }).tap()
+  const edit = actions.getByRole('button', { name: 'Edit text' })
+  await expectConcentricCorners(actions, edit)
+  await edit.tap()
   const surface = frame.locator('[contenteditable="plaintext-only"]')
   await expect(surface).toBeFocused()
   await surface.fill(revised)
-  await actions.getByRole('button', { name: 'Done' }).tap()
+  const done = actions.getByRole('button', { name: 'Done' })
+  await expectConcentricCorners(actions, done)
+  await done.tap()
   await expect(surface).toHaveCount(0)
   await expect(actions).toBeHidden()
   await expect(frame.getByText(revised)).toBeInViewport()
   await page.reload()
   await expect(frame.getByText(revised)).toBeInViewport()
 })
+
+async function expectConcentricCorners(group: Locator, button: Locator) {
+  const cornerCenter = (locator: Locator) => locator.evaluate((el) => {
+    const rect = el.getBoundingClientRect()
+    const radius = parseFloat(getComputedStyle(el).borderTopLeftRadius)
+    return { x: rect.left + radius, y: rect.top + radius }
+  })
+  const outer = await cornerCenter(group)
+  const inner = await cornerCenter(button)
+  expect(inner.x).toBeCloseTo(outer.x, 1)
+  expect(inner.y).toBeCloseTo(outer.y, 1)
+}

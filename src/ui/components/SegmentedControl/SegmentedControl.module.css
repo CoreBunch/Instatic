@@ -15,7 +15,7 @@
     gap: var(--space-4xs);
     border-radius: var(--segment-track-radius);
     padding: var(--space-4xs);
-    border: 1px solid var(--overlay-20);
+    border: var(--space-px) solid var(--overlay-20);
     background: var(--overlay-5);
 }
 
@@ -35,7 +35,7 @@
     position: relative;
     flex: 0 0 auto;
     min-width: 0;
-    border-radius: var(--segment-radius);
+    border-radius: calc(var(--segment-radius) - var(--space-px));
     background: transparent;
 }
 
@@ -88,7 +88,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: var(--segment-radius);
+    border-radius: inherit;
     background: var(--overlay-20);
     color: var(--text);
     opacity: 0;

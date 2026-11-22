@@ -67,6 +67,10 @@
     box-shadow: var(--shadow-panel);
 }
 
+.phoneTextActions > button {
+    border-radius: calc(var(--panel-radius) - var(--space-2xs));
+}
+
 .phoneTextActions[data-editing="true"] {
     bottom: auto;
     top: var(--space-s);

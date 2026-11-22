@@ -137,7 +137,7 @@
     width: 30px;
     height: 30px;
     min-width: 30px;
-    border-radius: calc(var(--panel-radius) - 4px);
+    border-radius: calc(var(--panel-radius) - var(--space-3xs));
     color: var(--moduleInserterAccent);
     background: color-mix(
         in srgb,
@@ -377,7 +377,7 @@
         var(--moduleInserterItemRadius) - var(--moduleInserterTilePadding)
     );
     --moduleInserterTileControlRadius: calc(
-        var(--moduleInserterTileInnerRadius) - var(--radius-sm)
+        var(--moduleInserterItemRadius) - var(--moduleInserterTileControlInset)
     );
 
     position: relative;
@@ -777,6 +777,7 @@
     }
 
     .sectionButton.sectionButton {
+        border-radius: calc(var(--panel-radius) - var(--space-4xs));
         justify-content: center;
         padding: 0;
         min-width: 0;
@@ -819,15 +820,23 @@
     }
 
     .phoneFavorite[aria-pressed="true"] { color: var(--text-bright); }
-    .grid .phoneFavorite { top: var(--space-xs); transform: none; }
+    .grid .phoneFavorite {
+        top: var(--space-xs);
+        border-radius: calc(var(--moduleInserterItemRadius) - var(--space-xs));
+        transform: none;
+    }
     .grid .tileAdd { display: none; }
     .itemTitle { font-size: var(--text-xl); }
     .itemDescription { font-size: var(--text-m); font-weight: 500; }
     .tileItem { min-height: 116px; }
     .tileMeta { gap: var(--space-2xs); }
     .grid .tileItem .itemDescription { white-space: normal; }
-    .rowThumb { width: 52px; }
-    .rowItem { min-height: 64px; padding-right: calc(44px + var(--space-l)); }
+    .rowThumb { width: 52px; height: auto; align-self: stretch; }
+    .rowItem {
+        min-height: 64px;
+        padding-left: var(--moduleInserterTilePadding);
+        padding-right: calc(var(--button-size-lg) + var(--space-l));
+    }
     .rowItem .itemDescription { white-space: normal; color: var(--text-muted); }
     .empty { min-height: 0; }
 }

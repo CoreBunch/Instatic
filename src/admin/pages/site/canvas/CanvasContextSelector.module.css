@@ -18,7 +18,7 @@
 
 .notch {
     --breakpoint-notch-bg: var(--bg-body);
-    --breakpoint-notch-radius: 16px;
+    --breakpoint-notch-radius: var(--card-radius);
     --breakpoint-notch-corner: 16px;
     --breakpoint-notch-corner-cut: calc(var(--breakpoint-notch-corner) - 0.5px);
     position: relative;
@@ -90,7 +90,7 @@
     gap: var(--space-4xs);
     height: 22px;
     padding: 0 var(--space-xs);
-    border-radius: 9px;
+    border-radius: calc(var(--breakpoint-notch-radius) - var(--space-xs));
     border: 0;
     background: var(--accent-1-10);
     color: var(--success-text);

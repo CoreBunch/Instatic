@@ -227,7 +227,7 @@ These are admin tokens. The published-site Framework engine also emits short spa
 
 | Token                | Value | Use                                                          |
 |----------------------|-------|--------------------------------------------------------------|
-| `--radius-sm` | 3px   | Tight chips, micro-badges, segmented control inner indicator |
+| `--radius-sm` | 3px   | Tight chips and micro-badges |
 | `--radius`    | 6px   | Default editor controls, toolbar buttons, ghost menu items   |
 | `--panel-radius`     | 12px  | Floating overlay panels (Spotlight, modals, popovers)        |
 | `--card-radius`      | 16px  | Borderless tile cards (Widget, dashboard cells, module inserter tiles) |
@@ -235,7 +235,7 @@ These are admin tokens. The published-site Framework engine also emits short spa
 | `--radius-pill`      | 999px | Fully round dots, badges, and handles                        |
 | `--tooltip-radius`   | 6px   | Tooltips                                                     |
 
-Do not introduce ad-hoc radius values. Tile-card surfaces use `--card-radius`.
+Tile-card surfaces use `--card-radius`. For nested surfaces that follow the same corner, subtract the distance between their outer edges from the parent radius. A button inside a 12px toolbar with 4px padding uses an 8px radius. Include the parent border in that distance. Use the same spacing token in the padding and the radius calculation so fluid spacing keeps both arcs concentric. Clamp at zero when the inset can exceed the radius. For unequal horizontal and vertical insets, calculate each axis separately.
 
 ### Scrollbar chrome
 

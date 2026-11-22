@@ -78,7 +78,7 @@
 }
 
 .size-lg {
-    height: 44px;
+    height: var(--button-size-lg);
     padding: 0 var(--space-2xl);
     gap: var(--space-xs);
     font-size: var(--text-m);
@@ -101,7 +101,7 @@
     width: 32px;
 }
 .size-lg.iconOnly {
-    width: 44px;
+    width: var(--button-size-lg);
 }
 
 .fullWidth {

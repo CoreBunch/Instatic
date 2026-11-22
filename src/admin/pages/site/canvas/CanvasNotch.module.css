@@ -95,7 +95,7 @@
 
 .notch {
     --notch-bg: var(--bg-body);
-    --notch-radius: 16px;
+    --notch-radius: var(--card-radius);
     --notch-corner: 16px;
     --notch-corner-cut: calc(var(--notch-corner) - 0.5px);
     position: relative;
@@ -140,6 +140,10 @@
                 var(--notch-bg) var(--notch-corner)
             )
             right top / var(--notch-corner) var(--notch-corner) no-repeat;
+}
+
+.notch .addButton {
+    border-radius: calc(var(--notch-radius) - var(--space-3xs));
 }
 
 .quickButton {
