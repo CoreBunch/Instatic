@@ -52,7 +52,7 @@ import {
   deleteMediaAsset,
   findMediaAssetsByContentHash,
   getMediaAsset,
-  listMediaAssets,
+  listMediaAssets,
   restoreMediaAsset,
   softDeleteMediaAsset,
   updateMediaAssetMetadata,
