@@ -10,13 +10,19 @@
  */
 
 .group {
+    box-sizing: border-box;
+    height: var(--control-size);
     display: inline-flex;
     align-items: stretch;
     gap: var(--space-4xs);
-    border-radius: 12px;
+    border-radius: var(--segment-track-radius);
     padding: var(--space-4xs);
-    border: 1px solid var(--overlay-20);
+    border: var(--space-px) solid var(--overlay-20);
     background: var(--overlay-5);
+}
+
+.group[data-size="micro"] {
+    padding-block: 0;
 }
 
 .fullWidth {
@@ -27,15 +33,17 @@
 /* Segments are content-sized — each takes its natural width from the
  * Button's own padding, so labels of different lengths never get stretched
  * to identical widths. A `fullWidth` group switches back to equal fill.
- * The smaller radius nests cleanly inside the 10px track. The doubled
+ * The smaller radius nests cleanly inside the track. The doubled
  * `.group .segment.segment` selector lifts specificity above
  * Button.module.css's `.btn.variant-X` pairings so the segment's
  * transparent / pressed look wins regardless of stylesheet load order. */
 .group .segment.segment {
     position: relative;
+    height: auto;
+    padding-block: 0;
     flex: 0 0 auto;
     min-width: 0;
-    border-radius: 8px;
+    border-radius: calc(var(--segment-radius) - var(--space-px));
     background: transparent;
 }
 
@@ -56,15 +64,11 @@
     background: var(--bg-surface);
 }
 
-/* Trailing modifier — used by the render-prop's `trailingClassName`. Switches
- * the segment from "stretch to fill" to "fixed-square icon button" so a
- * chevron-down dropdown trigger never absorbs flex slack and reads as a
- * 1:1 icon-only button alongside the wider primary segments. The width
- * matches the segment's intrinsic 26px height (size-sm Button) so the
- * trailing tile renders perfectly square. */
+/* Keep the trailing action square inside the track at every size. */
 .group .segment.trailing.trailing {
-    flex: 0 0 26px;
-    width: 26px;
+    flex: 0 0 auto;
+    width: auto;
+    aspect-ratio: 1;
 }
 
 .segmentContent {
@@ -88,7 +92,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 8px;
+    border-radius: inherit;
     background: var(--overlay-20);
     color: var(--text);
     opacity: 0;

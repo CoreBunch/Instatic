@@ -20,7 +20,7 @@ import { sqliteMigrations } from '../../../server/db/migrations-sqlite'
 import {
   listMediaUsageRefs,
   setMediaUsageRef,
-} from '../../../server/repositories/media'
+} from '../../../server/repositories/mediaUsageRefs'
 
 const cleanups: Array<() => Promise<void>> = []
 
@@ -130,7 +130,7 @@ async function replayMigration(db: Awaited<ReturnType<typeof freshDb>>, id: stri
   await db.unsafe(migration.sql)
 }
 
-const BACKFILL = '034_backfill_avatar_usage_refs'
+const BACKFILL = '041_backfill_avatar_usage_refs'
 
 describe('the avatar backfill', () => {
   it('protects an avatar that was set before anything recorded usage', async () => {

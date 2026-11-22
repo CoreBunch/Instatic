@@ -10,8 +10,10 @@ import {
   renamePage,
   reorderPages,
   duplicatePage,
+  parsePageSeo,
   reconcileSiteExplorerInPlace,
 } from '@core/page-tree'
+import { canonicalJson } from '@core/utils/canonicalJson'
 import { PUBLIC_ACCESS } from '@core/members'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 import { clearCanvasSelectionDraft } from '../selectionSlice'
@@ -22,6 +24,7 @@ type PageActions = Pick<
   | 'deletePage'
   | 'renamePage'
   | 'setPageAccess'
+  | 'setPageSeo'
   | 'duplicatePage'
   | 'reorderPages'
   | 'convertPageToTemplate'
@@ -78,6 +81,18 @@ export function createPageActions({
         if (JSON.stringify(current) === JSON.stringify(access)) return false
         if (access.level === 'public') delete page.access
         else page.access = access
+        return true
+      })
+    },
+
+    setPageSeo: (pageId, seo) => {
+      const next = parsePageSeo(seo)
+      mutateSite((p) => {
+        const page = p.pages.find((candidate) => candidate.id === pageId)
+        if (!page) return false
+        if (canonicalJson(page.seo ?? null) === canonicalJson(next)) return false
+        if (next) page.seo = next
+        else delete page.seo
         return true
       })
     },

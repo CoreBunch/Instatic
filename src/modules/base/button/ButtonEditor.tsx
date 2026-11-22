@@ -11,7 +11,7 @@
 import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
 import { anchorHtmlAttributes } from '@modules/base/shared/anchorTarget'
-import { htmlAttributesForReact } from '@core/htmlAttributes'
+import { useCanvasHtmlAttributes } from '@modules/base/shared/useCanvasHtmlAttributes'
 import { inlineEditableElementProps } from '@modules/base/shared/inlineText'
 import { resolveButtonAnchor } from './anchor'
 import type { ButtonStoredProps } from './props'
@@ -26,15 +26,16 @@ export const ButtonEditor: React.FC<ModuleComponentProps<ButtonStoredProps>> = (
   const anchor = resolveButtonAnchor(props.href)
   // React.createElement (not JSX) so the editable element's generic
   // `Ref<HTMLElement>` is accepted — matching TextEditor / LinkEditor.
+  const { attributes, rel } = anchorHtmlAttributes(props.htmlAttributes, props.target)
+  const htmlAttrs = useCanvasHtmlAttributes(anchor ? attributes : props.htmlAttributes, inlineEdit?.ref)
   if (anchor) {
-    const { attributes, rel } = anchorHtmlAttributes(props.htmlAttributes, props.target)
     return React.createElement(
       'a',
       {
         ...nodeWrapperProps,
-        ...attributes,
+        ...htmlAttrs,
         href: anchor.href,
-        target: props.target,
+        target: props.target || undefined,
         rel: rel ?? undefined,
         className: mcClassName,
         ...(inlineEdit ? inlineEditableElementProps(inlineEdit) : {}),
@@ -46,7 +47,7 @@ export const ButtonEditor: React.FC<ModuleComponentProps<ButtonStoredProps>> = (
     'button',
     {
       ...nodeWrapperProps,
-      ...htmlAttributesForReact(props.htmlAttributes),
+      ...htmlAttrs,
       type: 'button',
       className: mcClassName,
       // A disabled button can't be focused/edited — never disable while editing.

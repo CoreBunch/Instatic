@@ -75,9 +75,9 @@ Hosted MCP client
 Security properties:
 
 - Public clients only: no generated client secret is required or stored.
-- Redirect URIs are registered exactly. HTTPS is required except for HTTP loopback callbacks used by native clients.
+- Redirect URIs are registered exactly. HTTPS is required except for HTTP loopback callbacks used by native clients. On a loopback IP literal (`127.0.0.1`, `[::1]`) the port is ignored when a request is matched to the registered callback (RFC 8252 §7.3), since a native app listens on whatever port it is given; host, path and query must still match, and `localhost` gets no such exception.
 - Authorization codes expire after five minutes, are stored only as SHA-256 hashes, and can be consumed once.
-- S256 PKCE, exact client id, callback, and MCP `resource` binding are checked during exchange.
+- S256 PKCE, exact client id, callback, and MCP `resource` binding are checked during exchange. A code works once. Presenting it again before it expires revokes the connection it created, with every token already issued from it; the request only has to name the code's client id, which is public, so the five-minute lifetime is what bounds this. An expired code presented again is refused with `invalid_grant` and changes nothing.
 - OAuth access tokens are opaque, stored only as hashes, bound to the exact MCP resource, and expire after at most one hour.
 - Refresh tokens rotate on every use. Reuse of a rotated token revokes the connection and all of its tokens.
 - OAuth grants expire after 90 days. Disconnecting the connection immediately invalidates its access and refresh tokens.
@@ -133,17 +133,29 @@ executeAiTool(...) / live editor bridge
 
 ### Module layout
 
+The OAuth protocol itself is not MCP's own. `server/oauth/` holds what every authorization server in this process shares, and MCP is one realm on top of it:
+
+| Shared module | Responsibility |
+|---|---|
+| `server/oauth/protocol.ts` | Where an issuer origin may come from (configured public origin, loopback fallback, otherwise none), PKCE validation, which redirect URIs may be registered, matching a request to them, safe callback generation. |
+| `server/oauth/secrets.ts` | Opaque token generation, one-way hashing, the PKCE challenge. |
+| `server/oauth/grants.ts` | Code exchange and refresh rotation with reuse detection, written against a `GrantStore` a realm supplies. It names no table. |
+| `server/oauth/dpop.ts` | Proof of possession (DPoP, RFC 9449): verifies a proof and returns the key's thumbprint. A realm whose grants can be bound to a key passes `dpopEndpoint` to the token endpoint, returns `keyThumbprint` from its store, and implements the store's two optional methods: `keyShownAtExchange` (bind an unbound grant to the key proven at the code exchange) and `revokeGrantTokens` (which enables the 60-second retry of a refresh whose answer was lost, for bound grants only). MCP does none of this: its grants are never bound, and reuse of a rotated refresh token always revokes the connection. See [`members.md`](members.md) → "Device keys". |
+| `server/oauth/tokenEndpoint.ts` | The token endpoint for public clients: parsing, the two grants, protocol-shaped errors, rate limiting. |
+
+The MCP files under `server/ai/mcp/`:
+
 | Module | Responsibility |
 |---|---|
 | `paths.ts` | Canonical MCP, OAuth, metadata, and consent paths. |
-| `oauth/protocol.ts` | Issuer/resource construction (configured public origin, loopback fallback, otherwise none), the 503 issuer-unavailable response, supported scopes, redirect validation, PKCE validation, safe callback generation. |
+| `oauth/protocol.ts` | The MCP issuer, resource and endpoint URLs, the 503 issuer-unavailable response, supported scopes, and the remote-endpoint check. |
 | `oauth/schemas.ts` | TypeBox schemas for dynamic registration and form/query parsing. |
 | `oauth/handler.ts` | Public metadata, dynamic registration, and token endpoints with protocol-shaped errors and rate limits. |
-| `oauth/store.ts` | Registered clients, hashed one-time codes, token issue/rotation, resource-bound access lookup. |
+| `oauth/store.ts` | Registered clients, hashed one-time codes, resource-bound access lookup, and `mcpOAuthRealm`: this server's token prefixes, lifetimes, scopes and rows, handed to the shared grant logic. |
 | `handlers/oauthAuthorization.ts` | Admin-session consent read/decision API, capability floor, and step-up gate. |
 | `handlers/management.ts` | Connection overview, personal-token creation, and revoke/disconnect. |
 | `connectors/store.ts` | Persistent connection grant and the token-free `toConnectionView` projection. |
-| `connectors/token.ts` | Opaque secret generation, hashing, and PKCE challenge calculation. |
+| `connectors/token.ts` | Personal access token generation. |
 | `auth.ts` | Resolves OAuth access tokens or personal tokens to `{ connectorId, userId, capabilities }`; returns a discovery-aware 401 otherwise. |
 | `contentAuthorization.ts` | Before a document tool is relayed to the browser, resolves the target row through `server/auth/dataAccess.ts` with the connection's own identity and capabilities (table family plus own-vs-any ownership), so the owner's admin cookie cannot widen the delegated grant. |
 | `transports/http.ts` | Authenticated, Origin-validated `createMcpHandler` entry for MCP 2026-07-28 plus the stateless 2025 fallback. |
@@ -202,8 +214,11 @@ Create and manual revoke actions retain the existing `ai.mcp_connector.created` 
 ## Tests
 
 - `server/ai/mcp/oauth/protocol.test.ts` covers issuer trust: the configured public origin wins over the `Host` header, loopback requests fall back to their own origin, and any other request has no issuer.
+- `server/oauth/dpop.test.ts` covers proofs: both key types, the RFC 7638 thumbprint, replay, clock window, wrong address or method, forged or malformed proofs, and small-order Ed25519 keys.
+- `server/oauth/protocol.test.ts` covers the shared rules: which redirect URIs may be registered, the loopback port exception and its limits, PKCE shapes, and opaque tokens.
 - `server/ai/mcp/oauth/handler.test.ts` covers discovery metadata, the 503 answer without a configured public origin, public dynamic registration, and callback policy.
-- `server/ai/mcp/oauth/store.test.ts` covers PKCE exchange, exact binding, one-time codes, access lookup, refresh rotation/reuse, and revocation.
+- `server/ai/mcp/oauth/store.test.ts` covers PKCE exchange, exact binding, one-time codes, code replay before and after expiry, access lookup, refresh rotation/reuse (including that the realm never binds a key and has no refresh retry), and revocation.
+- `server/oauth/grants.test.ts` covers the shared grant logic against an in-memory `GrantStore`: code exchange, code replay before and after expiry, refresh rotation, and refresh reuse.
 - `server/ai/mcp/auth.test.ts` covers personal and OAuth bearer resolution plus the protected-resource challenge with and without a trustworthy issuer.
 - `server/ai/mcp/accountAccess.test.ts` exercises real MCP tool calls and OAuth token endpoints before and after suspension/deletion, permission reduction, and loss of AI access; it also verifies active-account refresh rotation.
 - `src/__tests__/ai/mcpOAuthAuthorizationHandler.test.ts` covers signed-in consent, capability selection, exact callback redirects, denial, and privilege floors.

@@ -120,9 +120,4 @@ export const SitePagesSource: LoopEntitySource = {
       totalItems: filtered.length,
     }
   },
-
-  preview(ctx) {
-    const filtered = filterPagesForLoop(ctx.site.pages, ctx.filters)
-    return filtered.slice(0, ctx.limit).map(pageToLoopItem)
-  },
 }

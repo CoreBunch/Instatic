@@ -79,7 +79,7 @@ export function getColumnWidth(
   isPrimary: boolean,
   primaryWidth: number,
 ): string {
-  if (isPrimary) return `${primaryWidth}px`
+  if (isPrimary) return `min(${primaryWidth}px, var(--data-primary-limit))`
   switch (field.type) {
     case 'number':
     case 'boolean':

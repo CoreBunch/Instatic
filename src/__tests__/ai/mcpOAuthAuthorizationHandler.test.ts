@@ -5,13 +5,13 @@ import type {
   McpOAuthAuthorizationRequest,
   McpOAuthAuthorizationView,
 } from '@core/ai'
-import { pkceChallengeForVerifier } from '../../../server/ai/mcp/connectors/token'
 import { registerOAuthClient } from '../../../server/ai/mcp/oauth/store'
 import {
   createCapabilityTestHarness,
   readJson,
   type CapabilityTestHarness,
 } from '../helpers/capabilityHarness'
+import { pkceChallengeForVerifier } from '../../../server/oauth/secrets'
 
 const AUTHORIZATION = '/admin/api/ai/mcp/oauth/authorization'
 const CONNECTIONS = '/admin/api/ai/mcp/connections'
@@ -88,6 +88,40 @@ describe('MCP OAuth authorization consent handler', () => {
       revoked: false,
     })
     expect(JSON.stringify(overview)).not.toContain('imcp_ac_')
+  })
+
+  it('sends a native app back to the loopback port it is listening on', async () => {
+    const cookie = await harness.setupOwner()
+    const native = await registerOAuthClient(harness.db, {
+      clientName: 'Terminal client',
+      redirectUris: ['http://127.0.0.1:47821/callback'],
+    })
+    const listening = 'http://127.0.0.1:50999/callback'
+    const approve = await harness.ai(AUTHORIZATION, {
+      method: 'POST',
+      cookie,
+      json: {
+        decision: 'approve',
+        request: { ...request, clientId: native.clientId, redirectUri: listening },
+        capabilities: ['site.read'],
+      },
+    })
+    expect(approve.status).toBe(200)
+    const redirect = new URL((await readJson<DecideMcpOAuthAuthorizationResult>(approve)).redirectUrl)
+    expect(`${redirect.origin}${redirect.pathname}`).toBe(listening)
+    expect(redirect.searchParams.get('code')).toMatch(/^imcp_ac_/)
+
+    // Another path on the same loopback address is still not the registered one.
+    const wrongPath = await harness.ai(AUTHORIZATION, {
+      method: 'POST',
+      cookie,
+      json: {
+        decision: 'approve',
+        request: { ...request, clientId: native.clientId, redirectUri: 'http://127.0.0.1:50999/other' },
+        capabilities: ['site.read'],
+      },
+    })
+    expect(wrongPath.status).toBe(400)
   })
 
   it('returns access_denied to the exact registered callback without creating a connection', async () => {

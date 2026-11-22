@@ -46,7 +46,7 @@ import { collectSiteStyleBackgroundImagePaths } from '@core/publisher'
 import { MAIN_SCOPE } from '../branches/scope'
 import { placeholder, type DbClient } from '../db/client'
 import { listBranches } from '../repositories/branches'
-import type { MediaUsageRef } from '../repositories/media'
+import type { MediaUsageRef } from '../repositories/mediaUsageRefs'
 import { getDraftSiteDocument } from '../repositories/publish'
 import { collectPageMediaPaths } from '../publish/mediaPrefetch'
 

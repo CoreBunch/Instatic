@@ -1,11 +1,10 @@
-/* ShowWhenControl — sits above the HTML attributes list. */
+/* ShowWhenControl — the element's Visibility view. */
 
 .root {
     display: flex;
     flex-direction: column;
     gap: var(--space-xs);
     padding: var(--space-l) var(--space-xl);
-    border-bottom: 1px solid var(--overlay-10);
 }
 
 .label {

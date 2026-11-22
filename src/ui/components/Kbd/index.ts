@@ -1,3 +1,3 @@
-export { Kbd, ShortcutKeys } from './Kbd'
+export { Kbd, ShortcutKeys, type KbdProps, type ShortcutKeysProps } from './Kbd'
 
 

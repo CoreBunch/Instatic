@@ -31,6 +31,7 @@
  * `renderModuleTabContent`. Keeping the shell trivial means the hotspot
  * complexity score stays bounded as the panel grows.
  */
+import { useMobileViewport } from '@admin/lib/mobileViewport'
 import { useEffect, useRef } from 'react'
 import { usePropertiesPanelAutoOpen } from './usePropertiesPanelAutoOpen'
 import { usePropertiesPanelData } from './usePropertiesPanelData'
@@ -75,6 +76,14 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
   usePropertiesPanelAutoOpen()
 
   const data = usePropertiesPanelData()
+  const phone = useMobileViewport()
+  const closePanel = () => {
+    if (phone) {
+      // Blurring the active field commits its draft before the panel unmounts.
+      document.querySelector<HTMLElement>('[data-instatic-canvas-root]')?.focus({ preventScroll: true })
+    }
+    data.togglePropertiesPanel()
+  }
 
   // ── ClassPicker ref — for the locked-state 'Add class' CTA ────────────────
   const classPickerRef = useRef<ClassPickerHandle>(null)
@@ -145,6 +154,7 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
 
   return (
     <aside
+      data-floating-obstacle=""
       ref={setDragPanelElementRef}
       data-panel=""
       data-testid="properties-panel"
@@ -187,16 +197,19 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
             renameNode={data.renameNode}
           />
         )}
-        onClose={data.togglePropertiesPanel}
+        onClose={closePanel}
+        closeLabel={phone ? 'Back to canvas' : undefined}
         dragHandleProps={variant === 'floating' ? headerDragProps : undefined}
       >
-        <PanelModeButton
-          mode={variant}
-          panelLabel="Properties"
-          dockLocation="right sidebar"
-          dockSide="right"
-          onToggle={() => data.setPropertiesPanelMode(variant === 'docked' ? 'floating' : 'docked')}
-        />
+        {!phone && (
+          <PanelModeButton
+            mode={variant}
+            panelLabel="Properties"
+            dockLocation="right sidebar"
+            dockSide="right"
+            onToggle={() => data.setPropertiesPanelMode(variant === 'docked' ? 'floating' : 'docked')}
+          />
+        )}
       </PanelHeader>
 
       {/* ─── Properties content (independent panel — Guideline #410) ─────── */}
@@ -209,7 +222,6 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
           selectedSelectorClassId={data.selectedSelectorClassId}
           selectedSelectorClassIds={data.selectedSelectorClassIds}
           isSelectorMultiSelect={data.isSelectorMultiSelect}
-          activeBreakpointId={data.activeBreakpointId}
           isMultiSelect={data.isMultiSelect}
           selectedNodeIds={data.selectedNodeIds}
           selectedNode={data.selectedNode}

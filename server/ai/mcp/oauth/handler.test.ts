@@ -4,7 +4,6 @@ import type { DbClient } from '../../../db/client'
 import { sqliteMigrations } from '../../../db/migrations-sqlite'
 import { runMigrations } from '../../../db/runMigrations'
 import { createSqliteClient } from '../../../db/sqlite'
-import { pkceChallengeForVerifier } from '../connectors/token'
 import {
   MCP_AUTHORIZATION_SERVER_METADATA_PATH,
   MCP_OAUTH_REGISTER_PATH,
@@ -18,6 +17,7 @@ import {
   createOAuthAuthorizationGrant,
   registerOAuthClient,
 } from './store'
+import { pkceChallengeForVerifier } from '../../../oauth/secrets'
 
 async function freshDb(): Promise<DbClient> {
   const db = createSqliteClient(':memory:')

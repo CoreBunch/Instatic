@@ -19,6 +19,9 @@ type UiStateActions = Pick<
   | 'setInlineStyleEditing'
   | 'setPreviewNodeClass'
   | 'clearPreviewNodeClass'
+  | 'setGradientPickerOpen'
+  | 'setRadiusScope'
+  | 'setPreviewInlineStyles'
   | 'setPreviewClassStyles'
   | 'clearPreviewClassStyles'
 >
@@ -65,12 +68,24 @@ export function createUiStateActions({ set, get }: SiteSliceHelpers): UiStateAct
       })
     },
 
+    setGradientPickerOpen(open) {
+      set((s) => { s.gradientPickerOpen = open })
+    },
+    setRadiusScope(scope) {
+      set((s) => { s.radiusScope = scope })
+    },
+    setPreviewInlineStyles(nodeId, styles) {
+      const current = get().previewInlineStyles
+      if (styles === null && current?.nodeId !== nodeId) return
+      if (styles && current?.nodeId === nodeId && shallowEqualStyles(current.styles, styles)) return
+      set((s) => { s.previewInlineStyles = styles ? { nodeId, styles } : null })
+    },
     setPreviewClassStyles(preview) {
       const current = get().previewClassStyles
       if (
         current &&
         current.classId === preview.classId &&
-        (current.breakpointId ?? null) === (preview.breakpointId ?? null) &&
+        (current.contextId ?? null) === (preview.contextId ?? null) &&
         shallowEqualStyles(current.styles, preview.styles)
       ) {
         return

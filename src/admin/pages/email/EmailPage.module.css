@@ -234,3 +234,16 @@
   border: 0;
   background: var(--email-preview-surface);
 }
+
+/* SMTP service picker: one button per well-known mail service. */
+.presetRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-s);
+}
+
+/* Logo, then name: the gap is the only thing this changes on the button. */
+.presetRow .presetButton {
+  gap: var(--space-s);
+  padding-inline: var(--space-l);
+}

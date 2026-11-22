@@ -22,9 +22,14 @@ export const MailAddressSchema = Type.String({
 
 // ─── Connectors ────────────────────────────────────────────────────────────
 
-export const MAIL_CONNECTOR_KINDS = ['smtp', 'ses'] as const
-export const MailConnectorKindSchema = Type.Union([Type.Literal('smtp'), Type.Literal('ses')])
-export type MailConnectorKind = Static<typeof MailConnectorKindSchema>
+/**
+ * `smtp` and `ses` take several values. The rest are "one-key" connectors:
+ * a provider's own HTTP API, set up with a single API key, sent over HTTPS
+ * (so they also work where a host blocks the SMTP ports).
+ */
+export const MAIL_CONNECTOR_KINDS = ['smtp', 'ses', 'resend', 'postmark', 'mailgun', 'brevo'] as const
+export const MailConnectorKindSchema = Type.Union(MAIL_CONNECTOR_KINDS.map((kind) => Type.Literal(kind)))
+export type MailConnectorKind = (typeof MAIL_CONNECTOR_KINDS)[number]
 
 export const SmtpConnectorConfigSchema = Type.Object(
   {
@@ -46,9 +51,36 @@ export const SesConnectorConfigSchema = Type.Object(
 )
 export type SesConnectorConfig = Static<typeof SesConnectorConfigSchema>
 
+/** A provider that needs nothing but its API key. */
+export const KeyOnlyConnectorConfigSchema = Type.Object({}, { additionalProperties: false })
+export type KeyOnlyConnectorConfig = Static<typeof KeyOnlyConnectorConfigSchema>
+
+export const MailgunConnectorConfigSchema = Type.Object(
+  {
+    /** The sending domain set up in Mailgun; it becomes part of the API path. */
+    domain: Type.String({ minLength: 3, maxLength: 253, pattern: '^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$' }),
+    /** Mailgun keeps EU accounts on a separate API host. */
+    region: Type.Union([Type.Literal('us'), Type.Literal('eu')]),
+  },
+  { additionalProperties: false },
+)
+export type MailgunConnectorConfig = Static<typeof MailgunConnectorConfigSchema>
+
+/** The config schema of each connector kind: the one place a kind's stored shape is named. */
+export const MAIL_CONNECTOR_CONFIG_SCHEMAS = {
+  smtp: SmtpConnectorConfigSchema,
+  ses: SesConnectorConfigSchema,
+  resend: KeyOnlyConnectorConfigSchema,
+  postmark: KeyOnlyConnectorConfigSchema,
+  mailgun: MailgunConnectorConfigSchema,
+  brevo: KeyOnlyConnectorConfigSchema,
+} as const
+
 const ConnectorLabelSchema = Type.String({ minLength: 1, maxLength: 80, pattern: SINGLE_LINE })
 /** An SMTP password or an AWS secret access key. Empty is allowed for an open local relay. */
 const ConnectorSecretSchema = Type.String({ maxLength: 1024 })
+/** An API key goes into a request header, so it is one line and never empty. */
+const ApiKeySchema = Type.String({ minLength: 1, maxLength: 1024, pattern: SINGLE_LINE })
 
 export const MailConnectorInputSchema = Type.Union([
   Type.Object(
@@ -69,6 +101,26 @@ export const MailConnectorInputSchema = Type.Union([
     },
     { additionalProperties: false },
   ),
+  ...(['resend', 'postmark', 'brevo'] as const).map((kind) =>
+    Type.Object(
+      {
+        kind: Type.Literal(kind),
+        label: ConnectorLabelSchema,
+        config: KeyOnlyConnectorConfigSchema,
+        secret: ApiKeySchema,
+      },
+      { additionalProperties: false },
+    ),
+  ),
+  Type.Object(
+    {
+      kind: Type.Literal('mailgun'),
+      label: ConnectorLabelSchema,
+      config: MailgunConnectorConfigSchema,
+      secret: ApiKeySchema,
+    },
+    { additionalProperties: false },
+  ),
 ])
 export type MailConnectorInput = Static<typeof MailConnectorInputSchema>
 
@@ -86,12 +138,18 @@ const ConnectorCommon = {
   lastUsedAt: Type.Union([Type.String(), Type.Null()]),
   /** What went wrong the last time this connector was used, if it failed. */
   lastError: Type.Union([Type.String(), Type.Null()]),
+  /** True while queued email is held because this connector refuses the account (see `lastError`). */
+  deliveryPaused: Type.Boolean(),
   createdAt: Type.String(),
 }
 
 export const MailConnectorSchema = Type.Union([
   Type.Object({ ...ConnectorCommon, kind: Type.Literal('smtp'), config: SmtpConnectorConfigSchema }),
   Type.Object({ ...ConnectorCommon, kind: Type.Literal('ses'), config: SesConnectorConfigSchema }),
+  Type.Object({ ...ConnectorCommon, kind: Type.Literal('resend'), config: KeyOnlyConnectorConfigSchema }),
+  Type.Object({ ...ConnectorCommon, kind: Type.Literal('postmark'), config: KeyOnlyConnectorConfigSchema }),
+  Type.Object({ ...ConnectorCommon, kind: Type.Literal('brevo'), config: KeyOnlyConnectorConfigSchema }),
+  Type.Object({ ...ConnectorCommon, kind: Type.Literal('mailgun'), config: MailgunConnectorConfigSchema }),
 ])
 export type MailConnector = Static<typeof MailConnectorSchema>
 
@@ -148,6 +206,12 @@ export const MailTemplateVariableSchema = Type.Object({
   label: Type.String(),
   /** The value the preview shows: the site's real one for `site.*`, a realistic made-up one otherwise. */
   sample: Type.String(),
+  /**
+   * What the value is. A `link` is an address: it is put into an email only
+   * where it stands alone or is the whole address of a link. `text` (the
+   * default) may sit anywhere in a sentence.
+   */
+  kind: Type.Optional(Type.Union([Type.Literal('text'), Type.Literal('link')])),
 })
 export type MailTemplateVariable = Static<typeof MailTemplateVariableSchema>
 
@@ -161,6 +225,12 @@ export const MailTemplateSchema = Type.Object({
   body: Type.String(),
   /** False while the template still has its built-in wording. */
   customised: Type.Boolean(),
+  /**
+   * Set when the owner's wording cannot be sent as written (it puts a link
+   * where it does not stand alone): the built-in wording is sent instead
+   * until the edit is corrected.
+   */
+  wordingProblem: Type.Union([Type.String(), Type.Null()]),
 })
 export type MailTemplate = Static<typeof MailTemplateSchema>
 
@@ -183,7 +253,12 @@ export const MailTestInputSchema = Type.Object(
   { additionalProperties: false },
 )
 
+/**
+ * `queued` is an email that has not left yet: waiting for its first attempt,
+ * or for the next one after a temporary failure (`attempts` > 0).
+ */
 export const MailActivityStatusSchema = Type.Union([
+  Type.Literal('queued'),
   Type.Literal('sent'),
   Type.Literal('failed'),
   Type.Literal('captured'),
@@ -209,6 +284,12 @@ export const MailActivityEntrySchema = Type.Object({
   providerMessageId: Type.Union([Type.String(), Type.Null()]),
   /** How long the hand-over to the provider took. */
   durationMs: Type.Union([Type.Integer(), Type.Null()]),
+  /** The plugin that asked for the email, by name. Null for the site's own email. */
+  sentBy: Type.Union([Type.String(), Type.Null()]),
+  /** Delivery attempts made so far. */
+  attempts: Type.Integer(),
+  /** When a queued email is tried next. Null once it has left or been given up on. */
+  nextAttemptAt: Type.Union([Type.String(), Type.Null()]),
   /** Present only for mail captured on a development server. */
   body: Type.Union([Type.String(), Type.Null()]),
   createdAt: Type.String(),
@@ -216,6 +297,7 @@ export const MailActivityEntrySchema = Type.Object({
 export type MailActivityEntry = Static<typeof MailActivityEntrySchema>
 
 const MailActivityCountsSchema = Type.Object({
+  queued: Type.Integer(),
   sent: Type.Integer(),
   failed: Type.Integer(),
   captured: Type.Integer(),
@@ -247,14 +329,26 @@ export const MailActivityResponseSchema = Type.Object({
   totals: MailActivityCountsSchema,
   /** The period one bucket at a time, oldest first: hours for `24h`, days otherwise. */
   buckets: Type.Array(
-    Type.Object({ start: Type.String(), sent: Type.Integer(), failed: Type.Integer(), captured: Type.Integer() }),
+    Type.Object({
+      start: Type.String(),
+      queued: Type.Integer(),
+      sent: Type.Integer(),
+      failed: Type.Integer(),
+      captured: Type.Integer(),
+    }),
   ),
   /** The newest failure in the period, whatever the filters. */
   lastFailure: Type.Union([Type.Object({ at: Type.String(), error: Type.String() }), Type.Null()]),
+  /**
+   * Why the newest waiting email has not left, when an attempt has failed:
+   * a temporary failure, or a connector that needs fixing. Null when every
+   * waiting email is simply waiting its turn.
+   */
+  waitingError: Type.Union([Type.String(), Type.Null()]),
   /** The templates and connectors seen in the period, for the filter menus. */
   kinds: Type.Array(MailActivityFacetSchema),
   connectors: Type.Array(MailActivityFacetSchema),
-  /** The log keeps this many emails; older ones are dropped. */
+  /** The log keeps this many emails per sender (the site, and each plugin); older ones are dropped. */
   retention: Type.Integer(),
 })
 export type MailActivityResponse = Static<typeof MailActivityResponseSchema>

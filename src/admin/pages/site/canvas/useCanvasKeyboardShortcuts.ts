@@ -145,6 +145,8 @@ export function useCanvasKeyboardShortcuts(
   } = deps
 
   return (event: CanvasKeyEvent) => {
+    // Portaled pickers still bubble through the canvas in the React tree.
+    if (event.target instanceof Element && event.target.closest('[data-ui-dialog="true"]')) return
     // While inline editing, the contentEditable node (inside a breakpoint
     // iframe) owns the keyboard. Its keystrokes bubble through React to this
     // parent handler, and the per-shortcut `isTextInputTarget` guard can't see

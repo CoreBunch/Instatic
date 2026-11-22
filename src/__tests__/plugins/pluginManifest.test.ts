@@ -579,3 +579,167 @@ describe('contentAccess coherence', () => {
     ).toThrow('the matching permission "cms.content.write" is not in `permissions`')
   })
 })
+
+describe('plugin manifest — frontend.origins', () => {
+  function withFrontend(frontend: unknown, permissions: string[] = ['frontend.assets']) {
+    return parsePluginManifest({
+      id: 'acme.pay',
+      name: 'Pay',
+      version: '1.0.0',
+      apiVersion: 1,
+      permissions,
+      frontend,
+    })
+  }
+
+  it('accepts declared script and frame origins and a script on a declared host', () => {
+    const manifest = withFrontend({
+      assets: [{ kind: 'script', src: 'https://js.example.com/v3?x=1', strategy: 'async' }],
+      origins: { scripts: ['js.example.com', '*.js.example.com'], frames: ['pay.example.com'] },
+    })
+    expect(manifest.frontend?.origins).toEqual({
+      scripts: ['js.example.com', '*.js.example.com'],
+      frames: ['pay.example.com'],
+    })
+    expect(manifest.frontend?.assets[0]).toMatchObject({ src: 'https://js.example.com/v3?x=1' })
+  })
+
+  it('accepts origins with no assets', () => {
+    expect(withFrontend({ assets: [], origins: { frames: ['pay.example.com'] } }).frontend?.origins)
+      .toEqual({ frames: ['pay.example.com'] })
+  })
+
+  it('still accepts a package-relative script', () => {
+    expect(() => withFrontend({ assets: [{ kind: 'script', src: 'frontend/app.js' }] })).not.toThrow()
+  })
+
+  it('requires the frontend.assets permission', () => {
+    expect(() => withFrontend({ assets: [], origins: { scripts: ['js.example.com'] } }, []))
+      .toThrow(/frontend\.assets/)
+  })
+
+  it.each([
+    ['a scheme', 'https://js.example.com'],
+    ['a path', 'js.example.com/v3'],
+    ['a port', 'js.example.com:8443'],
+    ['a bare wildcard', '*'],
+    ['a wildcard over a whole TLD', '*.com'],
+    ['a wildcard in the middle', 'js.*.example.com'],
+    ['a single label', 'localhost'],
+    ['an IPv4 literal', '203.0.113.7'],
+    ['a CSP keyword', "'unsafe-inline'"],
+    ['a scheme source', 'https:'],
+    ['a second source smuggled after a space', "js.example.com 'unsafe-eval'"],
+    ['uppercase', 'JS.Example.com'],
+  ])('rejects an origin written as %s', (_label, origin) => {
+    expect(() => withFrontend({ assets: [], origins: { scripts: [origin] } })).toThrow()
+    expect(() => withFrontend({ assets: [], origins: { frames: [origin] } })).toThrow()
+  })
+
+  it.each([
+    ['a country-code public suffix', '*.co.uk', /public suffix/],
+    ['the same suffix without a wildcard', 'com.au', /public suffix/],
+    ['GitHub Pages', '*.github.io', /shared hosting/],
+    ['CloudFront', '*.cloudfront.net', /shared hosting/],
+    ['any AWS endpoint', '*.amazonaws.com', /shared hosting/],
+    ['a regional S3 endpoint', '*.s3.eu-west-1.amazonaws.com', /shared hosting/],
+    ['Cloudflare Pages', '*.pages.dev', /shared hosting/],
+    ['Netlify', '*.netlify.app', /shared hosting/],
+    ['Vercel', '*.vercel.app', /shared hosting/],
+    ['Heroku', '*.herokuapp.com', /shared hosting/],
+    ['Firebase hosting', '*.web.app', /shared hosting/],
+    ['Firebase apps', '*.firebaseapp.com', /shared hosting/],
+    ['a localhost name', 'app.localhost', /not a public host/],
+    ['a private-network name', '*.intranet.local', /not a public host/],
+  ])('rejects an origin nobody owns as a whole: %s', (_label, origin, reason) => {
+    expect(() => withFrontend({ assets: [], origins: { scripts: [origin] } })).toThrow(reason)
+    expect(() => withFrontend({ assets: [], origins: { frames: [origin] } })).toThrow(reason)
+  })
+
+  it.each([
+    'ac.me',
+    '*.co.de',
+    'acme.github.io',
+    'd111111abcdef8.cloudfront.net',
+    '*.acme.vercel.app',
+    '*.example.co.uk',
+    'js.example.com',
+  ])('still accepts a host one party controls: %s', (origin) => {
+    expect(withFrontend({ assets: [], origins: { scripts: [origin] } }).frontend?.origins?.scripts).toEqual([origin])
+  })
+
+  it.each(['script-inline', 'style-inline'])('rejects U+0000 in %s content', (kind) => {
+    // The HTML parser would replace it, so the declared text is not the text that runs.
+    expect(() => withFrontend({ assets: [{ kind, content: 'a\u0000b' }] })).toThrow()
+    expect(withFrontend({ assets: [{ kind, content: 'a\r\n\tb' }] }).frontend?.assets).toHaveLength(1)
+  })
+
+  it('drops unknown origin kinds and rejects duplicates', () => {
+    expect(withFrontend({ assets: [], origins: { styles: ['a.example.com'] } }).frontend?.origins).toEqual({})
+    expect(() => withFrontend({ assets: [], origins: { scripts: ['a.example.com', 'a.example.com'] } }))
+      .toThrow(/duplicate/)
+  })
+
+  it.each([
+    ['an undeclared host', 'https://evil.example.net/x.js'],
+    ['the bare domain of a wildcard', 'https://example.com/x.js'],
+    ['a lookalike suffix', 'https://js.example.com.evil.net/x.js'],
+    ['credentials before the host', 'https://js.example.com@evil.net/x.js'],
+    ['a port', 'https://js.example.com:8443/x.js'],
+    ['plain http', 'http://js.example.com/x.js'],
+    ['a protocol-relative address', '//js.example.com/x.js'],
+    ['a quote in the path', 'https://js.example.com/x.js"onload="alert(1)'],
+  ])('rejects a script loaded from %s', (_label, src) => {
+    expect(() => withFrontend({
+      assets: [{ kind: 'script', src }],
+      origins: { scripts: ['js.example.com', '*.example.com'] },
+    })).toThrow()
+  })
+
+  it('does not let a frame origin authorise a script', () => {
+    expect(() => withFrontend({
+      assets: [{ kind: 'script', src: 'https://pay.example.com/x.js' }],
+      origins: { frames: ['pay.example.com'] },
+    })).toThrow(/frontend\.origins\.scripts/)
+  })
+
+  it('keeps style hrefs package-relative', () => {
+    expect(() => withFrontend({
+      assets: [{ kind: 'style', href: 'https://js.example.com/x.css' }],
+      origins: { scripts: ['js.example.com'] },
+    })).toThrow()
+  })
+
+  describe('resource uniqueField', () => {
+    const withResource = (resource: Record<string, unknown>) => ({
+      id: 'acme.keys',
+      name: 'Keys',
+      version: '1.0.0',
+      apiVersion: 1,
+      permissions: ['cms.storage'],
+      resources: [resource],
+    })
+    const fields = [
+      { id: 'eventId', label: 'Event id', type: 'text' },
+      { id: 'amount', label: 'Amount', type: 'number' },
+      { id: 'notes', label: 'Notes', type: 'longtext' },
+    ]
+
+    it('accepts a text field as the unique field', () => {
+      const manifest = parsePluginManifest(withResource({ id: 'events', title: 'Events', uniqueField: 'eventId', fields }))
+      expect(manifest.resources[0]?.uniqueField).toBe('eventId')
+    })
+
+    it('rejects a unique field the resource does not declare', () => {
+      expect(() => parsePluginManifest(withResource({ id: 'events', title: 'Events', uniqueField: 'missing', fields })))
+        .toThrow(/names "missing" as its uniqueField, but declares no field with that id/)
+    })
+
+    it('rejects a unique field that is not a text field', () => {
+      expect(() => parsePluginManifest(withResource({ id: 'events', title: 'Events', uniqueField: 'amount', fields })))
+        .toThrow(/must be a "text" field; "amount" is "number"/)
+      expect(() => parsePluginManifest(withResource({ id: 'events', title: 'Events', uniqueField: 'notes', fields })))
+        .toThrow(/must be a "text" field; "notes" is "longtext"/)
+    })
+  })
+})

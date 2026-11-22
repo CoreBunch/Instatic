@@ -15,6 +15,17 @@
     gap: var(--space-3xs);
 }
 
+.scopeLabel {
+    align-self: center;
+    margin-inline-start: auto;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-xs);
+    color: var(--text-muted);
+}
+
 /* Input + optional trailing action (e.g. the Componentize button).
    Single column by default; when a trailing action is present, the input
    takes the flexible space (minmax(0, 1fr)) and the action takes its

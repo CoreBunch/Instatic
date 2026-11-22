@@ -40,6 +40,7 @@ import { handleUsersRoutes } from './users'
 import { handleRolesRoutes } from './roles'
 import { handleAuditRoutes } from './audit'
 import { handleMailRoutes } from './mail'
+import { handleMembersRoutes } from './members'
 import { handleSiteRoutes } from './site'
 import { handleSiteDocumentRoutes } from './siteDocument'
 import { handlePagesRoutes } from './pages'
@@ -47,6 +48,7 @@ import { handleComponentsRoutes } from './components'
 import { handleLayoutsRoutes } from './layouts'
 import { handleRuntimeRoutes } from './runtime'
 import { handleRegistryRoutes } from './registry'
+import { handleLoopSourceRoutes } from './loopSources'
 import { handleMediaRoutes } from './media'
 import { handleMediaFolderRoutes } from './mediaFolders'
 import { handleMediaStorageAdminRoutes } from './mediaStorageAdmin'
@@ -102,6 +104,8 @@ export async function handleCmsRequest(
     ?? (await handleAuditRoutes(req, db))
     // Outgoing mail is installation-wide, not branched.
     ?? (await handleMailRoutes(req, db))
+    // Site members belong to the live site, not to a branch.
+    ?? (await handleMembersRoutes(req, db))
   if (accountResponse) return accountResponse
 
   // Branch scope — resolved ONCE per request from the `X-Instatic-Branch`
@@ -124,6 +128,9 @@ export async function handleCmsRequest(
     // Read-only npm registry proxy for the Dependencies panel: no branch
     // scope, it never touches site data.
     ?? (await handleRegistryRoutes(req, db))
+    // Plugin loop sources for the editor's Loop module: registered by running
+    // plugins, the same on every branch.
+    ?? (await handleLoopSourceRoutes(req, db))
     // The folder routes match `/admin/api/cms/media/folders/...` so they must
     // run BEFORE the asset routes whose `/admin/api/cms/media/:id` pattern
     // would otherwise eat them (treating "folders" as an asset id). The

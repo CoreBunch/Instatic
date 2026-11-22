@@ -16,6 +16,7 @@
  * surviving plugins so they pick their hooks back up.
  */
 import type { DbClient } from '../../../db/client'
+import { withdrawPluginAppScopes } from '../../../members/apps/store'
 import type { AuthUser } from '../../../repositories/users'
 import {
   deletePlugin,
@@ -35,6 +36,8 @@ import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '.
 import { Type } from '@core/utils/typeboxHelpers'
 import { deactivatePluginModulePack } from '@core/plugins/modulePackLoader'
 import { clearPluginScheduleRuns } from '../../../repositories/pluginSchedules'
+import { removePluginMail } from '../../../mail/pluginTemplates'
+import { forgetHeldMailOutcomes } from '../../../plugins/host/handlers/mail'
 import { type CmsHandlerOptions } from '../shared'
 import {
   lifecycleErrorMessage,
@@ -189,7 +192,14 @@ async function removePluginCompletely(
   pluginId: string,
   forced: boolean,
 ): Promise<Response> {
-  const deleted = await deletePlugin(db, pluginId)
+  // What its app scopes let an app do goes with the row, in one transaction:
+  // whatever a later cleanup step does, no approval outlives the plugin for
+  // a different package under the same id to inherit.
+  const deleted = await db.transaction(async (tx) => {
+    const removed = await deletePlugin(tx, pluginId)
+    if (removed) await withdrawPluginAppScopes(tx, pluginId)
+    return removed
+  })
   if (!deleted) return pluginNotFound()
   // Idempotent on the normal path (the uninstall hook runner already
   // unloaded the worker and deactivated the module pack) — required on the
@@ -199,6 +209,8 @@ async function removePluginCompletely(
   clearPluginCrashCounter(pluginId)
   await clearPluginCrashes(db, pluginId)
   await clearPluginScheduleRuns(db, pluginId)
+  await removePluginMail(db, pluginId)
+  forgetHeldMailOutcomes(pluginId)
   if (options.uploadsDir) {
     await removeAllPluginAssets(options.uploadsDir, pluginId)
   }

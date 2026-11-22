@@ -4,7 +4,7 @@
     position: fixed;
     --panel-x: calc(100% - 376px);
     --panel-y: 64px;
-    /* Background the inner fade gradients (ClassPicker fade, search-bar fade,
+    /* Background the inner fade gradients (ClassPicker fade,
        locked-preview teaser) blend into. Floating panel surface is --bg-surface;
        the docked variant is transparent over the --bg-body sidebar, so it
        overrides this below. Descendants read it via var(--panel-fade-bg). */
@@ -95,11 +95,19 @@
 .nodeViewSwitcher .nodeViewButton {
     height: auto;
     padding: 0;
-    border-radius: var(--radius-sm);
     color: var(--text-disabled);
     font-size: var(--text-2xs);
     font-weight: 800;
     line-height: 1.4;
+}
+
+.nodeViewDot {
+    width: 5px;
+    height: 5px;
+    /* Sits close to its label: the button's own gap is wider than a marker needs. */
+    margin-left: calc(-1 * var(--space-2xs));
+    border-radius: 50%;
+    background: var(--info-text);
 }
 
 .nodeViewSwitcher .nodeViewButton:hover {
@@ -123,9 +131,7 @@
     padding: var(--space-m) var(--space-xl) 0;
 }
 
-/*  Soft fade just below the ClassPicker — mirrors the bottom search bar's
-    gradient so content scrolling up under the picker fades out instead of
-    snapping to a hard color edge. */
+/* Fade the scrolling content just below the ClassPicker. */
 .headerClassPicker::after {
     content: '';
     position: absolute;
@@ -175,6 +181,7 @@
     min-height: 0;
     display: grid;
     grid-template-columns: minmax(0, 1fr) 32px;
+    grid-template-rows: minmax(0, 1fr);
     gap: var(--space-3xs);
     min-width: 0;
     overflow: hidden;
@@ -183,6 +190,42 @@
 .selectorScrollContainer {
     min-width: 0;
     min-height: 0;
+    grid-area: 1 / 1;
     overflow-y: auto;
     scrollbar-width: thin;
+}
+
+@media (max-width: 760px) {
+    .panel {
+        --control-height: var(--control-height-md);
+        --input-radius: var(--panel-radius);
+        --text-xs: var(--text-m);
+        --text-s: var(--text-m);
+    }
+
+    /* Keep editable values legible without zooming the phone on focus. */
+    .panel input:where(:not([type]), [type="text"], [type="number"], [type="search"]),
+    .panel textarea {
+        font-size: max(1rem, var(--text-l));
+    }
+
+    .panel > [role="toolbar"] {
+        height: auto;
+        min-height: 44px;
+        padding-inline: var(--space-xl);
+    }
+
+    .nodeViewSwitcher .nodeViewButton {
+        min-height: 36px;
+        font-size: var(--text-m);
+    }
+
+    .selectorSurfaceLayout {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .selectorScrollContainer {
+        grid-area: 2 / 1;
+    }
 }

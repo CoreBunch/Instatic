@@ -70,14 +70,16 @@ export async function completeStepUp(
 
 /** Sign out through the account menu and confirm the login screen returns. */
 export async function logout(page: Page): Promise<void> {
+  const switcher = page.getByRole('button', { name: /Switch workspace/ })
+  if (await switcher.isVisible()) await switcher.click()
   await page.getByTestId('account-menu-trigger').click()
   await page.getByTestId('account-menu-sign-out').click()
   await expect(page.getByRole('heading', { name: 'Admin Login' })).toBeVisible()
 }
 
-/** The owner is authenticated once the account menu trigger is on screen. */
+/** The shared toolbar mounts after authentication on every viewport. */
 export async function expectLoggedIn(page: Page): Promise<void> {
-  await expect(page.getByTestId('account-menu-trigger')).toBeVisible({
+  await expect(page.getByTestId('toolbar')).toBeVisible({
     timeout: 20_000,
   })
 }

@@ -18,7 +18,7 @@
 
 export interface ProviderGate {
   synced: boolean
-  /** Resolves on this doc's first sync. */
+  /** Resolves after this doc's first sync has reached the editor store. */
   whenSynced: Promise<unknown>
 }
 
@@ -45,7 +45,7 @@ export function clearProviderGates(): void {
   providerGates.clear()
 }
 
-/** True when at least one bound doc has not finished its first sync. */
+/** True when at least one bound doc has not finished syncing into the store. */
 export function anyGateUnsynced(): boolean {
   for (const gate of providerGates.values()) {
     if (!gate.synced) return true

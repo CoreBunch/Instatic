@@ -5,6 +5,9 @@
 .body {
     display: grid;
     gap: var(--space-6xl);
+    max-width: 1220px;
+    margin-inline: auto;
+    min-width: 0;
 }
 
 .sectionHeader {
@@ -14,17 +17,15 @@
     gap: var(--space-3xl);
 }
 
-.sectionHeader h2 {
+.sectionHeader h1 {
     margin: 0;
     color: var(--text-bright);
     letter-spacing: 0;
-    font-size: var(--text-2xl);
+    font-size: var(--text-5xl);
     line-height: 1.25;
 }
 
 .sectionHeader p,
-.identity span,
-.identity small,
 .secondaryText {
     margin: 0;
     color: var(--text-subtle);
@@ -54,32 +55,12 @@
     justify-content: flex-end;
 }
 
-.identityRow {
-    display: flex;
-    align-items: center;
-    gap: var(--space-l);
-    min-width: 0;
-}
-
-.identity {
-    display: grid;
-    gap: var(--space-2xs);
-    min-width: 0;
-}
-
-.identity strong,
 .tableTitle,
 .auditTitle {
     color: var(--text-bright);
     font-size: var(--text-l);
     font-weight: 800;
     line-height: 1.2;
-}
-
-.identity strong,
-.identity span,
-.identity small {
-    overflow-wrap: anywhere;
 }
 
 /* Role dialog identity row (Name + Slug). The capability picker itself now

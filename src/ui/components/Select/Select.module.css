@@ -91,21 +91,21 @@
 }
 
 .size-xs {
-    min-height: 24px;
+    min-height: var(--control-height-xs);
     padding: var(--space-4xs) var(--space-xs);
     gap: var(--space-2xs);
     font-size: var(--text-xs);
 }
 
 .size-sm {
-    min-height: 28px;
+    min-height: var(--control-height);
     padding: var(--space-2xs) var(--space-s);
     gap: var(--space-xs);
     font-size: var(--text-xs);
 }
 
 .size-md {
-    min-height: 32px;
+    min-height: var(--control-height-md);
     padding: var(--space-xs) var(--space-m);
     gap: var(--space-s);
     font-size: var(--text-s);

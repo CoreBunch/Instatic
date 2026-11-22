@@ -29,10 +29,16 @@
  *   POST email/confirm     token
  *   POST profile           profile fields                        (signed in)
  *   POST delete            currentPassword                       (signed in)
+ *   POST apps/disconnect   connection                (signed in; ends one app's sign-in)
+ *   POST apps/approve      request, decision          (signed in; answers an app's
+ *                          sign-in request: decision is `allow` or `deny`, and a post
+ *                          without one is refused, never taken as yes)
+ *   *    oauth/*           sign-in for apps, see `apps/handler.ts`
  *   GET  me                { member } or { member: null }
  *   GET  export            the member's own data as a JSON download
- *   GET  link/<kind>       bare fallback page for a link in an email
- *   GET  sign-in           bare fallback sign-in page (`?next=`)
+ *
+ * There is no page here. Sign-in, and every page an emailed link opens, is a
+ * page of the site that the owner built and assigned in the member settings.
  *
  * CSRF: every POST must carry an allowed `Origin` and, when the browser
  * sends it, a same-origin `Sec-Fetch-Site`. Together with the `SameSite=Lax`
@@ -42,10 +48,14 @@
 import type { DbClient } from '../db/client'
 import type { MemberErrorCode } from '@core/members'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
-import { clientIp, isSiteOrigin, originAllowed } from '../auth/security'
+import { clientIp, isCrossSiteFetch, isSiteOrigin, originAllowed } from '../auth/security'
 import { jsonResponse, readTextBodyWithLimit, RequestBodyTooLargeError, setCookieHeader } from '../http'
-import { renderMemberLinkPage, renderMemberSignInPage } from './linkPage'
-import { MEMBER_LINK_PATH_PREFIX, memberLinkOrigin, memberMailAvailable } from './mail'
+import { answerAppSignIn, disconnectApp } from './apps/approval'
+import { handleMemberOAuthRequest } from './apps/handler'
+import { exportMemberDataWithPlugins } from '../plugins/host/memberExport'
+import { MEMBER_OAUTH_PATH_PREFIX } from './apps/protocol'
+import { memberLimits } from './limits'
+import { memberLinkOrigin, memberMailAvailable } from './mail'
 import { findMemberById, toCurrentMember } from './repository'
 import {
   changePassword,
@@ -53,7 +63,6 @@ import {
   confirmEmailChange,
   confirmSignInLink,
   deleteAccount,
-  exportMemberData,
   logIn,
   logOut,
   requestEmailChange,
@@ -71,6 +80,7 @@ import {
   clearSignupNonceCookie,
   findMemberSession,
   memberSessionCookie,
+  readAppRequestMarker,
   readMemberSessionToken,
   readSignupNonce,
   signupNonceCookie,
@@ -122,11 +132,10 @@ async function readFields(req: Request): Promise<Fields | null> {
 }
 
 /** Same rule as public CMS forms: a browser POST always names its origin. */
-function originOk(req: Request): boolean {
+export function originOk(req: Request): boolean {
   if (!req.headers.get('origin')) return false
   if (!originAllowed(req)) return false
-  const fetchSite = req.headers.get('sec-fetch-site')
-  return !fetchSite || fetchSite === 'same-origin' || fetchSite === 'none'
+  return !isCrossSiteFetch(req)
 }
 
 /** The signed-in member behind this request, or null. */
@@ -159,6 +168,9 @@ export function safeRedirectPath(value: string | undefined | null): string | nul
     return null
   }
   if (url.origin !== base) return null
+  // Dot segments can collapse to a path that starts with two slashes
+  // (`/.//host`), which a browser reads as another site.
+  if (url.pathname.startsWith('//')) return null
   return `${url.pathname}${url.search}${url.hash}`
 }
 
@@ -198,6 +210,7 @@ const ERROR_MESSAGES: Record<MemberErrorCode, string> = {
   not_signed_in: 'Sign in first.',
   rate_limited: 'Too many attempts. Try again later.',
   email_unavailable: 'This site cannot send email right now.',
+  not_available: 'This is not available on this site.',
   forbidden_origin: 'This request did not come from this site.',
 }
 
@@ -210,6 +223,7 @@ const ERROR_STATUS: Partial<Record<MemberErrorCode, number>> = {
   forbidden_origin: 403,
   rate_limited: 429,
   email_unavailable: 503,
+  not_available: 404,
 }
 
 function outcomeCookies(req: Request, outcome: MemberOutcome, clearNonce: boolean): string[] {
@@ -241,7 +255,13 @@ function buildResponse(req: Request, fields: Fields, outcome: MemberOutcome): Re
     headers.set('content-type', 'application/json; charset=utf-8')
     if (outcome.ok) {
       return new Response(
-        JSON.stringify({ ok: true, code: outcome.code, ...(outcome.member ? { member: outcome.member } : {}) }),
+        JSON.stringify({
+          ok: true,
+          code: outcome.code,
+          ...(outcome.member ? { member: outcome.member } : {}),
+          ...(outcome.landing ? { landing: outcome.landing } : {}),
+          ...(outcome.appRedirect ? { appRedirect: outcome.appRedirect } : {}),
+        }),
         { status: 200, headers },
       )
     }
@@ -261,8 +281,11 @@ function buildResponse(req: Request, fields: Fields, outcome: MemberOutcome): Re
 
   const back = refererPath(req) ?? '/'
   let location: string
-  if (outcome.ok) {
-    const chosen = safeRedirectPath(fields._success)
+  if (outcome.ok && outcome.appRedirect) {
+    // The one answer that leaves the site: back to the app that asked.
+    location = outcome.appRedirect
+  } else if (outcome.ok) {
+    const chosen = safeRedirectPath(fields._success) ?? safeRedirectPath(outcome.landing)
     location = chosen ? withParams(chosen, {}) : withParams(back, { member_ok: outcome.code })
   } else {
     location = withParams(safeRedirectPath(fields._error) ?? back, {
@@ -288,7 +311,7 @@ async function buildContext(db: DbClient, req: Request): Promise<MemberActionCon
 
 /** Fields that are part of the protocol, not of a member's profile. */
 const RESERVED_FIELDS = new Set([
-  'email', 'password', 'token', 'currentPassword', 'newPassword', '_success', '_error',
+  'email', 'password', 'token', 'request', 'decision', 'connection', 'currentPassword', 'newPassword', '_success', '_error',
 ])
 
 function profileFieldsOf(fields: Fields): Fields {
@@ -338,7 +361,9 @@ async function runAction(
   }
 
   // Everything below needs a signed-in member.
-  if (!['password/change', 'email/change', 'profile', 'delete'].includes(action)) return null
+  if (!['password/change', 'email/change', 'profile', 'delete', 'apps/approve', 'apps/disconnect'].includes(action)) {
+    return null
+  }
   const current = await resolveSignedInMember(db, req)
   if (!current) return respond(req, fields, signedOut)
 
@@ -353,6 +378,12 @@ async function runAction(
       }))
     case 'profile':
       return respond(req, fields, await updateProfile(ctx, current, profileFieldsOf(fields)))
+    case 'apps/approve':
+      return respond(req, fields, await answerAppSignIn(ctx, current, {
+        requestId: field('request'), browserMarker: readAppRequestMarker(req), decision: field('decision'),
+      }))
+    case 'apps/disconnect':
+      return respond(req, fields, await disconnectApp(ctx, current, { connection: field('connection') }))
     default:
       return respond(req, fields, await deleteAccount(ctx, current, {
         currentPassword: fields.currentPassword,
@@ -365,6 +396,9 @@ function notFound(): Response {
 }
 
 export async function handleMemberRequest(req: Request, db: DbClient, url: URL): Promise<Response> {
+  // Sign-in for apps is called by the app, not by a page of this site: it has
+  // its own checks instead of the cookie and same-origin rules below.
+  if (url.pathname.startsWith(MEMBER_OAUTH_PATH_PREFIX)) return handleMemberOAuthRequest(req, db, url)
   const action = url.pathname.slice(MEMBERS_PATH_PREFIX.length).replace(/\/+$/, '')
 
   if (req.method === 'GET') {
@@ -376,14 +410,21 @@ export async function handleMemberRequest(req: Request, db: DbClient, url: URL):
       )
     }
     if (action === 'export') {
+      // A link on another site must not start an export (it asks every plugin).
+      if (isCrossSiteFetch(req)) return jsonResponse({ error: 'Forbidden' }, { status: 403, headers: NO_STORE })
       const current = await resolveSignedInMember(db, req)
       if (!current) return jsonResponse({ error: 'Sign in first.' }, { status: 401, headers: NO_STORE })
-      return jsonResponse(await exportMemberData(db, current.member), {
+      const allowed = memberLimits.exportPerMember.consume(current.member.id)
+      if (!allowed.ok) {
+        return jsonResponse(
+          { error: 'You downloaded your data a few times already. Try again later.' },
+          { status: 429, headers: { ...NO_STORE, 'retry-after': String(Math.ceil(allowed.retryAfterMs / 1000)) } },
+        )
+      }
+      return jsonResponse(await exportMemberDataWithPlugins(db, current.member), {
         headers: { ...NO_STORE, 'content-disposition': 'attachment; filename="my-account-data.json"' },
       })
     }
-    if (url.pathname.startsWith(MEMBER_LINK_PATH_PREFIX)) return renderMemberLinkPage(db, url)
-    if (action === 'sign-in') return renderMemberSignInPage(db, url, safeRedirectPath)
     return notFound()
   }
 

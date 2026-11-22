@@ -88,6 +88,10 @@ const MEMBER_SOURCE: SystemSource = {
     { id: 'email', label: 'Email address' },
     { id: 'profile.name', label: 'Name' },
     { id: 'tagList', label: 'Tags' },
+    { id: 'appRequest.name', label: 'App asking: name' },
+    { id: 'appRequest.access', label: 'App asking: what it sees' },
+    { id: 'appRequest.returnsTo', label: 'App asking: where it runs' },
+    { id: 'appRequest.device', label: 'App asking: device name' },
   ],
 }
 
@@ -101,3 +105,21 @@ export const SYSTEM_SOURCES: readonly SystemSource[] = [
   ROUTE_SOURCE,
   MEMBER_SOURCE,
 ]
+
+/**
+ * The member source's fields for a site: the fixed ones (email, tags) with
+ * one `profile.<id>` entry per profile field the owner defined, in place of
+ * the built-in `profile.name`.
+ */
+export function memberSourceFields(
+  builtIn: readonly LoopSourceField[],
+  profileFields: ReadonlyArray<{ id: string; label: string }>,
+): LoopSourceField[] {
+  const fixed = builtIn.filter((field) => !field.id.startsWith('profile.'))
+  const [email, ...rest] = fixed
+  return [
+    ...(email ? [email] : []),
+    ...profileFields.map((field) => ({ id: `profile.${field.id}`, label: field.label })),
+    ...rest,
+  ]
+}

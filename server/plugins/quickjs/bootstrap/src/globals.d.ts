@@ -51,6 +51,8 @@ declare global {
     version: string
     grantedPermissions: string[]
     assetBasePath?: string
+    /** The manifest declares `memberDataExport`. */
+    memberDataExport: boolean
   }
 
   /** A canvas module definition as it lives inside the pack VM. */

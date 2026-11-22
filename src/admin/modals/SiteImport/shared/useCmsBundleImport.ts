@@ -69,6 +69,9 @@ function buildCmsImportToastBody(result: CmsImportResult): string {
   if (result.rowsSkipped > 0) {
     parts.push(pluralize(result.rowsSkipped, 'row skipped', 'rows skipped'))
   }
+  if (result.rowsImportedAsDraft > 0) {
+    parts.push(pluralize(result.rowsImportedAsDraft, 'published row imported as a draft', 'published rows imported as drafts'))
+  }
   if (result.mediaImported > 0) {
     parts.push(pluralize(result.mediaImported, 'media file imported', 'media files imported'))
   }

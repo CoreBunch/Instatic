@@ -5,8 +5,13 @@ import { ModuleIcon } from '@site/ui/ModuleIcon'
 import { TagPill } from '@ui/components/TagPill'
 import styles from './TreeNode.module.css'
 
+export function LayerLabel({ name, preview }: { name: string; preview?: string }) {
+  return <TreeLabel>{name}{preview && <small className={styles.preview}>{preview}</small>}</TreeLabel>
+}
+
 interface LayerTreeNodeContentProps {
   moduleId: string
+  preview?: string
   displayName: string
   htmlTag: string | null
   classSelectorChip: string | null
@@ -25,6 +30,7 @@ interface LayerTreeNodeContentProps {
 export function LayerTreeNodeContent({
   moduleId,
   displayName,
+  preview,
   htmlTag,
   classSelectorChip,
   hasChildren,
@@ -40,12 +46,6 @@ export function LayerTreeNodeContent({
 }: LayerTreeNodeContentProps) {
   return (
     <>
-      <TreeChevron
-        onClick={onToggle}
-        expanded={expanded}
-        visible={hasChildren && !isRoot}
-      />
-
       {showIcon && (
         <TreeIconSlot iconSize={11} iconColor="var(--text-disabled)">
           <ModuleIcon
@@ -67,9 +67,7 @@ export function LayerTreeNodeContent({
               className={styles.tagPill}
             />
           )}
-          <TreeLabel>
-            {displayName}
-          </TreeLabel>
+          <LayerLabel name={displayName} preview={preview} />
           {showClasses && classSelectorChip && (
             <TagPill
               label={classSelectorChip}
@@ -92,6 +90,7 @@ export function LayerTreeNodeContent({
           <EyeOffSolidIcon size={13} color="currentColor" />
         </span>
       )}
+      {hasChildren && !isRoot && <TreeChevron expanded={expanded} onClick={onToggle} />}
     </>
   )
 }

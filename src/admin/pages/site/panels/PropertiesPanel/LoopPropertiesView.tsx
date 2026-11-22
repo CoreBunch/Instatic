@@ -15,8 +15,8 @@
 
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useEditorStore } from '@site/store/store'
-import { loopSourceRegistry } from '@core/loops/registry'
-import { ENTRY_FIELD_FILTER_KEY, ENTRY_FIELD_SOURCE_ID } from '@core/loops'
+import { loopSourceLabel, useLoopSourceMissing, useLoopSources } from '@site/hooks/useLoopSources'
+import { ENTRY_FIELD_FILTER_KEY, ENTRY_FIELD_SOURCE_ID, resolveLoopDirection } from '@core/loops'
 import {
   CELL_ORDER_PREFIX,
   isCellComparableField,
@@ -31,6 +31,7 @@ import { getAncestors, type Page } from '@core/page-tree'
 import { PropertyControlRenderer } from '@site/property-controls/PropertyControlRenderer'
 import { CUSTOM_HTML_TAG_VALUE } from '@core/htmlAttributes'
 import { customHtmlTagControl, htmlTagControl } from '@modules/base/utils/htmlTag'
+import styles from './LoopPropertiesView.module.css'
 
 interface LoopPropertiesViewProps {
   nodeId: string
@@ -41,9 +42,11 @@ interface LoopPropertiesViewProps {
 export function LoopPropertiesView({ nodeId, props, activePage }: LoopPropertiesViewProps) {
   const updateNodeProps = useEditorStore((s) => s.updateNodeProps)
 
-  const sources = loopSourceRegistry.list()
+  const sources = useLoopSources()
   const sourceId = typeof props.sourceId === 'string' ? props.sourceId : ''
   const source: LoopEntitySource | undefined = sources.find((s) => s.id === sourceId)
+  // A source id nobody provides: the plugin behind it is disabled or removed.
+  const sourceUnavailable = useLoopSourceMissing(sourceId)
 
   const filters =
     props.filters && typeof props.filters === 'object' && !Array.isArray(props.filters)
@@ -180,15 +183,21 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
       : [{ label: 'Default', value: '' }],
   }
 
+  // Built-in date columns (`publishedAt`, `createdAt`, `connectedAt`, ...)
+  // end in `At`; for those the direction reads better as oldest / newest.
+  const effectiveOrderBy = (typeof props.orderBy === 'string' && props.orderBy) || source?.orderByOptions[0]?.id || ''
+  const sortsByDate = /At$/.test(effectiveOrderBy)
+
   function handleSourceChange(_key: string, value: unknown) {
     const nextId = typeof value === 'string' ? value : ''
-    const next = loopSourceRegistry.get(nextId)
+    const next = sources.find((s) => s.id === nextId)
     // Reset filters and orderBy when changing source — keys don't transfer.
     updateNodeProps(nodeId, {
       sourceId: nextId,
       filters: {},
       orderBy: next?.orderByOptions[0]?.id ?? '',
-      direction: next?.kind === 'contextual' ? 'asc' : 'desc',
+      // Cleared, not reset: the loop follows the new source's default order.
+      direction: undefined,
       pagination: next?.kind === 'contextual' ? 'none' : props.pagination,
     })
   }
@@ -247,12 +256,21 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
           label: 'Source',
           options: [
             { label: '— Pick a source —', value: '' },
-            ...sources.map((s) => ({ label: s.label, value: s.id })),
+            // Kept as its own option so the picker shows what the loop is
+            // set to instead of falling back to its first entry.
+            ...(sourceUnavailable ? [{ label: `${sourceId} (unavailable)`, value: sourceId }] : []),
+            ...sources.map((s) => ({ label: loopSourceLabel(s), value: s.id })),
           ],
         }}
         value={sourceId}
         onChange={handleSourceChange}
       />
+      {sourceUnavailable ? (
+        <p role="status" className={styles.sourceUnavailable}>
+          No source named “{sourceId}” is available, so this loop publishes nothing. The plugin
+          that provides it may be disabled or removed. Enable it again, or pick another source.
+        </p>
+      ) : null}
 
       {source
         ? Object.entries(filterSchema).map(([key, control]) => (
@@ -286,16 +304,17 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
                     { label: 'Original order', value: 'asc' },
                     { label: 'Reverse order', value: 'desc' },
                   ]
-                : [
-                    { label: 'Descending (newest first)', value: 'desc' },
-                    { label: 'Ascending (oldest first)', value: 'asc' },
-                  ],
+                : sortsByDate
+                  ? [
+                      { label: 'Ascending (oldest first)', value: 'asc' },
+                      { label: 'Descending (newest first)', value: 'desc' },
+                    ]
+                  : [
+                      { label: 'Ascending', value: 'asc' },
+                      { label: 'Descending', value: 'desc' },
+                    ],
             }}
-            value={
-              typeof props.direction === 'string'
-                ? props.direction
-                : source.kind === 'contextual' ? 'asc' : 'desc'
-            }
+            value={resolveLoopDirection(props.direction, source)}
             onChange={handleScalarChange}
           />
           <PropertyControlRenderer

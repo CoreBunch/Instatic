@@ -125,7 +125,7 @@ test.describe.serial('capability boundaries', () => {
       await personaPage.getByLabel('Search class style properties to add').fill('font size')
       const fontSizeInput = personaPage
         .getByTestId('css-property-row-fontSize')
-        .getByLabel('Font size')
+        .getByRole('textbox', { name: 'Font size', exact: true })
       await fontSizeInput.fill('23px')
       await fontSizeInput.blur()
       await expect(editableText).toHaveCSS('font-size', '23px')

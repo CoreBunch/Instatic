@@ -1,54 +1,35 @@
-/* StyleSurface — unified properties editor (scroll-anchor layout). */
-
-/* ── Outer shell: THE scroll container, two-column grid ────────────────────── */
-/*    Left column  = content (search bar + sections)                           */
-/*    Right column = sticky rail (32px)                                        */
+/* Keep section navigation visible as the inspector scrolls. */
 .surface {
     flex: 1;
     min-height: 0;
     display: grid;
     grid-template-columns: minmax(0, 1fr) 32px;
-    padding-top: var(--space-2xl);
-    padding-bottom: var(--space-7xl);
-    gap: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    scrollbar-width: thin;
-    scrollbar-gutter: stable;
-    align-items: start;
+    grid-template-rows: minmax(0, 1fr) auto;
 }
 
-/* ── Left content column ─────────────────────────────────────────────────── */
-/* Grid with the same 1px gap as `.styleSections` so the Module section and the
-   CSS sections share one consistent vertical rhythm. (The sticky search bar is
-   absolutely positioned, so it's out of flow and adds no gap.) */
 .surfaceContent {
+    grid-area: 1 / 1;
     display: grid;
     align-content: start;
     gap: var(--space-px);
     min-width: 0;
-    padding-bottom: var(--space-7xl);
+    overflow: hidden auto;
+    scrollbar-width: thin;
+    scrollbar-gutter: stable;
+    padding-block: var(--space-2xl);
 }
 
-/* ── Sticky search bar ───────────────────────────────────────────────────── */
+/* Reserve the footer's height so the last property can scroll fully into view. */
 .searchBarRow {
-    position: absolute;
-    bottom: -1px;
-    right: 0;
-    left: 0;
-    z-index: 99;
-    padding: var(--space-4xl);
-    padding-top: var(--space-8xl);
-    padding-bottom: var(--space-l);
-    background: linear-gradient(0, var(--panel-fade-bg) 50%, transparent);
+    grid-column: 1 / -1;
+    padding: var(--space-l) var(--space-4xl);
 }
 
 /* ── Right column: sticky rail ───────────────────────────────────────────── */
 .railSticky {
-    position: sticky;
-    top: 0;
-    align-self: start;
-    padding-top: var(--space-3xs);
+    grid-area: 1 / 2;
+    overflow: hidden auto;
+    padding-top: var(--space-2xl);
 }
 
 /* ── Generated utility lock wrapper ─────────────────────────────────────── */
@@ -173,4 +154,21 @@
     font-weight: 700;
     line-height: 1;
     padding: var(--space-3xs) var(--space-s);
+}
+
+@media (max-width: 760px) {
+    .surface {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto minmax(0, 1fr) auto;
+    }
+
+    .railSticky {
+        grid-area: 1 / 1;
+        padding: 0;
+    }
+
+    .surfaceContent {
+        grid-area: 2 / 1;
+        padding-top: var(--space-s);
+    }
 }

@@ -36,6 +36,7 @@ import { renderLoop } from './renderLoop'
 import { resolveAutoSizes } from './sizesResolver'
 import { RICHTEXT_CONTENT_CONFIG, sanitizeRichtext } from '@core/sanitize'
 import { readShowWhen, showWhenAllows } from '@core/members'
+import { readShowIf, showIfAllows } from '@core/templates'
 import type {
   RenderConfig,
   RenderAccumulators,
@@ -291,6 +292,16 @@ export function resolveSpecialRenderer(
 }
 
 /**
+ * Whether a node handed to `renderNode` emits nothing, itself and everything
+ * under it: the author hid it. The one rule both the renderer and the
+ * server's pre-render walk (`walkRenderTree`) read, so what is prefetched is
+ * what is rendered.
+ */
+export function isHiddenFromRender(node: { hidden?: boolean }): boolean {
+  return node.hidden === true
+}
+
+/**
  * Render a single node and its entire subtree recursively.
  *
  * @returns HTML string for this node and all its descendants
@@ -302,7 +313,7 @@ export function renderNode(
 ): string {
   const node = config.page.nodes[nodeId]
   if (!node) return ''
-  if (node.hidden) return ''
+  if (isHiddenFromRender(node)) return ''
 
   const def = config.registry.get(node.moduleId)
   if (!def) {
@@ -321,7 +332,13 @@ export function renderNode(
   // for nobody in particular has already deferred the node to a per-visitor
   // hole, so reaching this line means the visitor is known (or the caller
   // asked for an inline render, which treats the visitor as signed out).
-  if (!showWhenAllows(readShowWhen(node.props), config.templateContext?.member?.tags ?? null)) return ''
+  const member = config.templateContext?.member
+  const visitor = member ? { tags: member.tags, appAsking: member.appRequest !== null } : null
+  if (!showWhenAllows(readShowWhen(node.props), visitor)) return ''
+  // A show-if condition reads the render context: a loop item's field is
+  // known here per iteration, and a query condition made the node
+  // request-dependent (rule 2c), so the request's query is in the route frame.
+  if (!showIfAllows(readShowIf(node.props), config.templateContext)) return ''
 
   const specialRenderer = resolveSpecialRenderer(def)
   if (specialRenderer) return specialRenderer(node, config, acc, renderNode)

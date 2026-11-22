@@ -25,6 +25,7 @@ export {
   getDataTableBySlug,
   createDataTable,
   updateDataTable,
+  appendDataTableFields,
   softDeleteDataTable,
   restoreDataTable,
 } from './tables'

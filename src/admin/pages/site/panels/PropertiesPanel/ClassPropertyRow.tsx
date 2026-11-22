@@ -12,6 +12,10 @@
  * Phase 3 / Task #464 / Spec #671.
  */
 
+import { MinusIcon } from 'pixel-art-icons/icons/minus'
+import { PlusIcon } from 'pixel-art-icons/icons/plus'
+import { NumericStyleInput } from '@site/property-controls/NumericStyleInput'
+import { Input } from '@ui/components/Input'
 import { useState } from 'react'
 import type { CSSPropertyBag } from '@core/page-tree'
 import { TextControl } from '@site/property-controls/TextControl'
@@ -47,6 +51,7 @@ import styles from './ClassPropertyRow.module.css'
 interface ClassPropertyRowProps {
   property: keyof CSSPropertyBag
   value: string | number | undefined
+  labelText?: string
   placeholder?: string | number
   fontFamilyValue?: unknown
   isSet?: boolean
@@ -68,6 +73,7 @@ export function ClassPropertyRow({
   property,
   value,
   placeholder,
+  labelText,
   fontFamilyValue,
   isSet = true,
   onChange,
@@ -77,7 +83,8 @@ export function ClassPropertyRow({
 }: ClassPropertyRowProps) {
   const type = getCSSPropertyControlType(property)
   const tokenSource = getCSSPropertyTokenSource(property)
-  const label = cssPropertyLabel(String(property))
+  const propertyName = cssPropertyLabel(String(property))
+  const label = labelText ?? propertyName
   const placeholderText = placeholder !== undefined ? String(placeholder) : undefined
   const fonts = useEditorStore((state) => state.site?.settings.fonts ?? null)
   const isNumberTyped = NUMBER_TYPED_PROPS.has(property)
@@ -213,6 +220,46 @@ export function ClassPropertyRow({
         />
       </ControlRow>
     )
+  } else if (property === 'zIndex' || property === 'opacity') {
+    const effective = Number(value ?? placeholder ?? (property === 'opacity' ? 1 : 0))
+    control = (
+      <ControlRow propKey={property} label={label}>
+        <div className={styles.numberPair}>
+          <NumericStyleInput showStepper={property !== 'zIndex'} increment={property === 'opacity' ? 0.01 : 1}
+            min={property === 'opacity' ? 0 : undefined} max={property === 'opacity' ? 1 : undefined}
+            onScrubPreview={handleTokenPreview} onClearPreview={onClearPreview}
+            onAdjust={(v) => { setNumberDraft(null); onChange(property, Number(v)) }}
+            id={`ctrl-${property}`}
+            aria-label={label}
+            fieldSize="sm"
+            value={numberDraft ?? String(value ?? '')}
+            placeholder={placeholderText}
+            onFocus={handleNumberFocus}
+            onBlur={(event) => handleNumberBlur(event.target.value)}
+            onChange={(event) => handleControlChange(property, event.target.value)}
+          />
+          {property === 'opacity' ? (
+            <Input type="range" min={0} max={1} step={0.01} aria-label="Opacity slider"
+              className={styles.opacitySlider} value={Number.isFinite(effective) ? effective : 1}
+              onChange={(event) => onChange(property, Number(event.target.value))} />
+          ) : (
+            <div className={styles.stepButtons}>
+              <Button variant="secondary" size="sm" fullWidth aria-label="Decrease Z index"
+                onClick={() => onChange(property, (effective || 0) - 1)}><MinusIcon size={12} /></Button>
+              <Button variant="secondary" size="sm" fullWidth aria-label="Increase Z index"
+                onClick={() => onChange(property, (effective || 0) + 1)}><PlusIcon size={12} /></Button>
+            </div>
+          )}
+        </div>
+      </ControlRow>
+    )
+  } else if (['letterSpacing', 'minWidth', 'maxWidth', 'minHeight', 'maxHeight', 'rowGap', 'columnGap'].includes(property)) {
+    control = <ControlRow propKey={property} label={label}>
+      <NumericStyleInput defaultUnit="px" id={`ctrl-${property}`} aria-label={label} fieldSize="sm"
+        value={String(value ?? '')} placeholder={placeholderText} min={property === 'letterSpacing' ? undefined : 0}
+        onScrubPreview={handleTokenPreview} onClearPreview={onClearPreview}
+        onAdjust={(v) => onChange(property, v)} onChange={(event) => handleControlChange(property, event.target.value)} />
+    </ControlRow>
   } else if (property === 'backgroundImage') {
     // background-image gets its own multi-mode control (None / Image picker /
     // Gradient text). See BackgroundImageControl for the value-string format
@@ -231,8 +278,8 @@ export function ClassPropertyRow({
   } else switch (type) {
     case 'color':
       control = (
-        <ColorControl
-          key={`${String(property)}-${String(value ?? '')}`}
+        <ColorControl richPicker
+          key={String(property)}
           propKey={String(property)}
           value={String(value ?? '')}
           placeholder={placeholderText}
@@ -299,7 +346,7 @@ export function ClassPropertyRow({
           size="micro"
           iconOnly
           onClick={() => onRemove(property)}
-          aria-label={`Remove ${label} property`}
+          aria-label={`Remove ${propertyName} property`}
           tooltip={`Remove ${label}`}
           className={styles.removeBtn}
         >

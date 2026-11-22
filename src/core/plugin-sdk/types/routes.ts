@@ -59,6 +59,62 @@ export interface ServerPluginRouteContext {
     email: string
     capabilities: string[]
   } | null
+  /**
+   * The signed-in site member (someone with an account on the published
+   * site), or null. Always set in a `routes.member.*` handler. In a public
+   * route served on the public mount it is set only when the plugin holds
+   * `members.read` and the visitor is signed in. Never set on the admin
+   * mount.
+   */
+  member: ServerPluginMember | null
+  /**
+   * Set when the caller is an app the member signed in to, not the member's
+   * own browser. Only a member route opened to apps (`{ app: { scope } }`)
+   * can see one. A handler that must never act for an app checks for null.
+   */
+  app: ServerPluginApp | null
+  /**
+   * The caller's IP address, or null when the server cannot tell or the
+   * plugin does not hold `visitors.ip` (the host then never sends it to the
+   * plugin's worker). Headers that carry an address (`x-forwarded-for` and
+   * the like) are never passed in `req.headers`, so this is the only way a
+   * plugin learns one. It is
+   * core's own answer (the one sign-in rate limits use): the socket peer, or,
+   * when that peer is a configured trusted proxy, the nearest address in
+   * `X-Forwarded-For` that is not one. Set on every kind of route.
+   *
+   * Behind a proxy the site does not trust, this is the proxy's address, the
+   * same for every visitor. It is personal data: keep it only as long as the
+   * purpose needs (a rate-limit window, say), and never send it on.
+   */
+  ip: string | null
+  /**
+   * `ip` as the key for one visitor in a per-visitor limit: an IPv4 address
+   * as it is, an IPv6 address as its /64 (`2001:db8:1:2::/64`), since one
+   * household or phone network gets a whole /64 and can rotate through it.
+   * A NAT64 address (`64:ff9b::/96`) is keyed on the IPv4 address it
+   * carries. Null when `ip` is (also without `visitors.ip`).
+   */
+  ipKey: string | null
+}
+
+/** An app calling a member route on a member's behalf. */
+export interface ServerPluginApp {
+  /** The client id the site owner registered the app under. */
+  id: string
+  name: string
+  /** The scope name the route is open under, as the manifest declares it. */
+  scope: string
+}
+
+/** A site member as plugin code sees them. */
+export interface ServerPluginMember {
+  id: string
+  email: string
+  /** Tags the member holds right now, from every source. */
+  tags: string[]
+  /** The profile fields the site defines, by field id. */
+  profile: Record<string, string | boolean>
 }
 
 /**

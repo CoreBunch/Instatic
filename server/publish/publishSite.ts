@@ -57,8 +57,9 @@ import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publis
 import { runPublishFlush } from './publishFlush'
 import { sweepStalePluginVersionAssets } from './stalePluginAssets'
 import { MAIN_SCOPE } from '../branches/scope'
+import { unavailableLoopSourceWarnings, type PublishWarnings } from './loopSourceWarnings'
 
-interface PublishResult {
+interface PublishResult extends PublishWarnings {
   publishedPages: number
 }
 
@@ -98,7 +99,7 @@ export async function publishDraftSite(
     const site = await getDraftSiteDocument(db, MAIN_SCOPE)
     if (!site) throw new Error('draft site not found')
     const result = await publishSiteDocumentLocked(db, site, adminUserId, uploadsDir)
-    return { publishedPages: result.publishedPages }
+    return { publishedPages: result.publishedPages, ...unavailableLoopSourceWarnings(site) }
   })
 }
 

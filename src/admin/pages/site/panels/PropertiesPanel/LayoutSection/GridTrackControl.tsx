@@ -95,26 +95,24 @@ export function GridTrackControl({
   if (editing) {
     return (
       <LabeledControl label={label} isSet={isSet}>
-        <div className={styles.gridEditRow}>
-          <Input
-            ref={inputRef}
-            fieldSize="sm"
-            aria-label={`${ariaLabel} (custom)`}
-            placeholder="repeat(3, 1fr) · 200px 1fr · …"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={commitDraft}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                commitDraft()
-              } else if (e.key === 'Escape') {
-                e.preventDefault()
-                cancelDraft()
-              }
-            }}
-          />
-        </div>
+        <Input
+          ref={inputRef}
+          fieldSize="sm"
+          aria-label={`${ariaLabel} (custom)`}
+          placeholder="repeat(3, 1fr) · 200px 1fr · …"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commitDraft}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              commitDraft()
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              cancelDraft()
+            }
+          }}
+        />
       </LabeledControl>
     )
   }
@@ -156,6 +154,7 @@ export function GridTrackControl({
   return (
     <LabeledControl label={label} isSet={isSet}>
       <SegmentedControl
+        size="sm"
         fullWidth
         aria-label={ariaLabel}
         value={isPreset ? String(presetN) : undefined}

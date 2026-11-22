@@ -44,27 +44,35 @@ export const MemberProfileFieldSchema = Type.Object(
 )
 export type MemberProfileField = Static<typeof MemberProfileFieldSchema>
 
-/** A site-relative path such as `/login`. Never an absolute URL. */
-const SitePathSchema = Type.String({ maxLength: 300, pattern: '^/(?![/\\\\])[^\\s]*$' })
+/** The id of a page of the site. */
+const PageIdSchema = Type.String({ minLength: 1, maxLength: 120 })
 
 /**
- * Owner-assigned pages. `login` is where a protected page sends a signed-out
- * visitor. The rest receive the links in account emails (`?token=…`); when
- * one is unset the link goes to the bare core page instead.
+ * Owner-assigned pages, by page id, so renaming a page never breaks a link.
+ * `login` is where a protected page sends a signed-out visitor. The rest
+ * receive the links in account emails (`?token=…`); when one is unset, or
+ * its page is not published, there is no page for that link and the feature
+ * that would send it is switched off. Core serves no member page of its own.
  */
 export const MemberPagesSchema = Type.Object(
   {
-    login: Type.Optional(SitePathSchema),
-    afterLogin: Type.Optional(SitePathSchema),
-    verify: Type.Optional(SitePathSchema),
-    reset: Type.Optional(SitePathSchema),
-    magic: Type.Optional(SitePathSchema),
-    invite: Type.Optional(SitePathSchema),
-    emailChange: Type.Optional(SitePathSchema),
+    login: Type.Optional(PageIdSchema),
+    afterLogin: Type.Optional(PageIdSchema),
+    verify: Type.Optional(PageIdSchema),
+    reset: Type.Optional(PageIdSchema),
+    magic: Type.Optional(PageIdSchema),
+    invite: Type.Optional(PageIdSchema),
+    emailChange: Type.Optional(PageIdSchema),
+    /** Where a member approves an app that wants to sign them in. */
+    appSignIn: Type.Optional(PageIdSchema),
   },
   { additionalProperties: false },
 )
 export type MemberPages = Static<typeof MemberPagesSchema>
+export type MemberPageKey = keyof MemberPages
+
+/** The live address of each assigned page that is published. */
+export type MemberPagePaths = Partial<Record<MemberPageKey, string>>
 
 export const MemberSettingsSchema = Type.Object(
   {
@@ -183,6 +191,10 @@ export function accessAllows(rule: AccessRule, memberTags: readonly string[] | n
 export const ShowWhenSchema = Type.Union([
   Type.Object({ visitor: Type.Literal('signedIn') }, { additionalProperties: false }),
   Type.Object({ visitor: Type.Literal('signedOut') }, { additionalProperties: false }),
+  // A member who was sent here by an app that wants to sign them in, and a
+  // member who was not. For the page where apps are approved.
+  Type.Object({ visitor: Type.Literal('appAsking') }, { additionalProperties: false }),
+  Type.Object({ visitor: Type.Literal('noAppAsking') }, { additionalProperties: false }),
   Type.Object(
     {
       visitor: Type.Literal('tags'),
@@ -208,14 +220,29 @@ export function readShowWhen(props: Record<string, unknown>): ShowWhen | 'nobody
   return parsed.ok ? parsed.value : 'nobody'
 }
 
-/** Is an element with `rule` rendered for a visitor with these tags (`null` when signed out)? */
-export function showWhenAllows(rule: ShowWhen | 'nobody' | null, memberTags: readonly string[] | null): boolean {
+/** What a show-when rule looks at: the signed-in member behind a render. */
+export interface ShowWhenVisitor {
+  tags: readonly string[]
+  /** The page was opened with an app's pending sign-in request. */
+  appAsking: boolean
+}
+
+/** Is an element with `rule` rendered for this visitor (`null` when signed out)? */
+export function showWhenAllows(rule: ShowWhen | 'nobody' | null, visitor: ShowWhenVisitor | null): boolean {
   if (rule === null) return true
   if (rule === 'nobody') return false
-  if (rule.visitor === 'signedOut') return memberTags === null
-  if (memberTags === null) return false
-  if (rule.visitor === 'signedIn') return true
-  return rule.tags.some((tag) => memberTags.includes(tag))
+  if (rule.visitor === 'signedOut') return visitor === null
+  if (visitor === null) return false
+  switch (rule.visitor) {
+    case 'signedIn':
+      return true
+    case 'appAsking':
+      return visitor.appAsking
+    case 'noAppAsking':
+      return !visitor.appAsking
+    case 'tags':
+      return rule.tags.some((tag) => visitor.tags.includes(tag))
+  }
 }
 
 // ─── Action results (JSON mode) ────────────────────────────────────────────
@@ -236,6 +263,7 @@ export const MEMBER_ERROR_CODES = [
   'not_signed_in',
   'rate_limited',
   'email_unavailable',
+  'not_available',
   'forbidden_origin',
 ] as const
 export type MemberErrorCode = (typeof MEMBER_ERROR_CODES)[number]

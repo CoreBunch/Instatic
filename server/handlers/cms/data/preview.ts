@@ -25,9 +25,9 @@ import { resolveTemplateChain, composeTemplateChain } from '@core/templates'
 import { buildRouteFrame } from '@core/templates/contextFrames'
 import { publishPage } from '@core/publisher'
 import { buildSiteCssBundle } from '../../../publish/siteCssBundle'
-import { buildPublishedSiteModuleJsMap } from '../../../publish/moduleJsBundle'
-import { getPublishVersion } from '../../../publish/publishState'
+import { buildPublishedSiteModuleJsMap, resolveModuleScripts } from '../../../publish/moduleJsBundle'
 import { prefetchLoopData, publishedDataRowToEntryItem } from '../../../publish/loopPrefetch'
+import { LOOP_RUNTIME_VERSION } from '../../../publish/loopRuntime'
 import { prefetchMediaAssets } from '../../../publish/mediaPrefetch'
 import { registry } from '@core/module-engine'
 import { getLatestPublishedSiteSnapshot } from '../../../repositories/publish'
@@ -137,6 +137,7 @@ export async function handleRowPreview(
     loopData,
     mediaAssets,
     loopEndpointBaseUrl: LOOP_ENDPOINT_BASE_URL,
+    loopRuntimeVersion: LOOP_RUNTIME_VERSION,
   })
   const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
 
@@ -146,8 +147,7 @@ export async function handleRowPreview(
       pageId: merged.id,
       slug: merged.slug,
       siteId: snapshot.site.id,
-      jsModuleIds: published.jsModuleIds.filter((id) => moduleJsMap.has(id)),
-      publishVersion: getPublishVersion(),
+      moduleScripts: resolveModuleScripts(published.jsModuleIds, moduleJsMap),
     },
     db,
   )

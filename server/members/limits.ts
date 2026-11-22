@@ -38,6 +38,10 @@ export const memberLimits = {
   mailPerRecipient: new RateLimiter({ limit: 8, windowMs: HOUR }),
   /** Link-token submissions from one address. */
   tokenPerIp: new RateLimiter({ limit: 30, windowMs: 10 * MINUTE }),
+  /** Downloads of a member's own data: each one asks every plugin. */
+  exportPerMember: new RateLimiter({ limit: 3, windowMs: HOUR }),
+  /** Member data downloads by one administrator. */
+  adminExportPerUser: new RateLimiter({ limit: 30, windowMs: HOUR }),
   /** Current-password checks for a signed-in member. */
   reauthPerMember: new RateLimiter({ limit: 8, windowMs: 15 * MINUTE }),
 }

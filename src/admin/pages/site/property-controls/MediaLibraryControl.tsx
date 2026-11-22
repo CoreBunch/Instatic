@@ -96,6 +96,7 @@ export function MediaLibraryControl({
   isOverride,
   disabled,
   layout,
+  labelAction,
   mediaKind,
 }: MediaLibraryControlProps) {
   const currentValue = String(value ?? '')
@@ -195,6 +196,7 @@ export function MediaLibraryControl({
       label={label}
       inputId={`ctrl-${propKey}`}
       layout={layout}
+      labelAction={labelAction}
       isOverride={isOverride}
       disabled={disabled}
       labelSuffix={mode === 'url' && urlError ? (

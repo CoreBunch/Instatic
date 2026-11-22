@@ -2,9 +2,9 @@ import { selectActiveCanvasPage, useEditorStore } from '@site/store/store'
 import { resolveInsertLocation, type InsertLocation } from '@site/store/insertLocation'
 import { getMissingModuleDependencies } from '@core/module-engine'
 import type { AnyModuleDefinition } from '@core/module-engine'
+import type { SelectNodeOptions } from '@site/store/slices/selectionSlice'
 
-interface InsertModuleOptions {
-  preservePropertiesPanelCollapse?: boolean
+interface InsertModuleOptions extends SelectNodeOptions {
   defaults?: Record<string, unknown>
 }
 
@@ -60,9 +60,7 @@ export function useInsertModule() {
       setDependency(dependency.name, dependency.version, dependency.dev)
     }
 
-    selectNode(nodeId, undefined, {
-      preservePropertiesPanelCollapse: options.preservePropertiesPanelCollapse,
-    })
+    selectNode(nodeId, undefined, options)
     return nodeId
   }
 }

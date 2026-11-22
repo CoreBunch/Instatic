@@ -22,6 +22,7 @@
  * swap) — that pre-warms the memo for the version visitors are about to hit.
  */
 
+import { isTemplatePage } from '@core/templates'
 import type { DbClient } from '../db/client'
 import type { Page, PageNode, SiteDocument } from '@core/page-tree'
 import type { PublishedPageSnapshot } from '../repositories/publish'
@@ -100,6 +101,7 @@ export function getPublishedNodeIndexForVersion(
 // ---------------------------------------------------------------------------
 
 interface PublishedLoopIndex {
+  hasTemplates: boolean
   site: SiteDocument
   /** First page wins on a duplicate loop id, matching the old scan order. */
   loops: Map<string, { page: Page; node: PageNode }>
@@ -125,6 +127,6 @@ export function getPublishedLoopIndexForVersion(
         if (!loops.has(node.id)) loops.set(node.id, { page, node })
       }
     }
-    return { site: snapshot.site, loops }
+    return { site: snapshot.site, loops, hasTemplates: snapshot.site.pages.some(isTemplatePage) }
   })
 }

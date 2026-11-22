@@ -23,6 +23,8 @@ const CONTENT_ACCESS_CAPABILITIES = [
 /** Mirrors `canAccessUsersWorkspace` in access.ts. */
 const USERS_ACCESS_CAPABILITIES = [
   'users.manage',
+  'members.read',
+  'members.manage',
   'roles.manage',
   'audit.read',
 ] as const

@@ -34,6 +34,13 @@ interface CreateMediaAssetInput {
    * other upload leaves it empty and the user writes it in the Media viewer.
    */
   altText?: string
+  /**
+   * SHA-256 (lowercase hex) of the bytes the client sent, before any server
+   * transform. Site Import matches it to reuse an asset instead of uploading a
+   * copy (`findMediaAssetsByContentHash`). Absent = no hash; the asset is
+   * never matched.
+   */
+  contentHash?: string
 }
 
 export interface UpdateMediaAssetMetadataInput {
@@ -130,6 +137,7 @@ export async function createMediaAsset(
     storage_adapter_id: input.storageAdapterId,
     externally_hosted: input.externallyHosted,
     alt_text: input.altText ?? '',
+    content_hash: input.contentHash ?? null,
   }
   const params = MEDIA_ASSET_INSERT_COLUMNS.map((column) => valuesByColumn[column])
   const placeholders = MEDIA_ASSET_INSERT_COLUMNS.map((_, i) => placeholder(db.dialect, i + 1)).join(', ')
@@ -383,6 +391,7 @@ export async function replaceMediaAssetBinary(
     publicPath: string
     storageAdapterId: string
     externallyHosted: boolean
+    contentHash: string | null
   },
 ): Promise<MediaAsset | null> {
   const nowIso = new Date().toISOString()
@@ -396,8 +405,9 @@ export async function replaceMediaAssetBinary(
        public_path = ${p(5)},
        storage_adapter_id = ${p(6)},
        externally_hosted = ${p(7)},
-       replaced_at = ${p(8)}
-     where id = ${p(9)}
+       replaced_at = ${p(8)},
+       content_hash = ${p(9)}
+     where id = ${p(10)}
      returning ${MEDIA_ASSET_COLUMNS}`,
     [
       input.filename,
@@ -408,12 +418,61 @@ export async function replaceMediaAssetBinary(
       input.storageAdapterId,
       input.externallyHosted,
       nowIso,
+      input.contentHash,
       id,
     ],
   )
   if (rows.length === 0) return null
   const assets = await hydrateAssets(db, rows)
   return assets[0] ?? null
+}
+
+/** One live asset whose stored content hash matched a lookup. */
+export interface MediaContentHashMatch {
+  contentHash: string
+  id: string
+  publicPath: string
+  filename: string
+}
+
+const CONTENT_HASH_LOOKUP_CHUNK = 500
+
+/**
+ * Live (not trashed) assets whose `content_hash` is one of `contentHashes`.
+ * Several assets can share a hash (uploads from before Site Import reused
+ * them); the oldest comes first so callers that keep one per hash keep it.
+ */
+export async function findMediaAssetsByContentHash(
+  db: DbClient,
+  contentHashes: string[],
+): Promise<MediaContentHashMatch[]> {
+  const unique = [...new Set(contentHashes)]
+  const matches: MediaContentHashMatch[] = []
+  for (let start = 0; start < unique.length; start += CONTENT_HASH_LOOKUP_CHUNK) {
+    const chunk = unique.slice(start, start + CONTENT_HASH_LOOKUP_CHUNK)
+    const placeholders = chunk.map((_, i) => placeholder(db.dialect, i + 1)).join(', ')
+    const { rows } = await db.unsafe<{
+      content_hash: string
+      id: string
+      public_path: string
+      filename: string
+    }>(
+      `select content_hash, id, public_path, filename
+       from media_assets
+       where content_hash in (${placeholders}) and deleted_at is null
+       order by created_at asc, id asc`,
+      chunk,
+    )
+    for (const row of rows) {
+      matches.push({
+        contentHash: row.content_hash,
+        id: row.id,
+        publicPath: row.public_path,
+        filename: row.filename,
+      })
+    }
+  }
+  return matches
 }
 
 /**
@@ -535,6 +594,12 @@ interface ImportMediaAssetInput {
   storageAdapterId?: string
   /** Optional; defaults to false when omitted. */
   externallyHosted?: boolean
+  /**
+   * SHA-256 hex of the bundle's bytes for this asset, before SVG sanitising
+   * (the same rule as an upload's `content_hash`). Written on insert and on
+   * update, so bytes overwritten at an existing id never keep a stale hash.
+   */
+  contentHash: string
 }
 
 /**
@@ -560,7 +625,7 @@ export async function importMediaAsset(
       id, filename, mime_type, size_bytes, storage_path, public_path,
       alt_text, caption, title, tags_json, width, height, duration_ms,
       dominant_color, blur_hash, poster_path,
-      storage_adapter_id, externally_hosted
+      storage_adapter_id, externally_hosted, content_hash
     )
     values (
       ${input.id}, ${input.filename}, ${input.mimeType}, ${input.sizeBytes},
@@ -568,7 +633,7 @@ export async function importMediaAsset(
       ${input.altText}, ${input.caption}, ${input.title}, ${tags},
       ${input.width}, ${input.height}, ${input.durationMs},
       ${input.dominantColor}, ${input.blurHash}, ${input.posterPath},
-      ${storageAdapterId}, ${externallyHosted}
+      ${storageAdapterId}, ${externallyHosted}, ${input.contentHash}
     )
     on conflict (id) do update
       set filename      = excluded.filename,
@@ -587,95 +652,7 @@ export async function importMediaAsset(
           blur_hash     = excluded.blur_hash,
           poster_path   = excluded.poster_path,
           storage_adapter_id = excluded.storage_adapter_id,
-          externally_hosted = excluded.externally_hosted
+          externally_hosted = excluded.externally_hosted,
+          content_hash  = excluded.content_hash
   `
-}
-
-// ---------------------------------------------------------------------------
-// Usage references
-//
-// `media_usage_refs` has existed since the media schema landed but nothing
-// wrote to it, so the library could not tell a decorative upload from an
-// asset something depends on. That gap is how a profile picture — stored as
-// an ordinary library row, with no marker distinguishing it — could be swept
-// into the trash during a tidy-up and purged, silently nulling
-// `users.avatar_media_id` through its `on delete set null` foreign key.
-//
-// `ref_kind` namespaces the source so more can be registered without touching
-// consumers: `user.avatar` here, page nodes and site settings next.
-// ---------------------------------------------------------------------------
-
-/** A thing that depends on an asset, resolved for display. */
-export interface MediaUsageRef {
-  assetId: string
-  refKind: string
-  refId: string
-  /** Human-readable, e.g. a person's name for an avatar. Never a raw id. */
-  label: string
-  /**
-   * Set only when the dependency exists on a site branch and NOT on main —
-   * the branch's display name, so the warning can say where to look. Stored
-   * references (an avatar) belong to no branch and never carry it.
-   */
-  branchName?: string
-}
-
-/**
- * Point a `(kind, id)` pair at an asset, replacing whatever it pointed at
- * before.
- *
- * Deleting first is what makes this a MOVE rather than an accumulation: a
- * user who changes their avatar four times should leave one row, not four,
- * or the fifth deletion would warn about pictures they replaced months ago.
- */
-export async function setMediaUsageRef(
-  db: DbClient,
-  args: { assetId: string | null; refKind: string; refId: string; refPath?: string },
-): Promise<void> {
-  const refPath = args.refPath ?? ''
-  await db`
-    delete from media_usage_refs
-    where ref_kind = ${args.refKind} and ref_id = ${args.refId} and ref_path = ${refPath}
-  `
-  if (!args.assetId) return
-  await db`
-    insert into media_usage_refs (asset_id, ref_kind, ref_id, ref_path)
-    values (${args.assetId}, ${args.refKind}, ${args.refId}, ${refPath})
-  `
-}
-
-/**
- * Which of these assets are still depended on, with something an operator can
- * recognise.
- *
- * Takes a LIST because the question is always asked about a selection — the
- * deletion path needs one round trip, not one per file.
- */
-export async function listMediaUsageRefs(
-  db: DbClient,
-  assetIds: string[],
-): Promise<MediaUsageRef[]> {
-  if (assetIds.length === 0) return []
-  const placeholders = assetIds.map((_, i) => placeholder(db.dialect, i + 1)).join(", ")
-  const { rows } = await db.unsafe<{
-    asset_id: string
-    ref_kind: string
-    ref_id: string
-    label: string | null
-  }>(
-    `select r.asset_id, r.ref_kind, r.ref_id,
-            case when r.ref_kind = 'user.avatar'
-                 then coalesce(nullif(u.display_name, ''), u.email)
-                 else null end as label
-       from media_usage_refs r
-       left join users u on u.id = r.ref_id and r.ref_kind = 'user.avatar'
-      where r.asset_id in (${placeholders})`,
-    assetIds,
-  )
-  return rows.map((row) => ({
-    assetId: row.asset_id,
-    refKind: row.ref_kind,
-    refId: row.ref_id,
-    label: row.label ?? row.ref_kind,
-  }))
 }
