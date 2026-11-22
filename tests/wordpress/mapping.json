@@ -1,0 +1,11 @@
+{
+  "types": {
+    "project": {
+      "text": { "studio": ".studio" },
+      "gallery": { "gallery": ".gallery" }
+    }
+  },
+  "forms": [
+    { "selector": "#contact", "name": "enquiries", "fields": { "email": "email" } }
+  ]
+}

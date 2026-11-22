@@ -19,6 +19,7 @@
   },
   "type": "module",
   "scripts": {
+    "wordpress:convert": "bun scripts/wordpress/cli.ts",
     "dev": "bun run scripts/dev.ts",
     "dev:agent": "bun run dev:server",
     "dev:server": "bun --watch server/index.ts",

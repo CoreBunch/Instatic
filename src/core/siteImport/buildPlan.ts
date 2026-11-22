@@ -62,6 +62,9 @@ interface BuildImportPlanInput {
  * wizard so the user can preview what will be imported and resolve conflicts.
  */
 export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPlanInput): ImportPlan {
+  if (fileMap.files['instatic-wordpress-source.json']) {
+    throw new Error('This private WordPress package needs conversion. Run bun run wordpress:convert with the source ZIP and a new output ZIP, then import the output here.')
+  }
   const mediaTolerance = options?.mediaTolerance ?? 10
   const warnings: ImportWarning[] = []
   const droppedAtRules: string[] = []

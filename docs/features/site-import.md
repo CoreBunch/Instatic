@@ -2,6 +2,8 @@
 
 `src/admin/modals/SiteImport` is the canonical import surface. It routes static-site bundles (HTML pages, CSS files, images, fonts, JS) through `src/core/siteImport`, and routes CMS-exported site-transfer ZIP bundles through the CMS transfer endpoints for full import/export parity.
 
+WordPress editorial sites can be converted into native transfer ZIPs using the [WordPress migration pilot](wordpress-migration.md).
+
 The static-site pipeline has two parts: a pure analysis function (`buildImportPlan`) that produces an `ImportPlan` preview, and an async commit function (`commitImportPlan`) that uploads assets and writes to the store. CMS bundle imports keep their native semantics: validate the `SiteBundle`, preview against `/admin/api/cms/import/preview`, resolve any row slug conflicts in the shared Conflicts step, then apply through `/admin/api/cms/import` or `/admin/api/cms/import/archive`. The modal uses the same Review category navigator and Import progress surface for CMS bundles, so tables, media, folders, redirects, conflict resolution, and completion all live in the same picker pattern as HTML/CSS/media imports.
 
 WebKit-prefixed CSS properties and declarations containing `var()`, `env()`, `clamp()`, `min()`, or `max()` pass through the shared CSS substitution encoder before CSSOM parsing. This preserves their authored values in both browser and headless imports, including centered section padding and responsive wrapper widths. The decoder restores the original property names before storage.
