@@ -23,6 +23,9 @@ import { SESSION_COOKIE_NAME, hashSessionToken } from '../../../server/auth/toke
 import type { DbClient, DbResult } from '../../../server/db'
 import { handleCmsRequest } from '../../../server/handlers/cms'
 import { loopSourceRegistry } from '@core/loops/registry'
+import type { Page } from '@core/page-tree'
+import { prefetchLoopData } from '../../../server/publish/loopPrefetch'
+import { makePage, makeSite } from '../publisher/helpers'
 import { hookBus } from '@core/plugins/hookBus'
 
 function makeFakeDb() {
@@ -152,12 +155,19 @@ function makeFakeDb() {
       crashEvents.push(...remaining)
       return { rows: [], rowCount: before - remaining.length }
     }
+    // installPluginWithRecordKeys: clears stored record keys of the declared
+    // resources (none of these plugins declares a uniqueField).
+    if (normalized.includes('update plugin_records set unique_key = null')) {
+      return { rows: [], rowCount: 0 }
+    }
     if (normalized.includes('insert into plugin_records')) {
       const row = {
         id: values[0],
         plugin_id: values[1],
         resource_id: values[2],
         data_json: values[3],
+        unique_key: values[4] ?? null,
+        version: 0,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }
@@ -172,6 +182,17 @@ function makeFakeDb() {
     // listPluginSecretStates / resolvePluginSecretsForRuntime — these tests
     // declare no secret-typed settings, so the table is always empty.
     if (normalized.includes('from plugin_secrets')) {
+      return { rows: [], rowCount: 0 }
+    }
+    // An install withdraws the app scopes that do not carry over to it
+    // (withdrawPluginAppScopes). No app is registered and no member signed
+    // in here, so both lists are empty.
+    if (normalized.includes('from member_app_grants') || normalized.includes('from member_apps')) {
+      return { rows: [], rowCount: 0 }
+    }
+    // syncPluginMailTemplates: these plugins declare no email templates and
+    // nobody has edited one.
+    if (normalized.includes('from mail_templates')) {
       return { rows: [], rowCount: 0 }
     }
     throw new Error(`Unhandled SQL: ${sql}`)
@@ -208,21 +229,13 @@ function cmsRequest(
   url: string,
   init: { method?: string; body?: string; headers?: Record<string, string> } = {},
 ): Request {
-  const headers = new Map(
-    Object.entries(init.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]),
-  )
-  return {
-    url,
+  const req = new Request(url, {
     method: init.method ?? 'GET',
-    headers: {
-      get(name: string) {
-        return headers.get(name.toLowerCase()) ?? null
-      },
-    },
-    async json() {
-      return init.body ? JSON.parse(init.body) : {}
-    },
-  } as Request
+    body: init.body,
+  })
+  // happy-dom strips fetch-forbidden headers passed to the constructor.
+  for (const [name, value] of Object.entries(init.headers ?? {})) req.headers.set(name, value)
+  return req
 }
 
 function cmsFormRequest(
@@ -252,6 +265,14 @@ function pluginZip(files: Record<string, string>): File {
     Object.entries(files).map(([path, content]) => [path, strToU8(content)]),
   ))
   return new File([zipped], 'plugin.zip', { type: 'application/zip' })
+}
+
+/** A page holding one loop on `sourceId` that stores no direction. */
+function makeLoopPage(sourceId: string): Page {
+  return makePage({
+    root: { moduleId: 'base.body', children: ['loop'] },
+    loop: { moduleId: 'base.loop', props: { sourceId, filters: {}, orderBy: '', limit: 10, offset: 0 } },
+  })
 }
 
 async function waitForLoopSource(sourceId: string): Promise<void> {
@@ -378,8 +399,9 @@ describe('server plugin runtime SDK', () => {
               label: 'Products',
               filterSchema: {},
               orderByOptions: [{ id: 'title', label: 'Title' }],
+              defaultDirection: 'desc',
               fields: [{ id: 'title', label: 'Title' }],
-              fetch: async () => ({ items: [], totalItems: 0 }),
+              fetch: async (ctx) => ({ items: [{ id: 'd', fields: { title: ctx.direction } }], totalItems: 1 }),
               preview: () => [],
             })
           }
@@ -395,6 +417,13 @@ describe('server plugin runtime SDK', () => {
       expect(body.plugin.lifecycleStatus).toBe('active')
       expect(body.plugin.lastError).toBeNull()
       await waitForLoopSource(sourceId)
+      // The sandbox's defaultDirection reaches the host registry, and a loop
+      // that stores no direction asks the plugin's fetch() with it.
+      const registered = loopSourceRegistry.get(sourceId)!
+      expect(registered.defaultDirection).toBe('desc')
+      const page = makeLoopPage(sourceId)
+      const data = await prefetchLoopData(page, makeSite(), db)
+      expect(data.get('loop')?.items[0]?.fields.title).toBe('desc')
     } finally {
       if (loopSourceRegistry.has(sourceId)) loopSourceRegistry.unregister(sourceId)
       await rm(uploadsDir, { recursive: true, force: true })

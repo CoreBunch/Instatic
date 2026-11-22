@@ -286,7 +286,7 @@ describe('UsersPage', () => {
     )
 
     expect(await screen.findByRole('table', { name: 'Users' })).toBeDefined()
-    expect(screen.getByRole('tab', { name: 'Users' })).toBeDefined()
+    expect(screen.getByRole('tab', { name: 'Admin users' })).toBeDefined()
     expect(screen.queryByRole('tab', { name: 'Roles' })).toBeNull()
     expect(screen.queryByRole('tab', { name: 'Audit' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Create User' })).toBeDefined()
@@ -315,7 +315,7 @@ describe('UsersPage', () => {
     )
 
     expect(await screen.findByRole('table', { name: 'Roles' })).toBeDefined()
-    expect(screen.queryByRole('tab', { name: 'Users' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Admin users' })).toBeNull()
     expect(screen.getByRole('tab', { name: 'Roles' })).toBeDefined()
     expect(screen.queryByRole('tab', { name: 'Audit' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Create Role' })).toBeDefined()
@@ -348,7 +348,7 @@ describe('UsersPage', () => {
     )
 
     expect(await screen.findByRole('table', { name: 'Audit events' })).toBeDefined()
-    expect(screen.queryByRole('tab', { name: 'Users' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Admin users' })).toBeNull()
     expect(screen.queryByRole('tab', { name: 'Roles' })).toBeNull()
     expect(screen.getByRole('tab', { name: 'Audit' })).toBeDefined()
     expect(screen.queryByRole('button', { name: /create user/i })).toBeNull()
@@ -380,7 +380,7 @@ describe('UsersPage', () => {
       </Wrapper>,
     )
 
-    expect(await screen.findByText('No audit events yet.')).toBeDefined()
+    expect(await screen.findByText('No audit events yet')).toBeDefined()
     expect(screen.queryByRole('table', { name: 'Audit events' })).toBeNull()
   })
 
@@ -402,7 +402,7 @@ describe('UsersPage', () => {
     )
 
     expect((await screen.findByRole('alert')).textContent).toContain('Audit service unavailable')
-    expect(screen.getByText('No audit events yet.')).toBeDefined()
+    expect(screen.getByText('No audit events yet')).toBeDefined()
   })
 
   it('locks the owner row and exposes edit/reset actions for regular users', async () => {

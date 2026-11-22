@@ -7,7 +7,7 @@ import {
   type Page,
   type SiteDocument,
   DEFAULT_BREAKPOINTS,
-  DEFAULT_SITE_SETTINGS,
+  createNewSiteSettings,
   createNode,
   createDefaultSiteExplorerOrganization,
 } from '@core/page-tree'
@@ -39,7 +39,7 @@ export function createDefaultSiteDocument(name: string): SiteDocument {
     packageJson: clonePackageJson(DEFAULT_SITE_PACKAGE_JSON),
     runtime: cloneSiteRuntimeConfig(DEFAULT_SITE_RUNTIME),
     breakpoints: DEFAULT_BREAKPOINTS,
-    settings: structuredClone(DEFAULT_SITE_SETTINGS),
+    settings: createNewSiteSettings(),
     styleRules: {},
     explorer: createDefaultSiteExplorerOrganization(),
     createdAt: Date.now(),

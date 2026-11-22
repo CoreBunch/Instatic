@@ -372,6 +372,10 @@ export async function buildSiteRuntimeScripts(
       format: 'esm',
       logLevel: 'silent',
       metafile: true,
+      // Published bundles carry their npm dependencies (GSAP alone is ~170 kB
+      // unminified), so publish output is minified. Canvas builds stay
+      // readable for the inline source maps below.
+      minify: input.target === 'publish',
       nodePaths: [
         ...(
           input.dependencyCache?.nodeModulesDir

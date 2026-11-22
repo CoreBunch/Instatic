@@ -143,6 +143,11 @@ class DashboardWidgetRegistry {
           `[dashboard] plugin "${widget.ownerId}" cannot register widget "${widget.id}" — id must start with "${widget.ownerId}.".`,
         )
       }
+      if (!widget.pluginContext) {
+        throw new Error(
+          `[dashboard] plugin widget "${widget.id}" must include its host context metadata.`,
+        )
+      }
     }
   }
 }

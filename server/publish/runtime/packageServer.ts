@@ -24,6 +24,16 @@
  * `bun install` succeeds. We refuse to serve when the sentinel is missing —
  * a stale or partial install must complete before responses go out.
  *
+ * A lost cache is restored here
+ * ─────────────────────────────
+ * A published page keeps pointing at these URLs for as long as it is live,
+ * but the cache directory can be lost underneath it: a recreated container
+ * whose cache is not on a volume, a restored backup, a cleaned folder. When
+ * the entry or the requested file is missing, the handler asks `restore` to
+ * reinstall the lock behind the hash and then looks again. The URL carries
+ * only the hash, so `restore` is what finds the lock (see
+ * `publishedCacheRestore.ts`). A file that is present is served without it.
+ *
  * Headers
  * ───────
  * Content-addressed by lock hash, so files are immutable once written. A fresh
@@ -85,21 +95,37 @@ function resolveCacheFilePath(pathname: string): { hash: string; absPath: string
   return { hash, absPath }
 }
 
-export async function tryServeRuntimePackage(req: Request, pathname: string): Promise<Response | null> {
+/** Reinstalls the cache entry behind `hash`; resolves to whether it is usable now. */
+export type RestoreRuntimeCache = (hash: string) => Promise<boolean>
+
+/**
+ * The requested file, when its cache entry finished installing and the file
+ * is on disk. The sentinel is written atomically *after* `bun install`
+ * succeeds (see dependencyCache.ts), so an in-progress or abandoned install
+ * is never served.
+ */
+async function installedFile(hash: string, absPath: string): Promise<Bun.BunFile | null> {
+  if (!existsSync(sentinelPathForHash(hash))) return null
+  const file = Bun.file(absPath)
+  return (await file.exists()) ? file : null
+}
+
+export async function tryServeRuntimePackage(
+  req: Request,
+  pathname: string,
+  restore: RestoreRuntimeCache,
+): Promise<Response | null> {
   if (req.method !== 'GET') return null
   if (!isRuntimePackagePath(pathname)) return null
 
   const resolved = resolveCacheFilePath(pathname)
   if (!resolved) return new Response('not found', { status: 404 })
 
-  // Refuse to serve from an in-progress / abandoned install. The sentinel is
-  // written atomically *after* `bun install` succeeds (see dependencyCache.ts).
-  if (!existsSync(sentinelPathForHash(resolved.hash))) {
-    return new Response('runtime dependency cache not ready', { status: 404 })
+  let file = await installedFile(resolved.hash, resolved.absPath)
+  if (!file && (await restore(resolved.hash))) {
+    file = await installedFile(resolved.hash, resolved.absPath)
   }
-
-  const file = Bun.file(resolved.absPath)
-  if (!(await file.exists())) return new Response('not found', { status: 404 })
+  if (!file) return new Response('not found', { status: 404 })
 
   return new Response(file, {
     headers: {

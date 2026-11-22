@@ -1,31 +1,3 @@
-/**
- * PositionSection — visual editor for the `position` CSS section.
- *
- * Replaces the long stack of generic ClassPropertyRow widgets for
- * position / top / right / bottom / left / zIndex with task-shaped
- * controls:
- *
- *   • PositionSwitcher  — connected `[Relative | Absolute | ▼]` segmented
- *                         control with a dropdown trail. `fixed | sticky |
- *                         static` (and any custom value) fall through to a
- *                         full-width chip + close-button layout, mirroring
- *                         DisplaySwitcher's three-state shape.
- *   • DirectionInput    — compact icon-as-label cell for one offset
- *                         (top/right/bottom/left). Four cells render in
- *                         a 2-column TRBL grid that's only revealed when
- *                         the position value actually honors offsets
- *                         (relative / absolute / fixed / sticky — i.e. not
- *                         static, not unset).
- *   • zIndex row        — always rendered as a generic ClassPropertyRow at
- *                         the bottom of the section. Stays visible even
- *                         when position is unset/static so users can
- *                         still poke at stacking context the rare cases
- *                         it matters outside positioning.
- *
- * Reuses chip / track styles from LayoutSection.module.css so the visual
- * vocabulary stays in one place — `displayRow`, `displayChipGroup`, etc.
- */
-
 import type { IconComponent } from 'pixel-art-icons/types'
 import type { CSSPropertyBag } from '@core/page-tree'
 import { Button } from '@ui/components/Button'
@@ -35,7 +7,9 @@ import { ArrowBarRightIcon } from 'pixel-art-icons/icons/arrow-bar-right'
 import { ArrowBarDownIcon } from 'pixel-art-icons/icons/arrow-bar-down'
 import { ArrowBarLeftIcon } from 'pixel-art-icons/icons/arrow-bar-left'
 import { ClassPropertyRow } from './ClassPropertyRow'
-import { DropdownSwitcher } from './DropdownSwitcher'
+import { Select } from '@ui/components/Select'
+import { LabeledControl } from './LayoutSection/LabeledControl'
+import { useEditorPreference } from '@site/preferences/editorPreferences'
 import { TokenAwareInput } from '@site/property-controls/TokenAwareInput'
 import { useSpacingTokens, type Token } from '@site/property-controls/tokenUtils'
 import { getCSSPropertyDefaultValue } from './cssControlTypes'
@@ -83,7 +57,10 @@ export function PositionSection({
   onPreview,
   onClearPreview,
 }: PositionSectionProps) {
+  const hoverPreview = useEditorPreference('hoverPreview')
   const position = readString(currentStyles, 'position')
+  const options = position && !POSITION_OPTIONS.some((option) => option === position)
+    ? [...POSITION_OPTIONS, position] : POSITION_OPTIONS
   const positionIsActive = position != null && POSITIONED_VALUES.has(position)
 
   // Per-property adapter over the patch-shaped preview channel, used by the
@@ -107,16 +84,20 @@ export function PositionSection({
 
   return (
     <>
-      <DropdownSwitcher
-        property="position"
-        value={position}
-        primarySegments={POSITION_PRIMARY_SEGMENTS}
-        allOptions={POSITION_OPTIONS}
-        onChange={(v) => onChange('position', v)}
-        onClear={() => onClearProperty('position')}
-        onPreview={onPreview ? (v) => onPreview({ position: v } as Partial<CSSPropertyBag>) : undefined}
-        onClearPreview={onClearPreview}
-      />
+      <LabeledControl label="Type" isSet={hasStyleValue(storedStyles.position)}>
+        <Select
+          fieldSize="sm"
+          aria-label="Position type"
+          data-testid="css-position-switcher"
+          value={position ?? ''}
+          onChange={(event) => event.target.value ? onChange('position', event.target.value) : onClearProperty('position')}
+          onOptionPreview={hoverPreview && onPreview ? (value) => onPreview({ position: value || 'static' } as Partial<CSSPropertyBag>) : undefined}
+          onOptionPreviewClear={onClearPreview}
+        >
+          <option value="">Default</option>
+          {options.map((value) => <option key={value} value={value}>{value}</option>)}
+        </Select>
+      </LabeledControl>
       {positionIsActive && (
         <div className={styles.positionDirectionsGrid}>
           <DirectionInput
@@ -194,21 +175,6 @@ export function PositionSection({
 
 const POSITION_OPTIONS = ['static', 'relative', 'absolute', 'fixed', 'sticky'] as const
 
-const POSITION_PRIMARY_SEGMENTS = [
-  {
-    value: 'relative',
-    label: 'Relative',
-    ariaLabel: 'Position relative',
-    tooltip: 'position: relative',
-  },
-  {
-    value: 'absolute',
-    label: 'Absolute',
-    ariaLabel: 'Position absolute',
-    tooltip: 'position: absolute',
-  },
-] as const
-
 // ---------------------------------------------------------------------------
 // DirectionInput — icon-as-label numeric/text input for top/right/bottom/left
 // ---------------------------------------------------------------------------
@@ -256,7 +222,7 @@ function DirectionInput({
       <span className={styles.directionIcon} aria-hidden="true">
         <DirectionIcon size={14} />
       </span>
-      <TokenAwareInput
+      <TokenAwareInput adjustable
         aria-label={ariaLabel}
         value={isSet ? String(storedValue) : undefined}
         placeholder={placeholder}

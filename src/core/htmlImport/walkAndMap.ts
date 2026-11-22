@@ -50,6 +50,7 @@ import { parseHtml } from './parseHtml'
 import { stripUnsafe, collectStyleCss } from './stripUnsafe'
 import type { StripReport } from './stripUnsafe'
 import { harvestInlineStyles } from './inlineStyle'
+import { inlineSvgSpriteReferences, type SvgSpriteLoader } from './svgSprites'
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -101,6 +102,11 @@ export interface ImportResult extends WalkResult {
    * rules to the global class registry / Selectors panel.
    */
   styleCss: string
+  /**
+   * `<use href>` values inside inline SVG that pointed at nothing the import
+   * could read (a missing sprite file or id). Those icons publish empty.
+   */
+  unresolvedSvgRefs: string[]
 }
 
 // ---------------------------------------------------------------------------
@@ -120,11 +126,27 @@ const HTML_ATTRIBUTE_MODULES = new Set([
   // A form is the anchor an authored progressive-enhancement script binds to,
   // so its safe data-* / ARIA attributes have to survive import like any other
   // element's. Without this the hooks silently vanish and the script no-ops.
+  // Its controls carry the same hooks plus native attributes the modules do
+  // not model (`inputmode`, `step`, `aria-describedby`), so they keep theirs too.
   'base.form',
+  'base.label',
+  'base.input',
+  'base.textarea',
+  'base.select',
+  'base.option',
+  'base.option-group',
+  'base.checkbox',
+  'base.radio',
+  'base.submit',
 ])
 
+// `rel` is deliberately absent from the anchor modules: base.link and
+// base.button only ever generate the security rel for `target="_blank"`, so a
+// source-declared `rel` (nofollow, sponsored, next/prev, …) has no other home
+// and would be lost outright. It stays in the bag and the modules merge it
+// with the security rel at render time (`anchorHtmlAttributes`).
 const MODULE_GENERATED_ATTRIBUTE_NAMES: Record<string, readonly string[]> = {
-  'base.button': ['aria-disabled', 'disabled', 'href', 'rel', 'target', 'type'],
+  'base.button': ['aria-disabled', 'disabled', 'href', 'target', 'type'],
   'base.form': [
     'action',
     'data-instatic-form-id',
@@ -146,7 +168,31 @@ const MODULE_GENERATED_ATTRIBUTE_NAMES: Record<string, readonly string[]> = {
     'style',
     'width',
   ],
-  'base.link': ['href', 'rel', 'target'],
+  'base.link': ['href', 'target'],
+  'base.label': ['for'],
+  'base.input': [
+    'autocomplete',
+    'disabled',
+    'id',
+    'max',
+    'maxlength',
+    'min',
+    'minlength',
+    'name',
+    'pattern',
+    'placeholder',
+    'readonly',
+    'required',
+    'type',
+    'value',
+  ],
+  'base.textarea': ['disabled', 'id', 'maxlength', 'minlength', 'name', 'placeholder', 'readonly', 'required', 'rows'],
+  'base.select': ['disabled', 'id', 'multiple', 'name', 'required'],
+  'base.option': ['disabled', 'label', 'selected', 'value'],
+  'base.option-group': ['disabled', 'label'],
+  'base.checkbox': ['checked', 'disabled', 'id', 'name', 'required', 'type', 'value'],
+  'base.radio': ['checked', 'disabled', 'id', 'name', 'required', 'type', 'value'],
+  'base.submit': ['disabled', 'form', 'name', 'type', 'value'],
 }
 
 /**
@@ -433,12 +479,23 @@ export function walkAndMap(
  * raw `<style>` CSS, so callers can parse the CSS into registry rules and
  * surface a "Stripped: N scripts, M handlers" toast.
  */
-export function importHtml(source: string): ImportResult {
+export function importHtml(source: string, options: ImportHtmlOptions = {}): ImportResult {
   const doc = parseHtml(source)
+  // Sprite `<use>`s become real shapes before anything reads the SVG markup.
+  const unresolvedSvgRefs = inlineSvgSpriteReferences(doc, options.loadSvgSprite)
   // Harvest inline styles + <style> CSS before stripUnsafe drops them.
   const inlineStyles = harvestInlineStyles(doc)
   const styleCss = collectStyleCss(doc)
   const stripped = stripUnsafe(doc)
   const fragment = walkAndMap(doc, inlineStyles)
-  return { ...fragment, stripped, styleCss }
+  return { ...fragment, stripped, styleCss, unresolvedSvgRefs }
+}
+
+export interface ImportHtmlOptions {
+  /**
+   * Reads an external SVG sprite (`<use href="icons.svg#id">`, the part before
+   * `#`) so its symbols can be copied inline. Without it, only same-page
+   * `#id` references resolve. See `svgSprites.ts`.
+   */
+  loadSvgSprite?: SvgSpriteLoader
 }

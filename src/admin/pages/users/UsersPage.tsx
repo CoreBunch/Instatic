@@ -1,11 +1,14 @@
 /**
  * UsersPage — `/admin/users`.
  *
- * Capability-gated workspace for managing CMS users, custom roles and the
- * audit log. The page itself is a thin shell: it figures out which tabs
- * the current admin is allowed to see (`users.manage`, `roles.manage`,
- * `audit.read`), loads the underlying data once via `useUsersPageData`,
- * and delegates rendering to the per-tab components in `./tabs/`.
+ * Capability-gated workspace for the people of a site: admin users (who
+ * sign in to this admin), site members (who sign in on the published site),
+ * custom roles and the audit log. The page itself is a thin shell: it
+ * figures out which tabs the current admin is allowed to see
+ * (`users.manage`, `members.read` / `members.manage`, `roles.manage`,
+ * `audit.read`), loads the admin-side data once via `useUsersPageData`, and
+ * delegates rendering to the per-tab components in `./tabs/`. The members
+ * tab loads its own data: it is searched and paged on the server.
  *
  * Each tab owns its own form state, busy flag, and dialog open/close
  * state — only the loaded data, the shared error string, and the
@@ -18,6 +21,7 @@ import { AdminPageLayout } from '@admin/layouts/AdminPageLayout'
 import { hasCapability } from '@admin/access'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import { AuditTab } from './tabs/AuditTab'
+import { MembersTab } from './tabs/MembersTab'
 import { RolesTab } from './tabs/RolesTab'
 import { UsersTab } from './tabs/UsersTab'
 import { useUsersPageData } from './hooks/useUsersPageData'
@@ -32,12 +36,15 @@ export function UsersPage() {
   const canManageRoles = unrestricted || hasCapability(currentUser, 'roles.manage')
   const canReadAudit = unrestricted || hasCapability(currentUser, 'audit.read')
   const canReadRoleOptions = canManageUsers || canManageRoles
+  const canManageMembers = unrestricted || hasCapability(currentUser, 'members.manage')
+  const canReadMembers = canManageMembers || hasCapability(currentUser, 'members.read')
 
   const loadAccess: UsersPageLoadAccess = { canManageUsers, canReadRoleOptions, canReadAudit }
   const data = useUsersPageData(loadAccess)
 
   const availableTabs: UsersPageTab[] = []
   if (canManageUsers) availableTabs.push('users')
+  if (canReadMembers) availableTabs.push('members')
   if (canManageRoles) availableTabs.push('roles')
   if (canReadAudit) availableTabs.push('audit')
 
@@ -84,7 +91,7 @@ export function UsersPage() {
         workspace="users"
         title="Users"
         titleId="users-title"
-        description="Manage admin access, custom roles, and security audit events."
+        description="Manage admin access, site members, custom roles, and security audit events."
         tabs={tabs}
       >
         {/* No `loading` on the layout — the tabs below own their own
@@ -94,6 +101,7 @@ export function UsersPage() {
           {data.error && <p className={styles.error} role="alert">{data.error}</p>}
 
           <TabPanel value="users"><UsersTab data={data} canManageUsers={canManageUsers} /></TabPanel>
+          <TabPanel value="members"><MembersTab canManage={canManageMembers} onChanged={() => void data.refresh()} /></TabPanel>
           <TabPanel value="roles"><RolesTab data={data} canManageRoles={canManageRoles} /></TabPanel>
           <TabPanel value="audit"><AuditTab data={data} /></TabPanel>
         </div>

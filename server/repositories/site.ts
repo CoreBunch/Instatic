@@ -33,7 +33,7 @@ import { notifyShellWrite, serializeCollabAwareWrite } from './rowWriteEvents'
 import type { SiteRow } from '../types'
 import { nowIso } from '@core/utils/isoDate'
 
-const CMS_SITE_SCHEMA_VERSION = 1
+export const CMS_SITE_SCHEMA_VERSION = 1
 
 interface StoredSitePayload {
   cmsSiteSchemaVersion: 1

@@ -37,7 +37,7 @@
 
 import type { PropertyControl, PropertySchema } from '@core/module-engine'
 import { escapeHtml, isSafeUrl } from './utils'
-import { sanitizeRichtext, sanitizeSvg } from '@core/sanitize'
+import { RICHTEXT_CONTENT_CONFIG, sanitizeRichtext, sanitizeSvg } from '@core/sanitize'
 
 /**
  * Resolve the control declared for `key`. Top-level keys are a direct lookup;
@@ -94,7 +94,7 @@ export function escapeProps(
       // values cannot reach the published HTML unsanitized.
       // sanitizeRichtext falls back to conservative tag stripping only in
       // runtimes that have not installed DOMPurify (for example one-off scripts).
-      escaped[key] = sanitizeRichtext(value)
+      escaped[key] = sanitizeRichtext(value, RICHTEXT_CONTENT_CONFIG)
     } else if (type === 'url' || type === 'image' || type === 'media') {
       // URLs: block javascript: and vbscript: schemes; pass safe URLs through raw
       // so that module render() functions can HTML-escape them via safeUrl() from

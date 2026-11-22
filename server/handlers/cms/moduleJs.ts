@@ -3,11 +3,19 @@
  *
  * Modules may return `js` from `render()` (see `RenderOutput`); the publisher
  * dedupes it per moduleId and pages reference it via
- * `<script src="/_instatic/module-js/<id>.js?v=<publishVersion>" defer>` tags
+ * `<script src="/_instatic/module-js/<id>.js?v=<contentHash>" defer>` tags
  * injected by `injectModuleScripts`. This endpoint serves the body from the
  * site-wide module-JS map, memoised per publish version through the same
- * versioned single-flight the hole endpoint uses (`?v=` is a pure
- * cache-buster — the content always reflects the LATEST published snapshot).
+ * versioned single-flight the hole endpoint uses.
+ *
+ * The body always reflects the LATEST published snapshot rendered by the
+ * running code. `?v=` is the content hash of the body the tag was written
+ * for: when it matches the body served, the response is cacheable; when it
+ * does not (a baked page written before an upgrade or a publish changed the
+ * script, or a request with no `?v=`), the body is served `no-cache` so a
+ * stale URL never pins a body it does not name. Every response carries the
+ * hash as its `ETag`, so a stale URL revalidates with a `304` instead of
+ * downloading the script again (`serveVersionedScript`).
  *
  * The `<moduleId>` path segment is UNTRUSTED input: it is validated against
  * the namespaced-module-id grammar before any lookup, so traversal sequences
@@ -17,7 +25,8 @@
 import type { DbClient } from '../../db/client'
 import { registry } from '@core/module-engine'
 import { getLatestPublishedSiteSnapshot } from '../../repositories/publish'
-import { buildPublishedSiteModuleJsMap } from '../../publish/moduleJsBundle'
+import { buildPublishedSiteModuleJsMap, moduleJsVersion } from '../../publish/moduleJsBundle'
+import { serveVersionedScript } from '../../publish/assetVersion'
 import { createVersionedSingleFlight, getPublishVersion } from '../../publish/publishState'
 
 const MODULE_JS_PATH_PREFIX = '/_instatic/module-js/'
@@ -62,7 +71,7 @@ function plainResponse(body: string, status: number): Response {
   })
 }
 
-/** GET `/_instatic/module-js/<moduleId>.js?v=<publishVersion>` → JS body. */
+/** GET `/_instatic/module-js/<moduleId>.js?v=<contentHash>` → JS body. */
 export async function handleModuleJsAssetRequest(
   req: Request,
   url: URL,
@@ -78,13 +87,8 @@ export async function handleModuleJsAssetRequest(
 
   const jsMap = await loadModuleJsMapForVersion(ctx.db, getPublishVersion())
   const body = jsMap?.get(moduleId)
-  if (body === undefined) return plainResponse('Not found', 404)
+  const version = jsMap && moduleJsVersion(jsMap, moduleId)
+  if (body === undefined || !version) return plainResponse('Not found', 404)
 
-  return new Response(body, {
-    headers: {
-      'content-type': 'text/javascript; charset=utf-8',
-      // 1 hour — `?v=<publishVersion>` on the referencing tag busts on publish.
-      'cache-control': 'public, max-age=3600',
-    },
-  })
+  return serveVersionedScript(req, url, { body, version })
 }

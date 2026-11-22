@@ -11,7 +11,7 @@ import {
   touchConnectorLastUsed,
   toConnectionView,
 } from './store'
-import { hashMcpSecret } from './token'
+import { hashOpaqueToken } from '../../../oauth/secrets'
 
 async function freshDb(): Promise<DbClient> {
   const db = createSqliteClient(':memory:')
@@ -33,7 +33,7 @@ describe('connector store', () => {
       userId: 'u1',
       label: 'Claude Code',
       capabilities: ['ai.chat', 'content.manage'],
-      tokenHash: await hashMcpSecret('imcp_x'),
+      tokenHash: await hashOpaqueToken('imcp_x'),
     })
     expect(rec.label).toBe('Claude Code')
     expect(rec.capabilities).toEqual(['ai.chat', 'content.manage'])
@@ -50,7 +50,7 @@ describe('connector store', () => {
   })
 
   it('finds an active connector by token hash and skips revoked', async () => {
-    const hash = await hashMcpSecret('imcp_y')
+    const hash = await hashOpaqueToken('imcp_y')
     const rec = await createBearerConnection(db, {
       userId: 'u1', label: 'L', capabilities: ['ai.chat'], tokenHash: hash,
     })
@@ -66,14 +66,14 @@ describe('connector store', () => {
 
   it('does not revoke another user\'s connector', async () => {
     const rec = await createBearerConnection(db, {
-      userId: 'u1', label: 'L', capabilities: ['ai.chat'], tokenHash: await hashMcpSecret('imcp_z'),
+      userId: 'u1', label: 'L', capabilities: ['ai.chat'], tokenHash: await hashOpaqueToken('imcp_z'),
     })
     expect(await revokeConnector(db, rec.id, 'someone-else')).toBe(false)
   })
 
   it('touches last_used_at', async () => {
     const rec = await createBearerConnection(db, {
-      userId: 'u1', label: 'L', capabilities: ['ai.chat'], tokenHash: await hashMcpSecret('imcp_w'),
+      userId: 'u1', label: 'L', capabilities: ['ai.chat'], tokenHash: await hashOpaqueToken('imcp_w'),
     })
     expect(rec.lastUsedAt).toBeNull()
     await touchConnectorLastUsed(db, rec.id)
@@ -84,7 +84,7 @@ describe('connector store', () => {
   // ── Expiry tests ────────────────────────────────────────────────────────
 
   it('a freshly created token is accepted by findConnectionByTokenHash (not yet expired)', async () => {
-    const hash = await hashMcpSecret('imcp_fresh')
+    const hash = await hashOpaqueToken('imcp_fresh')
     await createBearerConnection(db, {
       userId: 'u1', label: 'Fresh', capabilities: ['ai.chat'], tokenHash: hash,
     })
@@ -95,7 +95,7 @@ describe('connector store', () => {
   })
 
   it('an expired token is rejected by findConnectionByTokenHash', async () => {
-    const hash = await hashMcpSecret('imcp_expired')
+    const hash = await hashOpaqueToken('imcp_expired')
     await createBearerConnection(db, {
       userId: 'u1', label: 'Expired', capabilities: ['ai.chat'], tokenHash: hash,
       ttlDays: 30,
@@ -107,7 +107,7 @@ describe('connector store', () => {
   })
 
   it('a non-expired token is still accepted when now is before expires_at', async () => {
-    const hash = await hashMcpSecret('imcp_valid')
+    const hash = await hashOpaqueToken('imcp_valid')
     await createBearerConnection(db, {
       userId: 'u1', label: 'Valid', capabilities: ['ai.chat'], tokenHash: hash,
       ttlDays: 30,
@@ -121,7 +121,7 @@ describe('connector store', () => {
   it('createBearerConnection always sets a non-null expiresAt on the returned record', async () => {
     const rec = await createBearerConnection(db, {
       userId: 'u1', label: 'E', capabilities: ['ai.chat'],
-      tokenHash: await hashMcpSecret('imcp_ttl'),
+      tokenHash: await hashOpaqueToken('imcp_ttl'),
     })
     expect(rec.expiresAt).not.toBeNull()
     // expiresAt should be approximately 90 days from now (within ±2 minutes).
@@ -135,7 +135,7 @@ describe('connector store', () => {
   it('toConnectionView includes expiresAt (non-null for new tokens) and never tokenHash', async () => {
     const rec = await createBearerConnection(db, {
       userId: 'u1', label: 'V', capabilities: ['ai.chat'],
-      tokenHash: await hashMcpSecret('imcp_view'),
+      tokenHash: await hashOpaqueToken('imcp_view'),
     })
     const view = toConnectionView(rec)
     // expiresAt must be a non-null string for a freshly created token.
@@ -150,7 +150,7 @@ describe('connector store', () => {
   it('custom ttlDays is honoured', async () => {
     const rec = await createBearerConnection(db, {
       userId: 'u1', label: 'Custom TTL', capabilities: ['ai.chat'],
-      tokenHash: await hashMcpSecret('imcp_custom'),
+      tokenHash: await hashOpaqueToken('imcp_custom'),
       ttlDays: 7,
     })
     const delta = new Date(rec.expiresAt!).getTime() - Date.now()
@@ -160,7 +160,7 @@ describe('connector store', () => {
   })
 
   it('createBearerConnection with ttlDays: null creates a non-expiring token', async () => {
-    const hash = await hashMcpSecret('imcp_no_expiry')
+    const hash = await hashOpaqueToken('imcp_no_expiry')
     const rec = await createBearerConnection(db, {
       userId: 'u1', label: 'No Expiry', capabilities: ['ai.chat'],
       tokenHash: hash,
@@ -177,7 +177,7 @@ describe('connector store', () => {
   })
 
   it('a connector row with NULL expires_at (grandfathered) is accepted as non-expiring', async () => {
-    const hash = await hashMcpSecret('imcp_null_expiry')
+    const hash = await hashOpaqueToken('imcp_null_expiry')
     const rec = await createBearerConnection(db, {
       userId: 'u1', label: 'Legacy', capabilities: ['ai.chat'], tokenHash: hash,
     })

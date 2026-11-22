@@ -57,6 +57,12 @@ const { rows } = await db<SiteRow>`select id, settings_json from site`
 // rows[0].settings_json is `Record<string, unknown>` in both dialects
 ```
 
+**Bind the object, never `JSON.stringify(object)`.** On Postgres a string bound to a `jsonb` column is stored as a JSON *string scalar*. It reads back correctly (the read normalizer parses it), so nothing looks wrong, but SQL that looks inside the value (`jsonField(...)` filters, `->>`) matches nothing. `plugin_records.data_json` was written that way until migration `036_plugin_records_json_repair`, which unwraps the affected rows on Postgres. That migration is written so it cannot fail a boot: one plpgsql block, a set-based UPDATE where the server has `pg_input_is_valid`, a row-by-row pass with a per-row exception block otherwise or when the fast pass raises, and rows it cannot unwrap left as they are. A cancel is the one thing plpgsql cannot catch, so the migration sets `noTimeouts` and the runner switches `statement_timeout` and `lock_timeout` off for its transaction; set that flag on any Postgres migration that rewrites a large table. Because the migration is recorded as applied whatever it skipped, its `leftover` hook counts the rows still stored as strings and the runner logs the count as `[migrations] 036_plugin_records_json_repair: …`. Those rows stay readable where the text holds a JSON object, but `list` filters do not match them until the record is saved again.
+
+**Comparing or ordering by a JSON field.** `jsonField` yields text on Postgres and a typed value on SQLite, so `jsonField(...) = <number>` is an error on one and a match on the other. Use the typed helpers in `server/db/jsonExtract.ts`, the one file allowed to hold the dialect-specific SQL: `jsonFieldTyped(column, field, dialect, 'text' | 'number' | 'boolean')` yields a value of that JSON type and NULL for rows holding another (bind booleans through `jsonBooleanParam`), and `jsonFieldOrder(column, field, dialect, direction)` yields ORDER BY terms that sort missing values, booleans, numbers and text in the same sequence on both. `jsonTextLike` is the LIKE that folds ASCII letters only on both sides and declares its escape character, and `jsonColumnIsObject` tests that a JSON column holds an object. `listPluginRecords` is the reference caller.
+
+`jsonObjectField` projects a nested object field without returning its parent document. Alias the result with a `_json` suffix so both adapters hydrate it. Publish lineup uses this to read a page’s template target.
+
 Gated by `src/__tests__/architecture/db-json-column-naming.test.ts`:
 
 1. Every `jsonb`-typed column in `migrations-pg.ts` has a name ending in `_json`.
@@ -86,6 +92,8 @@ The two arrays must have **identical IDs in the same order**. Each migration has
 | `distinct on (...)`      | `row_number() over (...)` subquery | "Latest per group" queries |
 
 The parity gate (`src/__tests__/architecture/migration-parity.test.ts`) compares the two arrays element-by-element and fails the build if IDs drift.
+
+The same migration must also leave both engines with the **same tables and the same stored columns** (generated columns aside). The Manager API moves whole databases between the engines by table and column name (`server/manager/postgresBridge.ts`, see [`docs/features/manager-api.md`](../features/manager-api.md)), so a table or column that exists on one engine only breaks pushing a SQLite site to a Postgres server. `src/__tests__/server/managerPostgresBridge.test.ts` checks this against a real Postgres when `INSTATIC_TEST_POSTGRES_URL` is set.
 
 ### Rule 4 — Timestamps are bound from JS as ISO 8601
 

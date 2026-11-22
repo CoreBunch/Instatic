@@ -1,5 +1,5 @@
 import { Type, type Static } from '@core/utils/typeboxHelpers'
-import { AnchorTargetSchema } from '@modules/base/shared/anchorTarget'
+import { AnchorTargetSchema } from '@core/htmlAttributes'
 import { HtmlAttributesPropSchemaOptions } from '@modules/base/shared/htmlAttributes'
 
 export const ButtonPropsSchema = Type.Object({

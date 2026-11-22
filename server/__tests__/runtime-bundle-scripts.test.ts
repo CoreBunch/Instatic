@@ -86,4 +86,39 @@ describe('buildSiteRuntimeScripts', () => {
     expect(result.runtimeAssets.scripts[0].format).toBe('classic')
     expect(result.runtimeAssets.scripts[0].src).toContain('/_instatic/assets/version-1/classic/')
   })
+
+  it('minifies module bundles for publish but not for the canvas', async () => {
+    const page = makeRuntimePage()
+    const site = makeRuntimeSite(page)
+    site.files = [{
+      id: 'motion',
+      path: 'scripts/motion.ts',
+      type: 'script',
+      content: [
+        '// motion setup',
+        'const readableName = document.documentElement',
+        'readableName.dataset.ready = "yes"',
+      ].join('\n'),
+      createdAt: 1,
+      updatedAt: 1,
+    }]
+    site.runtime.scripts = { motion: { ...DEFAULT_SCRIPT_RUNTIME_CONFIG } }
+
+    const build = (target: 'publish' | 'canvas') => buildSiteRuntimeScripts({
+      site,
+      page,
+      target,
+      assetBasePath: '/_instatic/assets/version-1/',
+    })
+    const entryContent = (result: Awaited<ReturnType<typeof build>>) =>
+      result.files.find((file) => file.path.includes('entries/'))?.content ?? ''
+
+    const published = entryContent(await build('publish'))
+    const canvas = entryContent(await build('canvas'))
+
+    expect(published).toContain('dataset.ready="yes"')
+    expect(published).not.toContain('readableName')
+    expect(published).not.toContain('// motion setup')
+    expect(canvas).toContain('readableName')
+  })
 })

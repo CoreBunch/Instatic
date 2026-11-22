@@ -11,7 +11,9 @@
  * `DataField[]`. Locking the schema here would force us to keep two
  * definitions in sync.
  */
+import { DataFieldSchema } from '@core/data/schemas'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { AccessRuleSchema } from '@core/members'
 
 export const TableCreateBodySchema = Type.Object({
   name: Type.String(),
@@ -32,10 +34,23 @@ export const TablePatchBodySchema = Type.Partial(Type.Object({
   pluralLabel: Type.String(),
   primaryFieldId: Type.String(),
   fields: Type.Unknown(),
+  appendFields: Type.Array(DataFieldSchema),
 }))
+
+export const TableAccessBodySchema = Type.Object({ access: AccessRuleSchema })
 
 export const RowUpsertBodySchema = Type.Object({
   cells: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+})
+
+export const RowCreateBodySchema = Type.Object({
+  cells: Type.Optional(Type.Record(Type.String(), Type.Unknown())),
+  /**
+   * When the requested slug is taken, store the row under the next free
+   * `<slug>-N` instead of answering 409. For callers that want "a new row"
+   * rather than "this exact slug" — the admin's New and Duplicate actions.
+   */
+  allocateSlug: Type.Optional(Type.Boolean()),
 })
 
 export const RowStatusBodySchema = Type.Object({

@@ -51,7 +51,7 @@ import { reconcileFrameworkClasses } from '@site/store/slices/site/framework/rec
 import styles from './OnboardingPanel.module.css'
 
 interface StepDef {
-  id: keyof Pick<OnboardingFacts, 'identity' | 'framework' | 'firstPage' | 'plugin' | 'team'>
+  id: keyof Pick<OnboardingFacts, 'identity' | 'framework' | 'homePage' | 'plugin' | 'team'>
   title: string
   desc: string
   cta: string
@@ -82,11 +82,11 @@ const STEPS: readonly StepDef[] = [
     action: { kind: 'framework-import' },
   },
   {
-    id: 'firstPage',
-    title: 'Create your first page',
+    id: 'homePage',
+    title: 'Edit the Home page',
     desc:
-      'Start from a blank canvas, a starter layout, or import HTML and we will scaffold a tree.',
-    cta: 'New page',
+      'It starts empty. Add content, then publish to put it live.',
+    cta: 'Open editor',
     icon: FileTextSolidIcon,
     action: { kind: 'navigate', to: '/admin/site' },
   },
@@ -138,7 +138,9 @@ export function OnboardingPanel({ facts, onDismiss, onFrameworkImported }: Onboa
       const loaded = await cmsAdapter.loadSite('default')
       if (!loaded) throw new Error('Site is not ready yet — finish setup first.')
       const { site, shellSeq } = loaded
-      site.settings.framework = applyFrameworkPreset(site.settings.framework, target)
+      const next = applyFrameworkPreset(site.settings, target)
+      site.settings.framework = next.framework
+      site.settings.fonts = next.fonts
       // Regenerate / prune the generated `framework:` utility classes (and strip
       // stale classIds off nodes) to match the new settings — the same reconcile
       // the in-editor store runs. Without it, removing the framework here would

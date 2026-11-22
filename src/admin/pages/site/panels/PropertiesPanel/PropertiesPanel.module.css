@@ -95,11 +95,19 @@
 .nodeViewSwitcher .nodeViewButton {
     height: auto;
     padding: 0;
-    border-radius: var(--radius-sm);
     color: var(--text-disabled);
     font-size: var(--text-2xs);
     font-weight: 800;
     line-height: 1.4;
+}
+
+.nodeViewDot {
+    width: 5px;
+    height: 5px;
+    /* Sits close to its label: the button's own gap is wider than a marker needs. */
+    margin-left: calc(-1 * var(--space-2xs));
+    border-radius: 50%;
+    background: var(--info-text);
 }
 
 .nodeViewSwitcher .nodeViewButton:hover {

@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'bun:test'
+import { sanitizeRichtext, RICHTEXT_CONTENT_CONFIG } from '@core/sanitize'
 import {
   firstMediaPathFromMarkdown,
   markdownToProseMirrorDoc,
   proseMirrorDocToMarkdown,
-  type JSONNode,
 } from '@core/markdown/markdownDocument'
+import type { JSONNode } from '@core/markdown/proseMirrorJson'
 import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
 
 describe('content markdown ↔ ProseMirror document', () => {
@@ -110,6 +111,54 @@ describe('content markdown ↔ ProseMirror document', () => {
   })
 })
 
+describe('inline marks with whitespace at their edges', () => {
+  const text = (value: string, ...marks: string[]): JSONNode =>
+    marks.length > 0
+      ? { type: 'text', text: value, marks: marks.map((type) => ({ type })) }
+      : { type: 'text', text: value }
+  const paragraph = (...content: JSONNode[]): JSONNode => ({
+    type: 'doc',
+    content: [{ type: 'paragraph', content }],
+  })
+
+  // A double-click on Windows selects the word plus its trailing space, so
+  // the marked run is `word ` — CommonMark rejects `**word **` as emphasis.
+  it.each([
+    { mark: 'bold', before: 'a ', run: 'word ', after: 'b', markdown: 'a **word** b', html: '<p>a <strong>word</strong> b</p>' },
+    { mark: 'bold', before: 'a', run: ' word', after: 'b', markdown: 'a **word**b', html: '<p>a <strong>word</strong>b</p>' },
+    { mark: 'italic', before: 'a ', run: 'word ', after: 'b', markdown: 'a *word* b', html: '<p>a <em>word</em> b</p>' },
+    { mark: 'strike', before: 'a ', run: 'word ', after: 'b', markdown: 'a ~~word~~ b', html: '<p>a <del>word</del> b</p>' },
+    { mark: 'bold', before: 'a ', run: 'word', after: ' b', markdown: 'a **word** b', html: '<p>a <strong>word</strong> b</p>' },
+  ])('serialises a $mark run "$run" with its delimiters against the word', ({ mark, before, run, after, markdown, html }) => {
+    const serialised = proseMirrorDocToMarkdown(paragraph(text(before), text(run, mark), text(after)))
+    expect(serialised).toBe(markdown)
+    expect(renderMarkdownToHtml(serialised).trim()).toBe(html)
+  })
+
+  it('drops the mark from a run that is only whitespace', () => {
+    expect(proseMirrorDocToMarkdown(paragraph(text('a'), text(' ', 'bold'), text('b')))).toBe('a b')
+  })
+
+  it('keeps whitespace inside a mark that continues into the next run', () => {
+    const serialised = proseMirrorDocToMarkdown(
+      paragraph(text('a '), text('one ', 'bold'), text('two', 'bold', 'italic'), text(' c')),
+    )
+    expect(serialised).toBe('a **one *two*** c')
+    expect(renderMarkdownToHtml(serialised).trim()).toBe('<p>a <strong>one <em>two</em></strong> c</p>')
+  })
+
+  it('keeps a nested mark valid when its run starts with whitespace', () => {
+    const serialised = proseMirrorDocToMarkdown(paragraph(text('a', 'italic'), text(' b', 'bold', 'italic')))
+    expect(serialised).toBe('*a **b***')
+    expect(renderMarkdownToHtml(serialised).trim()).toBe('<p><em>a <strong>b</strong></em></p>')
+  })
+
+  it('re-parses the moved whitespace as unmarked text', () => {
+    const serialised = proseMirrorDocToMarkdown(paragraph(text('a '), text('word ', 'bold'), text('b')))
+    expect(markdownToProseMirrorDoc(serialised)).toEqual(paragraph(text('a '), text('word', 'bold'), text(' b')))
+  })
+})
+
 describe('publisher markdown renderer', () => {
   it('renders the extended grammar via marked', () => {
     const html = renderMarkdownToHtml(
@@ -153,4 +202,49 @@ describe('firstMediaPathFromMarkdown', () => {
   it('returns null when no media is present', () => {
     expect(firstMediaPathFromMarkdown('just text')).toBeNull()
   })
+})
+
+describe('raw HTML survives content editing (#407)', () => {
+  const htmlCases = [
+    '<figure class="w-richtext-align-fullwidth">\n  <div><img src="/uploads/hero_image.avif" alt=""></div>\n</figure>',
+    '<div class="a_b">literal *stars*, [brackets], and \\slashes</div>',
+    'Before <a href="/some_path?q=a_b" target="_blank" class="p_medium">link</a> after.',
+    'Before <span title="a > b_`*~[]" data-label=some_value>text</span> after.',
+    "Before <span title='a > b_value'>text</span> after.",
+    'Before <!-- keep_this [comment] --> text.',
+    '<svg><path clip-path="url(#clip0_2674_9364)" d="M0 0"></path></svg>',
+  ]
+  for (const source of htmlCases) {
+    it(`preserves HTML source across repeated edits: ${source.slice(0, 55)}`, () => {
+      let current = source
+      for (let save = 0; save < 3; save++) {
+        current = proseMirrorDocToMarkdown(markdownToProseMirrorDoc(current))
+        expect(current).toBe(source)
+      }
+    })
+  }
+
+  it('still escapes Markdown in text between inline HTML tags', () => {
+    const source = 'Before <span class="a_b">literal \\*stars\\* and an\\_underscore</span> after.'
+    const saved = proseMirrorDocToMarkdown(markdownToProseMirrorDoc(source))
+    expect(saved).toBe(source)
+    expect(renderMarkdownToHtml(saved)).toContain('<span class="a_b">literal *stars* and an_underscore</span>')
+  })
+
+  it('leaves code and literal Markdown punctuation under their existing rules', () => {
+    const source = '`<span class="a_b">` and literal \\[brackets\\] and \\*stars\\*.'
+    expect(proseMirrorDocToMarkdown(markdownToProseMirrorDoc(source))).toBe(source)
+    const incomplete = 'Text < unfinished_tag'
+    expect(renderMarkdownToHtml(proseMirrorDocToMarkdown(markdownToProseMirrorDoc(incomplete)))).toBe(renderMarkdownToHtml(incomplete))
+  })
+})
+
+it('keeps publisher sanitization effective after an HTML editing round-trip', () => {
+  const source = '<div><img src="/uploads/hero_image.svg" onerror="alert(1)"><a href="javascript:alert(2)">bad link</a><script>alert(3)</script></div>'
+  const saved = proseMirrorDocToMarkdown(markdownToProseMirrorDoc(source))
+  const published = sanitizeRichtext(renderMarkdownToHtml(saved), RICHTEXT_CONTENT_CONFIG)
+  expect(published).toContain('src="/uploads/hero_image.svg"')
+  expect(published).not.toContain('onerror')
+  expect(published).not.toContain('javascript:')
+  expect(published).not.toContain('<script')
 })

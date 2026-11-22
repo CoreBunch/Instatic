@@ -244,7 +244,7 @@ src/admin/
 ### Cross-page primitives
 
 - **`SpotlightRoot`** — Cmd+K command palette. Owns its own command registry (`spotlight/commands/`), provider runner (`providers/`), scopes, keybindings, recents, telemetry. Available from every workspace.
-- **`AdminSectionNavigation`** — top-of-screen workspace switcher.
+- **`AdminSectionNavigation`** — top-of-screen workspace switcher. At widths up to 760px, tapping the site/workspace label opens a modal bottom sheet. Every permitted workspace and plugin page gets a labeled tile, with the current route checked. Settings, Account, Branches and View live sit in the footer. Workspace actions such as Publish stay in the header. At wider widths, plugins add entries to it, so the row has no upper bound: `useFittingEntryCount` measures how many entries fit in the space the toolbar leaves, and the rest move into a trailing "More" menu (`AdminNavMoreMenu`). The right-hand toolbar controls never shrink, so the toolbar never grows wider than the window.
 - **`AccountMenuButton`** — top-right avatar / account menu.
 - **`Panel`, `PanelHeader`, `SidebarResizeHandle`** — generic floating-panel chrome reused across the editor, content, and data workspaces.
 - **`StepUp`** — re-auth dialog gating sensitive actions.
@@ -302,6 +302,8 @@ boundary deeper.
 
 `SiteExplorerPanel` (`src/admin/pages/site/panels/SiteExplorerPanel/`) is the editor's concept browser for pages, templates, Visual Components, stylesheets, and scripts. Every section renders through `SiteExplorerTreeSection`, which uses the shared `Tree*` primitives from `src/admin/pages/site/ui/Tree/` for depth indent, chevrons, selection chrome, and DnD row affordances.
 
+Each section header in the Site and Code tabs uses a plus button to create an item. The button's accessible label and tooltip name the item type.
+
 Organization is persisted in `site.explorer` on the site shell. Folders are decorative and flat: they group editor rows only, and never change page slugs, public URLs, component identity, or file paths. The homepage is the page whose slug is `index`; it is always pinned as the first Pages row and does not receive organization drag handlers.
 
 **Store actions** on `siteSlice` for explorer management:
@@ -329,7 +331,7 @@ Organization is persisted in `site.explorer` on the site shell. Folders are deco
 
 **Undo/redo** uses patch-based history: every undoable mutation captures Mutative `[next, forward, inverse]` patch pairs scoped to the `SiteDocument`. Undo applies `entry.inverse`, redo applies `entry.forward` — O(change) in both time and memory, not O(site). A 50-deep history holds kilobytes of patches instead of hundreds of megabytes of full-site clones. See [`docs/reference/editor-history.md`](reference/editor-history.md).
 
-The store is composed of **12 slices**, each created by a factory in `store/slices/`:
+The store is composed of **14 slices**, each created by a factory in `store/slices/`:
 
 | Slice                  | Owns                                                                       |
 |------------------------|----------------------------------------------------------------------------|
@@ -345,6 +347,8 @@ The store is composed of **12 slices**, each created by a factory in `store/slic
 | `sitePanelSlice`       | Dependency manifest + site runtime settings                                |
 | `clipboardSlice`       | Copy / cut / paste of layer subtrees, persisted editor-wide                |
 | `inlineEditSlice`      | `activeInlineEdit` — the canvas inline text-edit session (double-click to edit) |
+| `layoutsSlice`         | Saved layouts: save / insert / rename / delete                             |
+| `fragmentsSlice`       | Insert fragment dialog flag + `insertFragment` and `applyTheme` (one undo step each) — see [`features/fragments.md`](features/fragments.md) |
 
 The combined `EditorStore` type lives at `store/types.ts` so each slice can import it without going through `store.ts` (this eliminates the historical store ↔ slice cycles).
 
@@ -421,7 +425,7 @@ Double-clicking a node whose module declares `inlineTextEdit` (`base.text`, `bas
 
 ### CSS injection into the iframe
 
-Each iframe `<head>` receives five `<style>` elements (three from `ClassStyleInjector`, one each from the others), in this order:
+Each iframe `<head>` receives five `<style>` elements (three from `ClassStyleInjector`, one each from the others), in this order, plus one per plugin stylesheet (below):
 
 | Element | Injector | Cascade layer | Contents |
 |---|---|---|---|
@@ -430,10 +434,15 @@ Each iframe `<head>` receives five `<style>` elements (three from `ClassStyleInj
 | `<style id="mc-classes-preview">` | `ClassStyleInjector` | `@layer user-authored` | Higher-specificity preview rule while a property control is hovered; empty for state-pseudo rules |
 | `<style id="mc-classes-force-state">` | `ClassStyleInjector` | `@layer user-authored` | Forced state preview: paints the active state-pseudo rule onto the selected node via a doubled `[data-node-id]` selector |
 | `<style id="mc-user-styles">` | `UserStylesheetInjector` | `@layer user-authored` | User-uploaded stylesheets (verbatim, unscoped) |
+| `<style data-plugin-id="…">` (0..n) | `PluginStylesheetInjector` | `@layer user-authored` | Stylesheets enabled plugins add to published pages (`frontend.assets` of kind `style` / `style-inline`) |
 
 The **unlayered-vs-layered** split is the cascade isolation mechanism: CSS rules outside any `@layer` always beat rules inside `@layer`-d blocks, regardless of specificity. Author CSS (both the class registry and user stylesheets) goes into `@layer user-authored`, so it can never override the editor chrome even with a high-specificity selector.
 
-`EditorChromeInjector` targets chrome elements via **stable data-attribute selectors** (`data-canvas-module-placeholder`, `data-instatic-slot-instance`, `data-instatic-unknown-module`, etc.) rather than hashed CSS-Module class names, which only exist in the parent document. At mount, it copies the required safe design tokens (`--text-subtle`, `--canvas-placeholder-bg`, `--radius`, etc.) from the parent document's `:root` onto the iframe's `:root` so `var(...)` references resolve correctly inside the iframe. Admin font, text-size, and spacing tokens are remapped to `--chrome-font-sans`, `--chrome-text-*`, and `--chrome-space-*` before use; they are never copied as `--font-sans`, `--text-*`, or `--space-*`, because those short names belong to the rendered site's Framework tokens inside the canvas.
+Stylesheets that plugins add to published pages are part of what visitors see, so the canvas loads them too. `PluginStylesheetInjector` reads the shared list from `canvasPluginStylesheets.ts` (one `GET /admin/api/cms/runtime/canvas-stylesheets` per editor, reloaded on `CMS_PLUGINS_CHANGED_EVENT`, so enabling, disabling, upgrading or removing a plugin restyles the canvas without a reload) and writes one `<style data-source="PluginStylesheetInjector" data-plugin-id="…">` per stylesheet into `@layer user-authored`. A `head`-placement stylesheet goes ahead of the site's style tags, every other placement after them, which is the document order the published page has. Viewport units are pinned to the frame viewport like the site's own CSS. **Only `style` and `style-inline` assets load; a plugin's `script`, `script-inline`, `link` and `meta` assets never reach the canvas**, because it shares the admin origin and is an editing surface. The server builds the list (`server/publish/canvasStylesheets.ts`) from the same eligibility rule as the publisher. See [`docs/features/plugin-system.md`](features/plugin-system.md) → "Frontend assets".
+
+`EditorChromeInjector` targets chrome elements via **stable data-attribute selectors** (`data-canvas-module-placeholder`, `data-instatic-slot-instance`, `data-instatic-unknown-module`, etc.) rather than hashed CSS-Module class names, which only exist in the parent document. At mount, it copies the admin design tokens the chrome reads from the parent document's `:root` onto the iframe's `:root`, every one renamed into the reserved `--chrome-*` namespace: `--radius` becomes `--chrome-radius`, `--text-subtle` becomes `--chrome-text-subtle`, `--font-sans` becomes `--chrome-font-sans`, and so on. The chrome rules read only `var(--chrome-*)`, and the forwarded set is derived from those references, so it cannot drift from what the rules use.
+
+No admin token is ever declared on the iframe `:root` under its own name. The chrome stylesheet is unlayered, so a declaration of `--radius`, `--text`, or `--space-s` there would beat the site's own custom property of the same name in `@layer user-authored`, and the canvas would render the site with the editor's values while the published page used the site's. `editorChromeInjector.test.tsx` fails if the chrome sheet declares or reads any custom property outside `--chrome-*`.
 
 Full details: [`docs/features/canvas-iframe-per-frame.md`](features/canvas-iframe-per-frame.md).
 
@@ -481,6 +490,8 @@ Canvas-internal values are not CSS tokens — they are raw integers intentionall
 | `EditorChromeInjector.tsx`      | Unlayered editor-chrome CSS into each iframe head               |
 | `ClassStyleInjector.tsx`        | Class registry + publisher reset CSS into each iframe head      |
 | `UserStylesheetInjector.tsx`    | User-uploaded CSS into each iframe head                         |
+| `PluginStylesheetInjector.tsx`  | Plugin stylesheets (never scripts) into each iframe head        |
+| `canvasPluginStylesheets.ts`    | Shared, event-refreshed list of plugin stylesheets              |
 | `NodeRenderer.tsx`              | Renders a single node and its children inside the iframe        |
 | `CanvasTransformLayer.tsx`      | Zoom + pan transform (design view)                              |
 | `CanvasLiveSurface.tsx`         | "Live" view — single real-size editable frame, normal scroll    |
@@ -515,6 +526,8 @@ Canvas-internal values are not CSS tokens — they are raw integers intentionall
 ### Panel rail
 
 42px-wide vertical strip on the far left. Primary navigation panels sit in the top group; global workspace actions such as the AI assistant are pinned to the bottom group. Each button gets an automatic rail tint from its full panel identity, with repeats avoided inside the visible rail group, and opens a panel in the left sidebar. Implementation: `src/admin/pages/site/sidebars/PanelRail/PanelRail.module.css`.
+
+The Explorer’s **Site** tab opens with the site name and its **Global head settings** gear, followed by collapsible Pages, Templates and Components branches. The **Code** tab uses the same tree for Styles and Scripts. In both tabs, each branch keeps its create actions visible while collapsed.
 
 The primary rail group is, in order: **Explorer** (`database-solid` icon, `gold` accent — carried over from the standalone Layers rail button it replaced), **Framework**, **Selectors**, **Dependencies**. The AI assistant lives alone in the bottom global group. Read-only callers (Viewer / Client) see only the Explorer rail button — the structural Framework / Selectors / Dependencies panels and the agent are dropped from both the rail and their panel mounts.
 
@@ -564,11 +577,13 @@ Property controls are driven by the selected node's module schema (`src/core/mod
 
 At the top of the Properties Panel, the selector picker is the single entry point for CSS rules that affect the selected element. Assigned class rules render as removable `TagPill` chips and are stored on `node.classIds`; matching ambient rules render as non-removable `TagPill` chips because they apply by selector matching, not assignment. Ambient rules that match only through a universal subject (`*`, `body.x *`, `*::before`) never render as pills — they style every element in their scope and stay reachable through the dropdown and the Selectors panel instead. The dropdown searches both class rules and ambient selectors, is capped to the picker width budget, and ellipsizes long selector labels instead of expanding across the editor. Ambient rows that do not match the selected canvas element stay visible but disabled with the mismatch reason, and selector-shaped input such as `.hero .title`, `h1`, or `a:hover` creates an ambient rule instead of a class.
 
-The Framework panel's **Type** tab stores Google/custom font assets and editable font tokens together under `site.settings.fonts`. Installed font assets own the self-hosted `@font-face` files; font tokens own the builder-facing variables such as `--font-primary`, the assigned font asset, and the fallback stack. The property-panel `font-family` control is a rich picker: token rows write `var(--font-primary)` so the selected node or class keeps following future token swaps, direct font rows write a concrete family stack as an escape hatch, and the text input still accepts manual values.
+The Framework panel's **Type** tab stores Google/custom font assets and editable font tokens together under `site.settings.fonts`. Installed font assets own the self-hosted `@font-face` files; font tokens own the builder-facing variables such as `--font-heading`, the assigned font asset, and the fallback stack. New sites start with the three role tokens `--font-heading`, `--font-body` and `--font-mono` as system-font fallbacks, and the "Manage framework" dialog adds any of them a site lacks (see [site-shell.md](features/site-shell.md) → font role tokens); the new-token dialog pre-fills the first missing role name. The property-panel `font-family` control is a rich picker: token rows write `var(--font-heading)` so the selected node or class keeps following future token swaps, direct font rows write a concrete family stack as an escape hatch, and the text input still accepts manual values.
 
 When the user clicks a rule in the Selectors Panel, the Properties Panel switches to **selector-editing mode** — the body shows style controls for that rule directly, and the header renders `SelectorHeader` with the rule's CSS selector, an inline rename input, and a delete button. The delete and rename actions are only shown for non-generated rules and require `site.style.edit`.
 
 When an eligible node is selected on a page canvas (not root, not already a ref, not inside VC mode), a **Componentize** button (`ConvertToComponentButton`) appears next to the class picker. Clicking it, or triggering `openComponentizeEditor(nodeId)` from the layer context menu, opens an inline name-input strip and, on confirmation, calls `convertNodeToComponent(nodeId, name)` to extract the subtree into a new Visual Component. Full details: [`docs/features/visual-components.md`](features/visual-components.md) → "Componentizing existing page content".
+
+The Properties panel uses the same section editor for inline and selector styles. The rail follows the section order: Position, Size, Layout, Spacing, Styles, Typography, Effects, Transforms and Interaction. For text elements, Typography follows Position. Size pairs each dimension with its sizing mode; the ratio lock updates both numeric dimensions in one edit when their units match. Spacing edits each side of the margin and padding bands. Styles groups visibility, opacity, backgrounds, overflow and borders. For numeric inspector fields, drag horizontally or use the arrow buttons or Up/Down keys. Shift multiplies the step by ten. Scrubbing previews the change on the canvas as you drag, commits once on release, preserves the CSS unit and leaves token references and expressions editable as text. Fill supports solid colors and linear, radial and conic gradients. Editing a gradient preserves the other background layers. Gradients with custom positions or unresolved color stops open as authored CSS. The Fill, text, border and shadow pickers share Framework colors. **Save to Framework** creates an ordinary Framework color token and binds a solid field to its CSS variable. In a gradient, saving a color or choosing an existing token binds only the selected stop. Moving that stop preserves the reference; editing its color directly replaces the reference with a literal. The picker and canvas edit the first gradient in a layered background and preserve its sibling images. Linear gradients have draggable canvas stops and an angle handle. Gradients with custom geometry or stops outside the visual controls remain editable as CSS. Border opens a side editor for width, style, and color. Radius supports linked and individual corners, including dragging on the canvas. The Effects menu adds drop shadows, inner shadows, layer blur and background blur. Use a section’s **+** for additional properties. Stored and inherited values remain visible, and a style search reveals matching properties. Attributes and conditional Visibility retain their own tabs.
 
 ### Sidebar motion model
 
@@ -621,7 +636,7 @@ Site-specific controls that were previously sections of this modal (Pages roster
 **Data source — `useSiteSettingsController`** (`src/admin/modals/Settings/useSiteSettingsController.ts`): the General and Publishing sections edit fields of the persisted `SiteDocument` (`name`, `settings.*`, framework preferences), but where that document lives depends on the route. The modal is global, so a section cannot just read the editor store — that store is only hydrated on the Site editor (`AdminCanvasLayout`). The controller hides the split behind one uniform shape:
 
 - **Site editor** (editor store holds the live document): delegate to the editor-store mutations. Settings edits ride the collab write path alongside page-tree edits — streamed live to every peer and persisted by the server relay.
-- **Every other admin page** (no in-memory draft): a standalone Zustand store loads the document once via `cmsAdapter`, edits a local copy, and persists immediately with a shell-only `saveSite` (empty dirty sets, so pages / components / layouts are left untouched). After each save it refreshes the `adminUi` site summary and fires `CMS_SITE_RELOAD_EVENT` so the toolbar brand and `useSiteSummary` re-sync. There is no Save button on those pages, so writes commit on blur / toggle.
+- **Every other admin page** (no in-memory draft): a standalone Zustand store loads the document once via `cmsAdapter`, edits a local copy, and persists immediately with a shell-only `saveSite` (empty dirty sets, so pages / components / layouts are left untouched). After each save it refreshes the `adminUi` site summary and fires `CMS_SITE_RELOAD_EVENT` so the toolbar brand and `useSiteSummary` re-sync. There is no Save button on those pages, so writes commit on blur / toggle. The loaded copy is not kept forever: any **other** `CMS_SITE_RELOAD_EVENT` (site import, plugin install, data-workspace writes to site tables — also one arriving while the first load is in flight) marks it `stale`, and the next render of a section refetches it after pending saves have settled (immediately when the modal is open). A load whose fetch started before a save discards its response and fetches again, so it can never roll back that save or its shell conflict base (`saveGeneration`). General text fields reset their local input value when the corresponding persisted value changes, so the refreshed document also reaches the visible controls.
 
 Because the controller is imported only by the lazy section components, the editor-store import it carries stays inside the `SettingsModal` chunk and never enters the eager graph of the lightweight layouts. This is what makes the modal *actually* global — before it, General and Publishing rendered a permanent skeleton anywhere outside the Site editor.
 
@@ -646,7 +661,7 @@ The modal uses the tile-card pattern from `docs/design.md`: `--bg-surface` paren
 
 ### Saved layouts
 
-Right-clicking a layer (DOM panel or canvas) offers **Save as layout…** — page mode only, disabled with an inline reason on the page root. The action opens `LayoutNameDialog` (`src/admin/pages/site/dialogs/`), then `saveNodeAsLayout` captures the node + its whole subtree **and every referenced style rule** into a `SavedLayout` (`@core/layouts`) on `site.layouts`. The snapshot shape deliberately mirrors the clipboard payload, and both flows share one engine (`@site/store/subtreeSnapshot`): collecting a subtree + its classes, and restoring a snapshot with fresh node ids, scoped classes cloned with remapped `scope.nodeId`, framework classes re-matched by name, and regular classes reused-or-reimported. Inserting a saved layout therefore reproduces the original selection exactly, the same way paste would.
+Right-clicking a layer (DOM panel or canvas) offers **Save as layout…** — page mode only, disabled with an inline reason on the page root. The action opens `LayoutNameDialog` (`src/admin/pages/site/dialogs/`), then `saveNodeAsLayout` captures the node + its whole subtree **and every referenced style rule** into a `SavedLayout` (`@core/layouts`) on `site.layouts`. The snapshot shape deliberately mirrors the clipboard payload, and both flows share one engine (`@site/store/subtreeSnapshot`): collecting a subtree + its classes, and restoring a snapshot with fresh node ids, scoped classes cloned with remapped `scope.nodeId`, framework classes re-matched by name, and regular classes reused-or-reimported. Inserting a saved layout therefore reproduces the original selection exactly, the same way paste would. Layouts are same-site snapshots that match regular classes by id; to move a section between sites use a fragment ([`features/fragments.md`](features/fragments.md)), which matches classes, components and tokens by name and brings the rules, tokens, tables and media they need.
 
 Saved layouts persist as rows in the `layouts` system table (`savedLayoutFromRow` / `savedLayoutToCells` in `@core/data/layoutFromRow`) through the same transactional site-document save as pages and components (`PUT /admin/api/cms/site-document`, dirty-tracked per layout id with explicit deleted-layout ids). Plugins can ship layouts too — `definePack({ layouts: [{ id, name, html, css? }] })` entries are authored as clean HTML (+ CSS) and compiled to snapshot form at plugin build time (`compilePackLayout`, using the same HTML-import pipeline as "Paste HTML here…"); they install into the same table with ids namespaced `<pluginId>/<id>` and are replaced on pack re-sync (see [`docs/features/plugin-system.md`](features/plugin-system.md)). The inserter's Layouts section groups them accordingly: the user's **Saved** layouts first, then one group per plugin labelled with the plugin's display name (`composeLayoutsSection` + `pluginRuntime.getPluginName`). In the inserter, snapshot-borne hazards disable items inline instead of failing on click: a snapshot carrying a `base.outlet` follows the outlet module's own placement rules, and in VC mode a snapshot whose component refs would create a dependency cycle is disabled. Refs to since-deleted Visual Components are stripped at insertion time. Right-clicking a saved layout in the inserter offers Rename… (closes the inserter and reopens `LayoutNameDialog`) and Delete (immediate — it's an undoable site mutation — confirmed via toast).
 
@@ -665,6 +680,8 @@ Architecture:
 - **`recentStore.ts`** — recently-used hits.
 - **`keybindings.ts`** — declarative keybinding registry.
 - **`state.ts`, `stateHandlers.ts`** — palette state machine.
+
+**Insert fragment from file…** (`editor.insertFragment`, `commands/fragments.ts`) opens `InsertFragmentModal` (`src/admin/modals/InsertFragment/`), lazily mounted by `AdminCanvasEditorBody` while `insertFragmentModalOpen`; see [`features/fragments.md`](features/fragments.md).
 
 The palette is wired so that **plugin-registered commands work the same as built-in ones**. Spotlight is the editor's keyboard surface.
 
@@ -757,7 +774,7 @@ See [docs/features/plugin-system.md](features/plugin-system.md) for the plugin S
   - `src/admin/pages/site/store/slices/site/nodeActions.ts` — tree mutation actions that call `mutateActiveTree`
   - `src/admin/pages/site/canvas/CanvasRoot.tsx` — canvas mount
   - `src/admin/spotlight/SpotlightRoot.tsx` — Cmd+K palette
-  - `src/admin/pages/site/panels/PropertiesPanel/PropertiesPanelBody.tsx` — branch router for selector, multi-select, VC, and selected-node inspector surfaces; owns the node-level Styles/Attributes switch
+  - `src/admin/pages/site/panels/PropertiesPanel/PropertiesPanelBody.tsx` — branch router for selector, multi-select, VC, and selected-node inspector surfaces; owns the node-level Styles/Attributes/Visibility switch (Visibility holds `ShowWhenControl` and `ShowIfControl`; its tab shows a dot while the node has a show-when rule or a show-if condition)
   - `src/admin/pages/site/panels/PropertiesPanel/ClassPicker.tsx` — unified selector picker UI (entry point: pill strip, input, creation flow)
   - `src/admin/pages/site/panels/PropertiesPanel/HtmlAttributesPanel.tsx` — selected-node Attributes view for editing safe `props.htmlAttributes`
   - `src/admin/pages/site/panels/PropertiesPanel/htmlAttributesModel.ts` — pure row normalization, validation, and dirty-key helpers for the Attributes view
@@ -774,7 +791,7 @@ See [docs/features/plugin-system.md](features/plugin-system.md) for the plugin S
   - `src/admin/pages/site/panels/SiteExplorerPanel/useSiteExplorerDnd.ts` — DnD monitor for explorer organization drag-and-drop
   - `src/admin/pages/site/store/slices/site/explorerActions.ts` — 6 explorer store actions wired to `mutateSite`
   - `src/admin/pages/site/hooks/useInsertInserterItem.ts` — shared `onInsertItem` handler for `ModuleInserterDialog` (toolbar `+` and canvas selection toolbar both use it)
-  - `src/admin/pages/site/property-controls/DynamicBindingControl/` — binding affordance wrapper + single-pane picker popover; `cache.ts` holds the DataMeta fetch + module-level cache
+  - `src/admin/pages/site/property-controls/DynamicBindingControl/` — binding affordance + single-pane picker popover. `PropertyControlRenderer` builds each control through `renderControl(labelAction)`; the unbound affordance is handed in as `labelAction` and lands in the control's own label row (`ControlRow`'s `labelAction` slot, revealed on row hover / focus), so it never covers a control and edges stay aligned whether a prop is bindable or not; `cache.ts` holds the DataMeta fetch + module-level cache
   - `src/admin/pages/site/property-controls/TokenAwareInput.tsx` — shared token-autocomplete input primitive (suggestion filtering, commit, live preview, Suggested/All dropdown)
   - `src/admin/pages/site/property-controls/tokenUtils.ts` — `Token` shape, `useSpacingTokens`, `useTypographyTokens` hooks, and pure helpers (`resolveTokenValue`, `displayTokenValue`, `looksLikeDirectValue`, `isLivePreviewable`)
 - Gate tests:

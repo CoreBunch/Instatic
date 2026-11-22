@@ -180,15 +180,28 @@ describe('Request-scoped auth context', () => {
 
     const t0 = Date.now()
     // First touch for this hash always writes.
-    expect(await findUserBySessionHash(measured, idHash, t0)).not.toBeNull()
+    expect(await findUserBySessionHash(measured, idHash, { now: t0 })).not.toBeNull()
     expect(counts.lastSeenWrites).toBe(1)
 
     // 10s later — inside the 30s window — the write is debounced away.
-    expect(await findUserBySessionHash(measured, idHash, t0 + 10_000)).not.toBeNull()
+    expect(await findUserBySessionHash(measured, idHash, { now: t0 + 10_000 })).not.toBeNull()
     expect(counts.lastSeenWrites).toBe(1)
 
     // 40s after the first write — past the window — the write resumes.
-    expect(await findUserBySessionHash(measured, idHash, t0 + 40_000)).not.toBeNull()
+    expect(await findUserBySessionHash(measured, idHash, { now: t0 + 40_000 })).not.toBeNull()
     expect(counts.lastSeenWrites).toBe(2)
   })
+
+  it('does not extend session idle lifetime for passive socket delivery', async () => {
+    const cookie = await login(testDb.db)
+    const idHash = await hashSessionToken(cookie.split('=')[1]!)
+    const { db: measured, counts } = countingDb(testDb.db)
+    expect(await findUserBySessionHash(measured, idHash, { touchLastSeen: false })).not.toBeNull()
+    expect(counts.sessionUserSelects).toBe(1)
+    expect(counts.lastSeenWrites).toBe(0)
+    await testDb.db`update sessions set last_seen_at = ${new Date(0)} where id_hash = ${idHash}`
+    expect(await findUserBySessionHash(measured, idHash, { touchLastSeen: false })).toBeNull()
+    expect(counts.lastSeenWrites).toBe(0)
+  })
+
 })

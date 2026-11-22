@@ -1,6 +1,7 @@
 import { Button } from '@ui/components/Button'
 import type { ImportResult as CmsImportResult } from '@core/data/bundleSchema'
-import type { ImportSelection } from './shared/importPlanning'
+import type { ImportPlan } from '@core/siteImport'
+import { selectedImportCount, type ImportSelection } from './shared/importPlanning'
 import type { RunProgress } from './shared/importProgress'
 import type { CmsBundleState } from './shared/useCmsBundleImport'
 import {
@@ -14,6 +15,7 @@ type Step = 'drop' | 'analyze' | 'conflicts' | 'run'
 interface SiteImportFooterProps {
   step: Step
   cmsBundleState: CmsBundleState | null
+  plan: ImportPlan | null
   selection: ImportSelection | null
   runProgress: RunProgress
   cmsResult: CmsImportResult | null
@@ -26,6 +28,8 @@ interface SiteImportFooterProps {
   onAnalyzeNext: () => void
   onCmsAnalyzeNext: () => void
   onConflictsImport: () => void
+  /** Class rename targets on the Conflicts step that must be fixed before importing. */
+  classNameProblemCount: number
   onRunCancel: () => void
   onToggleLog: () => void
   onOpenSite: () => void
@@ -34,6 +38,7 @@ interface SiteImportFooterProps {
 export function SiteImportFooter({
   step,
   cmsBundleState,
+  plan,
   selection,
   runProgress,
   cmsResult,
@@ -46,6 +51,7 @@ export function SiteImportFooter({
   onAnalyzeNext,
   onCmsAnalyzeNext,
   onConflictsImport,
+  classNameProblemCount,
   onRunCancel,
   onToggleLog,
   onOpenSite,
@@ -84,10 +90,19 @@ export function SiteImportFooter({
     const pageCount = selection ? selection.pagesIncluded.size : 0
     const ruleCount = selection ? selection.styleRulesIncluded.size : 0
     const mediaCount = selection ? selection.assetsIncluded.size : 0
+    const sheetCount = selection ? selection.stylesheetsIncluded.size : 0
+    // An import needs no page: stylesheets, rules, media or fonts alone are valid.
+    const nothingSelected = !plan || !selection || selectedImportCount(plan, selection) === 0
     return (
       <>
         <span className={styles.footNote}>
-          {pageCount} {pageCount === 1 ? 'page' : 'pages'} · {ruleCount} rules · {mediaCount} media selected
+          {nothingSelected
+            ? 'Nothing is selected to import'
+            : <>
+                {pageCount} {pageCount === 1 ? 'page' : 'pages'} · {ruleCount} rules
+                {sheetCount > 0 && ` · ${sheetCount} ${sheetCount === 1 ? 'stylesheet' : 'stylesheets'}`}
+                {' '}· {mediaCount} media selected
+              </>}
         </span>
         <Button variant="secondary" type="button" onClick={onClose}>
           Cancel
@@ -95,7 +110,7 @@ export function SiteImportFooter({
         <Button
           variant="primary"
           type="button"
-          disabled={pageCount === 0}
+          disabled={nothingSelected}
           onClick={onAnalyzeNext}
         >
           Continue →
@@ -110,7 +125,17 @@ export function SiteImportFooter({
         <Button variant="secondary" type="button" onClick={onBack}>
           ← Back
         </Button>
-        <Button variant="primary" type="button" onClick={onConflictsImport}>
+        {classNameProblemCount > 0 && (
+          <span className={styles.footNote}>
+            Fix {classNameProblemCount === 1 ? 'the class name' : `${classNameProblemCount} class names`} marked above to import
+          </span>
+        )}
+        <Button
+          variant="primary"
+          type="button"
+          onClick={onConflictsImport}
+          disabled={classNameProblemCount > 0}
+        >
           Import
         </Button>
       </>

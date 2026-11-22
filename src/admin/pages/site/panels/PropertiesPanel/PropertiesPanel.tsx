@@ -145,6 +145,7 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
 
   return (
     <aside
+      data-floating-obstacle=""
       ref={setDragPanelElementRef}
       data-panel=""
       data-testid="properties-panel"
@@ -209,7 +210,6 @@ export function PropertiesPanel({ variant = 'floating' }: PropertiesPanelProps) 
           selectedSelectorClassId={data.selectedSelectorClassId}
           selectedSelectorClassIds={data.selectedSelectorClassIds}
           isSelectorMultiSelect={data.isSelectorMultiSelect}
-          activeBreakpointId={data.activeBreakpointId}
           isMultiSelect={data.isMultiSelect}
           selectedNodeIds={data.selectedNodeIds}
           selectedNode={data.selectedNode}

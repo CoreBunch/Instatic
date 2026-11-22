@@ -7,7 +7,7 @@
  *      OR per-visitor plugin source (Rule 3).
  *   3. The hole endpoint renders live, request-time data:
  *        - SHARED hole reads the page query, NOT cookies, and caches per query.
- *        - PER-VISITOR hole reads cookies, bypasses the cache (no-store), and
+ *        - PER-VISITOR hole reads cookies, bypasses the cache (private, no-store), and
  *          re-runs the source fetch on every request.
  *   4. The snapshot is loaded from the DB once per publish version (the
  *      versioned snapshot cache), not per request.
@@ -23,8 +23,9 @@ import { Value } from '@sinclair/typebox/value'
 import type { DbClient, DbResult } from '../../../server/db'
 import { handleHoleRequest } from '../../../server/handlers/cms/hole'
 import { resetForTests } from '../../../server/publish/renderCache'
-import { getPublishVersion } from '../../../server/publish/publishState'
-import { LoopSourceDescriptorSchema } from '../../../server/plugins/protocol/schemas/loops'
+import { getPublishedSnapshotHash } from '../../../server/publish/publishedSnapshotCache'
+import { bumpPublishVersion } from '../../../server/publish/publishState'
+import { LoopSourceDescriptorSchema } from '@core/loops'
 import { registry } from '../../core/module-engine/registry'
 import type { AnyModuleDefinition } from '../../core/module-engine'
 import { loopSourceRegistry } from '../../core/loops/registry'
@@ -158,7 +159,8 @@ function makeSnapshotWithLoop(loopNodeId: string, sourceId: string) {
 }
 
 /**
- * Minimal GET request stub. The hole handler only reads `req.method` and
+ * Minimal GET request stub. The hole handler only reads `req.method`,
+ * `req.url` (to tell which member-session cookie name applies) and
  * `req.headers.get('cookie')`. We bypass the global `Headers` here because the
  * test runtime (happy-dom) enforces the browser forbidden-header rule and drops
  * the `Cookie` header — Bun.serve's native incoming Request does not, so a stub
@@ -167,6 +169,7 @@ function makeSnapshotWithLoop(loopNodeId: string, sourceId: string) {
 function makeReq(cookie?: string): Request {
   return {
     method: 'GET',
+    url: 'http://localhost/',
     headers: { get: (k: string) => (cookie && k.toLowerCase() === 'cookie' ? cookie : null) },
   } as unknown as Request
 }
@@ -287,7 +290,7 @@ describe('hole endpoint — shared (requestDependent) hole', () => {
   it('renders request-time data from route.query and does NOT expose cookies', async () => {
     const snap = makeSnapshotWithLoop('hole-loop', LIVE_SOURCE_ID)
     const db = makeFakeDb(snap)
-    const v = getPublishVersion()
+    const v = getPublishedSnapshotHash(snap.site)
     const u = encodeURIComponent('/search?q=shoes')
     const url = new URL(`http://localhost/_instatic/hole/hole-loop?v=${v}&u=${u}`)
     const res = await handleHoleRequest(makeReq('sid=secret'), url, { db })
@@ -302,7 +305,7 @@ describe('hole endpoint — shared (requestDependent) hole', () => {
   it('caches per query: same query reuses the render, different query re-fetches', async () => {
     const snap = makeSnapshotWithLoop('hole-loop', LIVE_SOURCE_ID)
     const db = makeFakeDb(snap)
-    const v = getPublishVersion()
+    const v = getPublishedSnapshotHash(snap.site)
 
     const hit = async (q: string) => {
       const url = new URL(`http://localhost/_instatic/hole/hole-loop?v=${v}&u=${encodeURIComponent(`/search?q=${q}`)}`)
@@ -317,6 +320,12 @@ describe('hole endpoint — shared (requestDependent) hole', () => {
     const b1 = await hit('hats')
     expect(b1).toContain('q=hats')
     expect(liveCalls).toBe(2) // distinct query → distinct cache slot → re-fetch
+
+    // A post publish invalidates live data, not the baked placeholder.
+    bumpPublishVersion()
+    const refreshed = await hit('shoes')
+    expect(refreshed).toContain('q=shoes')
+    expect(liveCalls).toBe(3)
   })
 })
 
@@ -325,14 +334,14 @@ describe('hole endpoint — shared (requestDependent) hole', () => {
 // ---------------------------------------------------------------------------
 
 describe('hole endpoint — per-visitor hole', () => {
-  it('reads cookies, bypasses the cache (no-store), and re-renders every request', async () => {
+  it('reads cookies, bypasses the cache (private, no-store), and re-renders every request', async () => {
     const snap = makeSnapshotWithLoop('hole-loop', VISITOR_SOURCE_ID)
     const db = makeFakeDb(snap)
-    const v = getPublishVersion()
+    const v = getPublishedSnapshotHash(snap.site)
     const url = new URL(`http://localhost/_instatic/hole/hole-loop?v=${v}&u=${encodeURIComponent('/')}`)
 
     const res1 = await handleHoleRequest(makeReq('sid=alice'), url, { db })
-    expect(res1.headers.get('cache-control')).toBe('no-store')
+    expect(res1.headers.get('cache-control')).toBe('private, no-store')
     const body1 = await res1.text()
     expect(body1).toContain('sid=alice')
     expect(body1).toContain('call=1')
@@ -356,7 +365,7 @@ describe('hole endpoint — versioned snapshot cache', () => {
     const snap = makeSnapshotWithLoop('hole-loop', LIVE_SOURCE_ID)
     const counters = { snapshotLoads: 0 }
     const db = makeFakeDb(snap, counters)
-    const v = getPublishVersion()
+    const v = getPublishedSnapshotHash(snap.site)
 
     for (const q of ['a', 'b', 'c']) {
       const url = new URL(`http://localhost/_instatic/hole/hole-loop?v=${v}&u=${encodeURIComponent(`/s?q=${q}`)}`)

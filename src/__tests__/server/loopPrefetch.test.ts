@@ -7,19 +7,22 @@ import { describe, expect, it } from 'bun:test'
 import {
   collectLoopNodes,
   prefetchLoopData,
-  publishedDataRowToLoopItem,
+  publishedDataRowToEntryItem,
   readLoopProps,
 } from '../../../server/publish/loopPrefetch'
 import type { DbResult } from '../../../server/db'
 import { createFakeDb } from './dbTestFake'
+import { loopSourceRegistry } from '@core/loops'
+import type { SourceFetchContext } from '@core/loops/types'
 import { makePage, makeSite } from '../publisher/helpers'
 
 // Make sure the built-in sources are registered.
 import '@core/loops/sources'
 
 describe('loopPrefetch', () => {
-  it('maps published data row authorship into public loop fields', () => {
-    const item = publishedDataRowToLoopItem({
+  it('maps published data row authorship into public loop fields', async () => {
+    const db = createFakeDb(async () => ({ rows: [] }) as unknown as DbResult)
+    const item = await publishedDataRowToEntryItem(db, {
       id: 'version_1',
       rowId: 'row_1',
       tableId: 'posts',
@@ -47,7 +50,7 @@ describe('loopPrefetch', () => {
       publishedByRoleName: 'Admin',
       publishedAt: '2026-05-01T10:02:00.000Z',
       createdAt: '2026-05-01T10:02:00.000Z',
-    })
+    }, [])
 
     // Every people key is a LEAF. `author` used to be the reference object,
     // so a template binding it published `{"displayName":…,"roleSlug":…}`
@@ -71,6 +74,44 @@ describe('loopPrefetch', () => {
     expect('publishedById' in item.fields).toBe(false)
   })
 
+  it('resolves schema-declared media cells to public paths like the loop source', async () => {
+    const db = createFakeDb(async () => ({
+      rows: [
+        { id: 'media_hero', public_path: '/uploads/hero.jpg' },
+        { id: 'media_a', public_path: '/uploads/a.jpg' },
+      ],
+    }) as unknown as DbResult)
+    const item = await publishedDataRowToEntryItem(db, {
+      id: 'version_1',
+      rowId: 'row_1',
+      tableId: 'projects',
+      tableSlug: 'projects',
+      tableKind: 'postType',
+      tableRouteBase: '/projects',
+      versionNumber: 1,
+      cells: { title: 'Project', slug: 'project', hero: 'media_hero', gallery: ['media_a', 'media_gone'] },
+      slug: 'project',
+      featuredMediaId: null,
+      featuredMediaPath: null,
+      authorUserId: null,
+      authorName: null,
+      authorRoleSlug: null,
+      authorRoleName: null,
+      publishedByUserId: null,
+      publishedByName: null,
+      publishedByRoleSlug: null,
+      publishedByRoleName: null,
+      publishedAt: '2026-05-01T10:02:00.000Z',
+      createdAt: '2026-05-01T10:02:00.000Z',
+    }, [
+      { id: 'gallery', label: 'Gallery', type: 'media', allowMultiple: true },
+      { id: 'hero', label: 'Hero', type: 'media', mediaKind: 'image' },
+    ])
+    expect(item.fields.hero).toBe('/uploads/hero.jpg')
+    expect(item.fields.gallery).toEqual(['/uploads/a.jpg'])
+    expect(item.fields.title).toBe('Project')
+  })
+
   it('readLoopProps coerces missing/invalid props into safe defaults', () => {
     const props = readLoopProps({
       id: 'l',
@@ -83,7 +124,8 @@ describe('loopPrefetch', () => {
     expect(props.sourceId).toBe('')
     expect(props.limit).toBe(10)
     expect(props.offset).toBe(0)
-    expect(props.direction).toBe('desc')
+    // No stored direction: the source's default decides (resolveLoopDirection).
+    expect(props.direction).toBeUndefined()
     expect(props.pagination).toBe('none')
     expect(props.pageSize).toBe(10)
   })
@@ -196,5 +238,52 @@ describe('loopPrefetch', () => {
     const data = result.get('loop')
     expect(data?.totalItems).toBe(2)
     expect(data?.items.map((it) => it.fields.title)).toEqual(['About', 'Contact'])
+  })
+
+  describe('direction when the loop stores none', () => {
+    function recordingSource(id: string, defaultDirection?: 'asc' | 'desc') {
+      const seen: Array<SourceFetchContext['direction']> = []
+      loopSourceRegistry.registerOrReplace({
+        id,
+        label: id,
+        filterSchema: {},
+        orderByOptions: [],
+        fields: [{ id: 'name', label: 'Name' }],
+        ...(defaultDirection ? { defaultDirection } : {}),
+        async fetch(ctx) {
+          seen.push(ctx.direction)
+          return { items: [], totalItems: 0 }
+        },
+      })
+      return seen
+    }
+
+    async function prefetchWith(sourceId: string, props: Record<string, unknown> = {}) {
+      const page = makePage({
+        root: { moduleId: 'base.body', children: ['loop'] },
+        loop: { moduleId: 'base.loop', props: { sourceId, ...props } },
+      })
+      await prefetchLoopData(page, makeSite(), createFakeDb(async () => ({ rows: [], rowCount: 0 })))
+    }
+
+    it('lists a source with no default in the order it returns', async () => {
+      const seen = recordingSource('test.ordered')
+      await prefetchWith('test.ordered')
+      expect(seen).toEqual(['asc'])
+      loopSourceRegistry.unregister('test.ordered')
+    })
+
+    it('uses the source default, and the author pick over it', async () => {
+      const seen = recordingSource('test.newest', 'desc')
+      await prefetchWith('test.newest')
+      await prefetchWith('test.newest', { direction: 'asc' })
+      expect(seen).toEqual(['desc', 'asc'])
+      loopSourceRegistry.unregister('test.newest')
+    })
+
+    it('keeps data rows newest first by default', () => {
+      expect(loopSourceRegistry.get('data.rows')?.defaultDirection).toBe('desc')
+      expect(loopSourceRegistry.get('site.pages')?.defaultDirection).toBeUndefined()
+    })
   })
 })

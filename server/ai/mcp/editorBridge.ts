@@ -88,6 +88,7 @@ export function createEditorBridgeStream(
 
       let bridgeId = ''
       let destroyBridge = (): void => {}
+      let pendingCount = (): number => 0
       let heartbeat: ReturnType<typeof setInterval> | null = null
       let lease: ReturnType<typeof setTimeout> | null = null
 
@@ -117,7 +118,14 @@ export function createEditorBridgeStream(
       const armLease = (): void => {
         if (closed) return
         if (lease) clearTimeout(lease)
-        lease = setTimeout(cleanup, idleLeaseMs)
+        lease = setTimeout(() => {
+          // Never recycle under a pending call: that rejected it while the
+          // editor was still working on it (its result then 404'd). Every
+          // pending call is bounded by the relay's per-call timeout, so an
+          // orphaned stream still drains and closes.
+          if (pendingCount() > 0) armLease()
+          else cleanup()
+        }, idleLeaseMs)
       }
 
       const emit = (event: AiStreamEvent): void => {
@@ -125,17 +133,21 @@ export function createEditorBridgeStream(
         try {
           controller.enqueue(encodeStreamEvent(event))
           // Tool traffic proves the stream is wanted — keep the idle lease
-          // from expiring under an active batch. (The relay's own per-call
-          // timeout is 90s, comfortably inside the lease.)
+          // from expiring under an active batch.
           armLease()
         } catch {
           cleanup()
         }
       }
 
-      const created = createBridge(emit, signal)
+      // Serial: the editor runs relayed tools strictly one at a time, so
+      // pushing a whole batch at once only started every call's timeout (and
+      // the idle lease) early — queued calls timed out, or the lease closed the
+      // stream mid-batch, while the tab was still working through earlier ones.
+      const created = createBridge(emit, signal, undefined, undefined, { serial: true })
       bridgeId = created.bridgeId
       destroyBridge = created.destroy
+      pendingCount = created.pendingCount
 
       // Newest instance of this workspace wins. The user's other workspace
       // remains connected, so Site and Content may serve MCP simultaneously.

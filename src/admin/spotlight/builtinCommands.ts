@@ -36,6 +36,7 @@ import { getUsersCommands } from './commands/users'
 import { getPreviewCommands } from './commands/preview'
 import { getAiAssistantCommands } from './commands/aiAssistant'
 import { getImportHtmlCommands } from './commands/importHtml'
+import { getFragmentsCommands } from './commands/fragments'
 import { getSiteImportCommands } from './commands/siteImport'
 import { getSiteExportCommands } from './commands/siteExport'
 import { getBranchesCommands } from './commands/branches'
@@ -83,6 +84,7 @@ export function getAllCommands(): Command[] {
       ...getSettingsCommands(),
       ...getPreviewCommands(),
       ...getImportHtmlCommands(),
+      ...getFragmentsCommands(),
       ...getSiteImportCommands(),
       ...getSiteExportCommands(),
       ...getBranchesCommands(),

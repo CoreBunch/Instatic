@@ -16,9 +16,10 @@ import type { ConditionDef } from '@core/page-tree'
 import { cssToStyleRules } from './cssToStyleRules'
 import { extractRootColorTokens } from './colorTokens'
 import { extractRootFontTokens } from './fontTokens'
-import { stripGoogleFontImportRules } from './fontImports'
+import { stripGoogleFontImportRules, type GoogleFontCollector } from './fontImports'
 import type { CssFileResult } from './assetPlan'
-import type { ImportColorToken, ImportFontToken, ImportWarning } from './types'
+import type { ImportColorToken, ImportFontToken } from './types'
+import type { ImportWarning } from './warnings'
 
 /**
  * Accumulators threaded through every `parseCssSourceIntoPlan` call of one
@@ -32,7 +33,7 @@ export interface CssPlanState {
   conditionsById: Map<string, ConditionDef>
   /** Colour tokens pulled from root-scope rules, deduped by slug. */
   colorsBySlug: Map<string, ImportColorToken>
-  /** Font tokens pulled from root-scope rules, deduped by normalized variable. */
+  /** Font tokens pulled from root-scope rules, deduped by authored variable. */
   fontTokensByVariable: Map<string, ImportFontToken>
   cssFileResults: CssFileResult[]
 }
@@ -52,7 +53,7 @@ export interface ParseCssSourceOptions {
   breakpoints: Array<{ id: string; width: number; mediaQuery?: string }>
   mediaTolerance: number
   /** Harvests Google-font `@import` requests before they are stripped. */
-  collectGoogleFonts: (cssSource: string) => void
+  collectGoogleFonts: GoogleFontCollector
 }
 
 /**
@@ -69,7 +70,7 @@ export function parseCssSourceIntoPlan(
   state: CssPlanState,
   options: ParseCssSourceOptions,
 ): void {
-  options.collectGoogleFonts(cssSource)
+  options.collectGoogleFonts(cssSource, null)
   const cssForStyleRules = stripGoogleFontImportRules(cssSource)
   const { rules, warnings, assetRefs, conditions, fontFaces } = cssToStyleRules(cssForStyleRules, {
     breakpoints: options.breakpoints,

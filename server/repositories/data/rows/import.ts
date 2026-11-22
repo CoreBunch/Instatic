@@ -1,8 +1,11 @@
 /**
  * Bundle-import upserts for data rows. These bypass the normal CRUD path to
- * preserve the source instance's original id, status, and timestamps.
+ * preserve the source instance's original id and timestamps, and to write the
+ * publication state the import decided for the row (`landingPublication` in
+ * `server/handlers/cms/importApply.ts`): a bundle's `published` status is kept
+ * only when the import restores a live version.
  *
- *   upsertDataRow         — id-preserving upsert (merge-overwrite / replace)
+ *   upsertDataRow         — id-preserving upsert (merge-overwrite)
  *   insertDataRowIfAbsent — insert only if id absent (merge-add)
  *   replaceDataRow        — plain insert after wipe (replace strategy)
  *
@@ -23,14 +26,15 @@ export interface DataRowImportInput {
   cells: DataRowCells
   slug: string
   status: DataRowStatus
+  scheduledPublishAt?: string | null
   publishedAt: string | null
   createdAt: string | null
   updatedAt: string | null
 }
 
 /**
- * Upsert a row preserving its original id, status, and timestamps. Used by
- * the `merge-overwrite` and `replace` import strategies.
+ * Upsert a row preserving its original id and timestamps, with the publication
+ * state the caller decided. Used by the `merge-overwrite` import strategy.
  */
 export async function upsertDataRow(
   db: DbClient,
@@ -42,12 +46,12 @@ export async function upsertDataRow(
   await db`
     insert into data_rows (
       id, branch_id, table_id, cells_json, slug, status,
-      published_at, created_at, updated_at
+      published_at, scheduled_publish_at, created_at, updated_at
     )
     values (
       ${physicalId(scope.branchId, input.id)}, ${scope.branchId},
       ${physicalId(scope.branchId, input.tableId)}, ${input.cells}, ${input.slug}, ${input.status},
-      ${input.publishedAt}, ${createdAt}, ${updatedAt}
+      ${input.publishedAt}, ${input.scheduledPublishAt ?? null}, ${createdAt}, ${updatedAt}
     )
     on conflict (id) do update
       set table_id    = excluded.table_id,
@@ -55,6 +59,7 @@ export async function upsertDataRow(
           slug        = excluded.slug,
           status      = excluded.status,
           published_at = excluded.published_at,
+          scheduled_publish_at = excluded.scheduled_publish_at,
           updated_at  = excluded.updated_at
   `
 }
@@ -78,12 +83,12 @@ export async function insertDataRowIfAbsent(
   const { rows } = await db<{ id: string }>`
     insert into data_rows (
       id, branch_id, table_id, cells_json, slug, status,
-      published_at, created_at, updated_at
+      published_at, scheduled_publish_at, created_at, updated_at
     )
     values (
       ${physicalId(scope.branchId, input.id)}, ${scope.branchId},
       ${physicalId(scope.branchId, input.tableId)}, ${input.cells}, ${input.slug}, ${input.status},
-      ${input.publishedAt}, ${createdAt}, ${updatedAt}
+      ${input.publishedAt}, ${input.scheduledPublishAt ?? null}, ${createdAt}, ${updatedAt}
     )
     on conflict do nothing
     returning id
@@ -106,12 +111,12 @@ export async function replaceDataRow(
   await db`
     insert into data_rows (
       id, branch_id, table_id, cells_json, slug, status,
-      published_at, created_at, updated_at
+      published_at, scheduled_publish_at, created_at, updated_at
     )
     values (
       ${physicalId(scope.branchId, input.id)}, ${scope.branchId},
       ${physicalId(scope.branchId, input.tableId)}, ${input.cells}, ${input.slug}, ${input.status},
-      ${input.publishedAt}, ${createdAt}, ${updatedAt}
+      ${input.publishedAt}, ${input.scheduledPublishAt ?? null}, ${createdAt}, ${updatedAt}
     )
   `
 }

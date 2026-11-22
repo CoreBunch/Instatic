@@ -314,6 +314,8 @@ describe('framework/preferences', () => {
       maxScreenWidth: 1920,
       isRem: false,
       treeShakeGeneratedFrameworkUtilities: false,
+      // Absent from the stored settings, so the default (off) is layered in.
+      emitRootFontSize: false,
     })
   })
 

@@ -28,7 +28,7 @@ test.describe('users and roles', () => {
       email,
       displayName: 'E2E Member',
       password: 'member-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
 
     await expect(page.getByText(email)).toBeVisible()
@@ -144,7 +144,7 @@ test.describe('users and roles', () => {
       email,
       displayName: 'Step-Up Guard',
       password: 'step-up-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await page.locator('button[form="users-page-user-form"]').click()
 
@@ -181,7 +181,7 @@ test.describe('users and roles', () => {
       email,
       displayName: 'Mobile Step-Up Guard',
       password: 'step-up-mobile-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await page.locator('button[form="users-page-user-form"]').click()
 
@@ -216,7 +216,7 @@ test.describe('users and roles', () => {
       email: firstEmail,
       displayName: 'Fresh Step-Up Window',
       password: 'step-up-fresh-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await expect(page.getByText(firstEmail)).toBeVisible()
 
@@ -226,7 +226,7 @@ test.describe('users and roles', () => {
       email: staleEmail,
       displayName: 'Expired Step-Up Window',
       password: 'step-up-stale-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await page.locator('button[form="users-page-user-form"]').click()
 
@@ -286,16 +286,19 @@ test.describe('users and roles', () => {
       await loginAs(limited, email, password)
       const toolbar = limited.getByTestId('toolbar')
 
-      await expect(toolbar.getByText('Site', { exact: true })).toBeVisible()
-      await expect(toolbar.getByRole('link', { name: 'Media' })).toBeVisible()
-      await expect(toolbar.getByText('Content', { exact: true })).toHaveCount(0)
-      await expect(toolbar.getByText('Users', { exact: true })).toHaveCount(0)
-      await expectLimitedToolbarMobileLayout(limited)
-
-      await toolbar.getByTestId('account-menu-trigger').click()
+      const switcher = toolbar.getByRole('button', { name: /Switch workspace/ })
+      await expect(switcher).toContainText('Site')
+      await switcher.click()
+      const sheet = limited.getByRole('dialog', { name: 'Workspaces' })
+      await expect(sheet.getByRole('link')).toHaveText(['Site', 'Media'])
+      await expect(sheet.getByRole('link', { name: 'Media' })).toBeInViewport({ ratio: 1 })
+      await expect(sheet.getByTestId('account-menu-trigger')).toBeInViewport({ ratio: 1 })
+      expect(await toolbar.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+      expect(await limited.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      await sheet.getByTestId('account-menu-trigger').click()
+      await expect(sheet).toBeHidden()
       await expect(limited.getByRole('menu', { name: 'Account menu' })).toBeVisible()
-      await expect(limited.getByTestId('account-menu-go-to-account')).toBeVisible()
-      await expectLimitedToolbarMobileLayout(limited)
+      await expect(limited.getByTestId('account-menu-go-to-account')).toBeInViewport({ ratio: 1 })
     } finally {
       await context.close()
     }
@@ -400,7 +403,7 @@ test.describe('users and roles', () => {
       email,
       displayName,
       password: 'audit-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await expect(page.getByText(email)).toBeVisible()
 
@@ -415,7 +418,7 @@ test.describe('users and roles', () => {
     })
     await expect(createdRow).toBeVisible()
     await expect(createdRow.getByText(`by ${OWNER.email}`)).toBeVisible()
-    await expect(createdRow.getByText('Role: Member')).toBeVisible()
+    await expect(createdRow.getByText('Role: No access')).toBeVisible()
     await expect(auditTable.getByText('user.create')).toHaveCount(0)
   })
 
@@ -433,7 +436,7 @@ test.describe('users and roles', () => {
       email,
       displayName,
       password: 'audit-mobile-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await expect(page.getByText(email)).toBeVisible()
 
@@ -682,37 +685,4 @@ async function expectStepUpDialogMobileLayout(dialog: Locator): Promise<void> {
   expect(metrics.requiredControlsPresent).toBe(true)
   expect(metrics.controlsContained).toBe(true)
   expect(metrics.alertContained).toBe(true)
-}
-
-async function expectLimitedToolbarMobileLayout(page: Page): Promise<void> {
-  const metrics = await page.getByTestId('toolbar').evaluate((toolbar) => {
-    const documentElement = document.documentElement
-    const viewportWidth = documentElement.clientWidth
-    const viewportHeight = window.innerHeight
-    const toolbarRect = toolbar.getBoundingClientRect()
-    const mediaLink = toolbar.querySelector('a[href="/admin/media"]')
-    const accountTrigger = toolbar.querySelector('[data-testid="account-menu-trigger"]')
-    const controls = [mediaLink, accountTrigger].filter(
-      (control): control is Element => control !== null,
-    )
-
-    return {
-      viewportWidth,
-      viewportHeight,
-      pageOverflow: documentElement.scrollWidth - viewportWidth,
-      toolbarContained: toolbarRect.left >= -1 && toolbarRect.right <= viewportWidth + 1,
-      requiredControlsPresent: controls.length === 2,
-      controlsContained: controls.every((control) => {
-        const rect = control.getBoundingClientRect()
-        return rect.left >= -1 && rect.right <= viewportWidth + 1
-      }),
-    }
-  })
-
-  expect(metrics.viewportWidth).toBe(390)
-  expect(metrics.viewportHeight).toBe(844)
-  expect(metrics.pageOverflow).toBeLessThanOrEqual(1)
-  expect(metrics.toolbarContained).toBe(true)
-  expect(metrics.requiredControlsPresent).toBe(true)
-  expect(metrics.controlsContained).toBe(true)
 }

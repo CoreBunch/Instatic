@@ -120,7 +120,7 @@ function computePageInvariantBundles(
   return {
     reset: makeBundleFile('reset', PUBLISHER_RESET_CSS),
     framework: makeBundleFile('framework', buildFrameworkCss(site, registry)),
-    style: makeBundleFile('style', collectClassCSS(site, options)),
+    style: makeBundleFile('style', collectClassCSS(site, registry, options)),
   }
 }
 

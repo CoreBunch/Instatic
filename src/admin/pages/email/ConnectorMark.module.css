@@ -1,0 +1,75 @@
+/* Mail provider logos and tints, layered on the shared service mark. */
+
+.logoResend {
+    mask-image: url("./assets/resend.svg");
+}
+
+.logoMailgun {
+    mask-image: url("./assets/mailgun.svg");
+}
+
+.logoBrevo {
+    mask-image: url("./assets/brevo.svg");
+}
+
+.logoAmazonses {
+    mask-image: url("./assets/amazonses.svg");
+}
+
+.logoGmail {
+    mask-image: url("./assets/gmail.svg");
+}
+
+.logoMicrosoft {
+    mask-image: url("./assets/microsoft.svg");
+}
+
+.logoSendgrid {
+    mask-image: url("./assets/sendgrid.svg");
+}
+
+.logoZoho {
+    mask-image: url("./assets/zoho.svg");
+}
+
+.mark[data-logo="resend"],
+.mark[data-logo="microsoft"] {
+    --provider-accent: var(--accent-3);
+}
+
+.mark[data-logo="mailgun"],
+.mark[data-logo="gmail"] {
+    --provider-accent: var(--accent-4);
+}
+
+.mark[data-logo="brevo"],
+.mark[data-logo="zoho"] {
+    --provider-accent: var(--accent-1);
+}
+
+.mark[data-logo="amazonses"],
+.mark[data-logo="sendgrid"] {
+    --provider-accent: var(--accent-2);
+}
+
+/* The logo alone, sized to sit beside a button label. */
+.glyph {
+    --provider-accent: var(--accent-3);
+
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    color: var(--provider-accent);
+}
+
+.glyphLogo {
+    width: 100%;
+    height: 100%;
+    background: var(--provider-accent);
+    mask-position: center;
+    mask-repeat: no-repeat;
+    mask-size: contain;
+}

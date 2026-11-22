@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test'
 import type { SiteDocument } from '@core/page-tree'
-import { publishPage, collectHoleSubtreeModuleIds } from '@core/publisher'
+import { publishPage, collectHoleSubtreeAssets } from '@core/publisher'
 import { makeModule, makePage, makeRegistry, makeSite } from './helpers'
 
 const registry = makeRegistry({
@@ -48,7 +48,7 @@ describe('publishPage jsModuleIds', () => {
   })
 })
 
-describe('collectHoleSubtreeModuleIds', () => {
+describe('collectHoleSubtreeAssets', () => {
   it('descends into Visual Component definition trees (cycle-guarded)', () => {
     const page = makePage({
       root: { moduleId: 'base.body', children: ['ref'] },
@@ -76,7 +76,7 @@ describe('collectHoleSubtreeModuleIds', () => {
         } as unknown as SiteDocument['visualComponents'][number],
       ],
     })
-    const ids = collectHoleSubtreeModuleIds(page, site, new Set(['ref']))
+    const ids = collectHoleSubtreeAssets(page, site, new Set(['ref'])).moduleIds
     expect(ids.has('base.visual-component-ref')).toBe(true)
     expect(ids.has('test.jsy')).toBe(true)
   })
@@ -84,6 +84,6 @@ describe('collectHoleSubtreeModuleIds', () => {
   it('returns an empty set when there are no dynamic nodes', () => {
     const page = makePage({ root: { moduleId: 'base.body' } })
     const site = makeSite({ pages: [page] })
-    expect(collectHoleSubtreeModuleIds(page, site, new Set()).size).toBe(0)
+    expect(collectHoleSubtreeAssets(page, site, new Set()).moduleIds.size).toBe(0)
   })
 })

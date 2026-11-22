@@ -11,6 +11,7 @@ export function ToggleControl({
   label,
   isOverride,
   disabled,
+  labelAction,
 }: ControlProps<boolean>) {
   const checked = Boolean(value)
 
@@ -22,16 +23,19 @@ export function ToggleControl({
         disabled && controlRowStyles.controlWrapperDisabled,
       )}
     >
-      <label
-        htmlFor={`ctrl-${propKey}`}
-        className={cn(
-          styles.toggleLabel,
-          disabled && styles.toggleLabelDisabled,
-          isOverride && styles.toggleLabelOverride,
-        )}
-      >
-        {label ?? propKey}
-      </label>
+      <span className={styles.toggleLabelGroup}>
+        <label
+          htmlFor={`ctrl-${propKey}`}
+          className={cn(
+            styles.toggleLabel,
+            disabled && styles.toggleLabelDisabled,
+            isOverride && styles.toggleLabelOverride,
+          )}
+        >
+          {label ?? propKey}
+        </label>
+        {labelAction && <span className={controlRowStyles.labelAction}>{labelAction}</span>}
+      </span>
 
       <Switch
         id={`ctrl-${propKey}`}
