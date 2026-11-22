@@ -57,8 +57,14 @@ function requireEditorStore(): EditorStoreApi {
   return editorStoreApi
 }
 import type {
+  EditorFragmentsApi,
   EditorPluginApi,
   EditorPluginModule,
+  FragmentInsertInput,
+  FragmentInsertPlacement,
+  FragmentPlanInput,
+  ThemeApplyInput,
+  ThemePlanInput,
   PluginCanvasOverlay,
   PluginCommand,
   PluginCommandResult,
@@ -73,6 +79,82 @@ import type {
 } from '@core/plugin-sdk'
 import { assertPluginPermission } from '@core/plugin-sdk'
 import { dashboardWidgetRegistry } from '@core/dashboard'
+
+/**
+ * Fragment insert and theme host, injected by the site editor body while it
+ * is mounted (`useBindPluginFragmentsApi`). The implementation plans against
+ * the open site, uploads media and writes tables through the step-up
+ * prompt, and commits through the editor store: everything the runtime
+ * must not import. Unbound (no site editor open), `api.editor.fragments`
+ * resolves a not-available outcome instead of throwing.
+ */
+let fragmentsHost: EditorFragmentsApi | null = null
+
+/** Bind the fragment insert and theme host; returns the unbind for the effect cleanup. */
+export function bindPluginRuntimeFragmentsHost(host: EditorFragmentsApi): () => void {
+  fragmentsHost = host
+  return () => {
+    if (fragmentsHost === host) fragmentsHost = null
+  }
+}
+
+const FRAGMENT_PLACEMENTS: ReadonlySet<string> = new Set<FragmentInsertPlacement>(['after-selection', 'inside-selection', 'end'])
+const FRAGMENTS_UNAVAILABLE = 'Open a page or component in the site editor to insert a fragment.'
+const THEME_UNAVAILABLE = 'Open the site editor to apply a theme.'
+
+function assertFragmentPlanInput(input: unknown, method: string): asserts input is FragmentPlanInput {
+  if (!input || typeof input !== 'object') {
+    throw new TypeError(`editor.fragments.${method}: input must be an object`)
+  }
+  if (!('fragment' in input) || input.fragment === undefined || input.fragment === null) {
+    throw new TypeError(`editor.fragments.${method}: input.fragment is required`)
+  }
+  const sources = (input as { colorSources?: unknown }).colorSources
+  if (sources !== undefined && (!sources || typeof sources !== 'object' || Array.isArray(sources)
+    || Object.values(sources).some((v) => typeof v !== 'string'))) {
+    throw new TypeError(`editor.fragments.${method}: input.colorSources must map colour slugs to colour slugs`)
+  }
+}
+
+function assertFragmentInsertInput(input: unknown): asserts input is FragmentInsertInput {
+  assertFragmentPlanInput(input, 'insert')
+  const placement = (input as { placement?: unknown }).placement
+  if (placement !== undefined && !FRAGMENT_PLACEMENTS.has(placement as string)) {
+    throw new TypeError(`editor.fragments.insert: input.placement must be one of ${[...FRAGMENT_PLACEMENTS].join(', ')}`)
+  }
+  assertCommitOptions(input, 'insert')
+}
+
+function assertThemePlanInput(input: unknown, method: string): asserts input is ThemePlanInput {
+  if (!input || typeof input !== 'object') {
+    throw new TypeError(`editor.fragments.${method}: input must be an object`)
+  }
+  if (!('theme' in input) || input.theme === undefined || input.theme === null) {
+    throw new TypeError(`editor.fragments.${method}: input.theme is required`)
+  }
+}
+
+function assertThemeApplyInput(input: unknown): asserts input is ThemeApplyInput {
+  assertThemePlanInput(input, 'applyTheme')
+  assertCommitOptions(input, 'applyTheme')
+}
+
+/** The options an insert and a theme share: the media reader, progress, cancellation, toast. */
+function assertCommitOptions(input: object, method: string): void {
+  const value = input as Partial<Record<keyof FragmentInsertInput, unknown>>
+  if (typeof value.readMediaBytes !== 'function') {
+    throw new TypeError(`editor.fragments.${method}: input.readMediaBytes must be a function`)
+  }
+  if (value.onProgress !== undefined && typeof value.onProgress !== 'function') {
+    throw new TypeError(`editor.fragments.${method}: input.onProgress must be a function`)
+  }
+  if (value.signal !== undefined && !(value.signal instanceof AbortSignal)) {
+    throw new TypeError(`editor.fragments.${method}: input.signal must be an AbortSignal`)
+  }
+  if (value.silent !== undefined && typeof value.silent !== 'boolean') {
+    throw new TypeError(`editor.fragments.${method}: input.silent must be a boolean`)
+  }
+}
 
 /**
  * Icon-name → component resolver injected by the admin shell at boot.
@@ -306,11 +388,15 @@ class PluginRuntime {
    * `IconResolver` (`bindDashboardWidgetIconResolver`) — if no resolver
    * has been bound by the host, the registration throws loudly.
    */
-  registerDashboardWidget(pluginId: string, widget: PluginDashboardWidget): void {
+  registerDashboardWidget(manifest: PluginManifest, widget: PluginDashboardWidget): void {
     const iconResolve = requireDashboardIconResolver()
     dashboardWidgetRegistry.register({
       id: widget.id,
-      ownerId: pluginId,
+      ownerId: manifest.id,
+      pluginContext: {
+        version: manifest.version,
+        grantedPermissions: manifest.grantedPermissions ?? [],
+      },
       name: widget.name,
       description: widget.description,
       icon: iconResolve(widget.iconName),
@@ -507,6 +593,48 @@ export function createEditorPluginApi(
           })
         },
       },
+      fragments: {
+        watchPreviewStyles(onChange) {
+          assertPluginPermission(manifest, 'editor.fragments')
+          if (typeof onChange !== 'function') {
+            throw new TypeError('editor.fragments.watchPreviewStyles: expected a listener')
+          }
+          const notify: Parameters<EditorFragmentsApi['watchPreviewStyles']>[0] = (styles) => {
+            try {
+              onChange(styles)
+            } catch (err) {
+              console.error(`[plugin:${manifest.id}] Fragment preview listener failed:`, err)
+            }
+          }
+          if (fragmentsHost) return fragmentsHost.watchPreviewStyles(notify)
+          notify(null)
+          return () => {}
+        },
+        async insert(input) {
+          assertPluginPermission(manifest, 'editor.fragments')
+          assertFragmentInsertInput(input)
+          if (!fragmentsHost) return { ok: false, stage: 'unavailable', message: FRAGMENTS_UNAVAILABLE }
+          return await fragmentsHost.insert(input)
+        },
+        async plan(input) {
+          assertPluginPermission(manifest, 'editor.fragments')
+          assertFragmentPlanInput(input, 'plan')
+          if (!fragmentsHost) return { ok: false, message: FRAGMENTS_UNAVAILABLE }
+          return await fragmentsHost.plan(input)
+        },
+        async applyTheme(input) {
+          assertPluginPermission(manifest, 'editor.fragments')
+          assertThemeApplyInput(input)
+          if (!fragmentsHost) return { ok: false, stage: 'unavailable', message: THEME_UNAVAILABLE }
+          return await fragmentsHost.applyTheme(input)
+        },
+        async planTheme(input) {
+          assertPluginPermission(manifest, 'editor.fragments')
+          assertThemePlanInput(input, 'planTheme')
+          if (!fragmentsHost) return { ok: false, message: THEME_UNAVAILABLE }
+          return await fragmentsHost.planTheme(input)
+        },
+      },
       palette: {
         registerCommand(cmd) {
           const granted = (manifest.grantedPermissions ?? []).includes('editor.commands')
@@ -534,7 +662,7 @@ export function createEditorPluginApi(
       widgets: {
         register(widget) {
           assertPluginPermission(manifest, 'dashboard.widgets.register')
-          pluginRuntime.registerDashboardWidget(manifest.id, widget)
+          pluginRuntime.registerDashboardWidget(manifest, widget)
         },
       },
     },

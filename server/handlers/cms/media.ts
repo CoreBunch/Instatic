@@ -14,6 +14,11 @@
  *                                                  permitted on already-trashed
  *                                                  assets) and removes the file
  *                                                  (`media.delete`)
+ *   POST   /admin/api/cms/media/lookup         — which content hashes the library
+ *                                                  already holds (Site Import
+ *                                                  reuses those files)
+ *                                                  body: { contentHashes: string[] }
+ *                                                  (`media.read`)
  *   POST   /admin/api/cms/media/:id/restore    — restore a soft-deleted asset
  *                                                  (`media.write`)
  *   POST   /admin/api/cms/media/:id/replace    — overwrite the bytes for an asset
@@ -41,6 +46,7 @@ import { requireCapability } from '../../auth/authz'
 import {
   assignAssetToFolders,
   deleteMediaAsset,
+  findMediaAssetsByContentHash,
   getMediaAsset,
   listMediaAssets,
   restoreMediaAsset,
@@ -59,9 +65,9 @@ import {
   acceptUploadedMedia,
   readUploadForm,
 } from './mediaUpload'
-import { removeVariantFiles } from './mediaVariants'
-import { dispatchDelete } from './mediaUploadDispatch'
+import { removeMediaAssetFiles } from './mediaVariants'
 import { materializeAssetListForClient } from '../../publish/mediaPresentation'
+import { CmsMediaLookupRequestSchema } from '@core/persistence/responseSchemas'
 
 const MEDIA_LIBRARY_MIMES = Object.keys(EXTENSION_FOR_MIME) as Array<
   keyof typeof EXTENSION_FOR_MIME
@@ -143,6 +149,19 @@ async function handleListMedia(req: Request, db: DbClient): Promise<Response> {
   // CDN URL transformer is registered).
   const materialized = await materializeAssetListForClient(assets)
   return jsonResponse({ assets: materialized })
+}
+
+/** `MEDIA_LOOKUP_MAX_HASHES` quoted 64-character hashes are about 670 KB of JSON. */
+const MAX_LOOKUP_BODY_BYTES = 1024 * 1024
+
+async function handleLookupMedia(req: Request, db: DbClient): Promise<Response> {
+  const user = await requireCapability(req, db, 'media.read')
+  if (user instanceof Response) return user
+
+  const body = await readValidatedBody(req, CmsMediaLookupRequestSchema, { maxBytes: MAX_LOOKUP_BODY_BYTES })
+  if (!body) return badRequest('Invalid request body')
+  const matches = await findMediaAssetsByContentHash(db, body.contentHashes)
+  return jsonResponse({ matches })
 }
 
 async function handleUploadMedia(req: Request, db: DbClient): Promise<Response> {
@@ -273,17 +292,10 @@ async function handleDeleteMedia(
   if (!existing) return notFound()
   if (!existing.deletedAt) return badRequest('Asset must be soft-deleted before purge')
 
-  // Snapshot the variant list BEFORE the row delete so we know which
-  // extra bytes to sweep from each variant's adapter alongside the original.
-  const variants = existing.variants
-  const adapterId = existing.storageAdapterId
   const deleted = await deleteMediaAsset(db, params.id)
   if (!deleted) return notFound()
 
-  await dispatchDelete(adapterId, deleted.storagePath).catch((err) => {
-    console.error('[media] hard-delete original byte sweep failed (orphaned bytes):', err)
-  })
-  await removeVariantFiles(variants)
+  await removeMediaAssetFiles(deleted)
   return jsonResponse({ ok: true })
 }
 
@@ -296,6 +308,7 @@ const ID_PATTERN = '(?<id>[^/]+)'
 const MEDIA_ROUTES: readonly Route<[]>[] = [
   { method: 'GET', pattern: MEDIA_PREFIX, handler: handleListMedia },
   { method: 'POST', pattern: MEDIA_PREFIX, handler: handleUploadMedia },
+  { method: 'POST', pattern: `${MEDIA_PREFIX}/lookup`, handler: handleLookupMedia },
   {
     method: 'POST',
     pattern: new RegExp(`^${MEDIA_PREFIX}/${ID_PATTERN}/restore$`),

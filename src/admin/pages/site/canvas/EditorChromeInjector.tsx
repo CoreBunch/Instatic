@@ -15,8 +15,9 @@
  *
  * Two-part fix implemented here:
  *   1. Copy the tokens the chrome needs from the parent document's :root onto
- *      the iframe's :root at mount time — so `var(--text-subtle)` etc.
- *      resolve correctly inside the chrome CSS.
+ *      the iframe's :root at mount time, renamed into the `--chrome-*`
+ *      namespace — so `var(--chrome-text-subtle)` etc. resolve inside the
+ *      chrome CSS without shadowing the site's own custom properties.
  *   2. Style editor chrome via STABLE data-attribute selectors
  *      (data-canvas-module-placeholder, data-instatic-slot-instance, etc.) instead
  *      of hashed CSS-Module class names which will never match inside the iframe.
@@ -43,106 +44,11 @@ import { useEffect } from 'react'
 
 const STYLE_TAG_ID = 'instatic-editor-chrome'
 
-/**
- * Design tokens to forward from the parent document's :root onto the iframe's
- * :root. These are exactly the tokens referenced in CHROME_RULES below.
- * Copying at runtime keeps globals.css as the single source of truth — no
- * duplicated literal values anywhere.
- */
-const CHROME_TOKENS = [
-  '--radius',
-  '--radius-sm',
-  '--text-subtle',
-  '--text-disabled',
-  '--text-muted',
-  '--text',
-  '--text-bright',
-  '--canvas-placeholder-bg',
-  '--bg-surface',
-  '--bg-surface-2',
-  '--bg-surface-3',
-  '--bg-body',
-  '--border-muted',
-  '--border',
-  '--danger',
-] as const
-
-/**
- * Admin typography and spacing tokens, forwarded into the iframe for CHROME
- * elements ONLY.
- *
- * Read from the parent's admin tokens but WRITTEN under chrome-namespaced
- * variables. Setting `--font-sans` or `--text-s` itself on the iframe `:root`
- * or `--space-s` itself on the iframe `:root` clobbers the SITE's matching
- * Framework tokens — the chrome injector is unlayered, and unlayered always
- * beats the site's tokens in `@layer user-authored`.
- */
-const CHROME_TOKEN_ALIASES = [
-  ['--font-sans', '--chrome-font-sans'],
-  ['--text-3xs', '--chrome-text-3xs'],
-  ['--text-2xs', '--chrome-text-2xs'],
-  ['--text-xs', '--chrome-text-xs'],
-  ['--text-s', '--chrome-text-s'],
-  ['--text-m', '--chrome-text-m'],
-  ['--text-l', '--chrome-text-l'],
-  ['--text-xl', '--chrome-text-xl'],
-  ['--text-2xl', '--chrome-text-2xl'],
-  ['--text-3xl', '--chrome-text-3xl'],
-  ['--text-4xl', '--chrome-text-4xl'],
-  ['--text-5xl', '--chrome-text-5xl'],
-  ['--text-6xl', '--chrome-text-6xl'],
-  ['--text-7xl', '--chrome-text-7xl'],
-  ['--space-px', '--chrome-space-px'],
-  ['--space-4xs', '--chrome-space-4xs'],
-  ['--space-3xs', '--chrome-space-3xs'],
-  ['--space-2xs', '--chrome-space-2xs'],
-  ['--space-xs', '--chrome-space-xs'],
-  ['--space-s', '--chrome-space-s'],
-  ['--space-m', '--chrome-space-m'],
-  ['--space-l', '--chrome-space-l'],
-  ['--space-xl', '--chrome-space-xl'],
-  ['--space-2xl', '--chrome-space-2xl'],
-  ['--space-3xl', '--chrome-space-3xl'],
-  ['--space-4xl', '--chrome-space-4xl'],
-  ['--space-5xl', '--chrome-space-5xl'],
-  ['--space-6xl', '--chrome-space-6xl'],
-  ['--space-7xl', '--chrome-space-7xl'],
-  ['--space-8xl', '--chrome-space-8xl'],
-  ['--space-9xl', '--chrome-space-9xl'],
-  ['--space-10xl', '--chrome-space-10xl'],
-  ['--space-11xl', '--chrome-space-11xl'],
-  ['--space-12xl', '--chrome-space-12xl'],
-] as const
-
 interface EditorChromeInjectorProps {
   /** The iframe document to inject the chrome stylesheet into. */
   targetDocument: Document
   /** The parent (editor) document to read design tokens from. */
   parentDocument: Document
-}
-
-/**
- * Read the listed tokens from parentDoc's computed :root and return a
- * `:root { ... }` block that sets them on the iframe's root. Only tokens
- * that resolve to a non-empty value are included. Admin typography aliases are
- * mapped onto chrome-namespaced variables so they never override the site's own
- * Framework tokens.
- *
- * Module-scope so the React Compiler doesn't flag the getComputedStyle call
- * as a side-effect inside a component body.
- */
-function buildTokenBlock(parentDoc: Document): string {
-  const parentStyles = getComputedStyle(parentDoc.documentElement)
-  const declarations = CHROME_TOKENS.flatMap((token) => {
-    const value = parentStyles.getPropertyValue(token).trim()
-    return value ? [`  ${token}: ${value};`] : []
-  })
-  for (const [source, target] of CHROME_TOKEN_ALIASES) {
-    const value = parentStyles.getPropertyValue(source).trim()
-    if (value) declarations.push(`  ${target}: ${value};`)
-  }
-  if (declarations.length === 0) return ''
-  return `:root {\n${declarations.join('\n')}\n}`
 }
 
 /**
@@ -170,9 +76,9 @@ const CHROME_RULES = `
   display: block;
   box-sizing: border-box;
   min-width: 0;
-  border-radius: var(--radius);
-  background: var(--canvas-placeholder-bg);
-  color: var(--text-subtle);
+  border-radius: var(--chrome-radius);
+  background: var(--chrome-canvas-placeholder-bg);
+  color: var(--chrome-text-subtle);
   font-size: var(--chrome-text-s);
   font-family: var(--chrome-font-sans);
   font-weight: 400;
@@ -238,7 +144,7 @@ const CHROME_RULES = `
   flex: 0 0 auto;
   margin: 0;
   padding: 0;
-  color: var(--text-disabled);
+  color: var(--chrome-text-disabled);
   font-size: inherit;
   font-weight: inherit;
   line-height: 1;
@@ -258,7 +164,7 @@ const CHROME_RULES = `
   display: block;
   margin: 0;
   padding: 0;
-  color: var(--text-muted);
+  color: var(--chrome-text-muted);
   font-size: var(--chrome-text-s);
   font-family: var(--chrome-font-sans);
   font-weight: 600;
@@ -278,7 +184,7 @@ const CHROME_RULES = `
   max-width: 36ch;
   margin: 0;
   padding: 0;
-  color: var(--text-subtle);
+  color: var(--chrome-text-subtle);
   font-size: var(--chrome-text-xs);
   font-family: var(--chrome-font-sans);
   font-weight: 500;
@@ -302,10 +208,10 @@ const CHROME_RULES = `
 [data-canvas-module-placeholder] [data-instatic-placeholder-actions] button {
   height: 28px;
   padding: 0 var(--chrome-space-xl);
-  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chrome-text) 14%, transparent);
   border-radius: 999px;
-  background: var(--bg-surface);
-  color: var(--text-bright);
+  background: var(--chrome-bg-surface);
+  color: var(--chrome-text-bright);
   font-size: var(--chrome-text-xs);
   font-family: var(--chrome-font-sans);
   font-weight: 600;
@@ -316,12 +222,12 @@ const CHROME_RULES = `
 }
 
 [data-canvas-module-placeholder] [data-instatic-placeholder-actions] button:hover {
-  background: var(--bg-surface-2);
-  border-color: color-mix(in srgb, var(--text) 22%, transparent);
+  background: var(--chrome-bg-surface-2);
+  border-color: color-mix(in srgb, var(--chrome-text) 22%, transparent);
 }
 
 [data-canvas-module-placeholder] [data-instatic-placeholder-actions] button:active {
-  background: var(--bg-surface-3);
+  background: var(--chrome-bg-surface-3);
 }
 
 /* ── base.slot-instance ─────────────────────────────────────────────────────
@@ -335,12 +241,12 @@ const CHROME_RULES = `
  */
 
 [data-instatic-slot-instance] {
-  border: 1px solid var(--border-muted);
-  border-radius: var(--radius);
-  background: var(--bg-surface);
+  border: 1px solid var(--chrome-border-muted);
+  border-radius: var(--chrome-radius);
+  background: var(--chrome-bg-surface);
   overflow: hidden;
   box-sizing: border-box;
-  color: var(--text-subtle);
+  color: var(--chrome-text-subtle);
   font-size: var(--chrome-text-xs);
   font-family: var(--chrome-font-sans);
   font-weight: 400;
@@ -354,9 +260,9 @@ const CHROME_RULES = `
   align-items: center;
   gap: var(--chrome-space-2xs);
   padding: var(--chrome-space-4xs) var(--chrome-space-s);
-  background: var(--bg-body);
-  border-bottom: 1px dashed var(--border);
-  color: var(--text-subtle);
+  background: var(--chrome-bg-body);
+  border-bottom: 1px dashed var(--chrome-border);
+  color: var(--chrome-text-subtle);
   font-size: var(--chrome-text-xs);
   font-family: var(--chrome-font-sans);
   font-weight: 400;
@@ -371,7 +277,7 @@ const CHROME_RULES = `
 }
 
 [data-instatic-slot-instance-header] [data-instatic-slot-label] {
-  color: var(--text-muted);
+  color: var(--chrome-text-muted);
   font-size: var(--chrome-text-xs);
   font-style: italic;
   font-family: var(--chrome-font-sans);
@@ -393,7 +299,7 @@ const CHROME_RULES = `
  */
 
 [data-instatic-list-placeholder] {
-  color: var(--text-subtle);
+  color: var(--chrome-text-subtle);
   margin-bottom: var(--chrome-space-xs);
   font-family: var(--chrome-font-sans);
   font-weight: initial;
@@ -409,9 +315,9 @@ const CHROME_RULES = `
  */
 
 [data-instatic-unknown-module] {
-  outline: 1px dashed var(--danger);
+  outline: 1px dashed var(--chrome-danger);
   padding: var(--chrome-space-3xs);
-  color: var(--text-subtle);
+  color: var(--chrome-text-subtle);
   font-family: var(--chrome-font-sans);
   font-size: var(--chrome-text-s);
   font-weight: 400;
@@ -421,6 +327,45 @@ const CHROME_RULES = `
   white-space: normal;
 }
 `.trim()
+
+/**
+ * Admin design tokens the chrome reads, forwarded from the parent document's
+ * :root onto the iframe's :root at mount time. Copying at runtime keeps
+ * globals.css as the single source of truth — no duplicated literal values.
+ *
+ * Every token is WRITTEN under the `--chrome-` namespace (`--radius` →
+ * `--chrome-radius`, `--text-s` → `--chrome-text-s`), never under its admin
+ * name. This stylesheet is unlayered and the site's CSS sits in
+ * `@layer user-authored`, so a chrome declaration of `--radius`, `--text` or
+ * `--space-s` on :root would beat the site's own token of the same name and
+ * the canvas would render the site with editor values.
+ *
+ * Derived from the `var(--chrome-*)` references in CHROME_RULES, so the
+ * forwarded set always matches what the rules read.
+ */
+const CHROME_TOKEN_PREFIX = '--chrome-'
+const CHROME_TOKENS = [
+  ...new Set(Array.from(CHROME_RULES.matchAll(/var\(--chrome-([\w-]+)\)/g), (match) => match[1])),
+]
+
+/**
+ * Read each chrome token's admin value (`--<name>`) from parentDoc's computed
+ * :root and return a `:root { ... }` block that sets it as `--chrome-<name>`
+ * on the iframe's root. Only tokens that resolve to a non-empty value are
+ * included.
+ *
+ * Module-scope so the React Compiler doesn't flag the getComputedStyle call
+ * as a side-effect inside a component body.
+ */
+function buildTokenBlock(parentDoc: Document): string {
+  const parentStyles = getComputedStyle(parentDoc.documentElement)
+  const declarations = CHROME_TOKENS.flatMap((name) => {
+    const value = parentStyles.getPropertyValue(`--${name}`).trim()
+    return value ? [`  ${CHROME_TOKEN_PREFIX}${name}: ${value};`] : []
+  })
+  if (declarations.length === 0) return ''
+  return `:root {\n${declarations.join('\n')}\n}`
+}
 
 export function EditorChromeInjector({ targetDocument, parentDocument }: EditorChromeInjectorProps) {
   useEffect(() => {

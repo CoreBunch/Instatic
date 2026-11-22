@@ -32,7 +32,7 @@ import { Button } from '@ui/components/Button'
 import { ExternalLinkSolidIcon } from 'pixel-art-icons/icons/external-link-solid'
 import { useAdminUi } from '@admin/state/adminUi'
 
-export function OpenLivePageButton() {
+export function OpenLivePageButton({ labeled = false }: { labeled?: boolean }) {
   const activeLivePath = useAdminUi((s) => s.activeLivePath)
   const target = activeLivePath ?? '/'
   const tooltip = activeLivePath ? 'Open live page' : 'Open live site'
@@ -41,15 +41,15 @@ export function OpenLivePageButton() {
     <Button
       variant="ghost"
       size="sm"
-      iconOnly
+      iconOnly={!labeled}
       aria-label={tooltip}
-      tooltip={tooltip}
+      tooltip={labeled ? undefined : tooltip}
       data-testid="toolbar-open-live-page-btn"
       onClick={() => {
         window.open(target, '_blank', 'noopener,noreferrer')
       }}
     >
-      <ExternalLinkSolidIcon size={16} aria-hidden="true" />
+      {labeled ? 'View live' : <ExternalLinkSolidIcon size={16} aria-hidden="true" />}
     </Button>
   )
 }

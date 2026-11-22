@@ -34,6 +34,7 @@ import * as decoding from 'lib0/decoding'
 import * as syncProtocol from 'y-protocols/sync'
 import * as awarenessProtocol from 'y-protocols/awareness'
 import {
+  createCollabFrameReader,
   decodeCollabFrame,
   encodeCollabFrame,
   FRAME_AWARENESS,
@@ -95,6 +96,14 @@ export interface CollabProvider {
   canSend(): boolean
   /** Escape the backoff (which reaches 30s) when the user says the network is back. */
   reconnectNow(): void
+  /**
+   * Drop the current socket and open a new one at once, with no backoff. For
+   * when the session cookie was replaced (password re-confirmation rotates the
+   * session token): the server refuses the old socket on its next frame, so
+   * waiting for that close and then backing off leaves edits refused for over
+   * a second.
+   */
+  reopen(): void
   onStatus(listener: (status: CollabStatus) => void): () => void
   onReset(listener: CollabResetListener): () => void
   destroy(): void
@@ -154,6 +163,7 @@ export function createCollabProvider(
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
   let pingTimer: ReturnType<typeof setInterval> | undefined
   let lastInboundAt = 0
+  const frameReader = createCollabFrameReader()
 
   const presenceDoc = new Y.Doc()
   const awareness = new awarenessProtocol.Awareness(presenceDoc)
@@ -293,6 +303,27 @@ export function createCollabProvider(
     }
   }
 
+  /** Forget the current socket and everything scoped to it. */
+  function releaseSocket(): void {
+    frameReader.clear()
+    socket = null
+    clearInterval(pingTimer)
+    pingTimer = undefined
+  }
+
+  /**
+   * Close a socket whose events must no longer reach this provider. Callbacks
+   * are detached first, so a late browser event cannot restart the heartbeat,
+   * schedule a reconnect, or notify listeners.
+   */
+  function discardSocket(discarded: CollabSocketLike): void {
+    discarded.onopen = null
+    discarded.onmessage = null
+    discarded.onclose = null
+    discarded.onerror = null
+    discarded.close()
+  }
+
   function connect(): void {
     if (destroyed) return
     setStatus('connecting')
@@ -343,17 +374,24 @@ export function createCollabProvider(
     socket.onmessage = (event) => {
       lastInboundAt = Date.now()
       const { data } = event
-      if (data instanceof ArrayBuffer) handleFrame(new Uint8Array(data))
-      else if (data instanceof Uint8Array) handleFrame(data)
+      try {
+        const packet = data instanceof ArrayBuffer ? new Uint8Array(data) : data instanceof Uint8Array ? data : null
+        if (!packet) return
+        const frame = frameReader.read(packet)
+        if (frame) handleFrame(frame)
+      } catch (err) {
+        console.error('[collab] Invalid server frame:', err)
+        frameReader.clear()
+        setStatus('offline')
+        socket?.close()
+      }
     }
 
     // Errors always surface as a close — reconnect is scheduled there.
     socket.onerror = () => {}
 
     socket.onclose = () => {
-      socket = null
-      clearInterval(pingTimer)
-      pingTimer = undefined
+      releaseSocket()
       if (destroyed) return
       setStatus('offline')
       const delay =
@@ -412,6 +450,15 @@ export function createCollabProvider(
       attempts = 0
       connect()
     },
+    reopen: () => {
+      if (destroyed) return
+      clearTimeout(reconnectTimer)
+      attempts = 0
+      const previous = socket
+      releaseSocket()
+      if (previous) discardSocket(previous)
+      connect()
+    },
     onStatus: (listener) => {
       statusListeners.add(listener)
       return () => statusListeners.delete(listener)
@@ -421,6 +468,7 @@ export function createCollabProvider(
       return () => resetListeners.delete(listener)
     },
     destroy: () => {
+      frameReader.clear()
       destroyed = true
       clearTimeout(reconnectTimer)
       clearInterval(pingTimer)
@@ -429,18 +477,10 @@ export function createCollabProvider(
       awarenessProtocol.removeAwarenessStates(awareness, [awareness.clientID], 'destroy')
       awareness.destroy()
       for (const docId of [...bound.keys()]) unbind(docId)
+      // A socket can finish opening after the editor has already unmounted.
       const closingSocket = socket
       socket = null
-      if (closingSocket) {
-        // A socket can finish opening after the editor has already unmounted.
-        // Detach every callback before close so that late browser events cannot
-        // resurrect the heartbeat or notify listeners on a destroyed provider.
-        closingSocket.onopen = null
-        closingSocket.onmessage = null
-        closingSocket.onclose = null
-        closingSocket.onerror = null
-        closingSocket.close()
-      }
+      if (closingSocket) discardSocket(closingSocket)
       statusListeners.clear()
       resetListeners.clear()
     },

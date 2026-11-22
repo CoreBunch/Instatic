@@ -23,6 +23,8 @@ const CONTENT_ACCESS_CAPABILITIES = [
 /** Mirrors `canAccessUsersWorkspace` in access.ts. */
 const USERS_ACCESS_CAPABILITIES = [
   'users.manage',
+  'members.read',
+  'members.manage',
   'roles.manage',
   'audit.read',
 ] as const
@@ -133,6 +135,20 @@ export function getNavigationCommands(): Command[] {
       capability: AI_ACCESS_CAPABILITIES,
       run: (ctx) => {
         ctx.navigate('/admin/ai')
+        ctx.closeSpotlight()
+      },
+    },
+    {
+      id: 'navigation.goToEmail',
+      title: 'Go to Email',
+      subtitle: 'Manage connectors, the sender, templates, and delivery activity',
+      group: 'navigation',
+      iconName: 'mail-solid',
+      keywords: ['email', 'mail', 'smtp', 'ses', 'templates', 'sender', 'delivery'],
+      workspaces: ['any'],
+      capability: 'mail.manage',
+      run: (ctx) => {
+        ctx.navigate('/admin/email')
         ctx.closeSpotlight()
       },
     },

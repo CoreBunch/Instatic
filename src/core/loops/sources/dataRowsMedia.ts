@@ -16,7 +16,7 @@
  */
 
 import type { LoopSourceDb } from '@core/loops/types'
-import { readFeaturedMediaCell, readMediaCellIds, readRepeaterCell } from '@core/data/cells'
+import { collectCellMediaIds, readFeaturedMediaCell, readMediaCellIds, readRepeaterCell } from '@core/data/cells'
 import type { DataField, DataRowCells, RepeaterItemField } from '@core/data/schemas'
 
 interface MediaAssetRow {
@@ -56,23 +56,6 @@ export async function resolveMediaIdsToPaths(
   return pathMap
 }
 
-function collectFieldMediaIds(
-  cells: DataRowCells,
-  fields: readonly MediaProjectionField[],
-  ids: string[],
-): void {
-  for (const field of fields) {
-    if (field.type === 'media') {
-      ids.push(...readMediaCellIds(cells, field.id))
-      continue
-    }
-    if (field.type !== 'repeater') continue
-    for (const item of readRepeaterCell(cells, field.id)) {
-      collectFieldMediaIds(item.cells, field.fields, ids)
-    }
-  }
-}
-
 /**
  * Collect every media id referenced by a page of rows: the built-in
  * `featuredMedia` cell plus every schema-declared media field. Repeater media
@@ -88,7 +71,7 @@ export function collectMediaIds(
     const cells = row.cells_json as DataRowCells
     const featured = readFeaturedMediaCell(cells)
     if (featured) ids.push(featured)
-    collectFieldMediaIds(cells, fields, ids)
+    collectCellMediaIds(cells, fields, ids)
   }
   return ids
 }

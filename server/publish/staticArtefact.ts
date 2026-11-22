@@ -35,6 +35,8 @@
  * Incremental publish protocol (e.g. `publishDataRow`):
  *   - `updateArtefactInPlace` — tmp + rename into the ACTIVE slot
  *   - `removeArtefactInPlace` — unlink from the ACTIVE slot (slug change / deletion)
+ *   - `removeArtefactsInPlace` — the same for a batch (pages whose loops went
+ *     stale, see `loopArtefacts.ts`)
  *
  * Path safety: every on-disk path derived from a URL is validated by the
  * private `resolveArtefactPath` helper, which matches the style of
@@ -45,6 +47,7 @@ import { basename, dirname, isAbsolute, join, relative } from 'node:path'
 import {
   mkdir,
   readFile,
+  readdir,
   readlink,
   rename,
   rm,
@@ -68,6 +71,11 @@ type Slot = 'a' | 'b'
  * with status 404.
  */
 export const NOT_FOUND_ARTEFACT_URL_PATH = '/404'
+
+/** Artefact URL path a page bakes to: the `index` slug is the site root. */
+export function pageArtefactUrlPath(slug: string): string {
+  return slug === 'index' ? '/' : `/${slug}`
+}
 
 // ---------------------------------------------------------------------------
 // Private path helpers
@@ -444,19 +452,59 @@ export async function removeArtefactInPlace(
   uploadsDir: string,
   urlPath: string,
 ): Promise<void> {
+  await removeArtefactsInPlace(uploadsDir, [urlPath])
+}
+
+/**
+ * Remove several artefacts from the ACTIVE slot in-place, resolving the slot
+ * once. Same contract as `removeArtefactInPlace` per path: a missing file is a
+ * no-op and an unsafe path is skipped.
+ */
+export async function removeArtefactsInPlace(
+  uploadsDir: string,
+  urlPaths: readonly string[],
+): Promise<void> {
+  if (urlPaths.length === 0) return
   const slot = await getActiveSlot(uploadsDir)
   const dir = getSlotDir(uploadsDir, slot)
 
-  let filePath: string
-  try {
-    filePath = resolveArtefactPath(dir, urlPath)
-  } catch {
-    // Unsafe path — ignore silently
-    return
+  for (const urlPath of urlPaths) {
+    let filePath: string
+    try {
+      filePath = resolveArtefactPath(dir, urlPath)
+    } catch {
+      // Unsafe path — ignore silently
+      continue
+    }
+    // force: true makes this a no-op if the file doesn't exist
+    await rm(filePath, { force: true })
   }
+}
 
-  // force: true makes this a no-op if the file doesn't exist
-  await rm(filePath, { force: true })
+/**
+ * Remove every baked HTML page from BOTH slots, leaving CSS and runtime
+ * assets in place. Every route then renders live until the next publish
+ * rebuilds the slot. For changes that can alter any baked page at once and
+ * must not wait for a publish (a table's access rule: its rows may be listed
+ * on any page). The inactive slot is cleared too: it is not served, but it
+ * is the previous generation and would otherwise keep the old pages on disk.
+ */
+export async function removeAllHtmlArtefactsInPlace(uploadsDir: string): Promise<void> {
+  const walk = async (dir: string): Promise<void> => {
+    let entries
+    try {
+      entries = await readdir(dir, { withFileTypes: true })
+    } catch (err) {
+      if (isNodeError(err) && err.code === 'ENOENT') return // nothing published yet
+      throw err
+    }
+    for (const entry of entries) {
+      const full = join(dir, entry.name)
+      if (entry.isDirectory()) await walk(full)
+      else if (entry.name.endsWith('.html')) await rm(full, { force: true })
+    }
+  }
+  for (const slot of ['a', 'b'] as const) await walk(getSlotDir(uploadsDir, slot))
 }
 
 // ---------------------------------------------------------------------------

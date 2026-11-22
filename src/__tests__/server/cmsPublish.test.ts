@@ -158,6 +158,22 @@ function createPublishFakeDb() {
       })
       return { rows: [], rowCount: 1 }
     }
+    // persistSitePublish — read the page's previously active version
+    if (sql.startsWith('select active_version_id, published_by_user_id, published_at from data_rows where id =')) {
+      const row = state.dataRows.find((r) => r.id === params[0])
+      return { rows: row ? [{ active_version_id: row.active_version_id, published_by_user_id: row.published_by_user_id, published_at: row.published_at }] : [], rowCount: row ? 1 : 0 }
+    }
+    // pruneSupersededRuntimeAssets — params: $1=rowId, $2=activeVersionId, $3=previousVersionId
+    if (sql.startsWith('delete from published_runtime_assets')) {
+      const pruned = new Set(
+        state.dataRowVersions
+          .filter((v) => v.row_id === params[0] && v.id !== params[1] && v.id !== params[2])
+          .map((v) => v.id),
+      )
+      const before = state.runtimeAssets.length
+      state.runtimeAssets = state.runtimeAssets.filter((a) => !pruned.has(a.page_version_id))
+      return { rows: [], rowCount: before - state.runtimeAssets.length }
+    }
     // update data_rows set active_version_id = $1 ... (after publish)
     // SQL params: $1=versionId, $2=publishedByUserId, $3=published_at, $4=updatedByUserId, $5=updated_at, $6=rowId
     if (sql.startsWith('update data_rows') && sql.includes('active_version_id')) {
@@ -176,7 +192,7 @@ function createPublishFakeDb() {
       return { rows: [], rowCount: row ? 1 : 0 }
     }
     // getPublishedPageBySlug — join data_rows + data_row_versions + site_snapshots
-    if (sql.includes('site_snapshots.site_json') && sql.includes('data_rows.slug')) {
+    if (sql.includes('site_snapshots.site_json') && sql.includes('data_row_versions.slug')) {
       const slug = params[0] as string
       const row = state.dataRows.find((r) => r.slug === slug && r.status === 'published')
       const version = row ? state.dataRowVersions.find((v) => v.id === row.active_version_id) : null

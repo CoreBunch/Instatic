@@ -18,8 +18,20 @@ export {
   normalizeRouteBase,
   type RouteResolutionContext,
 } from './templateMatching'
-export { buildRouteFrame } from './contextFrames'
+export { buildMemberFrame, buildPageFrame, buildRouteFrame } from './contextFrames'
+export type { MemberAppRequestFrame, MemberFrame } from './contextFrames'
 export type { TemplateRenderDataContext } from './dynamicBindings'
 export { composeTemplateChain } from './templateCompose'
 export { firstOutletId, treeHasOutlet, subtreeHasOutlet } from './outlet'
-export { composedNodeSourceId } from './templateCompose'
+export { composedNodeSourceId, isComposedNodeId } from './templateCompose'
+export {
+  readShowIf,
+  showIfAllows,
+  ShowIfSchema,
+  SHOW_IF_PROP_KEY,
+  SHOW_IF_NAME_REGEX,
+  SHOW_IF_VALUE_MAX_LENGTH,
+  type ShowIf,
+  type ShowIfSource,
+  type ShowIfTest,
+} from './showIf'

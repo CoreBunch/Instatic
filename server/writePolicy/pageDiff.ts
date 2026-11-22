@@ -101,6 +101,16 @@ function diffPage(capabilities: readonly CoreCapability[], previous: Page, next:
   if (!deepEqual(previous.template, next.template)) {
     requireChange(capabilities, 'structure', `${pagePath}.template`, 'template settings changed')
   }
+  // Who may open the page. A content-only or style-only editor must not be
+  // able to open a protected page to everyone, or lock one.
+  if (!deepEqual(previous.access, next.access)) {
+    requireChange(capabilities, 'structure', `${pagePath}.access`, 'page access changed')
+  }
+  // Head settings are page settings, like the title: canonical, robots and
+  // structured data decide how the page is indexed.
+  if (!deepEqual(previous.seo, next.seo)) {
+    requireChange(capabilities, 'structure', `${pagePath}.seo`, 'page head settings changed')
+  }
 
   diffNodes(capabilities, pagePath, previous.nodes, next.nodes)
 }

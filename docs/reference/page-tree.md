@@ -72,7 +72,7 @@ The rules:
 - **Derived on entry, stored value never trusted.** `reindexNodeParents(nodes)` recomputes `parentId` for a whole flat map purely from the `children` arrays. It runs at every boundary where a tree enters the system — `parsePage`, `parseVisualComponent`, `parsePageNodeTree`, the editor store's `loadSite`/`createSite`, `composeTemplateChain`, the HTML-import bulk-merge paths, and runtime VC-tree construction. This is the backfill: data persisted before `parentId` existed is healed on load, and a stored `parentId` is always overwritten from the children arrays. (`parentId` IS persisted on save — it's a redundant-but-harmless cache that is recomputed, not relied upon, on the next load.)
 - **Optional at the schema level** so persisted data predating the field and transient detached nodes still validate. The runtime invariant guarantees full population for any tree that has entered the system, so `getParent` reads the pointer directly with no scan fallback.
 
-`inlineStyles` is the per-node **inline-style layer**: a camelCase CSS bag (same shape as a `StyleRule`'s `styles`) that the publisher emits as a literal `style="…"` attribute on the node's root element (or on `<body>` for the root `base.body` node). It is independent of `classIds` (a node can have both) and is **base-only** — like a real HTML `style=""` attribute it cannot be breakpoint- or condition-scoped. Values are sanitised at the publish boundary by `bagToInlineStyle` → `sanitiseCssValue`. Edited via the Properties panel's "Style inline" mode (store actions `setNodeInlineStyles` / `removeNodeInlineStyleProperty`); the HTML importer also writes it when it harvests an element's inline background image.
+`inlineStyles` is the per-node **inline-style layer**: a camelCase CSS bag (same shape as a `StyleRule`'s `styles`) that the publisher emits as a literal `style="…"` attribute on the node's root element (or on `<body>` for the root `base.body` node). It is independent of `classIds` (a node can have both) and is **base-only** — like a real HTML `style=""` attribute it cannot be breakpoint- or condition-scoped. Values are sanitised at the publish boundary by `bagToInlineStyle` → `sanitiseCssValue`. Edited via the Properties panel's "Style inline" mode (store action `setNodeInlineStyles`, with null values clearing individual properties); the HTML importer also writes it when it harvests an element's inline background image.
 
 `PageNode` (in `src/core/page-tree/pageNode.ts`) extends `BaseNode` with an optional `dynamicBindings` field for template data-binding. `VCNode` (in `src/core/visualComponents/schemas.ts`) is a direct re-export — `VCNode === BaseNode`.
 
@@ -178,6 +178,13 @@ All mutations live in `src/core/page-tree/mutations.ts`. They take a `NodeTree<P
 - `pageSlugError(slug)` — returns a validation error message or `null` if the slug is valid. Valid page slugs are lowercase hyphenated segments separated by single slashes; the first segment cannot be a reserved public route (`admin`, `api`, `assets`, `health`).
 - `pageSlugDuplicateError(slug, pages, currentPageId?)` — checks for slug collisions across the page list.
 - `createUniquePageSlug(title, pages)` — generates a collision-free slug from a page title (normalises + reserved-slug guard + uniqueness).
+- `uniquePageSlug(desired, pages, excludePageId?)` — the auto-suffixing (`-2`, `-3`, …) `addPage` uses; exported so planners can report the final slug before committing.
+
+Shared by HTML paste, site import and fragment inserts:
+
+- `createStyleRuleOrderAllocator(rules)` (`styleRuleRegistry.ts`) — cascade positions after every existing rule, O(1) per append.
+- `isRootScopeSelector(selector)` (`styleRule.ts`) — `:root`, `html`, `body` or a comma group of them; where root custom properties live.
+- `addMissingConditions(site, defs)` (`condition.ts`) — registers condition definitions the site lacks, by id.
 
 ---
 

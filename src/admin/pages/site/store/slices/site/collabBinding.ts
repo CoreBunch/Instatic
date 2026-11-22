@@ -22,7 +22,7 @@
  *
  * Modes:
  *   - DETACHED (default; tests, and the window before the socket connects):
- *     docs live locally, seeded from the loaded site. Everything works
+ *     docs live locally, seeded on first use from the loaded site. Everything works
  *     single-user with no transport.
  *   - CONNECTED (editor runtime): `connectCollabProvider` rebinds every doc
  *     through the CollabProvider — empty docs that the SERVER seeds (the
@@ -36,16 +36,11 @@ import {
   applySitePatchesToDocs,
   createCollabDocSet,
   dataMap,
-  encodeCollabDocId,
   isSiteDocId,
   LOCAL_ORIGIN,
   metaMap,
   parseCollabDocId,
   rostersMap,
-  seedComponentDoc,
-  seedLayoutDoc,
-  seedPageDoc,
-  seedSiteDoc,
   SEED_ORIGIN,
   shellMap,
   siteDocId,
@@ -54,6 +49,7 @@ import {
 } from '@core/collab'
 import { projectCollabDocument } from './collabProjection'
 import { allDocIdsForSite, collabBranchId, notifyCollabBranchGone } from './collabBranch'
+import { createDetachedCollabDocSet } from './detachedCollabDocs'
 import type { EditorStoreApi } from '@site/store/types'
 import { pruneCanvasSelectionDraft } from '../selectionSlice'
 import type { Awareness } from 'y-protocols/awareness'
@@ -443,7 +439,7 @@ function scheduleProjection(docId: string): void {
 
 /**
  * Reset the doc world to mirror a freshly loaded site (or nothing). In
- * detached mode the docs are seeded locally; in connected mode every doc
+ * detached mode the docs seed locally on first use; in connected mode every doc
  * rebinds through the provider (server-seeded).
  */
 export function resetCollabDocsFromSite(site: SiteDocument | null): void {
@@ -472,33 +468,7 @@ export function resetCollabDocsFromSite(site: SiteDocument | null): void {
     bindThroughProvider(allDocIdsForSite(site))
     return
   }
-  seedDetachedDocs(site)
-}
-
-function seedDetachedDocs(site: SiteDocument): void {
-  const branchId = collabBranchId()
-  const shellDocId = siteDocId(branchId)
-  const siteDoc = docs.ensure(shellDocId)
-  seedSiteDoc(siteDoc, site)
-  ensureManaged(shellDocId, siteDoc)
-  for (const page of site.pages) {
-    const docId = encodeCollabDocId({ kind: 'page', branchId, rowId: page.id })
-    const doc = docs.ensure(docId)
-    seedPageDoc(doc, page)
-    ensureManaged(docId, doc)
-  }
-  for (const vc of site.visualComponents) {
-    const docId = encodeCollabDocId({ kind: 'component', branchId, rowId: vc.id })
-    const doc = docs.ensure(docId)
-    seedComponentDoc(doc, vc)
-    ensureManaged(docId, doc)
-  }
-  for (const layout of site.layouts) {
-    const docId = encodeCollabDocId({ kind: 'layout', branchId, rowId: layout.id })
-    const doc = docs.ensure(docId)
-    seedLayoutDoc(doc, layout)
-    ensureManaged(docId, doc)
-  }
+  docs = createDetachedCollabDocSet(site, collabBranchId(), ensureManaged)
 }
 
 function bindDocThroughProvider(docId: string): void {

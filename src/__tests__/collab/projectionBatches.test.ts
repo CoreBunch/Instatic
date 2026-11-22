@@ -37,6 +37,7 @@ function seededProvider(site: ReturnType<typeof makeSite>) {
     status: () => 'connected',
     canSend: () => true,
     reconnectNow() {},
+    reopen() {},
     onStatus: () => () => {},
     onReset: () => () => {},
     destroy() {

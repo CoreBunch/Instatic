@@ -154,7 +154,11 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
     return listCmsMediaAssets({ trash: selection === FOLDER_TRASH })
   }, [])
 
+  // Preserve uploads completed while the library listing was in flight.
+  const pendingListing = useRef<Set<string> | null>(null)
   const refresh = useCallback(async () => {
+    const uploadedIds = new Set<string>()
+    pendingListing.current = uploadedIds
     setLoading(true)
     setError(null)
     try {
@@ -162,12 +166,19 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
         listCmsMediaFolders(),
         loadAssets(folderSelection),
       ])
+      if (pendingListing.current !== uploadedIds) return
       setFolders(nextFolders)
-      setAssets(nextAssets)
+      setAssets((current) => folderSelection === FOLDER_TRASH ? nextAssets : [
+        ...current.filter((asset) => uploadedIds.has(asset.id)),
+        ...nextAssets.filter((asset) => !uploadedIds.has(asset.id)),
+      ])
     } catch (err) {
-      setError(getErrorMessage(err, 'Unable to load media library'))
+      if (pendingListing.current === uploadedIds) setError(getErrorMessage(err, 'Unable to load media library'))
     } finally {
-      setLoading(false)
+      if (pendingListing.current === uploadedIds) {
+        pendingListing.current = null
+        setLoading(false)
+      }
     }
   }, [folderSelection, loadAssets])
 
@@ -346,6 +357,7 @@ export function useMediaWorkspace(): UseMediaWorkspaceResult {
   // (`ImageEditor` / `useCmsMediaAssetByPath`) picks up the new asset
   // immediately without racing a follow-up list request.
   const onUploaded = (asset: CmsMediaAsset) => {
+    pendingListing.current?.add(asset.id)
     setAssets((current) => [asset, ...current.filter((existing) => existing.id !== asset.id)])
     primeCmsMediaAssetCache(asset)
   }

@@ -682,7 +682,7 @@ export const createUiSlice: EditorStoreSliceCreator<UiSlice> = (set, get) => ({
  * references. Used by setActiveDocument to decide whether selection / hover
  * needs to be cleared.
  */
-function isSameActiveDocument(
+export function isSameActiveDocument(
   a: ActiveDocument | null,
   b: ActiveDocument | null,
 ): boolean {

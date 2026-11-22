@@ -163,11 +163,16 @@
   border-top: 1px solid var(--overlay-10);
 }
 
+/* Sits on the footer's close Button. Keeps the row reading as a quiet hint
+   rather than a control (the keycap already carries the affordance) while
+   the element underneath is a real button. Alignment and width come from the
+   Button's own `align` and `fullWidth` props. */
 .shortcutHint {
   display: flex;
   align-items: center;
   gap: var(--space-xs);
   flex-wrap: wrap;
+  padding: 0;
   color: var(--text-subtle);
   font-size: var(--text-s);
 }

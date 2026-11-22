@@ -30,10 +30,9 @@ function planWithAssets(count: number): ImportPlan {
     scripts: [],
     linkedStylesheets: [],
     stylesheets: [],
-    conflicts: { pages: [], rules: [], tokens: [], crossSheetClasses: [] },
+    conflicts: { pages: [], rules: [], tokens: [], crossSheetClasses: [], files: [], media: [] },
     warnings: [],
     droppedAtRules: [],
-    unusedCss: [],
   }
 }
 
@@ -50,7 +49,7 @@ function resultWithAssets(count: number): ImportResult {
     fontTokens: [],
     scripts: [],
     stylesheets: [],
-    conflicts: { pages: [], rules: [], tokens: [], crossSheetClasses: [] },
+    conflicts: { pages: [], rules: [], tokens: [], crossSheetClasses: [], files: [], media: [] },
     warnings: [],
   }
 }

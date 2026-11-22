@@ -24,6 +24,7 @@ export {
   getDataRow,
   getDataRowMany,
   getDataRowBySlug,
+  nextFreeDataRowSlug,
   countDataRows,
   listDataAuthorOptions,
 } from './read'
@@ -38,6 +39,7 @@ export {
   createDataRow,
   saveDataRowDraft,
   upsertDataRowDraft,
+  findDataRowSlot,
   updateDataRowDraftCells,
   softDeleteDataRow,
   updateDataRowTable,

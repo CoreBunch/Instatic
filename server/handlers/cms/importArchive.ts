@@ -7,20 +7,27 @@
  * The manifest is the first stored entry, so the handler can validate the
  * selected media stream before applying site data. Selected media bytes are
  * staged in temporary files first, then moved into uploads after the data
- * import succeeds.
+ * import succeeds. The data half (capability gates, the transaction, a
+ * `replace` media wipe) is the JSON endpoint's, shared through
+ * Authorization comes from `./import.ts`; the shared transaction is
+ * `applySiteBundle` in `./importApply.ts`.
  */
-
+import { ZipBodyReader } from '../../archive/zipBodyReader'
+import { applySiteBundle, removeDeletedMediaFiles } from './importApply'
+import { BundlePublicationError } from '../../repositories/bundlePublication'
+import { runtimeArchivePath, selectBundlePublication, type BundlePublication } from '@core/data/bundlePublication'
 import { createWriteStream } from 'node:fs'
 import { copyFile, mkdir, mkdtemp, rm, rename, unlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { once } from 'node:events'
 import { tmpdir } from 'node:os'
 import type { DbClient } from '../../db/client'
-import { requireCapability } from '../../auth/authz'
+import { requireCapability, userHasCapability } from '../../auth/authz'
 import { jsonResponse, badRequest } from '../../http'
 import { importMediaAsset, assignAssetToFolders } from '../../repositories/media'
 import { parseValue, formatValueErrors, compiled } from '@core/utils/typeboxHelpers'
 import { validateAndSanitizeMediaBytes, resolveMediaWriteTarget } from './importMediaValidation'
+import { mediaContentHash } from './mediaUpload'
 import {
   ImportResultSchema,
   ImportStrategySchema,
@@ -40,34 +47,29 @@ import {
 import { createCrc32 } from '../../archive/storedZip'
 import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
 import type { BranchScope } from '../../branches/scope'
-import { handleImportRoute } from './import'
+import {
+  authorizeImportedShell,
+  authorizeImportedTableAccess,
+  recordImportedTableAccess,
+  authorizeImportedPublication,
+  validateImportedPublication,
+  authorizeImportStrategy,
+} from './import'
 
 const IMPORT_ARCHIVE_PATH = `${CMS_API_PREFIX}/import/archive`
-const ZIP_LOCAL_FILE_HEADER = 0x04034b50
-const ZIP_CENTRAL_DIRECTORY_HEADER = 0x02014b50
-const ZIP_END_OF_CENTRAL_DIRECTORY = 0x06054b50
-const ZIP64_END_OF_CENTRAL_DIRECTORY = 0x06064b50
-const ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR = 0x07064b50
-const ZIP_DATA_DESCRIPTOR = 0x08074b50
-const ZIP64_EXTRA_FIELD_ID = 0x0001
 const ZIP_STORED_METHOD = 0
 const ZIP_DATA_DESCRIPTOR_FLAG = 0x0008
-const UINT32_MAX = 0xffffffff
 const MAX_ARCHIVE_MANIFEST_BYTES = 256 * 1024 * 1024
 
 const textDecoder = new TextDecoder()
 
-interface LocalHeader {
-  path: string
-  flags: number
-  compression: number
-  compressedSize: number | null
-  uncompressedSize: number | null
-}
-
 interface StagedArchiveMedia {
   stagingDir: string
   entries: StagedArchiveMediaEntry[]
+}
+
+interface StagedArchiveFiles extends StagedArchiveMedia {
+  runtimeFiles: Map<string, Uint8Array>
 }
 
 interface StagedArchiveMediaEntry {
@@ -99,6 +101,8 @@ export async function handleImportArchiveRoute(
 
   const strategy = parseImportStrategy(url)
   if (strategy instanceof Response) return strategy
+  const strategyDenied = await authorizeImportStrategy(req, db, user, strategy)
+  if (strategyDenied) return strategyDenied
   const selection = parseImportSelection(url)
   if (selection instanceof Response) return selection
 
@@ -106,10 +110,21 @@ export async function handleImportArchiveRoute(
     ? filterArchiveManifestForSelection(manifest, selection)
     : manifest
 
-  let stagedMedia: StagedArchiveMedia | null = null
-  if (selectedManifest.media && selectedManifest.media.length > 0 && options.uploadsDir) {
+  const shellDenied = authorizeImportedShell(user, selectedManifest.site !== undefined)
+  if (shellDenied) return shellDenied
+
+  const tableAccessDenied = await authorizeImportedTableAccess(req, db, user, selectedManifest)
+  if (tableAccessDenied) return tableAccessDenied
+
+  const publicationInvalid = validateImportedPublication(siteBundleWithoutMediaBytes(selectedManifest))
+  if (publicationInvalid) return publicationInvalid
+  const publicationDenied = await authorizeImportedPublication(req, db, user, scope, siteBundleWithoutMediaBytes(selectedManifest))
+  if (publicationDenied) return publicationDenied
+
+  let stagedMedia: StagedArchiveFiles | null = null
+  if ((manifest.media?.length ?? 0) > 0 || (manifest.publication?.files.length ?? 0) > 0) {
     try {
-      stagedMedia = await stageArchiveMediaEntries({
+      stagedMedia = await stageArchiveEntries({
         reader,
         archiveManifest: manifest,
         selectedManifest,
@@ -120,19 +135,18 @@ export async function handleImportArchiveRoute(
   }
 
   try {
-    const dataBundle = siteBundleWithoutMediaBytes(selectedManifest)
-    const dataImportReq = makeInternalImportRequest(req, strategy, dataBundle)
-    const dataImportRes = await handleImportRoute(dataImportReq, db, scope, options)
-    if (!dataImportRes || !dataImportRes.ok) {
-      return dataImportRes ?? jsonResponse({ error: 'Import route did not handle archive manifest' }, { status: 500 })
-    }
-
-    const baseResult = parseValue(ImportResultSchema, await dataImportRes.json())
-    const importedFolderIds = new Set(
-      strategy === 'replace'
-        ? selectedManifest.mediaFolders?.map((folder) => folder.id) ?? []
-        : [],
-    )
+    const applied = await applySiteBundle(db, scope, {
+      bundle: siteBundleWithoutMediaBytes(selectedManifest),
+      strategy,
+      carriesMedia: selectedManifest.media !== undefined,
+      mayChangePageStructure: userHasCapability(user, 'site.structure.edit'),
+      runtimeFiles: stagedMedia?.runtimeFiles,
+      uploadsDir: options.uploadsDir,
+    })
+    // After commit, before staged media moves in: a bundle file at a deleted
+    // asset's storage path must land after the old bytes are removed.
+    await recordImportedTableAccess(req, db, user, applied.tableAccessAdded)
+    await removeDeletedMediaFiles(applied.deletedMedia)
 
     let mediaImported = 0
     if (stagedMedia && options.uploadsDir) {
@@ -141,7 +155,7 @@ export async function handleImportArchiveRoute(
           stagedMedia,
           db,
           uploadsDir: options.uploadsDir,
-          importedFolderIds,
+          importedFolderIds: applied.importedFolderIds,
         })
       } catch (err) {
         return badRequest(err instanceof Error ? err.message : 'Invalid CMS bundle archive')
@@ -149,11 +163,22 @@ export async function handleImportArchiveRoute(
     }
 
     const result: ImportResult = {
-      ...baseResult,
+      ok: true,
+      strategy,
+      tablesAffected: applied.tablesAffected,
+      rowsInserted: applied.rowsInserted,
+      rowsReplaced: applied.rowsReplaced,
+      rowsSkipped: applied.rowsSkipped,
+    rowsImportedAsDraft: applied.rowsImportedAsDraft,
       mediaImported,
+      mediaFoldersImported: applied.mediaFoldersImported,
+      redirectsImported: applied.redirectsImported,
     }
     parseValue(ImportResultSchema, result)
     return jsonResponse(result)
+  } catch (err) {
+    if (err instanceof BundlePublicationError) return badRequest(err.message)
+    throw err
   } finally {
     if (stagedMedia) {
       await cleanupStagedMedia(stagedMedia)
@@ -194,10 +219,8 @@ export async function importStagedArchiveMediaEntries(input: {
     // upload pipeline so there is exactly one place to update if the detection
     // or sanitisation logic changes. The staged file is fully buffered here to
     // sniff its magic bytes (unavoidable — MIME detection needs the head).
-    const safeBytes = validateAndSanitizeMediaBytes(
-      new Uint8Array(await Bun.file(stagedPath).arrayBuffer()),
-      asset,
-    )
+    const stagedBytes = new Uint8Array(await Bun.file(stagedPath).arrayBuffer())
+    const safeBytes = validateAndSanitizeMediaBytes(stagedBytes, asset)
 
     // SVG entries are written from the sanitized in-memory bytes; all other
     // types are moved from staging (zero-copy fast path).
@@ -213,6 +236,7 @@ export async function importStagedArchiveMediaEntries(input: {
       mimeType: asset.mimeType,
       // Use the sanitized byte length — SVG shrinks after script removal.
       sizeBytes: safeBytes.length,
+      contentHash: mediaContentHash(stagedBytes),
       storagePath: asset.storagePath,
       publicPath: `/uploads/${asset.storagePath}`,
       altText: asset.altText,
@@ -256,19 +280,27 @@ function errorHasCode(err: unknown, code: string): boolean {
   )
 }
 
-async function stageArchiveMediaEntries(input: {
+async function stageArchiveEntries(input: {
   reader: ZipBodyReader
   archiveManifest: SiteBundleArchiveManifest
   selectedManifest: SiteBundleArchiveManifest
-}): Promise<StagedArchiveMedia> {
-  const stagedMedia: StagedArchiveMedia = {
+}): Promise<StagedArchiveFiles> {
+  const stagedMedia: StagedArchiveFiles = {
     stagingDir: await mkdtemp(join(tmpdir(), 'instatic-import-media-')),
     entries: [],
+    runtimeFiles: new Map(),
   }
 
   try {
-    await readArchiveMediaEntries({
+    await readArchiveEntries({
       ...input,
+      async onRuntimeFile(asset, reader) {
+        const stagedPath = join(stagedMedia.stagingDir, `runtime-${stagedMedia.runtimeFiles.size}.bin`)
+        const crc = createCrc32()
+        await writeEntryToFile(reader, stagedPath, asset.sizeBytes, crc)
+        stagedMedia.runtimeFiles.set(asset.publicPath, new Uint8Array(await Bun.file(stagedPath).arrayBuffer()))
+        return crc.digest()
+      },
       async onSelectedMedia(asset, reader) {
         const stagedPath = join(stagedMedia.stagingDir, `${stagedMedia.entries.length}.bin`)
         const crc = createCrc32()
@@ -289,10 +321,11 @@ async function stageArchiveMediaEntries(input: {
   }
 }
 
-async function readArchiveMediaEntries(input: {
+async function readArchiveEntries(input: {
   reader: ZipBodyReader
   archiveManifest: SiteBundleArchiveManifest
   selectedManifest: SiteBundleArchiveManifest
+  onRuntimeFile: (asset: BundlePublication['files'][number], reader: ZipBodyReader) => Promise<number>
   onSelectedMedia: (
     asset: NonNullable<SiteBundleArchiveManifest['media']>[number],
     reader: ZipBodyReader,
@@ -309,9 +342,13 @@ async function readArchiveMediaEntries(input: {
     (input.selectedManifest.media ?? []).map((asset) => [mediaArchivePath(asset.storagePath), asset]),
   )
 
+  const runtimeByPath = new Map((input.archiveManifest.publication?.files ?? []).map((file, index) => [runtimeArchivePath(index), file]))
+  const selectedRuntime = new Set(input.selectedManifest.publication?.files.map((file) => file.publicPath) ?? [])
+
   while (true) {
     const header = await input.reader.readLocalHeader()
     if (!header) {
+      if (selectedRuntime.size > 0) throw new Error('Archive is missing a published runtime file')
       const missingPath = selectedMediaByArchivePath.keys().next().value
       if (typeof missingPath === 'string') {
         throw new Error(`Archive is missing media file "${missingPath}"`)
@@ -320,6 +357,22 @@ async function readArchiveMediaEntries(input: {
     }
     if (header.compression !== ZIP_STORED_METHOD) {
       throw new Error(`Archive entry "${header.path}" is compressed; CMS bundle media must be stored`)
+    }
+
+    const runtimeFile = runtimeByPath.get(header.path)
+    if (runtimeFile) {
+      if ((header.flags & ZIP_DATA_DESCRIPTOR_FLAG) === 0 && (header.compressedSize !== runtimeFile.sizeBytes || header.uncompressedSize !== runtimeFile.sizeBytes)) {
+        throw new Error('Runtime archive entry size does not match the manifest')
+      }
+      const crc = createCrc32()
+      const crc32 = selectedRuntime.has(runtimeFile.publicPath)
+        ? await input.onRuntimeFile(runtimeFile, input.reader)
+        : (await drainEntry(input.reader, runtimeFile.sizeBytes, crc), crc.digest())
+      if ((header.flags & ZIP_DATA_DESCRIPTOR_FLAG) !== 0) await input.reader.readAndValidateDataDescriptor({ crc32, sizeBytes: runtimeFile.sizeBytes })
+      if ((header.flags & ZIP_DATA_DESCRIPTOR_FLAG) === 0 && header.crc32 !== crc32) throw new Error('Published runtime file CRC does not match')
+      runtimeByPath.delete(header.path)
+      selectedRuntime.delete(runtimeFile.publicPath)
+      continue
     }
 
     const archivedAsset = allMediaByArchivePath.get(header.path)
@@ -344,6 +397,7 @@ async function readArchiveMediaEntries(input: {
       })
     }
 
+    if ((header.flags & ZIP_DATA_DESCRIPTOR_FLAG) === 0 && header.crc32 !== crc32) throw new Error('Media file CRC does not match')
     allMediaByArchivePath.delete(header.path)
     selectedMediaByArchivePath.delete(header.path)
   }
@@ -382,22 +436,6 @@ function parseImportSelection(url: URL): BundleImportSelection | null | Response
   }
 }
 
-function makeInternalImportRequest(req: Request, strategy: ImportStrategy, bundle: SiteBundle): Request {
-  const url = new URL(`${CMS_API_PREFIX}/import`, req.url)
-  url.searchParams.set('strategy', strategy)
-  const headers = new Headers(req.headers)
-  headers.set('content-type', 'application/json')
-  headers.delete('content-length')
-  const internalReq = new Request(url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(bundle),
-  })
-  const cookie = req.headers.get('cookie')
-  if (cookie) internalReq.headers.set('cookie', cookie)
-  return internalReq
-}
-
 function siteBundleWithoutMediaBytes(manifest: SiteBundleArchiveManifest): SiteBundle {
   const bundle: Partial<SiteBundleArchiveManifest> = { ...manifest }
   delete bundle.media
@@ -432,6 +470,7 @@ function filterArchiveManifestForSelection(
     ...(selection.includeSite && manifest.site ? { site: manifest.site } : {}),
     tables,
     rows,
+    ...(manifest.publication ? { publication: selectBundlePublication(manifest.publication, selectedRowIds) } : {}),
     ...(media ? { media } : {}),
     ...(selection.includeMediaFolders && manifest.mediaFolders ? { mediaFolders: manifest.mediaFolders } : {}),
     ...(redirects ? { redirects } : {}),
@@ -540,150 +579,4 @@ async function writeEntryToFile(
     stream.destroy()
     throw err
   }
-}
-
-class ZipBodyReader {
-  private pending: Uint8Array<ArrayBufferLike> = new Uint8Array(0)
-  private ended = false
-  private readonly reader: ReadableStreamDefaultReader<Uint8Array>
-
-  constructor(reader: ReadableStreamDefaultReader<Uint8Array>) {
-    this.reader = reader
-  }
-
-  async readLocalHeader(): Promise<LocalHeader | null> {
-    const signatureBytes = await this.readExact(4)
-    if (!signatureBytes) return null
-    const signature = readUint32(signatureBytes, 0)
-    if (
-      signature === ZIP_CENTRAL_DIRECTORY_HEADER ||
-      signature === ZIP_END_OF_CENTRAL_DIRECTORY ||
-      signature === ZIP64_END_OF_CENTRAL_DIRECTORY ||
-      signature === ZIP64_END_OF_CENTRAL_DIRECTORY_LOCATOR
-    ) {
-      return null
-    }
-    if (signature !== ZIP_LOCAL_FILE_HEADER) {
-      throw new Error('Invalid ZIP local file header in CMS bundle archive')
-    }
-
-    const rest = await this.readExact(26)
-    if (!rest) throw new Error('Truncated ZIP local file header')
-    const flags = readUint16(rest, 2)
-    const compression = readUint16(rest, 4)
-    const compressedSize32 = readUint32(rest, 14)
-    const uncompressedSize32 = readUint32(rest, 18)
-    const fileNameLength = readUint16(rest, 22)
-    const extraLength = readUint16(rest, 24)
-    const metadata = await this.readExact(fileNameLength + extraLength)
-    if (!metadata) throw new Error('Truncated ZIP local file metadata')
-
-    const path = textDecoder.decode(metadata.subarray(0, fileNameLength))
-    const extra = metadata.subarray(fileNameLength)
-    const zip64Sizes = compressedSize32 === UINT32_MAX || uncompressedSize32 === UINT32_MAX
-      ? readZip64LocalSizes(extra)
-      : null
-
-    return {
-      path,
-      flags,
-      compression,
-      compressedSize: compressedSize32 === UINT32_MAX ? zip64Sizes?.compressedSize ?? null : compressedSize32,
-      uncompressedSize: uncompressedSize32 === UINT32_MAX ? zip64Sizes?.uncompressedSize ?? null : uncompressedSize32,
-    }
-  }
-
-  async readExact(size: number): Promise<Uint8Array<ArrayBufferLike> | null> {
-    if (size === 0) return new Uint8Array(0)
-    while (this.pending.byteLength < size && !this.ended) {
-      const next = await this.reader.read()
-      if (next.done) {
-        this.ended = true
-        break
-      }
-      const merged = new Uint8Array(this.pending.byteLength + next.value.byteLength)
-      merged.set(this.pending, 0)
-      merged.set(next.value, this.pending.byteLength)
-      this.pending = merged
-    }
-    if (this.pending.byteLength === 0 && this.ended) return null
-    if (this.pending.byteLength < size) throw new Error('CMS bundle archive ended unexpectedly')
-    const out = this.pending.slice(0, size)
-    this.pending = this.pending.slice(size)
-    return out
-  }
-
-  async copyExact(
-    size: number,
-    writeChunk: (chunk: Uint8Array<ArrayBufferLike>) => Promise<void>,
-  ): Promise<void> {
-    let remaining = size
-    while (remaining > 0) {
-      if (this.pending.byteLength === 0) {
-        const next = await this.reader.read()
-        if (next.done) throw new Error('CMS bundle archive media entry is truncated')
-        this.pending = next.value
-      }
-      const chunkSize = Math.min(remaining, this.pending.byteLength)
-      const chunk = this.pending.subarray(0, chunkSize)
-      await writeChunk(chunk)
-      this.pending = this.pending.subarray(chunkSize)
-      remaining -= chunkSize
-    }
-  }
-
-  async readAndValidateDataDescriptor(expected: { crc32: number; sizeBytes: number }): Promise<void> {
-    const descriptorSize = expected.sizeBytes > UINT32_MAX ? 24 : 16
-    const descriptor = await this.readExact(descriptorSize)
-    if (!descriptor) throw new Error('CMS bundle archive media descriptor is missing')
-    if (readUint32(descriptor, 0) !== ZIP_DATA_DESCRIPTOR) {
-      throw new Error('CMS bundle archive media descriptor is invalid')
-    }
-    const actualCrc = readUint32(descriptor, 4)
-    const actualCompressedSize = expected.sizeBytes > UINT32_MAX
-      ? Number(readUint64(descriptor, 8))
-      : readUint32(descriptor, 8)
-    const actualUncompressedSize = expected.sizeBytes > UINT32_MAX
-      ? Number(readUint64(descriptor, 16))
-      : readUint32(descriptor, 12)
-    if (
-      actualCrc !== expected.crc32 ||
-      actualCompressedSize !== expected.sizeBytes ||
-      actualUncompressedSize !== expected.sizeBytes
-    ) {
-      throw new Error('CMS bundle archive media descriptor does not match the streamed bytes')
-    }
-  }
-}
-
-function readZip64LocalSizes(extra: Uint8Array): { uncompressedSize: number; compressedSize: number } | null {
-  let offset = 0
-  while (offset + 4 <= extra.byteLength) {
-    const headerId = readUint16(extra, offset)
-    const dataSize = readUint16(extra, offset + 2)
-    const dataStart = offset + 4
-    const dataEnd = dataStart + dataSize
-    if (dataEnd > extra.byteLength) return null
-    if (headerId === ZIP64_EXTRA_FIELD_ID) {
-      if (dataSize < 16) return null
-      return {
-        uncompressedSize: Number(readUint64(extra, dataStart)),
-        compressedSize: Number(readUint64(extra, dataStart + 8)),
-      }
-    }
-    offset = dataEnd
-  }
-  return null
-}
-
-function readUint16(bytes: Uint8Array, offset: number): number {
-  return new DataView(bytes.buffer, bytes.byteOffset + offset, 2).getUint16(0, true)
-}
-
-function readUint32(bytes: Uint8Array, offset: number): number {
-  return new DataView(bytes.buffer, bytes.byteOffset + offset, 4).getUint32(0, true)
-}
-
-function readUint64(bytes: Uint8Array, offset: number): bigint {
-  return new DataView(bytes.buffer, bytes.byteOffset + offset, 8).getBigUint64(0, true)
 }

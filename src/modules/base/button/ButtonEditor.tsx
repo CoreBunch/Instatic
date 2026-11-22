@@ -10,8 +10,8 @@
  */
 import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
-import { anchorRel } from '@modules/base/shared/anchorTarget'
-import { htmlAttributesForReact } from '@core/htmlAttributes'
+import { anchorHtmlAttributes } from '@modules/base/shared/anchorTarget'
+import { useCanvasHtmlAttributes } from '@modules/base/shared/useCanvasHtmlAttributes'
 import { inlineEditableElementProps } from '@modules/base/shared/inlineText'
 import { resolveButtonAnchor } from './anchor'
 import type { ButtonStoredProps } from './props'
@@ -23,10 +23,11 @@ export const ButtonEditor: React.FC<ModuleComponentProps<ButtonStoredProps>> = (
   inlineEdit,
 }) => {
   const label = props.label || 'Button'
-  const htmlAttrs = htmlAttributesForReact(props.htmlAttributes)
   const anchor = resolveButtonAnchor(props.href)
   // React.createElement (not JSX) so the editable element's generic
   // `Ref<HTMLElement>` is accepted — matching TextEditor / LinkEditor.
+  const { attributes, rel } = anchorHtmlAttributes(props.htmlAttributes, props.target)
+  const htmlAttrs = useCanvasHtmlAttributes(anchor ? attributes : props.htmlAttributes, inlineEdit?.ref)
   if (anchor) {
     return React.createElement(
       'a',
@@ -34,8 +35,8 @@ export const ButtonEditor: React.FC<ModuleComponentProps<ButtonStoredProps>> = (
         ...nodeWrapperProps,
         ...htmlAttrs,
         href: anchor.href,
-        target: props.target,
-        rel: anchorRel(props.target) ?? undefined,
+        target: props.target || undefined,
+        rel: rel ?? undefined,
         className: mcClassName,
         ...(inlineEdit ? inlineEditableElementProps(inlineEdit) : {}),
       },
