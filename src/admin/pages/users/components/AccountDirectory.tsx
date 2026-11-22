@@ -107,7 +107,7 @@ export function AccountDirectory({ kind, accounts, selectedId, onSelect, toolbar
             </DataTableRow></DataTableHead>
             <DataTableBody>
               {accounts.map((account) => (
-                <DataTableRow key={account.id} aria-label={`${kind} ${account.email}`} data-selected={account.id === selectedId}>
+                <DataTableRow key={account.id} aria-label={`${kind} ${account.email}`} aria-current={account.id === selectedId || undefined}>
                   <DataTableCell>
                     <Button variant="ghost" align="start" className={styles.select} aria-expanded={account.id === selectedId}
                       aria-controls={account.id === selectedId ? panelId : undefined}

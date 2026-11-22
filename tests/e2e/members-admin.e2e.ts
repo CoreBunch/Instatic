@@ -86,6 +86,7 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
     await tab.getByLabel('Search name or email').fill(`member-${suffix}`)
     const rows = tab.getByRole('table', { name: 'Site members' })
     await expect(rows.getByRole('button')).toHaveCount(1)
+    await expect(rows.getByRole('row', { name: `Member ${email}`, exact: true })).toHaveAttribute('aria-current', 'true')
     await expect(details.getByRole('heading', { name: email })).toBeVisible()
     await expect(details.getByText('Pending', { exact: true })).toBeVisible()
     // The tag typed as "Student" is stored the way members hold it.

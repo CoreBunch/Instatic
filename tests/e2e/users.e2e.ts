@@ -62,11 +62,23 @@ test.describe('users and roles', () => {
     await expect(row.getByText('Admin')).toBeVisible()
 
     await test.step('inspect the account on desktop and in a narrow drawer', async () => {
+      const ownerRow = userRow(page, OWNER.email)
+      await ownerRow.getByRole('button').click()
+      await expect(ownerRow).toHaveAttribute('aria-current', 'true')
       await row.getByRole('button').click()
       const panel = page.getByRole('article', { name: 'User details' })
       await expect(panel.getByRole('heading', { name: initialDisplayName })).toBeVisible()
+      await expect(ownerRow).not.toHaveAttribute('aria-current', 'true')
+      await expect(row).toHaveAttribute('aria-current', 'true')
+      const selectedCell = row.getByRole('cell').first()
+      await row.hover()
+      await expect(selectedCell).not.toHaveCSS('box-shadow', 'none')
+      await panel.hover()
+      await expect(selectedCell).not.toHaveCSS('box-shadow', 'none')
       await page.screenshot({ path: '.tmp/evidence/admin-user-inspector.png' })
       await panel.getByRole('button', { name: 'Close details' }).click()
+      await expect(row).not.toHaveAttribute('aria-current', 'true')
+      await expect(selectedCell).toHaveCSS('box-shadow', 'none')
       await expect(row.getByRole('button')).toBeFocused()
 
       const viewport = page.viewportSize()!

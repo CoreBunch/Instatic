@@ -67,12 +67,16 @@
     border-radius: 0 var(--radius) var(--radius) 0;
 }
 
-.table tbody tr:hover td {
+.directory .table tbody tr:hover td {
     background: var(--overlay-5);
 }
 
-.table tbody tr[data-selected="true"] td {
-    background: var(--overlay-10);
+.directory .table tbody tr[aria-current="true"] td {
+    background: var(--overlay-20);
+}
+
+.table tr[aria-current="true"] td:first-child {
+    box-shadow: inset 3px 0 var(--text-bright);
 }
 
 .table .select {
