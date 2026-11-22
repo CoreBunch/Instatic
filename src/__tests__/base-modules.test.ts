@@ -170,7 +170,6 @@ describe('base.loop — module contract specifics', () => {
     expect(Object.keys(LoopModule.schema)).toEqual([])
     expect(Object.keys(LoopModule.defaults).sort()).toEqual([
       'customTag',
-      'direction',
       'filters',
       'htmlAttributes',
       'limit',
@@ -185,7 +184,6 @@ describe('base.loop — module contract specifics', () => {
       sourceId: '',
       filters: {},
       orderBy: '',
-      direction: 'desc',
       limit: 10,
       offset: 0,
       pagination: 'none',
@@ -193,6 +191,8 @@ describe('base.loop — module contract specifics', () => {
       tag: 'div',
       customTag: '',
     })
+    // A new loop stores no direction: its source's default decides.
+    expect('direction' in LoopModule.defaults).toBe(false)
   })
 
   it('resolves safe wrapper tags for publisher and canvas affordances', () => {
@@ -1228,13 +1228,8 @@ describe('base.list — render() specifics', () => {
 // ---------------------------------------------------------------------------
 
 describe('base.link — render() specifics', () => {
-  it('has click action, URL, text, and target module settings', () => {
-    expect(Object.keys(LinkModule.schema).sort()).toEqual(['action', 'href', 'htmlAttributes', 'signOutRedirect', 'target', 'text'])
-  })
-
-  it('renders a sign-out link to the member sign-out address', () => {
-    const { html } = renderModule(LinkModule, { action: 'memberSignOut', signOutRedirect: '/bye', text: 'Sign out' })
-    expect(html).toContain('href="/_instatic/members/logout?to=%2Fbye"')
+  it('has URL, text, and target module settings', () => {
+    expect(Object.keys(LinkModule.schema).sort()).toEqual(['href', 'htmlAttributes', 'target', 'text'])
   })
 
   it('renders target and rel for new-tab links', () => {

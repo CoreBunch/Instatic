@@ -101,17 +101,12 @@ describe('CanvasNotch', () => {
     expect(toolbar).not.toContain('UndoRedoButtons')
   })
 
-  it('moves the Add picker trigger to an icon-only chip (no "Add" label text)', () => {
+  it('labels the Add trigger on phones and keeps its desktop icon shortcut', () => {
     const picker = readFileSync(MODULE_PICKER, 'utf-8')
 
-    // The trigger is icon-only — only the AppGridPlusGlyphIcon is rendered
-    // (the same icon used by the "Insert module here" right-click submenu, so
-    // the two affordances read as the same action).
-    expect(picker).toContain('iconOnly')
-    expect(picker).toContain('<AppGridPlusGlyphIcon size={13} />')
-    // The literal "Add" text inside the trigger button is gone. The aria-label
-    // and tooltip describe the dialog action for screen readers.
+    expect(picker).toContain('iconOnly={!phone}')
+    expect(picker).toContain('<AppGridPlusGlyphIcon ')
+    expect(picker).toContain("{phone && 'Add'}")
     expect(picker).toContain('aria-label="Add to canvas"')
-    expect(picker).not.toMatch(/<AppGridPlusGlyphIcon[^>]*\/>\s*Add\s*<\/Button>/)
   })
 })

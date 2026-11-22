@@ -10,8 +10,11 @@ import {
   isModuleJsAssetPath,
 } from '../../../server/handlers/cms/moduleJs'
 import { resetForTests } from '../../../server/publish/renderCache'
+import { assetContentVersion } from '../../../server/publish/assetVersion'
 import { makeModule } from '../publisher/helpers'
 import { registry } from '../../core/module-engine/registry'
+
+const TEST_RUNTIME_JS = '(function(){/* test runtime */})();'
 
 function makeSnapshot() {
   return {
@@ -92,9 +95,9 @@ function makeFakeDb(snapshot: ReturnType<typeof makeSnapshot> | null): DbClient 
   return handle as DbClient
 }
 
-function moduleJsRequest(path: string, method = 'GET'): [Request, URL] {
+function moduleJsRequest(path: string, method = 'GET', headers: Record<string, string> = {}): [Request, URL] {
   const url = new URL(`http://localhost${path}`)
-  return [new Request(url, { method }), url]
+  return [new Request(url, { method, headers }), url]
 }
 
 beforeEach(() => {
@@ -107,7 +110,7 @@ beforeEach(() => {
   )
   registry.registerOrReplace(
     makeModule('test.jsy', {
-      render: () => ({ html: '<div></div>', js: '(function(){/* test runtime */})();' }),
+      render: () => ({ html: '<div></div>', js: TEST_RUNTIME_JS }),
     }),
   )
 })
@@ -122,13 +125,58 @@ describe('isModuleJsAssetPath', () => {
 })
 
 describe('handleModuleJsAssetRequest', () => {
-  it('serves a known module with text/javascript and a 1h public cache', async () => {
-    const [req, url] = moduleJsRequest('/_instatic/module-js/test.jsy.js?v=0')
+  it('serves a known module with text/javascript and a 1h public cache under its content-hash URL', async () => {
+    const version = assetContentVersion(TEST_RUNTIME_JS)
+    const [req, url] = moduleJsRequest(`/_instatic/module-js/test.jsy.js?v=${version}`)
     const res = await handleModuleJsAssetRequest(req, url, { db: makeFakeDb(makeSnapshot()) })
     expect(res.status).toBe(200)
     expect(res.headers.get('content-type')).toBe('text/javascript; charset=utf-8')
     expect(res.headers.get('cache-control')).toBe('public, max-age=3600')
-    expect(await res.text()).toContain('test runtime')
+    expect(res.headers.get('etag')).toBe(`"${version}"`)
+    expect(await res.text()).toBe(TEST_RUNTIME_JS)
+  })
+
+  it('serves the current body uncached when ?v= does not name it', async () => {
+    // A page baked before the script changed, a legacy counter URL, no ?v=.
+    for (const query of ['?v=000000000000', '?v=0', '']) {
+      const [req, url] = moduleJsRequest(`/_instatic/module-js/test.jsy.js${query}`)
+      const res = await handleModuleJsAssetRequest(req, url, { db: makeFakeDb(makeSnapshot()) })
+      expect(res.status).toBe(200)
+      expect(res.headers.get('cache-control')).toBe('no-cache')
+      expect(res.headers.get('etag')).toBe(`"${assetContentVersion(TEST_RUNTIME_JS)}"`)
+      expect(await res.text()).toBe(TEST_RUNTIME_JS)
+    }
+  })
+
+  it('answers 304 with no body when If-None-Match names the body, on a stale and on a current URL', async () => {
+    const version = assetContentVersion(TEST_RUNTIME_JS)
+    const cases: Array<[query: string, ifNoneMatch: string, cacheControl: string]> = [
+      // A page baked before an upgrade: revalidates instead of re-downloading.
+      ['?v=000000000000', `"${version}"`, 'no-cache'],
+      ['', `W/"${version}"`, 'no-cache'],
+      ['?v=0', `"other", W/"${version}"`, 'no-cache'],
+      [`?v=${version}`, `"${version}"`, 'public, max-age=3600'],
+    ]
+    for (const [query, ifNoneMatch, cacheControl] of cases) {
+      const [req, url] = moduleJsRequest(`/_instatic/module-js/test.jsy.js${query}`, 'GET', {
+        'if-none-match': ifNoneMatch,
+      })
+      const res = await handleModuleJsAssetRequest(req, url, { db: makeFakeDb(makeSnapshot()) })
+      expect(res.status).toBe(304)
+      expect(res.headers.get('etag')).toBe(`"${version}"`)
+      expect(res.headers.get('cache-control')).toBe(cacheControl)
+      expect(await res.text()).toBe('')
+    }
+  })
+
+  it('serves the full body when If-None-Match names another body', async () => {
+    const [req, url] = moduleJsRequest('/_instatic/module-js/test.jsy.js?v=000000000000', 'GET', {
+      'if-none-match': '"000000000000"',
+    })
+    const res = await handleModuleJsAssetRequest(req, url, { db: makeFakeDb(makeSnapshot()) })
+    expect(res.status).toBe(200)
+    expect(res.headers.get('cache-control')).toBe('no-cache')
+    expect(await res.text()).toBe(TEST_RUNTIME_JS)
   })
 
   it('404s for a moduleId with no published js', async () => {

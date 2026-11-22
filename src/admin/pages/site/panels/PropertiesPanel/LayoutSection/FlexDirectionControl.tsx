@@ -21,6 +21,7 @@ export function FlexDirectionControl({ value, isSet, onChange, onClear }: FlexDi
   return (
     <LabeledControl label="Direction" isSet={isSet}>
       <SegmentedControl
+        size="sm"
         fullWidth
         aria-label="Flex direction"
         value={value}

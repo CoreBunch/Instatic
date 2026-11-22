@@ -88,6 +88,10 @@ const MEMBER_SOURCE: SystemSource = {
     { id: 'email', label: 'Email address' },
     { id: 'profile.name', label: 'Name' },
     { id: 'tagList', label: 'Tags' },
+    { id: 'appRequest.name', label: 'App asking: name' },
+    { id: 'appRequest.access', label: 'App asking: what it sees' },
+    { id: 'appRequest.returnsTo', label: 'App asking: where it runs' },
+    { id: 'appRequest.device', label: 'App asking: device name' },
   ],
 }
 

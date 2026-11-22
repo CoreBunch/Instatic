@@ -189,9 +189,8 @@ describe('dynamic binding controls', () => {
         control={{ type: 'image', label: 'Image' }}
         onSet={(binding) => { selectedBinding = binding }}
         onClear={() => {}}
-      >
-        <input aria-label="Image" />
-      </DynamicBindingControl>,
+        renderControl={(labelAction) => <><input aria-label="Image" />{labelAction}</>}
+      />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: /bind image/i }))

@@ -1,9 +1,16 @@
 import { describe, test, expect } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { Value } from '@sinclair/typebox/value'
-import { guardedFetch, performGatedFetch, isBlockedAddress } from '../../../server/plugins/host/network'
+import {
+  PluginFetchTimeoutError,
+  guardedFetch,
+  performGatedFetch,
+  isBlockedAddress,
+} from '../../../server/plugins/host/network'
+import { DEFAULT_PLUGIN_FETCH_TIMEOUT_MS } from '../../../server/plugins/quickjs/limits'
 import { NetworkFetchInitSchema } from '../../../server/plugins/protocol/schemas/network'
 import type { HostPluginRecord } from '../../../server/plugins/host/types'
+import { PluginRateLimitStore } from '../../../server/plugins/host/pluginRateLimit'
 
 /**
  * SSRF hardening for the gated plugin fetch (ISS-004, ISS-005, ISS-010, ISS-011).
@@ -22,6 +29,7 @@ function makeEntry(allowlist: string[]): HostPluginRecord {
   return {
     manifest: { id: 'test.plugin', networkAllowedHosts: allowlist },
     inflightFetches: new Map(),
+    rateLimits: new PluginRateLimitStore(10),
   } as unknown as HostPluginRecord
 }
 
@@ -572,5 +580,104 @@ describe('network.ts source invariant', () => {
   test('uses manual redirect handling (never transparent following)', () => {
     const src = readFileSync(new URL('../../../server/plugins/host/network.ts', import.meta.url), 'utf8')
     expect(src).toContain("redirect: 'manual'")
+  })
+})
+
+describe('performGatedFetch — request timeout', () => {
+  test('times out a request that never answers and cancels it upstream', async () => {
+    let upstreamAborted = false
+    const hanging = ((_input: string | URL | Request, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          upstreamAborted = true
+          reject(new DOMException('The operation was aborted', 'AbortError'))
+        })
+      })) as unknown as typeof fetch
+    const entry = makeEntry(['api.example.com'])
+    const failure = await performGatedFetch(
+      entry,
+      'https://api.example.com/slow',
+      { timeoutMs: 30, abortId: 'a1_x' },
+      { fetchImpl: hanging, resolveHostAddresses: resolver({}) },
+    ).catch((err: unknown) => err)
+    expect(failure).toBeInstanceOf(PluginFetchTimeoutError)
+    expect((failure as Error).message).toBe('Plugin "test.plugin" fetch timed out after 30ms')
+    expect(upstreamAborted).toBe(true)
+    expect(entry.inflightFetches.size).toBe(0)
+  })
+
+  test('times out a response whose body stalls, and cancels the body', async () => {
+    let bodyCancelled = false
+    const stalled = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) { controller.enqueue(new TextEncoder().encode('partial')) },
+        cancel() { bodyCancelled = true },
+      }),
+      { status: 200 },
+    )
+    await expect(
+      performGatedFetch(
+        makeEntry(['api.example.com']),
+        'https://api.example.com/stall',
+        { timeoutMs: 30 },
+        {
+          fetchImpl: scriptedFetch({ 'https://api.example.com/stall': stalled }),
+          resolveHostAddresses: resolver({}),
+        },
+      ),
+    ).rejects.toThrow('fetch timed out after 30ms')
+    expect(bodyCancelled).toBe(true)
+  })
+
+  test('a request that answers in time is not affected by the timeout', async () => {
+    const res = await performGatedFetch(
+      makeEntry(['api.example.com']),
+      'https://api.example.com/data',
+      { timeoutMs: 5_000 },
+      {
+        fetchImpl: scriptedFetch({ 'https://api.example.com/data': new Response('OK', { status: 200 }) }),
+        resolveHostAddresses: resolver({}),
+      },
+    )
+    expect(res.body).toBe('OK')
+  })
+
+  test('times out a DNS lookup that stalls', async () => {
+    let connected = false
+    const failure = await performGatedFetch(
+      makeEntry(['api.example.com']),
+      'https://api.example.com/data',
+      { timeoutMs: 30 },
+      {
+        fetchImpl: (async () => { connected = true; return new Response('late') }) as unknown as typeof fetch,
+        resolveHostAddresses: () => new Promise<string[]>(() => { /* never answers */ }),
+      },
+    ).catch((err: unknown) => err)
+    expect(failure).toBeInstanceOf(PluginFetchTimeoutError)
+    expect((failure as PluginFetchTimeoutError).code).toBe('fetch_timeout')
+    expect(connected).toBe(false)
+  })
+
+  test('reports a refusal as the refusal even when the timer has fired', async () => {
+    // The resolver answers, late, with a blocked address. The timer fires
+    // while it blocks the thread, so both have happened by the time the
+    // request fails: the refusal is the truth.
+    const slowBlocked = async (): Promise<string[]> => {
+      const until = Date.now() + 60
+      while (Date.now() < until) { /* hold the thread past the 20 ms timeout */ }
+      return ['127.0.0.1']
+    }
+    const failure = await performGatedFetch(
+      makeEntry(['api.example.com']),
+      'https://api.example.com/data',
+      { timeoutMs: 20 },
+      { fetchImpl: scriptedFetch({}), resolveHostAddresses: slowBlocked },
+    ).catch((err: unknown) => err)
+    expect(failure).not.toBeInstanceOf(PluginFetchTimeoutError)
+    expect((failure as Error).message).toMatch(/blocked|private|not allowed|internal/i)
+  })
+
+  test('defaults the timeout to 15 seconds', () => {
+    expect(DEFAULT_PLUGIN_FETCH_TIMEOUT_MS).toBe(15_000)
   })
 })

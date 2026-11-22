@@ -17,6 +17,7 @@ import { createSitePanelSlice } from './slices/sitePanelSlice'
 import { createClipboardSlice } from './slices/clipboardSlice'
 import { createInlineEditSlice } from './slices/inlineEditSlice'
 import { createLayoutsSlice } from './slices/layoutsSlice'
+import { createFragmentsSlice } from './slices/fragmentsSlice'
 import { initCollabBinding } from './slices/site/collabBinding'
 import { bindPluginRuntimeStoreApi } from '@core/plugins/runtime'
 import { useAdminUi } from '@admin/state/adminUi'
@@ -75,6 +76,7 @@ export const useEditorStore = create<EditorStore>()(
         ...createClipboardSlice(...args),
         ...createInlineEditSlice(...args),
         ...createLayoutsSlice(...args),
+        ...createFragmentsSlice(...args),
       }),
       { enableAutoFreeze: true },
     )
@@ -193,15 +195,17 @@ export const selectActivePage = (s: EditorStore): Page | null => {
   return page
 }
 
-/** Select whether the docked right sidebar is currently taking layout space. */
-export const selectRightSidebarExpanded = (s: EditorStore) =>
-  s.propertiesPanelMode === 'docked' &&
+export const selectPropertiesPanelVisible = (s: EditorStore) =>
   !s.propertiesPanel.collapsed &&
   Boolean(
     s.selectedNodeId ||
       s.selectedSelectorClassId ||
       s.selectedSelectorClassIds.length > 0,
   )
+
+/** Select whether the docked right sidebar is currently taking layout space. */
+export const selectRightSidebarExpanded = (s: EditorStore) =>
+  s.propertiesPanelMode === 'docked' && selectPropertiesPanelVisible(s)
 
 // ---------------------------------------------------------------------------
 // selectActiveCanvasPage — VC-aware canvas page selector (Task #438)

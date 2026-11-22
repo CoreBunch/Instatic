@@ -7,7 +7,6 @@
  *
  *   • `coerceCount`             — every reader that calls `count(*)`
  *   • `coerceBytes`             — Media, Storage
- *   • `buildRowPath`            — Publish lineup, Activity
  */
 
 /**
@@ -30,23 +29,3 @@ export function coerceCount(raw: number | string | null | undefined): number {
  * separately so call sites read as "this is a byte count" at a glance.
  */
 export const coerceBytes = coerceCount
-
-/**
- * Build the public path for a content row from its table's route_base
- * and the row's slug. Shared by the Publish lineup and Activity widgets
- * so both render the same `/blog/<slug>` style label.
- *
- *   • Falls back to `/${tableId}/<slug>` when route_base is missing
- *     (collection still being set up, or a system table without a
- *     route prefix yet).
- *   • An empty slug renders as the literal `(no slug)` placeholder so
- *     the row stays clickable in the widget instead of dropping a
- *     trailing slash that looks like a broken link.
- */
-export function buildRowPath(routeBase: string | null, tableId: string, slug: string): string {
-  const safeSlug = slug || '(no slug)'
-  const base = routeBase && routeBase.trim().length > 0 ? routeBase : `/${tableId}`
-  const normalizedBase = base.startsWith('/') ? base : `/${base}`
-  const trimmedBase = normalizedBase.endsWith('/') ? normalizedBase.slice(0, -1) : normalizedBase
-  return `${trimmedBase}/${safeSlug}`
-}

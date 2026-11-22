@@ -19,27 +19,35 @@
 
 import type {
   ImportPlan,
+  PagePlan,
+  NewStyleRule,
+  ImportColorToken,
+  ImportFontToken,
+  ImportScript,
+  ImportStylesheet,
+} from './types'
+import type {
   PageConflict,
   RuleConflict,
   TokenConflict,
   CrossSheetClassConflict,
   ConflictResolution,
-  PagePlan,
-  NewStyleRule,
-  ImportColorToken,
-  ImportFontToken,
-} from './types'
+  FileConflict,
+} from './conflictTypes'
 import {
   classKindSelector,
+  normalizePageSlug,
   replaceCssSelectorClassName,
   type SiteDocument,
   type PageNode,
 } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
 import { normalizeFrameworkColorSlug } from '@core/framework'
-import { isUntouchedFontRoleToken, normalizeFontTokenVariable, type FontToken } from '@core/fonts'
-import { applyCrossSheetClassResolutions, normalizeBindableClassRules } from './classCascades'
+import { isUntouchedFontRoleToken, normalizeFontTokenVariable, sanitizeFontFallbackStack, type FontToken } from '@core/fonts'
+import { applyCrossSheetClassResolutions, normalizeBindableClassRules } from './classCascadeResolution'
 import { declaredCustomProperties, rewriteRuleVarRefs, rewriteStyleBagVarRefs } from './varRefs'
+import { importClassNames, pageClassUsage } from './classUsage'
+import { detectFileConflicts } from './fileConflicts'
 
 // ---------------------------------------------------------------------------
 // Detection
@@ -49,6 +57,7 @@ interface ConflictDetectionResult {
   pages: PageConflict[]
   rules: RuleConflict[]
   tokens: TokenConflict[]
+  files: FileConflict[]
 }
 
 /**
@@ -64,23 +73,56 @@ export function detectConflicts(
   styleRules: NewStyleRule[],
   colorTokens: ImportColorToken[] = [],
   fontTokens: ImportFontToken[] = [],
+  scripts: ImportScript[] = [],
+  stylesheets: ImportStylesheet[] = [],
+  /** Class names other conflict rows (cross-sheet renames) already target. */
+  reservedClassNames: Iterable<string> = [],
 ): ConflictDetectionResult {
   const pageConflicts = detectPageConflicts(currentSite, pagePlans)
-  const ruleConflicts = detectRuleConflicts(currentSite, styleRules)
+  const authoredNames = importClassNames(pageClassUsage(pagePlans, scripts), styleRules)
+  const ruleConflicts = detectRuleConflicts(currentSite, styleRules, [...authoredNames, ...reservedClassNames])
   const tokenConflicts = detectTokenConflicts(
     currentSite,
     colorTokens,
     fontTokens,
     declaredCustomProperties(pagePlans, styleRules),
   )
-  return { pages: pageConflicts, rules: ruleConflicts, tokens: tokenConflicts }
+  const fileConflicts = detectFileConflicts(currentSite, scripts, stylesheets)
+  return { pages: pageConflicts, rules: ruleConflicts, tokens: tokenConflicts, files: fileConflicts }
+}
+
+/**
+ * Give pages the slugs the user typed in the Review step and detect page
+ * conflicts again against those final slugs.
+ *
+ * The plan's page conflicts were detected against the slugs derived from the
+ * file paths. A slug edited afterwards must be checked again, or a page
+ * renamed onto an existing route (`index`) would skip the Conflicts step and
+ * be suffixed silently (`index-2`) at commit. Pass the plan already narrowed
+ * to the selected pages, so a deselected page claims no slug. Typed slugs are
+ * normalised the way the page store normalises them.
+ */
+export function withPageSlugs(
+  plan: ImportPlan,
+  currentSite: SiteDocument,
+  slugBySource: ReadonlyMap<string, string>,
+): ImportPlan {
+  const pages = plan.pages.map((page) => {
+    const typed = slugBySource.get(page.source)
+    return typed === undefined ? page : { ...page, slug: normalizePageSlug(typed) }
+  })
+  return {
+    ...plan,
+    pages,
+    conflicts: { ...plan.conflicts, pages: detectPageConflicts(currentSite, pages) },
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Page conflict detection
 // ---------------------------------------------------------------------------
 
-function detectPageConflicts(
+export function detectPageConflicts(
   site: SiteDocument,
   pagePlans: PagePlan[],
 ): PageConflict[] {
@@ -136,20 +178,37 @@ function detectPageConflicts(
 function detectRuleConflicts(
   site: SiteDocument,
   styleRules: NewStyleRule[],
+  reservedClassNames: Iterable<string>,
 ): RuleConflict[] {
   const conflicts: RuleConflict[] = []
 
   // Only kind:'class' rules have unique-name constraints
   const existingClassNames = new Map<string, string>()
+  const importedSources = new Set<string>()
   for (const rule of Object.values(site.styleRules)) {
+    if (rule.origin) importedSources.add(rule.origin.source)
     if (rule.kind === 'class') existingClassNames.set(rule.name, rule.id)
   }
 
-  // Track names claimed by earlier items in the import batch
+  // Track names claimed by earlier items in the import batch, and the names
+  // cross-sheet rows rename to (they apply first).
   const claimedNames = new Map<string, string>(existingClassNames)
+  for (const name of reservedClassNames) {
+    if (!claimedNames.has(name)) claimedNames.set(name, `cross-sheet:${name}`)
+  }
   // A class may arrive as several cascade fragments with one name — they
   // rename together, so they share ONE conflict row.
   const conflictedNames = new Set<string>()
+  const reimportedNames = new Set(styleRules.filter((rule) => {
+    const id = existingClassNames.get(rule.name)
+    if (rule.kind !== 'class' || !id || !rule.origin) return false
+    const existing = site.styleRules[id]
+    if (existing.origin) return existing.origin.source === rule.origin.source
+    // A confined class keeps its bare token as an unstyled binding for JS.
+    return importedSources.has(rule.origin.source) && existing.selector === classKindSelector(rule.name)
+      && !Object.keys(existing.styles).length && !Object.keys(existing.contextStyles).length
+  }).map((rule) => rule.name))
+
 
   for (const rule of styleRules) {
     if (rule.kind !== 'class') continue // ambient rules never conflict
@@ -168,7 +227,7 @@ function detectRuleConflicts(
         desiredName,
         existingRuleId: existingId,
         defaultResolution: {
-          action: 'auto-rename',
+          action: reimportedNames.has(desiredName) ? 'skip' : 'auto-rename',
           resolvedName,
         },
       })
@@ -207,24 +266,22 @@ function detectTokenConflicts(
   const conflicts: TokenConflict[] = []
 
   // ── Colour tokens — keyed by normalised slug ──────────────────────────────
-  const existingColorIds = new Map<string, string>()
-  for (const token of site.settings.framework?.colors?.tokens ?? []) {
-    existingColorIds.set(normalizeFrameworkColorSlug(token.slug), token.id)
-  }
+  const existingColors = new Map((site.settings.framework?.colors?.tokens ?? [])
+    .map((token) => [normalizeFrameworkColorSlug(token.slug), token]))
   const claimedColors = new Set([
-    ...existingColorIds.keys(),
+    ...existingColors.keys(),
     ...colorTokens.map((token) => normalizeFrameworkColorSlug(token.slug)),
     ...reserved,
   ])
   for (const token of colorTokens) {
-    const existingId = existingColorIds.get(normalizeFrameworkColorSlug(token.slug))
-    if (!existingId) continue
+    const existing = existingColors.get(normalizeFrameworkColorSlug(token.slug))
+    if (!existing) continue
     const resolved = nextAvailableVariable(token.slug, claimedColors, normalizeFrameworkColorSlug)
     conflicts.push({
       kind: 'color',
       desiredVariable: token.slug,
-      existingTokenId: existingId,
-      defaultResolution: { action: 'auto-rename', resolvedVariable: resolved },
+      existingTokenId: existing.id,
+      defaultResolution: { action: !existing.darkModeEnabled && existing.lightValue === token.value ? 'skip' : 'auto-rename', resolvedVariable: resolved },
     })
     claimedColors.add(normalizeFrameworkColorSlug(resolved))
   }
@@ -239,27 +296,21 @@ function detectTokenConflicts(
     ...fontTokens.map((token) => normalizeFontTokenVariable(token.variable)),
     ...reserved,
   ])
+  const families = new Map((site.settings.fonts?.items ?? []).map((entry) => [entry.id, entry.family.toLowerCase()]))
   for (const token of fontTokens) {
     const existing = existingFonts.get(normalizeFontTokenVariable(token.variable))
     if (!existing) continue
     // A role token still exactly as a new site seeded it (`font-body`, …) is a
     // placeholder, not a user choice: the import fills it in place so
     // `var(--font-body)` keeps its name. An edited role token keeps the rename.
-    if (isUntouchedFontRoleToken(existing)) {
-      conflicts.push({
-        kind: 'font',
-        desiredVariable: token.variable,
-        existingTokenId: existing.id,
-        defaultResolution: { action: 'overwrite' },
-      })
-      continue
-    }
+    const sameStack = (existing.familyId ? families.get(existing.familyId) : undefined) === token.family?.toLowerCase()
+      && existing.fallback === sanitizeFontFallbackStack(token.fallback)
     const resolved = nextAvailableVariable(token.variable, claimedFonts, normalizeFontTokenVariable)
     conflicts.push({
       kind: 'font',
       desiredVariable: token.variable,
       existingTokenId: existing.id,
-      defaultResolution: { action: 'auto-rename', resolvedVariable: resolved },
+      defaultResolution: { action: isUntouchedFontRoleToken(existing) ? 'overwrite' : sameStack ? 'skip' : 'auto-rename', resolvedVariable: resolved },
     })
     claimedFonts.add(normalizeFontTokenVariable(resolved))
   }
@@ -352,12 +403,11 @@ export function applyConflictResolutions(
   plan = applyCrossSheetClassResolutions(plan, crossSheetResolutions)
 
   const pageRes = new Map(pageResolutions.map((r) => [r.source, r.defaultResolution]))
-  const ruleRes = new Map(ruleResolutions.map((r) => [r.desiredName, r.defaultResolution]))
   const classRenames = buildClassRenameMap(ruleResolutions)
   const tokenMaps = buildTokenRenameMaps(tokenResolutions)
 
   const pages = resolvePagePlans(plan.pages, pageRes, classRenames, tokenMaps.varRenames)
-  const styleRules = resolveStyleRules(plan.styleRules, ruleRes, classRenames, tokenMaps.varRenames)
+  const styleRules = resolveStyleRules(plan.styleRules, classRenames, tokenMaps.varRenames)
   const { colors, fontTokens } = resolveTokenLists(plan.colors, plan.fontTokens, tokenMaps)
 
   // The registry requires unique class names: after all renames have landed,
@@ -469,31 +519,17 @@ export function rewriteImportVarRefs(
 /** Apply rule name resolutions, then rewrite any token var references. */
 function resolveStyleRules(
   styleRules: NewStyleRule[],
-  ruleRes: Map<string, RuleConflict['defaultResolution']>,
   classRenames: Map<string, string>,
   varRenames: Map<string, string>,
 ): NewStyleRule[] {
   return styleRules.map((rule) => {
     let next = rule
-    if (rule.kind === 'class') {
-      const res = ruleRes.get(rule.name)
-      // `skip` keeps the original name (binds to the pre-existing rule).
-      if (res && res.action !== 'skip') {
-        const resolvedName = res.resolvedName ?? rule.name
-        // Preserve imported selector structure while moving its decoded
-        // binding token to the resolved class name.
-        next = {
-          ...next,
-          name: resolvedName,
-          selector: replaceCssSelectorClassName(
-            rule.selector,
-            rule.name,
-            classKindSelector(resolvedName).slice(1),
-          ),
-        }
-      }
-    } else if (classRenames.size > 0) {
-      next = rewriteAmbientRuleClassRefs(rule, classRenames)
+    if (classRenames.size && typeof rule.rawCss !== 'string') {
+      const selector = rewriteSelectorClasses(rule.selector, classRenames)
+      const name = rule.kind === 'class'
+        ? classRenames.get(rule.name) ?? rule.name
+        : rule.name === rule.selector ? selector : rule.name
+      if (selector !== rule.selector || name !== rule.name) next = { ...rule, selector, name }
     }
     return varRenames.size > 0 ? rewriteRuleVarRefs(next, varRenames) : next
   })
@@ -585,20 +621,6 @@ function remapNodeRefs<T extends { classIds?: string[]; inlineStyles?: PageNode[
     if (inlineStyles !== next.inlineStyles) next = { ...next, inlineStyles }
   }
   return next
-}
-
-function rewriteAmbientRuleClassRefs(
-  rule: NewStyleRule,
-  classRenames: Map<string, string>,
-): NewStyleRule {
-  if (rule.kind !== 'ambient' || typeof rule.rawCss === 'string') return rule
-  const selector = rewriteSelectorClasses(rule.selector, classRenames)
-  if (selector === rule.selector) return rule
-  return {
-    ...rule,
-    selector,
-    name: rule.name === rule.selector ? selector : rule.name,
-  }
 }
 
 function rewriteSelectorClasses(selector: string, classRenames: Map<string, string>): string {

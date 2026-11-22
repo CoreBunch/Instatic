@@ -1,5 +1,5 @@
-import { configuredPublicOrigin } from '../../../auth/security'
 import { jsonResponse } from '../../../http'
+import { isLoopbackHostname, oauthIssuerOrigin } from '../../../oauth/protocol'
 import {
   MCP_ENDPOINT_PATH,
   MCP_OAUTH_AUTHORIZE_PATH,
@@ -16,23 +16,13 @@ export const MCP_OAUTH_ISSUER_UNAVAILABLE_MESSAGE =
   'MCP OAuth needs PUBLIC_ORIGIN to be configured for this deployment.'
 
 /**
- * The OAuth issuer every MCP discovery URL and `resource` comparison hangs off.
- *
- * Unauthenticated clients read the issuer back from the discovery documents
- * and the 401 challenge, so it must never come from the inbound Host header:
- * the configured public origin (`PUBLIC_ORIGIN`, or the Render / Railway
- * auto-detection) is authoritative. Without one, only a request addressed to
- * the machine itself (a loopback hostname) may use its own origin so local
- * development keeps working; Bun.serve builds `req.url` from the Host header,
- * so checking the URL covers the header. Any other request has no trustworthy
- * issuer: callers answer with `mcpIssuerUnavailableResponse()` or skip the
- * OAuth path (personal access tokens never need an issuer).
+ * The MCP authorization server's issuer: this deployment's origin. Null when
+ * the request has no trustworthy origin (see `oauthIssuerOrigin`); callers
+ * then answer with `mcpIssuerUnavailableResponse()` or skip the OAuth path
+ * (personal access tokens never need an issuer).
  */
 export function mcpIssuer(req: Request): string | null {
-  const configured = configuredPublicOrigin()
-  if (configured) return configured
-  const url = new URL(req.url)
-  return isLoopbackHostname(url.hostname) ? url.origin : null
+  return oauthIssuerOrigin(req)
 }
 
 export function mcpResource(req: Request): string | null {
@@ -73,47 +63,9 @@ export function normalizeMcpScope(raw: string | undefined): string | null {
   return MCP_OAUTH_SUPPORTED_SCOPES.filter((scope) => requested.has(scope)).join(' ')
 }
 
-export function isValidPkceChallenge(value: string): boolean {
-  return /^[A-Za-z0-9_-]{43}$/.test(value)
-}
-
-export function isValidPkceVerifier(value: string): boolean {
-  return /^[A-Za-z0-9._~-]{43,128}$/.test(value)
-}
-
-export function parseAllowedRedirectUri(raw: string): URL | null {
-  let url: URL
-  try {
-    url = new URL(raw)
-  } catch {
-    return null
-  }
-  if (url.username || url.password || url.hash) return null
-  if (url.protocol === 'https:') return url
-  if (url.protocol !== 'http:') return null
-  return isLoopbackHostname(url.hostname) ? url : null
-}
-
 export function isRemoteMcpEndpoint(endpoint: string): boolean {
   const url = new URL(endpoint)
   return url.protocol === 'https:' && !isPrivateNetworkHostname(url.hostname)
-}
-
-export function oauthRedirect(
-  redirectUri: string,
-  params: Record<string, string | undefined>,
-): string {
-  const url = new URL(redirectUri)
-  for (const [key, value] of Object.entries(params)) {
-    if (value !== undefined) url.searchParams.set(key, value)
-  }
-  return url.toString()
-}
-
-function isLoopbackHostname(hostname: string): boolean {
-  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, '')
-  return normalized === 'localhost' || normalized.endsWith('.localhost') ||
-    normalized.startsWith('127.') || normalized === '::1'
 }
 
 function isPrivateNetworkHostname(hostname: string): boolean {

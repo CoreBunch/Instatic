@@ -26,6 +26,7 @@ import { createMemberSession } from '../../../server/members/sessions'
 import { handleCmsRequest } from '../../../server/handlers/cms'
 import { requestForPluginSource } from '../../../server/plugins/host/handlers/loops'
 import { hostPlugins } from '../../../server/plugins/host/registry'
+import { unloadPlugin } from '../../../server/plugins/runtime'
 import { getPublishedNodeIndexForVersion } from '../../../server/publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../../server/publish/publishState'
 import { publishDraftSite } from '../../../server/publish/publishSite'
@@ -416,6 +417,9 @@ describe('a plugin\'s loop sources on the published site', () => {
   })
 
   afterEach(async () => {
+    // The loop registry is one per process: unload the plugin so its sources
+    // and its worker do not outlive this test into whichever file runs next.
+    await unloadPlugin(PLUGIN_ID)
     await h.cleanup()
     await rm(uploadsDir, { recursive: true, force: true })
   })

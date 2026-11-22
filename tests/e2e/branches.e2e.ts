@@ -87,6 +87,19 @@ test('create a branch from the toolbar, edit on it, and return to main (BRANCH-0
   await page.reload()
   await openSiteEditor(page)
   await expect(page.getByTestId('branch-strip')).toContainText('Spring Redesign')
+  await expect(strip.getByRole('button', { name: 'Share preview' })).toHaveText('Share preview')
+  await expect(strip.getByRole('button', { name: 'Review merge…' })).toHaveText('Review merge…')
+
+  // The phone strip keeps the branch name and exposes each action by icon.
+  const desktopHeight = await strip.evaluate((element) => element.clientHeight)
+  await page.setViewportSize({ width: 320, height: 640 })
+  for (const label of ['Share preview', 'Review merge…', 'More branch actions']) {
+    const button = strip.getByRole('button', { name: label, exact: true })
+    await expect(button).toBeInViewport({ ratio: 1 })
+    await expect(button).toHaveText('')
+  }
+  expect(await strip.evaluate((element) => element.clientHeight)).toBe(desktopHeight)
+  await page.screenshot({ path: `${EVIDENCE_DIR}/branches-phone-compact.png`, clip: { x: 0, y: 0, width: 320, height: 90 } })
 
   // Back to main from the strip.
   await page.getByTestId('branch-strip-more').click()

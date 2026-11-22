@@ -20,6 +20,7 @@
  * `protocol/bodyEncoding.ts`).
  */
 
+import { DEFAULT_PLUGIN_FETCH_TIMEOUT_MS } from '../quickjs/limits'
 import { isIP } from 'node:net'
 import { lookup } from 'node:dns/promises'
 import ipaddr from 'ipaddr.js'
@@ -317,12 +318,11 @@ async function guardedFetchWithTrace(
     // connection to the checked IP. Bun is told not to follow redirects, so an
     // allowlisted host can never bounce us to a private/internal target, and
     // the pin closes the check-then-connect DNS-rebinding gap (SSRF).
-    const { url: parsed, pinnedIp } = await assertOutboundAllowed(
-      opts.allowlist,
-      currentUrl,
-      resolveHost,
-      label,
-      opts.requireHttps ?? false,
+    // DNS has no cancellation of its own, so the check is raced against the
+    // caller's signal: a resolver that stalls ends with the request.
+    const { url: parsed, pinnedIp } = await untilAborted(
+      assertOutboundAllowed(opts.allowlist, currentUrl, resolveHost, label, opts.requireHttps ?? false),
+      opts.signal,
     )
     const request = buildPinnedRequest(parsed, pinnedIp, headers)
 
@@ -386,6 +386,76 @@ async function guardedFetchWithTrace(
   }
 }
 
+/**
+ * A plugin request that ran out of time. It reaches the plugin as the
+ * rejection of its `fetch`; the sandbox shim names it `TimeoutError` from
+ * the `code`.
+ */
+export class PluginFetchTimeoutError extends Error {
+  /** Travels on the api-reply so the sandbox can name the error. */
+  readonly code = 'fetch_timeout'
+
+  constructor(pluginId: string, timeoutMs: number, cause: unknown) {
+    super(`Plugin "${pluginId}" fetch timed out after ${timeoutMs}ms`, { cause })
+    this.name = 'PluginFetchTimeoutError'
+  }
+}
+
+function abortError(): DOMException {
+  return new DOMException('The operation was aborted', 'AbortError')
+}
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'AbortError'
+}
+
+/** Settle with `work`, or reject with an `AbortError` as soon as `signal` aborts. */
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return work
+  if (signal.aborted) return Promise.reject(abortError())
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = (): void => reject(abortError())
+    signal.addEventListener('abort', onAbort, { once: true })
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+  })
+}
+
+/**
+ * Read a response body to the end as raw bytes, stopping as soon as `signal`
+ * aborts. The read holds the stream's lock, so cancelling goes through the
+ * reader: that releases the connection whether or not the transport ties its
+ * body stream to the signal.
+ */
+async function readBodyBytes(response: Response, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+  if (!response.body) return new Uint8Array(0)
+  const reader = response.body.getReader()
+  const onAbort = (): void => {
+    void reader.cancel().catch(() => { /* stream already closed or errored */ })
+  }
+  signal.addEventListener('abort', onAbort, { once: true })
+  try {
+    const chunks: Uint8Array[] = []
+    let total = 0
+    for (;;) {
+      if (signal.aborted) throw abortError()
+      const { done, value } = await reader.read()
+      if (done) break
+      chunks.push(value)
+      total += value.byteLength
+    }
+    if (signal.aborted) throw abortError()
+    const bytes = new Uint8Array(total)
+    let offset = 0
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset)
+      offset += chunk.byteLength
+    }
+    return bytes
+  } finally {
+    signal.removeEventListener('abort', onAbort)
+  }
+}
+
 export async function performGatedFetch(
   entry: HostPluginRecord,
   urlString: string,
@@ -396,6 +466,7 @@ export async function performGatedFetch(
     bodyEncoding?: BodyEncoding
     abortId?: string
     redirect?: RedirectMode
+    timeoutMs?: number
   },
   deps: GatedFetchDeps = {},
 ): Promise<SerializedNetworkResponse> {
@@ -409,6 +480,15 @@ export async function performGatedFetch(
   const controller = new AbortController()
   const abortId = init.abortId
   if (abortId) entry.inflightFetches.set(abortId, controller)
+
+  // The timeout aborts the same controller, so the upstream request and any
+  // body still streaming are cancelled, not left running.
+  const timeoutMs = init.timeoutMs ?? DEFAULT_PLUGIN_FETCH_TIMEOUT_MS
+  let timedOut = false
+  const timeoutTimer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
 
   // Decode the VM-supplied body once up front: a utf8 body is passed through as
   // the string (fetch UTF-8-encodes it to the same bytes), a base64 body
@@ -437,7 +517,7 @@ export async function performGatedFetch(
     response.headers.forEach((v, k) => { respHeaders[k] = v })
     // Read the upstream body as raw bytes — `response.text()` would lossily
     // UTF-8-decode binary payloads (images, gzip, protobuf).
-    const bytes = new Uint8Array(await response.arrayBuffer())
+    const bytes = await readBodyBytes(response, controller.signal)
     return {
       status: response.status,
       ok: response.ok,
@@ -445,7 +525,14 @@ export async function performGatedFetch(
       redirected,
       ...encodeBodyBytes(bytes),
     }
+  } catch (err) {
+    // Only a cancellation is the timeout. A refusal (allowlist, blocked
+    // address) that happens to land after the timer fired is still reported
+    // as the refusal it is.
+    if (timedOut && isAbortError(err)) throw new PluginFetchTimeoutError(manifest.id, timeoutMs, err)
+    throw err
   } finally {
+    clearTimeout(timeoutTimer)
     if (abortId) entry.inflightFetches.delete(abortId)
   }
 }

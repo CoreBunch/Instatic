@@ -70,6 +70,8 @@ export const LoopItemSchema = Type.Object({
 
 export type LoopItem = Static<typeof LoopItemSchema>
 
+export type LoopDirection = 'asc' | 'desc'
+
 // ---------------------------------------------------------------------------
 // Source contract
 // ---------------------------------------------------------------------------
@@ -117,7 +119,8 @@ export interface SourceFetchContext {
   filters: Record<string, unknown>
   /** One of the source's `orderByOptions[].id` values. */
   orderBy: string
-  direction: 'asc' | 'desc'
+  /** The loop's stored direction, or the source's `defaultDirection` when it has none. */
+  direction: LoopDirection
   /** Hard cap from the loop instance; sources may further clamp. */
   limit: number
   offset: number
@@ -270,6 +273,14 @@ interface LoopEntitySourceBase {
   filterSchema: PropertySchema
   /** Allowed values for the loop's `orderBy` property. */
   orderByOptions: { id: string; label: string }[]
+  /**
+   * The direction a loop uses when its author never picked one. Unset means
+   * `'asc'`. Each source decides what a direction means for it, so this is
+   * the direction under which `fetch()` lists items in their natural order:
+   * `'desc'` for the newest-first listings (`data.rows`, `site.media`,
+   * `members.apps`). Resolved by `resolveLoopDirection`.
+   */
+  defaultDirection?: LoopDirection
   /** Fields available for `dynamicBindings` inside the loop. */
   fields: LoopSourceField[]
 }
@@ -285,8 +296,12 @@ export interface PrefetchedLoopEntitySource extends LoopEntitySourceBase {
   kind?: 'prefetched'
   /** Server-side: produce items + totalItems for the resolved filters/page. */
   fetch(ctx: SourceFetchContext): Promise<LoopFetchResult>
-  /** Editor-side: synthesise representative items without DB access. */
-  preview(ctx: SourcePreviewContext): LoopItem[]
+  /**
+   * Editor-side: synthesise representative items without DB access. Called
+   * in the browser, so only an in-process source has one; a plugin's source
+   * is previewed through its worker (see `RemoteLoopEntitySource`).
+   */
+  preview?(ctx: SourcePreviewContext): LoopItem[]
 }
 
 /**
@@ -299,12 +314,31 @@ export interface ContextualLoopEntitySource extends LoopEntitySourceBase {
 }
 
 /**
+ * A plugin's source as the editor knows it: the descriptor only. The fetch
+ * and preview functions live in the plugin's sandbox on the server, where the
+ * same id is registered as a prefetched source. The editor lists it, offers
+ * its fields and filters, and asks the server for sample items
+ * (`previewCmsLoopSource`). Registered only in the browser, by
+ * `replaceRemoteLoopSources`.
+ */
+export interface RemoteLoopEntitySource extends LoopEntitySourceBase {
+  kind: 'remote'
+  /** The plugin that registered it. The picker shows the name. */
+  provider: { pluginId: string; pluginName: string }
+  /** New on every load of the plugin; see `RemoteLoopSourceSchema`. */
+  revision: string
+}
+
+/**
  * Pluggable entity source.
  *
  * Built-in sources live under `src/core/loops/sources/*` and self-register
  * on import. Plugins register prefetched sources via the plugin SDK.
  */
-export type LoopEntitySource = PrefetchedLoopEntitySource | ContextualLoopEntitySource
+export type LoopEntitySource =
+  | PrefetchedLoopEntitySource
+  | ContextualLoopEntitySource
+  | RemoteLoopEntitySource
 
 // ---------------------------------------------------------------------------
 // Registry interface
@@ -318,4 +352,12 @@ export interface ILoopSourceRegistry {
   getOrThrow(id: string): LoopEntitySource
   has(id: string): boolean
   list(): LoopEntitySource[]
+  /** Called after every change to the set of sources. Returns an unsubscribe. */
+  subscribe(listener: () => void): () => void
+  /**
+   * The registered sources as an immutable list, replaced by a new one on
+   * every change and otherwise the same array: a `useSyncExternalStore`
+   * snapshot.
+   */
+  getSnapshot(): readonly LoopEntitySource[]
 }

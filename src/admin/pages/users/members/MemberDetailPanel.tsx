@@ -2,13 +2,17 @@
  * One member: who they are, what they can open (tags), where they are signed
  * in, what they did, and what an administrator can do about it.
  */
-import { useId, useState, type FormEvent } from 'react'
+import { useId, useState, type ReactNode, type FormEvent } from 'react'
+import { ChevronDownIcon } from 'pixel-art-icons/icons/chevron-down'
+import { ChevronRightIcon } from 'pixel-art-icons/icons/chevron-right'
+import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
+import directory from '../components/AccountDirectory.module.css'
 import ld from '@admin/shared/ListDetail/ListDetail.module.css'
-import { isGrantableMemberTag, type MemberDetail, type MemberTagGrant } from '@core/members'
+import { isGrantableMemberTag, type MemberConnectedApp, type MemberDetail, type MemberTagGrant } from '@core/members'
 import { formatRelativeTimeAgo } from '@core/utils/relativeTime'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
-import { eventLabel, formatDate, formatDateTime, STATUS_LABEL, STATUS_TONE, tagSourceLabel } from './memberText'
+import { eventLabel, formatDate, formatDateTime, tagSourceLabel } from './memberText'
 import styles from './Members.module.css'
 
 const NO_PERMISSION = 'Your role cannot change members'
@@ -17,10 +21,12 @@ export interface MemberActions {
   suspend: () => void
   restore: () => void
   signOut: () => void
+  downloadData: () => void
   remove: () => void
   resendInvitation: () => void
   grantTag: (tag: string, expiresAt: string | null) => void
   revokeTag: (grant: MemberTagGrant) => void
+  disconnectApp: (app: MemberConnectedApp) => void
 }
 
 export function MemberDetailPanel({
@@ -40,25 +46,17 @@ export function MemberDetailPanel({
   busy: boolean
   actions: MemberActions
 }) {
+  const [addingTag, setAddingTag] = useState(false)
   const { member } = detail
   const blocked = canManage ? undefined : NO_PERMISSION
-  const profileEntries = Object.entries(detail.profile).filter(([, value]) => value !== '' && value !== false)
+  const profileEntries = Object.entries(detail.profile).filter(([key, value]) => key !== 'name' && value !== '' && value !== false)
 
   return (
-    <article className={ld.detail} aria-label="Member details">
-      <header className={ld.detailHeader}>
-        <span className={ld.statusBadge} data-tone={STATUS_TONE[member.status]}>
-          <span className={ld.dot} data-tone={STATUS_TONE[member.status]} aria-hidden="true" />
-          {STATUS_LABEL[member.status]}
-        </span>
-        <h3>{member.name || member.email}</h3>
-        {member.name && <p className={ld.selectable}>{member.email}</p>}
-      </header>
-
+    <>
       {member.status === 'pending' && (
         <p className={ld.notice} data-tone="warning">
-          Not finished yet: this person was invited and has not accepted, or signed up and has not confirmed their
-          address. They cannot sign in until they do.
+          Not finished yet: this person has not confirmed their address. They were invited, signed up, or were given an
+          account by a plugin. A sign-in link, a password reset or an invitation confirms it.
         </p>
       )}
       {member.status === 'suspended' && (
@@ -67,48 +65,29 @@ export function MemberDetailPanel({
         </p>
       )}
 
-      <div className={styles.detailActions}>
-        {member.status === 'pending' && (
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={actions.resendInvitation}
-            disabled={busy || inviteBlocked !== undefined}
-            tooltip={inviteBlocked
-              ?? (mailAvailable ? undefined : 'Outgoing email is not set up, so you get the link to pass on yourself')}
-          >
-            {mailAvailable ? 'Send an invitation link' : 'Create an invitation link'}
-          </Button>
-        )}
-        {member.status === 'suspended' ? (
-          <Button type="button" variant="secondary" size="sm" onClick={actions.restore} disabled={busy || !canManage} tooltip={blocked}>
-            Restore access
-          </Button>
-        ) : (
-          <Button type="button" variant="secondary" size="sm" onClick={actions.suspend} disabled={busy || !canManage} tooltip={blocked}>
-            Suspend
-          </Button>
-        )}
+      {member.status === 'pending' && (
         <Button
           type="button"
           variant="secondary"
           size="sm"
-          onClick={actions.signOut}
-          disabled={busy || !canManage || detail.sessions.length === 0}
-          tooltip={blocked ?? (detail.sessions.length === 0 ? 'Not signed in anywhere' : undefined)}
+          onClick={actions.resendInvitation}
+          disabled={busy || inviteBlocked !== undefined}
+          tooltip={inviteBlocked
+            ?? (mailAvailable ? undefined : 'Outgoing email is not set up, so you get the link to pass on yourself')}
         >
-          Sign out everywhere
+          {mailAvailable ? 'Send an invitation link' : 'Create an invitation link'}
         </Button>
-        <Button type="button" variant="destructive" size="sm" onClick={actions.remove} disabled={busy || !canManage} tooltip={blocked}>
-          Delete
-        </Button>
-      </div>
+      )}
 
-      <section className={styles.detailSection} aria-label="Tags">
-        <h4>Tags</h4>
+      <section className={directory.section} aria-label="Tags">
+        <div className={styles.sectionHeading}>
+          <h4>Tags</h4>
+          {canManage && <Button variant="secondary" size="xs" aria-expanded={addingTag} onClick={() => setAddingTag(!addingTag)}>
+            {addingTag ? 'Cancel' : 'Add tag'}
+          </Button>}
+        </div>
         {detail.grants.length === 0 ? (
-          <p className={styles.plain}>No tags. Tags decide which protected pages and elements a member gets.</p>
+          <p className={styles.plain}>No access tags.</p>
         ) : (
           <ul className={styles.grants}>
             {detail.grants.map((grant) => (
@@ -139,12 +118,12 @@ export function MemberDetailPanel({
             ))}
           </ul>
         )}
-        {canManage && <AddTagForm busy={busy} onAdd={actions.grantTag} />}
+        {canManage && addingTag && <AddTagForm busy={busy} onAdd={actions.grantTag} />}
       </section>
 
-      <section className={styles.detailSection} aria-label="Account">
+      <section className={directory.section} aria-label="Account">
         <h4>Account</h4>
-        <dl className={ld.facts}>
+        <dl className={directory.facts}>
           <div>
             <dt>Joined</dt>
             <dd>{formatDateTime(member.createdAt)}</dd>
@@ -166,42 +145,108 @@ export function MemberDetailPanel({
         </dl>
       </section>
 
-      <section className={styles.detailSection} aria-label="Signed in on">
-        <h4>Signed in on</h4>
-        {detail.sessions.length === 0 ? (
-          <p className={styles.plain}>Not signed in anywhere.</p>
-        ) : (
-          <ul className={styles.timeline}>
-            {detail.sessions.map((session, index) => (
-              <li key={`${session.createdAt}-${index}`}>
-                <span>{deviceLabel(session.userAgent)}{session.ipAddress ? ` · ${session.ipAddress}` : ''}</span>
-                <time dateTime={session.lastSeenAt} title={formatDateTime(session.lastSeenAt)}>
-                  active {formatRelativeTimeAgo(Date.parse(session.lastSeenAt))}
-                </time>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <div className={styles.disclosures}>
+        <DetailSection title="Signed in on" count={detail.sessions.length}>
+          {detail.sessions.length === 0 ? (
+            <p className={styles.plain}>Not signed in anywhere.</p>
+          ) : (
+            <ul className={styles.timeline}>
+              {detail.sessions.map((session, index) => (
+                <li key={`${session.createdAt}-${index}`}>
+                  <span>{deviceLabel(session.userAgent)}{session.ipAddress ? ` · ${session.ipAddress}` : ''}</span>
+                  <time dateTime={session.lastSeenAt} title={formatDateTime(session.lastSeenAt)}>
+                    active {formatRelativeTimeAgo(Date.parse(session.lastSeenAt))}
+                  </time>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DetailSection>
 
-      <section className={styles.detailSection} aria-label="Activity">
-        <h4>Activity</h4>
-        {detail.events.length === 0 ? (
-          <p className={styles.plain}>Nothing yet.</p>
-        ) : (
-          <ul className={styles.timeline}>
-            {detail.events.map((event, index) => (
-              <li key={`${event.createdAt}-${index}`}>
-                <span>{eventLabel(event.kind)}</span>
-                <time dateTime={event.createdAt} title={formatDateTime(event.createdAt)}>
-                  {formatRelativeTimeAgo(Date.parse(event.createdAt))}
-                </time>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </article>
+        <DetailSection title="Connected apps" count={detail.connectedApps.length}>
+          {detail.connectedApps.length === 0 ? (
+            <p className={styles.plain}>No apps are signed in to this account.</p>
+          ) : (
+            <ul className={styles.grants}>
+              {detail.connectedApps.map((app) => (
+                <li key={app.id} className={styles.grant}>
+                  <span className={styles.grantMain}>
+                    <span className={styles.appName}>{app.name}</span>
+                    <span className={styles.grantMeta}>
+                      {app.device && `${app.device} · `}
+                      Connected {formatDate(app.connectedAt)}
+                      {' · '}
+                      {app.lastUsedAt ? `Last used ${formatDate(app.lastUsedAt)}` : 'Not used yet'}
+                    </span>
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => actions.disconnectApp(app)}
+                    disabled={busy || !canManage}
+                    tooltip={blocked}
+                    aria-label={`Disconnect ${app.name}`}
+                  >
+                    Disconnect
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DetailSection>
+
+        <DetailSection title="Activity" count={detail.events.length}>
+          {detail.events.length === 0 ? (
+            <p className={styles.plain}>Nothing yet.</p>
+          ) : (
+            <ul className={styles.timeline}>
+              {detail.events.map((event, index) => (
+                <li key={`${event.createdAt}-${index}`}>
+                  <span>{eventLabel(event.kind)}</span>
+                  <time dateTime={event.createdAt} title={formatDateTime(event.createdAt)}>
+                    {formatRelativeTimeAgo(Date.parse(event.createdAt))}
+                  </time>
+                </li>
+              ))}
+            </ul>
+          )}
+        </DetailSection>
+      </div>
+      {canManage && (
+        <div className={directory.actions} role="group" aria-label="Member actions">
+          <Button variant="secondary" size="md" disabled={busy} onClick={actions.downloadData}>
+            Download data
+          </Button>
+          <Button variant="secondary" size="md" disabled={busy || detail.sessions.length === 0}
+            tooltip={detail.sessions.length === 0 ? 'Not signed in anywhere' : undefined} onClick={actions.signOut}>
+            Sign out everywhere
+          </Button>
+          {member.status === 'suspended' ? (
+            <Button variant="ghost" size="md" disabled={busy} onClick={actions.restore}>Restore access</Button>
+          ) : (
+            <Button variant="ghost" size="md" disabled={busy} onClick={actions.suspend}>Suspend</Button>
+          )}
+          <Button variant="ghost" size="md" tone="danger" disabled={busy} onClick={actions.remove}>
+            <TrashSolidIcon size={14} aria-hidden="true" /> Delete member
+          </Button>
+        </div>
+      )}
+    </>
+  )
+}
+
+function DetailSection({ title, count, children }: { title: string; count: number; children: ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const id = useId()
+  return (
+    <section className={directory.section} aria-label={title}>
+      <Button variant="ghost" align="between" className={styles.disclosure} aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+        {title}
+        <span>{count}{open ? <ChevronDownIcon size={14} /> : <ChevronRightIcon size={14} />}</span>
+      </Button>
+      <div id={id} hidden={!open}>{children}</div>
+    </section>
   )
 }
 

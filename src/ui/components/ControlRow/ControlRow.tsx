@@ -9,7 +9,11 @@
  *
  * The `labelSuffix` slot is used by controls that surface inline metadata
  * next to the label (e.g. NumberControl's unit, MediaLibraryControl /
- * UrlControl's validation error).
+ * UrlControl's validation error). The `labelAction` slot holds a small
+ * action that belongs to the row, such as the site editor's bind-to-data
+ * affordance: it sits at the end of the label row, shown while the row is
+ * hovered or focused, so it never covers the control and every control's
+ * edges stay aligned whether the action is there or not.
  *
  * Shared admin primitive — used by the site editor's PropertiesPanel
  * property controls and the data admin's TableSettings inspector.
@@ -36,6 +40,8 @@ interface ControlRowProps {
   disabled?: boolean
   /** Optional inline content rendered after the label (unit, validation error). */
   labelSuffix?: ReactNode
+  /** Optional row action at the end of the label row, revealed on hover / focus. */
+  labelAction?: ReactNode
   /** Optional caption shown below the row in subdued text. */
   description?: ReactNode
   /** The actual control input(s). */
@@ -50,6 +56,7 @@ export function ControlRow({
   isOverride,
   disabled,
   labelSuffix,
+  labelAction,
   description,
   children,
 }: ControlRowProps) {
@@ -70,7 +77,7 @@ export function ControlRow({
         disabled && styles.controlWrapperDisabled,
       )}
     >
-      {showLabelRow && (
+      {showLabelRow ? (
         <div className={styles.labelRow}>
           <label
             htmlFor={inputId ?? `ctrl-${propKey}`}
@@ -79,8 +86,9 @@ export function ControlRow({
             {label ?? propKey}
           </label>
           {labelSuffix}
+          {labelAction && <span className={styles.labelAction}>{labelAction}</span>}
         </div>
-      )}
+      ) : labelAction && <span className={styles.labelAction}>{labelAction}</span>}
       {children}
       {description && (
         <span className={styles.description}>{description}</span>

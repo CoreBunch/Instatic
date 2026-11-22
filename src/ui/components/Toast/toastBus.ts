@@ -40,8 +40,7 @@ interface ToastInput {
    */
   durationMs?: number | null
   /**
-   * Optional secondary action (e.g. "Copy stack"). Rendered as a Button next
-   * to the close affordance.
+   * Optional secondary action (e.g. "Copy stack"). Rendered beneath the message.
    */
   action?: ToastAction
 }

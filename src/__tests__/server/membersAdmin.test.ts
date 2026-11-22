@@ -7,9 +7,11 @@
  * `listMembersForAdmin` cases in `members.test.ts`.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import type { MemberDetail, MemberListResponse, MemberSettingsResponse } from '@core/members'
+import type { MemberApp, MemberDetail, MemberListItem, MemberListResponse, MemberSettingsResponse } from '@core/members'
 import { DEFAULT_MEMBER_SETTINGS } from '@core/members'
+import { nowIso } from '@core/utils/isoDate'
 import { resetPublicOrigins } from '../../../server/auth/security'
+import { createMemberApp } from '../../../server/members/apps/store'
 import { flushMemberMail } from '../../../server/members/mail'
 import { resetMemberLimits } from '../../../server/members/limits'
 import {
@@ -17,7 +19,9 @@ import {
   findMemberByEmail,
   grantMemberTag,
   listActiveMemberTags,
- saveMemberSettings } from '../../../server/members/repository'
+  listMemberEvents,
+  saveMemberSettings,
+} from '../../../server/members/repository'
 import { createMemberSession, findMemberSession, listMemberSessions } from '../../../server/members/sessions'
 import {
   createCapabilityTestHarness,
@@ -80,6 +84,7 @@ describe('members admin API', () => {
         ['POST', `${BASE}/${target.id}/sign-out`],
         ['POST', `${BASE}/${target.id}/tags`, { tag: 'pro' }],
         ['DELETE', `${BASE}/${target.id}/tags`, { tag: 'pro', source: 'admin' }],
+        ['DELETE', `${BASE}/${target.id}/apps/some-grant`],
         ['DELETE', `${BASE}/${target.id}`],
       ]
       for (const [method, path, json] of calls) {
@@ -217,6 +222,91 @@ describe('members admin API', () => {
     })
   })
 
+  describe('connected apps', () => {
+    /** One live approval of a registered app by a member, as the approval page leaves it. */
+    async function connect(memberId: string, name = 'Instatic Desktop'): Promise<string> {
+      const app = await createMemberApp(h.db, {
+        name,
+        redirectUris: ['http://127.0.0.1/callback'],
+        scopes: ['profile'],
+        createdByUserId: null,
+      })
+      const grantId = `grant-${memberId}-${app.id}`
+      await h.db`
+        insert into member_app_grants (id, member_id, app_id, scope, created_at, expires_at)
+        values (${grantId}, ${memberId}, ${app.id}, ${'profile'}, ${nowIso()}, ${new Date(Date.now() + 86_400_000).toISOString()})
+      `
+      return grantId
+    }
+    const disconnect = (memberId: string, grantId: string, cookie = owner) =>
+      h.cms(`${BASE}/${memberId}/apps/${grantId}`, { method: 'DELETE', cookie })
+
+    it('lists the apps a member is signed in to, and none for a member who has not', async () => {
+      const ada = await member('ada@example.com')
+      const bob = await member('bob@example.com')
+      const grantId = await connect(ada.id)
+      const apps = (await detailOf(ada.id)).connectedApps
+      expect(apps).toHaveLength(1)
+      expect(apps[0]).toMatchObject({ id: grantId, name: 'Instatic Desktop', lastUsedAt: null })
+      expect(Number.isNaN(Date.parse(apps[0]!.connectedAt))).toBe(false)
+      expect((await detailOf(bob.id)).connectedApps).toEqual([])
+    })
+
+    it('disconnects an app once: it leaves the detail, the member and the audit record it, and a second try answers 404', async () => {
+      const ada = await member('ada@example.com')
+      const grantId = await connect(ada.id)
+      const res = await disconnect(ada.id, grantId)
+      expect(res.status).toBe(200)
+      expect((await readJson<{ detail: MemberDetail }>(res)).detail.connectedApps).toEqual([])
+      expect((await detailOf(ada.id)).connectedApps).toEqual([])
+      expect((await listMemberEvents(h.db, ada.id)).map((event) => event.kind)).toContain('app_disconnected_by_admin')
+
+      const { events } = await readJson<{ events: Array<{ action: string; targetId: string | null; metadata: Record<string, unknown> }> }>(
+        await h.cms('/admin/api/cms/audit', { cookie: owner }),
+      )
+      const recorded = events.filter((event) => event.action === 'member.app.disconnect')
+      expect(recorded).toHaveLength(1)
+      expect(recorded[0]?.metadata).toMatchObject({ email: 'ada@example.com', app: 'Instatic Desktop' })
+
+      const again = await disconnect(ada.id, grantId)
+      expect(again.status).toBe(404)
+      expect(typeof (await readJson<{ error: string }>(again)).error).toBe('string')
+      expect((await listMemberEvents(h.db, ada.id)).filter((event) => event.kind === 'app_disconnected_by_admin')).toHaveLength(1)
+    })
+
+    it('refuses a user who cannot manage members, and needs no second password from one who can', async () => {
+      const ada = await member('ada@example.com')
+      const grantId = await connect(ada.id)
+      const reader = await h.createRoleUser({ name: 'Viewer', slug: 'viewer', capabilities: ['members.read'] })
+      await expectForbidden(await disconnect(ada.id, grantId, reader.cookie))
+      expect((await detailOf(ada.id)).connectedApps).toHaveLength(1)
+
+      const manager = await h.createRoleUser({ name: 'Manager', slug: 'manager', capabilities: ['members.manage'] })
+      expect((await disconnect(ada.id, grantId, manager.cookie)).status).toBe(200)
+      expect((await detailOf(ada.id)).connectedApps).toEqual([])
+    })
+
+    it('answers 404 for an approval that belongs to another member, and leaves it connected', async () => {
+      const ada = await member('ada@example.com')
+      const bob = await member('bob@example.com')
+      const grantId = await connect(ada.id)
+      expect((await disconnect(bob.id, grantId)).status).toBe(404)
+      expect((await disconnect('nope', grantId)).status).toBe(404)
+      expect((await detailOf(ada.id)).connectedApps.map((app) => app.id)).toEqual([grantId])
+      expect((await listMemberEvents(h.db, bob.id)).map((event) => event.kind)).not.toContain('app_disconnected_by_admin')
+    })
+
+    it('does not get in the way of the app registry routes', async () => {
+      const ada = await member('ada@example.com')
+      await connect(ada.id)
+      const registry = await readJson<{ apps: MemberApp[] }>(await h.cms(`${BASE}/apps`, { cookie: owner }))
+      expect(registry.apps).toHaveLength(1)
+      // Removing the registered app is still the registry route, not a disconnect of a member called "apps".
+      expect((await h.cms(`${BASE}/apps/${registry.apps[0]!.id}`, { method: 'DELETE', cookie: owner })).status).toBe(200)
+      expect((await detailOf(ada.id)).connectedApps).toEqual([])
+    })
+  })
+
   describe('invitations', () => {
     // An invitation opens a page of the site; the owner's is set here.
     beforeEach(async () => {
@@ -344,7 +434,7 @@ describe('members admin API', () => {
       expect(after.settings).toEqual(next as MemberSettingsResponse['settings'])
       // The pickers get every page, with its live address.
       expect(after.pageOptions).toContainEqual({
-        id: next.pages.login!, title: 'sign-in', path: '/sign-in', publishedPath: '/sign-in', formActions: [],
+        id: next.pages.login!, title: 'sign-in', path: '/sign-in', publishedPath: '/sign-in', formActions: [], membersOnly: false,
       })
 
       const { events } = await readJson<{ events: Array<{ action: string }> }>(await h.cms('/admin/api/cms/audit', { cookie: owner }))
@@ -362,6 +452,95 @@ describe('members admin API', () => {
       expect((await save({ ...base, signupMode: 'everyone' })).status).toBe(400)
       const still = await readJson<MemberSettingsResponse>(await h.cms(`${BASE}/settings`, { cookie: owner }))
       expect(still.settings.signupMode).toBe('closed')
+    })
+  })
+
+  describe('apps', () => {
+    const APPS = `${BASE}/apps`
+    const valid = { name: 'Instatic Desktop', redirectUris: ['http://127.0.0.1/callback'], scopes: ['profile', 'access'] }
+    const apps = async (cookie = owner) => (await readJson<{ apps: MemberApp[] }>(await h.cms(APPS, { cookie }))).apps
+    const create = (json: unknown, cookie = owner) => h.cms(APPS, { method: 'POST', cookie, json })
+
+    it('starts with none', async () => {
+      expect(await apps()).toEqual([])
+    })
+
+    it('lets a reader list but not add or remove', async () => {
+      const created = await readJson<MemberApp>(await create(valid))
+      const reader = await h.createRoleUser({ name: 'Viewer', slug: 'viewer', capabilities: ['members.read'] })
+      expect((await apps(reader.cookie)).map((app) => app.name)).toEqual(['Instatic Desktop'])
+      await expectForbidden(await create(valid, reader.cookie))
+      await expectForbidden(await h.cms(`${APPS}/${created.id}`, { method: 'DELETE', cookie: reader.cookie }))
+      const editor = await h.createRoleUser({ name: 'Editor', slug: 'editor', capabilities: ['site.read'] })
+      await expectForbidden(await h.cms(APPS, { cookie: editor.cookie }))
+      expect(await apps()).toHaveLength(1)
+    })
+
+    it('asks for the password again before adding or removing an app', async () => {
+      const existing = await readJson<MemberApp>(await create(valid))
+      const manager = await h.createRoleUser({ name: 'Manager', slug: 'manager', capabilities: ['members.manage'] })
+      await expectStepUpRequired(await create({ ...valid, name: 'Second' }, manager.cookie))
+      await expectStepUpRequired(await h.cms(`${APPS}/${existing.id}`, { method: 'DELETE', cookie: manager.cookie }))
+      expect((await apps()).map((app) => app.name)).toEqual(['Instatic Desktop'])
+
+      // Proving the password again rotates the session; the new one may do both.
+      const steppedUp = await h.stepUp(manager.cookie)
+      expect((await create({ ...valid, name: 'Second' }, steppedUp)).status).toBe(201)
+      expect((await h.cms(`${APPS}/${existing.id}`, { method: 'DELETE', cookie: steppedUp })).status).toBe(200)
+      expect((await apps(steppedUp)).map((app) => app.name)).toEqual(['Second'])
+    })
+
+    it('adds an app with a trimmed name and each redirect address once, lists it and records it', async () => {
+      const res = await create({
+        name: '  Instatic Desktop  ',
+        redirectUris: ['http://127.0.0.1/callback', 'https://app.example.com/done', 'http://127.0.0.1/callback'],
+        scopes: ['profile'],
+      })
+      expect(res.status).toBe(201)
+      const created = await readJson<MemberApp>(res)
+      expect(created).toMatchObject({
+        name: 'Instatic Desktop',
+        redirectUris: ['http://127.0.0.1/callback', 'https://app.example.com/done'],
+        scopes: ['profile'],
+      })
+      expect(created.id).toMatch(/^imem_app_/)
+      expect(await apps()).toEqual([created])
+
+      const { events } = await readJson<{ events: Array<{ action: string; metadata: Record<string, unknown> }> }>(
+        await h.cms('/admin/api/cms/audit', { cookie: owner }),
+      )
+      expect(events.find((event) => event.action === 'member.app.create')?.metadata.name).toBe('Instatic Desktop')
+    })
+
+    it('refuses a redirect address that is not https or local, and an unknown, repeated or missing scope', async () => {
+      for (const uri of ['http://example.com/callback', 'myapp://callback', 'not an address', 'https://user:pw@example.com/']) {
+        const res = await create({ ...valid, redirectUris: [uri] })
+        expect(res.status).toBe(400)
+        expect((await readJson<{ error: string }>(res)).error).toBe(
+          'Redirect addresses must use https, or http on this machine (127.0.0.1).',
+        )
+      }
+      expect((await create({ ...valid, redirectUris: [] })).status).toBe(400)
+      expect((await create({ ...valid, scopes: ['profile', 'admin'] })).status).toBe(400)
+      expect((await create({ ...valid, scopes: ['profile', 'profile'] })).status).toBe(400)
+      expect((await create({ ...valid, scopes: [] })).status).toBe(400)
+      expect((await create({ ...valid, name: '   ' })).status).toBe(400)
+      expect((await create({ ...valid, name: 'x'.repeat(81) })).status).toBe(400)
+      expect(await apps()).toEqual([])
+    })
+
+    it('removes an app once: it leaves the list, and a second removal answers 404', async () => {
+      const created = await readJson<MemberApp>(await create(valid))
+      const removed = await h.cms(`${APPS}/${created.id}`, { method: 'DELETE', cookie: owner })
+      expect(removed.status).toBe(200)
+      expect(await readJson<{ ok: boolean }>(removed)).toEqual({ ok: true })
+      expect(await apps()).toEqual([])
+      expect((await h.cms(`${APPS}/${created.id}`, { method: 'DELETE', cookie: owner })).status).toBe(404)
+
+      const { events } = await readJson<{ events: Array<{ action: string; metadata: Record<string, unknown> }> }>(
+        await h.cms('/admin/api/cms/audit', { cookie: owner }),
+      )
+      expect(events.find((event) => event.action === 'member.app.delete')?.metadata.name).toBe('Instatic Desktop')
     })
   })
 })

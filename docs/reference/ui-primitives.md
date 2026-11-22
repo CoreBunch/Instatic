@@ -50,7 +50,7 @@ Every interactive control in `src/admin/` goes through one of these. Bare `<butt
 |--------------------|----------------------------------------------------------------------|------------------------------------------------------------|
 | `Stack`            | Small vertical / horizontal flex layouts, especially plugin admin UI  | `direction`, `gap`, `align`, `justify`, `wrap`, `height`   |
 | `Section`          | Collapsible titled section inside a panel (accordion)                | `title`, `children`, `defaultOpen`, `icon`, `meta`, `indicator`, `forceOpen`, `flush` |
-| `ControlRow`       | Label + control row in property panels                               | `propKey` (required), `label`, `layout`, `description`, `children` |
+| `ControlRow`       | Label + control row in property panels                               | `propKey` (required), `label`, `layout`, `labelSuffix`, `labelAction`, `description`, `children` |
 | `Separator`        | Visual divider between sections                                      | `orientation: 'horizontal' \| 'vertical'`                  |
 | `Card`             | Token-backed panel surface for plugin/admin grouped content          | `padding`, `bordered`                                      |
 | `Widget`           | Borderless tile card on a darker parent (the dashboard pattern)      | `widgetId`, `title`, `tint`, `span`, `editing`, `loading`, `onMenuClick?` (kebab renders only when provided) |
@@ -185,12 +185,14 @@ import { Button } from '@ui/components/Button'
 
 ### Sizes
 
+Use the same size on adjacent controls. `Button` and `SegmentedControl` use `size`. `Input` and `Select` use `fieldSize`. All four share the `xs`, `sm`, and `md` height tokens and default to `md`. A segmented control's size includes its track border and padding. Pair a `SearchBar` with `sm` controls.
+
 | Size    | Height | Use for                                                            |
 |---------|--------|--------------------------------------------------------------------|
 | `micro` | 18px   | Inline chips                                                       |
-| `xs`    | 22px   | Property panel rows                                                |
-| `sm`    | 26px   | **Default** — toolbar, dialogs                                     |
-| `md`    | 32px   | Primary CTAs in modals                                             |
+| `xs`    | 24px   | Property panel rows                                                |
+| `sm`    | 28px   | Compact forms and toolbars                                         |
+| `md`    | 32px   | **Default** for buttons and form fields                            |
 | `lg`    | 44px   | Touch targets, mobile                                              |
 
 ### Flags
@@ -456,7 +458,7 @@ Layout primitives for property panels.
 
 `Section` is a collapsible accordion block. Each instance manages its own open/closed state via `defaultOpen` (the initial value). `forceOpen` overrides local state and keeps the section always open. The `flush` prop removes the section's own vertical padding so spacing comes entirely from the parent container's grid gap — used by the Properties panel (1px-gap card pattern). The `indicator` prop renders a small green dot next to the title to signal active state (e.g. properties are set in this section).
 
-`ControlRow` requires a `propKey` — it drives the `htmlFor`/`id` linkage between the label and the control (override with `inputId`). `label` is optional and falls back to `propKey`; pass `label=""` to suppress the label row entirely.
+`ControlRow` requires a `propKey` — it drives the `htmlFor`/`id` linkage between the label and the control (override with `inputId`). `label` is optional and falls back to `propKey`; pass `label=""` to suppress the label row entirely. `labelSuffix` holds inline metadata after the label (a unit, a validation error). `labelAction` holds one small row action at the end of the label row, hidden until the row is hovered or focused (the site editor's bind-to-data affordance goes here, never over the control).
 
 ```tsx
 import { Section } from '@ui/components/Section'

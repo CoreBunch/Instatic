@@ -47,7 +47,7 @@ export function isRenderableHtmlAttributeName(name: string): boolean {
 /**
  * The single security gate every custom-`htmlAttributes` emit path funnels
  * through — the publisher string emit (`htmlAttributesAttr`), the admin-canvas
- * React props (`htmlAttributesForReact`), the `<body>` emit
+ * React props (`useCanvasHtmlAttributes`), the `<body>` emit
  * (`bodyHtmlAttributes`), and the HTML-import harvest (`collectHtmlAttributes`).
  *
  * Returns the value to render, or `null` to drop the attribute entirely. Drops:
@@ -77,7 +77,7 @@ export function sanitizeRenderableHtmlAttribute(name: string, value: string): st
  * `normalizeHtmlAttributeName`, and every value through
  * `sanitizeRenderableHtmlAttribute`. Both emit paths — the publisher string
  * emit (`htmlAttributesAttr` in `@core/publisher`) and the admin-canvas
- * React props (`htmlAttributesForReact`) — build on this.
+ * React props (`useCanvasHtmlAttributes`) — build on this.
  */
 export function normalizeHtmlAttributes(value: unknown): Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
@@ -91,9 +91,4 @@ export function normalizeHtmlAttributes(value: unknown): Record<string, string> 
     attrs[name] = safeValue
   }
   return attrs
-}
-
-/** Author `htmlAttributes` as React-spreadable props for canvas editors. */
-export function htmlAttributesForReact(value: unknown): Record<string, string> {
-  return normalizeHtmlAttributes(value)
 }

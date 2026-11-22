@@ -231,7 +231,7 @@ export function BodyBubbleMenu({ editor, iframeEl }: BodyBubbleMenuProps) {
           <>
             <Button
               variant="ghost"
-              size="xs"
+              size="sm"
               tooltip="Turn into…"
               className={styles.blockTypeButton}
               onMouseDown={(event) => event.preventDefault()}
@@ -310,11 +310,10 @@ export function BodyBubbleMenu({ editor, iframeEl }: BodyBubbleMenuProps) {
             <span className={styles.divider} aria-hidden="true" />
             <Button
               variant="ghost"
-              size="xs"
+              size="sm"
               iconOnly
               tooltip="Insert block below"
               aria-label="Insert block below"
-              className={styles.markButton}
               onMouseDown={(event) => event.preventDefault()}
               onClick={(event) => {
                 setInsertMenuRect(event.currentTarget.getBoundingClientRect())
@@ -480,12 +479,11 @@ function MarkButton({ label, icon: Icon, active, onClick }: MarkButtonProps) {
   return (
     <Button
       variant={active ? 'primary' : 'ghost'}
-      size="xs"
+      size="sm"
       iconOnly
       tooltip={label}
       aria-label={label}
       aria-pressed={active}
-      className={styles.markButton}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onClick}
     >
@@ -526,11 +524,11 @@ function LinkEditor({ initial, onCancel, onClear, onSubmit }: LinkEditorProps) {
           }
         }}
       />
-      <Button type="submit" variant="primary" size="xs">
+      <Button type="submit" variant="primary" size="sm">
         Apply
       </Button>
       {initial.length > 0 && (
-        <Button type="button" variant="ghost" size="xs" onClick={onClear}>
+        <Button type="button" variant="ghost" size="sm" onClick={onClear}>
           Remove
         </Button>
       )}

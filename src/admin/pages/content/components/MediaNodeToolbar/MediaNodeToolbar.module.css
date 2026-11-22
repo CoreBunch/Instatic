@@ -20,18 +20,7 @@
     background: var(--border);
 }
 
-.button {
-    width: 28px;
-    height: 28px;
-    min-width: 28px;
-    min-height: 28px;
-    padding: 0;
-    flex-shrink: 0;
-    aspect-ratio: 1 / 1;
-}
-
 .altButton {
-    height: 28px;
     min-width: 32px;
     padding: 0 var(--space-s);
     font-size: var(--text-xs);

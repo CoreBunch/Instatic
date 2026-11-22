@@ -605,33 +605,26 @@ describe('site members', () => {
     })
   })
 
-  describe('sign-out link', () => {
-    it('signs out on a click from this site and lands on the named page', async () => {
+  describe('sign-out form', () => {
+    it('signs out from a plain form post and lands on the page the form names', async () => {
       await register(browser, 'm@example.com')
-      const res = await browser.get('logout?to=/bye', { 'sec-fetch-site': 'same-origin' })
+      const res = await browser.post('logout', { _success: '/bye' }, { json: false })
       expect(res.status).toBe(303)
       expect(res.headers.get('location')).toBe('/bye')
       expect(await browser.me()).toBeNull()
     })
 
-    it('lands on the home page when the target is another site', async () => {
-      const res = await browser.get('logout?to=https://evil.example/', { 'sec-fetch-site': 'same-origin' })
-      expect(res.headers.get('location')).toBe('/')
+    it('returns to the page the form is on when it names no other', async () => {
+      await register(browser, 'm@example.com')
+      const res = await browser.post('logout', {}, { json: false, headers: { referer: `${ORIGIN}/account` } })
+      expect(res.headers.get('location')).toBe('/account?member_ok=signed_out')
+      expect(await browser.me()).toBeNull()
     })
 
-    it('leaves the member signed in when another site sends them there', async () => {
+    it('has no address that signs a member out by opening it', async () => {
       await register(browser, 'm@example.com')
-      const crossSite = await browser.get('logout', { 'sec-fetch-site': 'cross-site' })
-      const foreignReferer = await browser.get('logout', { referer: 'https://evil.example/page' })
-      const unknownSource = await browser.get('logout')
-      const fromEmail = await browser.get('logout', { 'sec-fetch-site': 'none' })
-      const asImage = await browser.get('logout', {
-        'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'image',
-      })
-      const prefetch = await browser.get('logout', { 'sec-fetch-site': 'same-origin', 'sec-purpose': 'prefetch' })
-      for (const res of [crossSite, foreignReferer, unknownSource, fromEmail, asImage, prefetch]) {
-        expect(res.status).toBe(303)
-      }
+      const res = await browser.get('logout', { 'sec-fetch-site': 'same-origin' })
+      expect(res.status).toBe(404)
       expect(await browser.me()).not.toBeNull()
     })
   })

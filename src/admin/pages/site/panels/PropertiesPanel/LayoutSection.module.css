@@ -26,12 +26,14 @@
  * the current display value at a glance and clear it without opening
  * the dropdown. */
 .displayChipGroup {
+    box-sizing: border-box;
+    height: var(--control-height);
     display: flex;
     width: 100%;
     align-items: stretch;
     gap: var(--space-4xs);
     padding: var(--space-4xs);
-    border-radius: 10px;
+    border-radius: var(--segment-track-radius);
     background: var(--bg-surface-2);
 }
 
@@ -40,9 +42,10 @@
  * so this rule wins regardless of stylesheet load order. */
 .displayChipGroup .displayChip.displayChip {
     flex: 1 1 auto;
+    height: auto;
     min-width: 0;
     padding: 0 var(--space-s);
-    border-radius: 8px;
+    border-radius: var(--segment-radius);
     background: var(--bg-surface);
     color: var(--text);
     text-align: left;
@@ -70,12 +73,13 @@
     min-width: 0;
 }
 
-/* Close button — square, fixed-width to match SegmentedControl's
- * trailing slot (26px = sm Button intrinsic height). */
+/* Square trailing action inside the track. */
 .displayChipGroup .displayChipClear.displayChipClear {
-    flex: 0 0 26px;
-    width: 26px;
-    border-radius: 6px;
+    flex: 0 0 auto;
+    width: auto;
+    height: auto;
+    aspect-ratio: 1;
+    border-radius: var(--segment-radius);
     background: transparent;
     color: var(--text-muted);
 }
@@ -100,10 +104,10 @@
  * rendered below the visual block. */
 .labeledRow {
     display: grid;
-    grid-template-columns: 100px 1fr;
+    grid-template-columns: min(32%, var(--control-label-column)) minmax(0, 1fr);
     align-items: center;
     gap: var(--space-3xs);
-    min-height: 28px;
+    min-height: var(--control-height);
 }
 
 /* Default (no state hint) keeps the secondary-text colour used by
@@ -183,7 +187,6 @@
     right: 4px;
     width: 18px;
     height: 18px;
-    border-radius: 6px;
     background: var(--bg-surface-2);
     border: 1px solid var(--border-muted);
     color: var(--text-muted);
@@ -204,20 +207,4 @@
 
 .directionClearBtn.directionClearBtn:hover {
     color: var(--text);
-}
-
-/* Grid-specific edit row — wraps a full-width text input that replaces
- * the segmented control while the user types a custom track template.
- *
- * Pinned to 30px (the SegmentedControl's outer track height: 26px sm-Button
- * + 2px×2 chrome padding) so toggling between preset and custom modes
- * doesn't jolt the surrounding rows. `align-items: stretch` on the row
- * combined with the Input's own `min-height` lets the field grow to the
- * row height instead of staying at its 28px default — keeping the visible
- * field flush with the segmented track height it replaces. */
-.gridEditRow {
-    display: flex;
-    width: 100%;
-    align-items: stretch;
-    min-height: 30px;
 }

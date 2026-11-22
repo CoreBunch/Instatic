@@ -21,7 +21,10 @@ describe('classCascades — in-file duplicate class rules', () => {
       '.btn { border-radius: 0 } .other { color: red } .btn { border-radius: 999px }',
       '.btn { border-radius: 0 }',
     )
-    expect(conflicts.map((conflict) => conflict.desiredName)).toEqual(['btn'])
+    expect(conflicts.filter((c) => c.desiredName === 'btn').map((conflict) => [conflict.kind, conflict.desiredName])).toEqual([
+      ['leak', 'btn'],
+      ['leak', 'btn'],
+    ])
   })
 
   it('identical restatements in both cascades do not conflict', () => {

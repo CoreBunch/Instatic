@@ -72,7 +72,7 @@ export function TreeBackgroundContextMenu({
   const handleSelectModule = (mod: AnyModuleDefinition) => {
     if (!rootNodeId) return
     insertModule(mod, rootNodeId, {
-      preservePropertiesPanelCollapse: isNarrowEditorChromeViewport(),
+      propertiesPanel: isNarrowEditorChromeViewport() ? 'preserve' : 'open',
     })
     onClose()
   }

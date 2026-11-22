@@ -115,17 +115,28 @@ globalThis.__buildApi = function buildApi() {
   }
   // api.cms.routes.member.get(path, handler)
   // api.cms.routes.member.get(path, { tag: 'pro' }, handler)
+  // api.cms.routes.member.get(path, { app: { scope: 'read' } }, handler)
   //     Only a signed-in site member reaches the handler (optionally one
-  //     holding the tag). Served on the public plugin mount.
+  //     holding the tag). Served on the public plugin mount. With `app`,
+  //     an app the member signed in to may call it too, when its sign-in
+  //     carries that scope (declared in the manifest's `appScopes`).
   function registerMember(method: string) {
     return function (path: unknown, optionsOrHandler: unknown, maybeHandler?: unknown) {
       assertTargetPermission('cms.routes.register')
       assertPermission('members.read')
       const handler = typeof optionsOrHandler === 'function' ? optionsOrHandler : maybeHandler
       if (typeof handler !== 'function') throw new TypeError('Route handler must be a function')
-      const options = typeof optionsOrHandler === 'function' || !optionsOrHandler ? {} : optionsOrHandler as { tag?: unknown }
-      const access: { kind: 'member'; tag?: string } = { kind: 'member' }
+      const options = typeof optionsOrHandler === 'function' || !optionsOrHandler
+        ? {}
+        : optionsOrHandler as { tag?: unknown; app?: { scope?: unknown } | null }
+      const access: { kind: 'member'; tag?: string; appScope?: string } = { kind: 'member' }
       if (options.tag !== undefined && options.tag !== null) access.tag = String(options.tag)
+      if (options.app !== undefined && options.app !== null) {
+        if (typeof options.app !== 'object' || typeof options.app.scope !== 'string') {
+          throw new TypeError('A member route opened to apps needs `app: { scope: "<name>" }`')
+        }
+        access.appScope = options.app.scope
+      }
       const routeKey = method + ':' + normalizePath(path)
       globalThis.__plugin_handlers.routes[routeKey] = handler as BootstrapFn
       return call('cms.routes.register', [{
@@ -147,6 +158,9 @@ globalThis.__buildApi = function buildApi() {
     globalThis.__plugin_handlers.listeners[listenerId] = listener as BootstrapFn
     return call('cms.hooks.on', [{ event: String(event), listenerId: listenerId }])
   }
+  // One member export provider per plugin, refused here before any host call.
+  let exportProviderRegistered = false
+
   function filter(name: unknown, handler: unknown) {
     assertTargetPermission('cms.hooks.filter')
     if (typeof handler !== 'function') throw new TypeError('Hook filter must be a function')
@@ -178,21 +192,29 @@ globalThis.__buildApi = function buildApi() {
       filterSchema: source.filterSchema || {},
       orderByOptions: source.orderByOptions || [],
       fields: source.fields || [],
+      defaultDirection: source.defaultDirection === 'desc' || source.defaultDirection === 'asc' ? source.defaultDirection : undefined,
       requestDependent: source.requestDependent === true ? true : undefined,
       perVisitor: source.perVisitor === true ? true : undefined,
     }
     return call('cms.loops.registerSource', [descriptor])
   }
 
+  // A host reply of `null` crosses the bridge as `undefined`. Storage reads
+  // are documented as "record or null", so restore the null here.
+  function orNull(value: unknown) { return value === undefined ? null : value }
+
   function collection(resourceId: unknown) {
-    // All four cms.storage.* targets share the cms.storage permission; assert
+    // Every cms.storage.* target shares the cms.storage permission; assert
     // once up front via the map (same behavior as before, no inline literal).
     assertTargetPermission('cms.storage.list')
     return {
       list: function (options: unknown) { return call('cms.storage.list', [String(resourceId), options ?? {}]) },
       create: function (data: unknown) { return call('cms.storage.create', [String(resourceId), data]) },
-      update: function (recordId: unknown, data: unknown) { return call('cms.storage.update', [String(resourceId), String(recordId), data]) },
-      delete: function (recordId: unknown) { return call('cms.storage.delete', [String(resourceId), String(recordId)]) },
+      createIfAbsent: function (data: unknown) { return call('cms.storage.createIfAbsent', [String(resourceId), data]) },
+      get: function (recordId: unknown) { return call('cms.storage.get', [String(resourceId), String(recordId)]).then(orNull) },
+      getByKey: function (key: unknown) { return call('cms.storage.getByKey', [String(resourceId), String(key)]).then(orNull) },
+      update: function (recordId: unknown, data: unknown, options: unknown) { return call('cms.storage.update', [String(resourceId), String(recordId), data, options ?? {}]).then(orNull) },
+      delete: function (recordId: unknown, options: unknown) { return call('cms.storage.delete', [String(resourceId), String(recordId), options ?? {}]) },
     }
   }
 
@@ -434,6 +456,52 @@ globalThis.__buildApi = function buildApi() {
           delete: registerMember('DELETE'),
         },
       },
+      // Email — queue one of this plugin's declared templates for one
+      // recipient. `{ member }` needs mail.send; `{ address }` needs
+      // mail.send.external.
+      mail: {
+        // api.cms.mail.send({ template, to, variables?, reference? }) → 'queued' | 'captured'
+        send: function (input: unknown) {
+          const mail = (input && typeof input === 'object' ? input : {}) as {
+            template?: unknown
+            to?: { member?: unknown; address?: unknown }
+            variables?: unknown
+            reference?: unknown
+          }
+          const to = mail.to && typeof mail.to === 'object' ? mail.to : {}
+          const rest: { template: string; variables: unknown; reference?: string } = {
+            template: String(mail.template),
+            variables: mail.variables === undefined || mail.variables === null ? {} : mail.variables,
+          }
+          if (mail.reference !== undefined && mail.reference !== null) rest.reference = String(mail.reference)
+          if (typeof to.member === 'string' && to.address === undefined) {
+            assertTargetPermission('cms.mail.send')
+            return call('cms.mail.send', [{ template: rest.template, member: to.member, variables: rest.variables, reference: rest.reference }])
+          }
+          if (typeof to.address === 'string' && to.member === undefined) {
+            assertTargetPermission('cms.mail.sendExternal')
+            return call('cms.mail.sendExternal', [{ template: rest.template, address: to.address, variables: rest.variables, reference: rest.reference }])
+          }
+          throw new TypeError('mail.send needs `to: { member: id }` or `to: { address }`')
+        },
+      },
+      // The plugin's own sliding-window counters. No permission needed.
+      rateLimit: {
+        // api.cms.rateLimit.take(key, limit, windowMs) → { ok, remaining, retryAfterMs, reason }
+        take: function (key: unknown, limit: unknown, windowMs: unknown) {
+          return call('cms.rateLimit.take', [String(key), limit, windowMs])
+        },
+      },
+      // Facts about the site. No permission needed.
+      site: {
+        // api.cms.site.publicUrl() → 'https://example.com' | null
+        publicUrl: function () {
+          // "No address configured" is null, not a missing value.
+          return call('cms.site.publicUrl', []).then(function (value: unknown) {
+            return value === undefined ? null : value
+          })
+        },
+      },
       // Site members — the people with an account on the published site.
       members: {
         // api.cms.members.get({ id }) / get({ email }) → member or null
@@ -445,6 +513,41 @@ globalThis.__buildApi = function buildApi() {
         invite: function (input: unknown) {
           assertTargetPermission('cms.members.invite')
           return call('cms.members.invite', [input])
+        },
+        // api.cms.members.ensure({ email, tags? }) → { member, created, confirmed }; sends nothing
+        ensure: function (input: unknown) {
+          assertTargetPermission('cms.members.ensure')
+          // The answer is the member's record.
+          assertPermission('members.read')
+          return call('cms.members.ensure', [input])
+        },
+        // api.cms.members.emailStatus() → { canEmail, reasons }
+        emailStatus: function () {
+          assertTargetPermission('cms.members.emailStatus')
+          return call('cms.members.emailStatus', [])
+        },
+        // api.cms.members.exportProvider(async (memberId) => ({ title, data }))
+        // The plugin's section of a member's data export. One per plugin; it
+        // runs through the filter dispatcher, never hooked to a filter name.
+        exportProvider: function (handler: unknown) {
+          assertTargetPermission('cms.members.exportProvider')
+          if (typeof handler !== 'function') throw new TypeError('A member export provider must be a function')
+          if (!globalThis.__plugin_meta.memberDataExport) {
+            throw new Error('Declare "memberDataExport": true in plugin.json to offer a member export provider')
+          }
+          if (exportProviderRegistered) throw new Error('This plugin already registered its member export provider')
+          exportProviderRegistered = true
+          const provide = handler as BootstrapFn
+          const filterId = __nextId('member-export')
+          globalThis.__plugin_handlers.filters[filterId] = function (_value: unknown, context: unknown) {
+            return provide((context as { memberId: string }).memberId)
+          }
+          return call('cms.members.exportProvider', [{ filterId: filterId }])
+        },
+        // api.cms.members.deletedSince(cursor, { limit }) → { ids, nextCursor }
+        deletedSince: function (cursor: unknown, options?: unknown) {
+          assertTargetPermission('cms.members.deletedSince')
+          return call('cms.members.deletedSince', [cursor === undefined ? null : cursor, options || {}])
         },
         tags: {
           // The tag's source is this plugin; `revoke` withdraws only this plugin's grant.

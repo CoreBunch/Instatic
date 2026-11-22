@@ -131,9 +131,15 @@ describe('site read tools', () => {
     } as unknown as ToolContext
 
     const result = (await tool.handler!({}, ctx)) as {
-      sources: Array<{ id: string; fields: Array<{ id: string; token: string }> }>
+      sources: Array<{ id: string; defaultDirection: string; fields: Array<{ id: string; token: string }> }>
       dataTables: Array<{ id: string; slug: string; fields: Array<{ id: string; token: string }> }>
+      usage: { loopElement: string }
     }
+
+    // The agent learns each source's own order and is not taught to pin one.
+    expect(result.sources.find((s) => s.id === 'data.rows')?.defaultDirection).toBe('desc')
+    expect(result.sources.find((s) => s.id === 'site.pages')?.defaultDirection).toBe('asc')
+    expect(result.usage.loopElement).not.toContain('data-direction')
 
     expect(result.sources.find((s) => s.id === 'data.rows')?.fields).toContainEqual(
       expect.objectContaining({ id: 'permalink', token: '{currentEntry.permalink}' }),

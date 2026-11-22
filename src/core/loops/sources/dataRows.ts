@@ -581,6 +581,8 @@ export const DataRowsSource: LoopEntitySource = {
     },
   },
 
+  // Newest first unless the author picks otherwise.
+  defaultDirection: 'desc',
   orderByOptions: [
     { id: 'publishedAt', label: 'Published date' },
     { id: 'createdAt', label: 'Created date' },
@@ -639,15 +641,5 @@ export const DataRowsSource: LoopEntitySource = {
       items: open.slice(ctx.offset, ctx.offset + ctx.limit).map(withoutAccessRule),
       totalItems: open.length,
     }
-  },
-
-  preview() {
-    // Editor-side preview is handled by the canvas via `useLoopPreviewItems`:
-    // it first calls the admin endpoint `/data/tables/:id/loop-preview` to
-    // fetch real published rows via `fetchPublishedDataRowItems` (this file),
-    // and falls back to synthetic preview items from `dataTablePreviewToLoopItem`
-    // when there are no published rows. This source's synchronous `preview()`
-    // returns [] so no synthetic placeholder data leaks from the server source.
-    return []
   },
 }

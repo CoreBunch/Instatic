@@ -159,7 +159,7 @@ export function isSiteOrigin(req: Request, rawOrigin: string): boolean {
  * standard one, and any inbound version is stripped in `stampSocketIp`
  * before we set our own value — clients cannot spoof it.
  */
-const BUN_SOCKET_IP_HEADER = 'x-bun-socket-ip'
+export const BUN_SOCKET_IP_HEADER = 'x-bun-socket-ip'
 
 interface ParsedIpAddress {
   family: 4 | 6
@@ -280,6 +280,63 @@ function parseIpAddress(raw: string): ParsedIpAddress | null {
   return null
 }
 
+/**
+ * One spelling per address, so one visitor is one key: IPv4 in dotted form
+ * (an IPv4-mapped IPv6 address included), IPv6 lowercased and compressed as
+ * RFC 5952 writes it (the longest run of two or more zero groups becomes
+ * `::`, the first when tied). Null for anything that is not an IP address.
+ */
+export function canonicalIp(raw: string): string | null {
+  const parsed = parseIpAddress(raw)
+  if (!parsed) return null
+  if (parsed.family === 4) return ipv4String(parsed.value)
+  if (parsed.value >> 32n === 0xffffn) return ipv4String(parsed.value & 0xffffffffn)
+  return ipv6String(parsed.value)
+}
+
+/** `64:ff9b::/96`, the well-known NAT64 prefix (RFC 6052), as its top 96 bits. */
+const NAT64_WELL_KNOWN_PREFIX = 0x0064ff9b0000000000000000n
+
+/**
+ * The key for "one visitor" in a per-visitor limit: an IPv4 address as it
+ * is, an IPv6 address as its /64 (`2001:db8:1:2::/64`), since one household
+ * or phone network is given a whole /64 and can rotate through it. An
+ * address in the well-known NAT64 prefix `64:ff9b::/96` stands for the IPv4
+ * address in its last 32 bits, so it is keyed on that address, as an
+ * IPv4-mapped one is; otherwise every IPv4 site reached through NAT64 would
+ * share one /64. Null for anything that is not an IP address.
+ */
+export function visitorIpKey(raw: string): string | null {
+  const canonical = canonicalIp(raw)
+  if (canonical === null || !canonical.includes(':')) return canonical
+  const parsed = parseIpAddress(canonical)
+  if (!parsed) return null
+  if (parsed.value >> 32n === NAT64_WELL_KNOWN_PREFIX) return ipv4String(parsed.value & 0xffffffffn)
+  return `${ipv6String(maskAddress(parsed.value, 64, 128))}/64`
+}
+
+/** RFC 5952 text for a 128-bit IPv6 value. */
+function ipv6String(value: bigint): string {
+  const groups: number[] = []
+  for (let shift = 112n; shift >= 0n; shift -= 16n) groups.push(Number((value >> shift) & 0xffffn))
+  let bestStart = -1
+  let bestLength = 0
+  for (let i = 0; i < 8; ) {
+    if (groups[i] !== 0) { i++; continue }
+    let end = i
+    while (end < 8 && groups[end] === 0) end++
+    if (end - i > bestLength) { bestStart = i; bestLength = end - i }
+    i = end
+  }
+  const hex = groups.map((group) => group.toString(16))
+  if (bestLength < 2) return hex.join(':')
+  return `${hex.slice(0, bestStart).join(':')}::${hex.slice(bestStart + bestLength).join(':')}`
+}
+
+function ipv4String(value: bigint): string {
+  return [24n, 16n, 8n, 0n].map((shift) => Number((value >> shift) & 0xffn)).join('.')
+}
+
 function maskAddress(value: bigint, prefixBits: number, totalBits: number): bigint {
   if (prefixBits === 0) return 0n
   const hostBits = BigInt(totalBits - prefixBits)
@@ -333,6 +390,17 @@ function isTrustedProxyPeer(rawIp: string): boolean {
 export function stampSocketIp(req: Request, address: string | null): void {
   req.headers.delete(BUN_SOCKET_IP_HEADER)
   if (address) req.headers.set(BUN_SOCKET_IP_HEADER, address)
+}
+
+/**
+ * Whether the browser says this request came from another site (a link or a
+ * form on another page). `Sec-Fetch-Site` is set by the browser and cannot be
+ * changed by page script; a request without it (an old browser, a script
+ * client) is not treated as coming from another site.
+ */
+export function isCrossSiteFetch(req: Request): boolean {
+  const fetchSite = req.headers.get('sec-fetch-site')
+  return fetchSite !== null && fetchSite !== 'same-origin' && fetchSite !== 'none'
 }
 
 /**

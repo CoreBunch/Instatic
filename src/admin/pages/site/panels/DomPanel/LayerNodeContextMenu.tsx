@@ -222,7 +222,7 @@ export function LayerNodeContextMenu({
   const handleSelectModule = (mod: AnyModuleDefinition) => {
     if (!nodeId) return
     insertModule(mod, nodeId, {
-      preservePropertiesPanelCollapse: isNarrowEditorChromeViewport(),
+      propertiesPanel: isNarrowEditorChromeViewport() ? 'preserve' : 'open',
     })
   }
 

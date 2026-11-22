@@ -29,7 +29,9 @@ import { Button } from '@ui/components/Button'
 import { ClassPicker, type ClassPickerHandle } from './ClassPicker'
 import { StyleSurface } from './StyleSurface'
 import { readShowWhen } from '@core/members'
+import { readShowIf } from '@core/templates'
 import { ShowWhenControl } from './ShowWhenControl'
+import { ShowIfControl } from './ShowIfControl'
 import { HtmlAttributesPanel } from './HtmlAttributesPanel'
 import { ComponentRefView } from './ComponentRefView'
 import { ComponentParamsOverview } from './ComponentParamsOverview'
@@ -45,7 +47,6 @@ interface PropertiesPanelBodyProps {
   selectedSelectorClassId: string | null
   selectedSelectorClassIds: string[]
   isSelectorMultiSelect: boolean
-  activeBreakpointId: string | undefined
   isMultiSelect: boolean
   selectedNodeIds: string[]
   selectedNode: PageNode | null
@@ -68,7 +69,6 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
     selectedSelectorClassId,
     selectedSelectorClassIds,
     isSelectorMultiSelect,
-    activeBreakpointId,
     isMultiSelect,
     selectedNodeIds,
     selectedNode,
@@ -93,7 +93,7 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
 
   if (selectedSelectorClass) {
     return (
-      <SelectorInspector cls={selectedSelectorClass} activeBreakpointId={activeBreakpointId} />
+      <SelectorInspector cls={selectedSelectorClass} />
     )
   }
 
@@ -141,7 +141,8 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
     permissions.canEditStructure && canComponentizeNode(activeDocument, selectedNode)
 
   // Any stored rule counts, a broken one too: it hides the element from everyone.
-  const hasVisibilityRule = readShowWhen(selectedNode.props) !== null
+  const hasVisibilityRule =
+    readShowWhen(selectedNode.props) !== null || readShowIf(selectedNode.props) !== null
 
   return (
     <div className={styles.nodeArea}>
@@ -204,7 +205,6 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
           definition={definition}
           activeClass={activeClass}
           activeClassId={activeClassId}
-          activeBreakpointId={activeBreakpointId}
           nodeId={selectedNodeId}
           inlineStyles={selectedNode.inlineStyles}
           moduleContent={moduleTabContent}
@@ -217,11 +217,18 @@ export function PropertiesPanelBody(props: PropertiesPanelBodyProps): React.Reac
           readOnly={!permissions.canEditStructure}
         />
       ) : (
-        <ShowWhenControl
-          nodeId={selectedNode.id}
-          props={selectedNode.props}
-          readOnly={!permissions.canEditStructure}
-        />
+        <>
+          <ShowWhenControl
+            nodeId={selectedNode.id}
+            props={selectedNode.props}
+            readOnly={!permissions.canEditStructure}
+          />
+          <ShowIfControl
+            nodeId={selectedNode.id}
+            props={selectedNode.props}
+            readOnly={!permissions.canEditStructure}
+          />
+        </>
       )}
     </div>
   )

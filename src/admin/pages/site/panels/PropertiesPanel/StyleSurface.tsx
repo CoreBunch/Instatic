@@ -2,7 +2,7 @@
  * StyleSurface — unified properties editor surface.
  *
  * Layout: one continuous scrollable column with a sticky icon-rail on the
- * right and a sticky search bar pinned to the top.
+ * right and a search field in its own footer.
  *
  * All sections render together in one scroll:
  *   1. Module settings — wrapped in a Section accordion, always first.
@@ -22,6 +22,7 @@
  */
 
 import { useState, useRef, type ReactNode } from 'react'
+import { selectStyleContextId, storedRuleStyles } from '@site/store/useActiveStyleTarget'
 import { useEditorStore } from '@site/store/store'
 import type { AnyModuleDefinition } from '@core/module-engine'
 import type { StyleRule, CSSPropertyBag } from '@core/page-tree'
@@ -38,7 +39,6 @@ import {
   CLASS_STYLE_SECTIONS,
   getCSSPropertyDefaultValue,
   getClassStyleSectionSetCounts,
-  getActiveStyleTab,
 } from './cssControlTypes'
 import { useEditorPreference } from '@site/preferences/editorPreferences'
 import { useEditorPermissions } from '@site/editorPermissionsContext'
@@ -60,7 +60,6 @@ interface StyleSurfaceProps {
   definition?: AnyModuleDefinition | null
   activeClass: StyleRule | null
   activeClassId: string | null
-  activeBreakpointId: string | undefined
   /** Node id — triggers scroll reset when it changes. */
   nodeId: string | null
   /**
@@ -83,20 +82,16 @@ export function StyleSurface({
   definition,
   activeClass,
   activeClassId,
-  activeBreakpointId,
   nodeId,
   inlineStyles,
   moduleContent,
   onFocusClassPicker,
 }: StyleSurfaceProps) {
-  // scrollRef → outer grid which is also the scroll container
+  // The section list scrolls independently of the category navigation.
   const scrollRef = useRef<HTMLDivElement>(null)
   const [styleQuery, setStyleQuery] = useState('')
 
   // Active section + click-to-scroll behaviour (shared with SelectorInspector).
-  // The Module anchor is both the initial active section and the "scroll to
-  // absolute top" target (so the sticky search bar above it is revealed); the
-  // active anchor resets to it whenever the selected node changes.
   const { activeId: activeAnchorId, scrollTo: handleSectionClick } = useScrollSpy(scrollRef, {
     initialId: MODULE_CATEGORY_ID,
     scrollTopId: MODULE_CATEGORY_ID,
@@ -126,15 +121,7 @@ export function StyleSurface({
   // context switcher (canvas toolbar) can target a custom condition, which
   // wins over the viewport breakpoint; otherwise we fall back to the
   // base/breakpoint resolved by the active viewport.
-  const activeTab = getActiveStyleTab(activeBreakpointId)
-  // Validated active condition id (or null) — stale ids fall back to viewport.
-  const activeConditionId = useEditorStore((s) => {
-    const id = s.activeConditionId
-    if (id === null) return null
-    const cs = s.site?.conditions
-    return cs && cs.some((c) => c.id === id) ? id : null
-  })
-  const activeContextId = activeConditionId ?? (activeTab !== 'base' ? activeTab : null)
+  const activeContextId = useEditorStore(selectStyleContextId)
 
   // Inline-style editing target: a node with no active class that either
   // already has inline styles or opted in via "Style inline". Inline styles are
@@ -149,7 +136,7 @@ export function StyleSurface({
   const storedStyles: Record<string, unknown> = showInline
     ? (inlineStyles ?? {})
     : activeClass
-      ? (activeContextId ? (activeClass.contextStyles[activeContextId] ?? {}) : activeClass.styles)
+      ? storedRuleStyles(activeClass, activeContextId)
       : {}
   const sectionSetCounts = getClassStyleSectionSetCounts(storedStyles)
 
@@ -190,6 +177,7 @@ export function StyleSurface({
         key={`${nodeId}-inline`}
         nodeId={nodeId!}
         inlineStyles={inlineStyles}
+        textElement={definition?.inlineTextEdit != null}
         styleQuery={styleQuery}
       />
     )
@@ -203,9 +191,9 @@ export function StyleSurface({
     } else {
       cssContent = (
         <StyleRuleComposer
-          key={`${activeClassId}-${activeTab}`}
-          classId={activeClassId!}
+          key={activeClass.id}
           cls={activeClass}
+          textElement={definition?.inlineTextEdit != null}
           styleQuery={styleQuery}
         />
       )
@@ -223,31 +211,18 @@ export function StyleSurface({
   const ModuleIcon = definition?.icon
 
   return (
-    <div ref={scrollRef} className={styles.surface}>
-      {/* ── Left column: search + module section + CSS area ─────────── */}
-      <div className={styles.surfaceContent}>
-
-        {/* Search bar — sticky at the top, searches both module and CSS.
-            Hidden when no class is selected or the active class is a locked
-            generated utility (no CSS rows to search in either state). */}
-        {searchableClass && (
-          <div className={styles.searchBarRow}>
-            <SearchBar
-              value={styleQuery}
-              onValueChange={setStyleQuery}
-              onClear={clearStyleQuery}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  e.preventDefault()
-                  clearStyleQuery()
-                }
-              }}
-              placeholder={`Search styles in ${styleRuleSelector(searchableClass)}...`}
-              aria-label="Search class style properties to add"
-            />
-          </div>
-        )}
-
+    <div className={styles.surface}>
+      <div className={styles.railSticky}>
+        <StyleCategoryRail
+          activeAnchorId={activeAnchorId}
+          sectionSetCounts={sectionSetCounts}
+          onSectionClick={handleSectionClick}
+          definition={definition ?? null}
+          activeClass={activeClass}
+          editingInline={showInline}
+        />
+      </div>
+      <div ref={scrollRef} className={styles.surfaceContent}>
         {/* Module section — same Section accordion as CSS sections */}
         {moduleVisible && (
           <div data-style-section={MODULE_CATEGORY_ID}>
@@ -269,18 +244,23 @@ export function StyleSurface({
         {/* CSS area — StyleRuleComposer sections, locked preview, or generated lock */}
         {cssContent}
       </div>
-
-      {/* ── Right column: sticky rail ────────────────────────────── */}
-      <div className={styles.railSticky}>
-        <StyleCategoryRail
-          activeAnchorId={activeAnchorId}
-          sectionSetCounts={sectionSetCounts}
-          onSectionClick={handleSectionClick}
-          definition={definition ?? null}
-          activeClass={activeClass}
-          editingInline={showInline}
-        />
-      </div>
+      {searchableClass && (
+        <div className={styles.searchBarRow}>
+          <SearchBar
+            value={styleQuery}
+            onValueChange={setStyleQuery}
+            onClear={clearStyleQuery}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                clearStyleQuery()
+              }
+            }}
+            placeholder={`Search styles in ${styleRuleSelector(searchableClass)}...`}
+            aria-label="Search class style properties to add"
+          />
+        </div>
+      )}
     </div>
   )
 }

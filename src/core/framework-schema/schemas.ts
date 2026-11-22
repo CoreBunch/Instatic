@@ -116,7 +116,7 @@ const FrameworkColorVariantOptionsSchema = withFallback(
   { enabled: true, count: 4 },
 )
 
-const FrameworkColorTokenSchema = Type.Object({
+export const FrameworkColorTokenSchema = Type.Object({
   id: Type.String(),
   /**
    * Free-form category label. Empty string means "uncategorized".
@@ -248,7 +248,7 @@ const TypographyMaxBreakpointSchema = Type.Object({
   scaleRatio: withFallback(Type.Union([Type.Number(), Type.String()]), 1.333),
 })
 
-const FrameworkTypographyGroupSchema = Type.Object({
+export const FrameworkTypographyGroupSchema = Type.Object({
   ...FrameworkScaleGroupBaseSchema.properties,
   /** Variable prefix — e.g. "text" produces --text-xs, --text-m, … */
   namingConvention: withFallback(Type.String(), 'text'),
@@ -280,7 +280,7 @@ const SpacingMaxBreakpointSchema = Type.Object({
   scaleRatio: withFallback(Type.Union([Type.Number(), Type.String()]), 1.414),
 })
 
-const FrameworkSpacingGroupSchema = Type.Object({
+export const FrameworkSpacingGroupSchema = Type.Object({
   ...FrameworkScaleGroupBaseSchema.properties,
   /** Variable prefix — e.g. "space" produces --space-xs, --space-m, … */
   namingConvention: withFallback(Type.String(), 'space'),

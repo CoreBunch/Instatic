@@ -177,6 +177,7 @@
  * highlight stretched all the way to the right edge of the table.
  */
 .grid {
+    --data-primary-limit: 100vw;
     display: grid;
     grid-template-columns: var(--data-grid-columns);
     min-width: 100%;
@@ -709,4 +710,51 @@
 
 .bulkBarBtn:hover {
     background: var(--bg-surface-2);
+}
+
+@media (max-width: 760px) {
+    .grid {
+        --data-primary-limit: 48vw;
+    }
+
+    .toolbarTop {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: var(--space-m);
+        padding: var(--space-xl);
+    }
+
+    .titleBlock {
+        grid-column: 1 / -1;
+        flex-wrap: wrap;
+        /* Reserve the top-right corner for the inspector notch. */
+        padding-right: var(--space-8xl);
+        overflow-wrap: anywhere;
+    }
+
+    .spacer, .toolbarSpacer {
+        display: none;
+    }
+
+    .searchWrap {
+        width: auto;
+        min-width: 0;
+    }
+
+    .searchWrap:last-child {
+        grid-column: 1 / -1;
+    }
+
+    .toolbarBottom {
+        padding: 0 var(--space-xl) var(--space-m);
+        overflow-x: auto;
+    }
+
+    .viewChips {
+        flex-wrap: nowrap;
+    }
+
+    .actions {
+        opacity: 1;
+    }
 }

@@ -36,8 +36,8 @@ async function currentBundle(): Promise<SiteBundle> {
   return { schemaVersion: 1, exportedAt: new Date(0).toISOString(), tables, rows }
 }
 
-function apply(bundle: SiteBundle, strategy: ImportStrategy, mayChangePageAccess = false) {
-  return applySiteBundle(t.db, MAIN_SCOPE, { bundle, strategy, carriesMedia: false, mayChangePageAccess })
+function apply(bundle: SiteBundle, strategy: ImportStrategy, mayChangePageStructure = false) {
+  return applySiteBundle(t.db, MAIN_SCOPE, { bundle, strategy, carriesMedia: false, mayChangePageStructure })
 }
 
 function withoutPageAccess(bundle: SiteBundle): SiteBundle {
@@ -191,7 +191,7 @@ describe('a protected address', () => {
     const publication = {
       snapshots: [{
         id: 'snap_1',
-        site: { pages: [{ id: 'page_club', slug: 'club' }], visualComponents: [], layouts: [] },
+        site: { settings: { shortcuts: {} }, pages: [{ id: 'page_club', slug: 'club' }], visualComponents: [], layouts: [] },
         importmapBody: null,
         importmapSha256: null,
         createdAt: stamp,
@@ -214,6 +214,69 @@ describe('a protected address', () => {
     await apply(published, 'merge-overwrite')
     const { rows } = await t.db<{ cells_json: Record<string, unknown> }>`select cells_json from data_row_versions where id = 'ver_1'`
     expect(rows[0]?.cells_json.access).toEqual(MEMBERS)
+  })
+})
+
+describe('page head settings in a restored publication', () => {
+  const STORED = { description: 'Stored' }
+  const ATTEMPT = { description: 'Attempt', robots: 'noindex' }
+  const stamp = new Date(0).toISOString()
+
+  /** A bundle whose publication carries ATTEMPT on page_club and on a new page_new. */
+  async function publishedBundle(): Promise<SiteBundle> {
+    await t.db`update data_rows set cells_json = ${{ title: 'Club', slug: 'club', access: MEMBERS, seo: STORED }} where id = 'page_club'`
+    const bundle = await currentBundle()
+    const club = bundle.rows.find((row) => row.id === 'page_club')!
+    const fresh = { ...club, id: 'page_new', slug: 'new', cells: { title: 'New', slug: 'new', seo: ATTEMPT } }
+    const version = (rowId: string, slug: string) => ({
+      id: `ver_${rowId}`, versionNumber: 1, cells: { title: slug, slug, seo: ATTEMPT }, slug,
+      siteSnapshotId: 'snap_1', runtimeAssets: null, publishedAt: stamp, createdAt: stamp,
+    })
+    const rows = [...bundle.rows, fresh]
+    return {
+      ...bundle,
+      rows: rows.map((row) => (row.tableId === 'pages' ? { ...row, status: 'published' as const, publishedAt: stamp } : row)),
+      publication: {
+        snapshots: [{
+          id: 'snap_1',
+          site: { settings: { shortcuts: {}, seo: ATTEMPT }, pages: [{ id: 'page_club', slug: 'club', seo: ATTEMPT }, { id: 'page_new', slug: 'new', seo: ATTEMPT }], visualComponents: [], layouts: [] },
+          importmapBody: null, importmapSha256: null, createdAt: stamp,
+        }],
+        files: [],
+        rows: rows.map((row) => row.tableId !== 'pages'
+          ? { rowId: row.id, activeVersionId: null, versions: [] }
+          : { rowId: row.id, activeVersionId: `ver_${row.id}`, versions: [version(row.id, row.slug)] }),
+      },
+    } as unknown as SiteBundle
+  }
+
+  async function publishedSeo() {
+    const { rows: versions } = await t.db<{ row_id: string; cells_json: Record<string, unknown> }>`select row_id, cells_json from data_row_versions`
+    const { rows: snapshots } = await t.db<{ site_json: { settings: { seo?: unknown }; pages: Array<{ id: string; seo?: unknown }> } }>`select site_json from site_snapshots`
+    const pages = snapshots.flatMap((snapshot) => snapshot.site_json.pages)
+    return {
+      global: snapshots[0]?.site_json.settings.seo,
+      versions: Object.fromEntries(versions.map((row) => [row.row_id, row.cells_json.seo])),
+      snapshots: Object.fromEntries(pages.map((page) => [page.id, page.seo])),
+    }
+  }
+
+  it('keeps the stored settings, and gives a new page none, without structure rights', async () => {
+    await apply(await publishedBundle(), 'merge-overwrite')
+    const seo = await publishedSeo()
+    expect(seo.global).toBeUndefined()
+    expect(seo.versions.page_club).toEqual(STORED)
+    expect(seo.versions.page_new).toBeUndefined()
+    expect(seo.snapshots.page_club).toEqual(STORED)
+    expect(seo.snapshots.page_new).toBeUndefined()
+  })
+
+  it('carries the bundle settings for an importer who may change structure', async () => {
+    await apply(await publishedBundle(), 'merge-overwrite', true)
+    const seo = await publishedSeo()
+    expect(seo.global).toEqual(ATTEMPT)
+    expect(seo.versions.page_new).toEqual(ATTEMPT)
+    expect(seo.snapshots.page_club).toEqual(ATTEMPT)
   })
 })
 

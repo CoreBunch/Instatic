@@ -40,6 +40,11 @@
   grid-column: span 2;
 }
 
+/* Four number tiles leave no room for the chart beside them: it takes its own row. */
+.summary[data-crowded="true"] .tile[data-wide="true"] {
+  grid-column: 1 / -1;
+}
+
 .tileLabel {
   color: var(--text-subtle);
   font-size: var(--text-xs);
@@ -85,6 +90,7 @@
 }
 
 .column {
+  --queued: 0;
   --sent: 0;
   --failed: 0;
   --captured: 0;
@@ -117,6 +123,11 @@
 .segment[data-status="captured"] {
   height: calc(var(--captured) * 100%);
   background: var(--warning);
+}
+
+.segment[data-status="queued"] {
+  height: calc(var(--queued) * 100%);
+  background: var(--text-subtle);
 }
 
 .chartAxis {

@@ -34,11 +34,14 @@
  * module-JS channel's static hole-subtree walk.
  */
 
+import { isComposedNodeId, isTemplatePage } from '@core/templates'
+import { composedRouteForPath } from '../../publish/composedRoute'
 import type { DbClient } from '../../db/client'
 import type { Page, SiteDocument } from '@core/page-tree'
-import type { ClosedContent } from '@core/loops/types'
+import type { ClosedContent, LoopItem } from '@core/loops/types'
 import { registry } from '@core/module-engine'
 import {
+  findDynamicNodeIds,
   renderNode,
   showWhenPathsAllow,
   showWhenPathsAreGated,
@@ -56,11 +59,13 @@ import {
   visitorRequestScope,
   type LoopRequestScope,
 } from '../../publish/loopSourceRequest'
-import { getOrRender } from '../../publish/renderCache'
+import { getOrRender, peek } from '../../publish/renderCache'
 import { getPublishedNodeIndexForVersion } from '../../publish/publishedSnapshotCache'
 import { getPublishVersion } from '../../publish/publishState'
-import { HOLE_RUNTIME_JS } from '../../publish/holeRuntime'
+import { HOLE_RUNTIME_JS, HOLE_RUNTIME_VERSION } from '../../publish/holeRuntime'
+import { serveVersionedScript } from '../../publish/assetVersion'
 import { stampFormPageTokens } from '../../forms/formRuntime'
+import { memberAppRequestFrame } from '../../members/apps/approval'
 import {
   closedContentFor,
   decideAccess,
@@ -79,16 +84,15 @@ export function isHoleRuntimeAssetPath(pathname: string): boolean {
   return pathname === HOLE_RUNTIME_PATH
 }
 
-export function serveHoleRuntimeAsset(): Response {
-  return new Response(HOLE_RUNTIME_JS, {
-    headers: {
-      'content-type': 'application/javascript; charset=utf-8',
-      // Cache for 1 hour — the path is a well-known fixed CMS asset that
-      // only changes on a CMS version bump. Use deploy-time cache-busting
-      // (e.g. append a build hash) if you need longer caching.
-      'cache-control': 'public, max-age=3600',
-    },
-  })
+/**
+ * GET `/_instatic/hole-runtime.js?v=<contentHash>`: cacheable under the URL
+ * that names this runtime (`v` equals `HOLE_RUNTIME_VERSION`), `no-cache`
+ * otherwise, `ETag` and `304` on both (see `serveVersionedScript`). A page
+ * baked before a CMS upgrade carries the old hash, so it revalidates rather
+ * than caching the new runtime under a URL that names the old one.
+ */
+export function serveHoleRuntimeAsset(req: Request, url: URL): Response {
+  return serveVersionedScript(req, url, { body: HOLE_RUNTIME_JS, version: HOLE_RUNTIME_VERSION })
 }
 
 interface HoleHandlerContext {
@@ -124,6 +128,7 @@ async function renderHoleFragment(
   closed: ClosedContent,
   /** The visitor's member frame (null when signed out); undefined for a shared render. */
   member: MemberFrame | null | undefined,
+  entryStack: LoopItem[],
 ): Promise<string> {
   const route = buildRouteFrame(pageUrl.toString())
   const loopData = await prefetchLoopData(page, site, db, pageUrl, {
@@ -146,7 +151,7 @@ async function renderHoleFragment(
     loopData,
     mediaAssets,
     templateContext: {
-      entryStack: [],
+      entryStack,
       page: buildPageFrame(page),
       site: buildSiteFrame(site),
       route,
@@ -171,7 +176,7 @@ async function renderHoleFragment(
 /**
  * Render a single dynamic node subtree for Layer C hole hydration.
  *
- * GET `/_instatic/hole/<nodeId>?v=<publishVersion>&u=<page-url>` → HTML fragment.
+ * GET `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` → HTML fragment.
  */
 export async function handleHoleRequest(
   req: Request,
@@ -211,22 +216,42 @@ export async function handleHoleRequest(
       },
     })
   }
-  const foundPage = snap.nodeIndex.get(nodeId)
+  const sourcePage = snap.nodeIndex.get(nodeId)
+  const fallbackPath = sourcePage ? buildPageFrame(sourcePage).permalink : '/'
+  let pageUrl: URL
+  try {
+    const forwarded = new URL(url.searchParams.get('u') ?? fallbackPath, url.origin)
+    pageUrl = forwarded.origin === url.origin ? forwarded : new URL(fallbackPath, url.origin)
+  } catch {
+    pageUrl = new URL(fallbackPath, url.origin)
+  }
+
+  const cacheKey = {
+    urlPath: `${HOLE_PATH_PREFIX}${nodeId}`,
+    queryString: `v=${currentVersion}&u=${encodeURIComponent(pageUrl.pathname)}&${normalizeQuery(pageUrl.searchParams)}`,
+  }
+  const isComposed = isComposedNodeId(nodeId)
+  if (isComposed && !sourcePage) {
+    // Only a shared, fully checked render can populate this versioned key.
+    // Repeated visitor requests need neither a route lookup nor recomposition.
+    const cached = peek(cacheKey)
+    if (cached) return new Response(cached.body, { status: cached.status, headers: cached.headers })
+  }
+
+  // The baked shell addresses a spliced subtree by its composed ID. Keep that
+  // ID and its enclosing layout nodes intact for rendering and ancestor rules.
+  const useRoute = isComposed || (sourcePage && isTemplatePage(sourcePage) && url.searchParams.has('u'))
+  const composed = useRoute
+    ? await composedRouteForPath(ctx.db, pageUrl, snap.site)
+    : null
+  const onRoute = composed && findDynamicNodeIds(composed.page, snap.site, registry).has(nodeId) ? composed : null
+  const foundPage = onRoute?.page ?? sourcePage
+  const entryStack = onRoute?.entryStack ?? []
   if (!foundPage) {
     return new Response('Node not found', {
       status: 404,
       headers: { 'content-type': 'text/plain; charset=utf-8' },
     })
-  }
-
-  // Reconstruct the originating page URL forwarded by the runtime (`u`). Falls
-  // back to the page's own permalink when absent (older runtime / direct hit).
-  const pageUrlRaw = url.searchParams.get('u') ?? buildPageFrame(foundPage).permalink
-  let pageUrl: URL
-  try {
-    pageUrl = new URL(pageUrlRaw, url.origin)
-  } catch {
-    pageUrl = new URL(buildPageFrame(foundPage).permalink, url.origin)
   }
 
   // A fragment is part of a page and is gated like one: by the page that owns
@@ -257,12 +282,13 @@ export async function handleHoleRequest(
   // So is a fragment that sits inside an element with a show-when rule: the
   // rules above it are checked here, because rendering starts at this node.
   // A node that is not on any render path of its page is given to nobody.
-  const paths = showWhenPathsTo(foundPage, snap.site, nodeId, { includeSelf: false })
+  const paths = showWhenPathsTo(foundPage, snap.site, nodeId, { includeSelf: false, composed: onRoute !== null })
   const gated = showWhenPathsAreGated(paths)
   const showsMember = gated || subtreeDependsOnMember(foundPage, snap.site, registry, nodeId)
   if (gated) {
-    const tags = (await visitor())?.tags ?? null
-    if (!showWhenPathsAllow(paths, tags)) {
+    const who = await visitor()
+    const asking = who ? (await memberAppRequestFrame(ctx.db, pageUrl)) !== null : false
+    if (!showWhenPathsAllow(paths, who ? { tags: who.tags, appAsking: asking } : null)) {
       // Exactly what the page render gives this visitor for the enclosing element: nothing.
       return new Response('', { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', ...PRIVATE_HEADERS } })
     }
@@ -279,8 +305,11 @@ export async function handleHoleRequest(
   // sources get the cookies and the member, each through its own request.
   if (perVisitor || isProtected || showsMember) {
     const scope = visitorRequestScope(base, req, visitor)
-    const member = isProtected || showsMember ? memberFrameFor(await visitor()) : undefined
-    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, member)
+    const signedIn = isProtected || showsMember ? await visitor() : undefined
+    const member = signedIn === undefined
+      ? undefined
+      : memberFrameFor(signedIn, signedIn ? await memberAppRequestFrame(ctx.db, pageUrl) : null)
+    const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, member, entryStack)
     return new Response(html, {
       status: 200,
       headers: {
@@ -300,12 +329,9 @@ export async function handleHoleRequest(
   // no cookies (they would fragment the cache) and no member.
   const scope: LoopRequestScope = { base }
   const cached = await getOrRender(
-    {
-      urlPath: `${HOLE_PATH_PREFIX}${nodeId}`,
-      queryString: `v=${currentVersion}&u=${encodeURIComponent(pageUrl.pathname)}&${normalizeQuery(pageUrl.searchParams)}`,
-    },
+    cacheKey,
     async () => {
-      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, undefined)
+      const html = await renderHoleFragment(nodeId, foundPage, snap.site, ctx.db, pageUrl, scope, closed, undefined, entryStack)
       return {
         body: html,
         headers: { 'content-type': 'text/html; charset=utf-8' },

@@ -195,21 +195,21 @@ describe('base.link — plain <a> elements', () => {
     expect(node.props.target).toBe('_blank')
   })
 
-  it('plain anchor with no target → defaults to "_self"', () => {
+  it('plain anchor with no target → the default, no target', () => {
     const node = single('<a href="/about">About</a>')
-    expect(node.props.target).toBe('_self')
+    expect(node.props.target).toBe('')
   })
 
-  it('plain anchor with target="" → "_self", href and text kept', () => {
+  it('plain anchor with target="" → the default, href and text kept', () => {
     const node = single('<a href="/contact/" target="">Contact us</a>')
-    expect(node.props.target).toBe('_self')
+    expect(node.props.target).toBe('')
     expect(node.props.href).toBe('/contact/')
     expect(node.props.text).toBe('Contact us')
   })
 
-  it('plain anchor with a bare target attribute → "_self"', () => {
+  it('plain anchor with a bare target attribute → the default', () => {
     const node = single('<a href="/contact/" target>Contact us</a>')
-    expect(node.props.target).toBe('_self')
+    expect(node.props.target).toBe('')
   })
 
   it('plain anchor with target="_top" → "_self"', () => {
@@ -266,14 +266,14 @@ describe('base.button — <a class="btn"> elements', () => {
     expect(node.props.target).toBe('_blank')
   })
 
-  it('<a class="btn"> with no target → defaults to "_self"', () => {
+  it('<a class="btn"> with no target → the default, no target', () => {
     const node = single('<a class="btn" href="/try">Try it</a>')
-    expect(node.props.target).toBe('_self')
+    expect(node.props.target).toBe('')
   })
 
-  it('<a class="btn"> with target="" → "_self", href and label kept', () => {
+  it('<a class="btn"> with target="" → the default, href and label kept', () => {
     const node = single('<a class="btn" href="/buy" target="">Buy now</a>')
-    expect(node.props.target).toBe('_self')
+    expect(node.props.target).toBe('')
     expect(node.props.href).toBe('/buy')
     expect(node.props.label).toBe('Buy now')
   })
@@ -286,7 +286,7 @@ describe('base.button — <a class="btn"> elements', () => {
   it('compound <a class="btn"> (→ base.link) normalises target too', () => {
     const node = single('<a class="btn" href="/x" target=""><span>X</span></a>')
     expect(node.moduleId).toBe('base.link')
-    expect(node.props.target).toBe('_self')
+    expect(node.props.target).toBe('')
   })
 
   it('<a class="btn primary"> — btn is present among other classes → still base.button', () => {
@@ -1082,14 +1082,14 @@ describe('HTML attribute preservation — props.htmlAttributes for ordinary base
     })
   })
 
-  it('keeps form control id props on form modules instead of adding htmlAttributes', () => {
+  it('keeps form control id props on form modules, not in htmlAttributes', () => {
     const result = imported('<form><input id="email" name="email"></form>')
     const form = result.nodes[result.rootIds[0]!]!
     const input = result.nodes[form.children[0]!]!
 
     expect(input.moduleId).toBe('base.input')
     expect(input.props.id).toBe('email')
-    expect(input.props.htmlAttributes).toBeUndefined()
+    expect(input.props.htmlAttributes).toEqual({})
   })
 
   it('skips class, module-owned attributes, and reserved editor attributes', () => {
@@ -1456,6 +1456,15 @@ describe('base.loop — <instatic-loop>', () => {
     expect(loop.children).toHaveLength(1)
     expect(result.nodes[loop.children[0]!]!.moduleId).toBe('base.container')
   })
+  it('stores no direction without data-direction, so the source default decides', () => {
+    const result = importHtml(
+      '<instatic-loop data-source-id="acme.plans"><p>{currentEntry.name}</p></instatic-loop>',
+    )
+    const loop = result.nodes[result.rootIds[0]!]!
+    expect(loop.moduleId).toBe('base.loop')
+    expect('direction' in loop.props).toBe(false)
+  })
+
 })
 
 // ---------------------------------------------------------------------------

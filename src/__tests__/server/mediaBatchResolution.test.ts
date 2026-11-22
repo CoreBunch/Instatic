@@ -185,6 +185,171 @@ describe('prefetchMediaAssets (Finding 2)', () => {
     expect(map.size).toBe(0) // both paths not in DB → hits absent from map
   })
 
+  const vcImageRegistry = {
+    get: (id: string) => ({
+      id,
+      schema:
+        id === 'base.image'
+          ? { src: { type: 'image' }, title: { type: 'text' }, href: { type: 'url' } }
+          : {},
+    }),
+  } as unknown as IModuleRegistry
+
+  function makeHeroVcSite(imageSrc = '') {
+    const wrapper = { id: 'wrap', moduleId: 'base.container', children: ['image'], props: {} }
+    const image = {
+      id: 'image',
+      moduleId: 'base.image',
+      children: [],
+      props: { src: imageSrc },
+      propBindings: {
+        src: { paramId: 'photo' },
+        title: { paramId: 'caption' },
+        href: { paramId: 'link' },
+      },
+    }
+    return {
+      visualComponents: [{
+        id: 'hero',
+        name: 'Hero',
+        params: [
+          { id: 'photo', name: 'Photo', type: 'image', defaultValue: '', required: false },
+          { id: 'caption', name: 'Caption', type: 'string', defaultValue: '', required: false },
+          { id: 'link', name: 'Link', type: 'url', defaultValue: '', required: false },
+        ],
+        tree: { rootNodeId: 'wrap', nodes: { wrap: wrapper, image } },
+      }],
+    }
+  }
+
+  function makeVcRefPage(refProps: Record<string, unknown>) {
+    return {
+      rootNodeId: 'ref',
+      nodes: {
+        ref: { id: 'ref', moduleId: 'base.visual-component-ref', children: [], props: refProps },
+      },
+    }
+  }
+
+  it('queries only media-bound upload overrides on a visual component instance', async () => {
+    const queries: unknown[][] = []
+    const db = createFakeDb(async (_sql, params) => {
+      queries.push(params)
+      return { rows: [], rowCount: 0 }
+    })
+    const page = makeVcRefPage({
+      componentId: 'hero',
+      propOverrides: {
+        photo: '/uploads/hero.jpg',
+        caption: '/uploads/text',
+        link: '/uploads/brochure.pdf',
+      },
+    })
+    await prefetchMediaAssets(page as never, makeHeroVcSite() as never, vcImageRegistry, db)
+    expect(queries).toEqual([['/uploads/hero.jpg']])
+  })
+
+  it('resolves a visual component image param override from media_assets (real SQLite)', async () => {
+    const { db, cleanup } = await createTestDb()
+    try {
+      await insertMediaAsset(db, 'hero-asset', '/uploads/hero.jpg')
+      const page = makeVcRefPage({
+        componentId: 'hero',
+        propOverrides: { photo: '/uploads/hero.jpg' },
+      })
+      const map = await prefetchMediaAssets(page as never, makeHeroVcSite() as never, vcImageRegistry, db)
+      expect(map.size).toBe(1)
+      expect(map.get('/uploads/hero.jpg')?.id).toBe('hero-asset')
+    } finally {
+      await cleanup()
+    }
+  })
+
+  it('batches a VC definition literal src and a different instance override into one query', async () => {
+    const queries: unknown[][] = []
+    const db = createFakeDb(async (_sql, params) => {
+      queries.push(params)
+      return { rows: [], rowCount: 0 }
+    })
+    const page = makeVcRefPage({
+      componentId: 'hero',
+      propOverrides: { photo: '/uploads/override.jpg' },
+    })
+    await prefetchMediaAssets(
+      page as never,
+      makeHeroVcSite('/uploads/default.jpg') as never,
+      vcImageRegistry,
+      db,
+    )
+    expect(queries).toHaveLength(1)
+    expect(queries[0]?.slice().sort()).toEqual(['/uploads/default.jpg', '/uploads/override.jpg'])
+  })
+
+  it('ignores orphaned VC definition nodes and overrides for undeclared params', async () => {
+    const queries: unknown[][] = []
+    const db = createFakeDb(async (_sql, params) => {
+      queries.push(params)
+      return { rows: [], rowCount: 0 }
+    })
+    const site = {
+      visualComponents: [{
+        id: 'hero',
+        name: 'Hero',
+        params: [{ id: 'declared', name: 'Declared', type: 'image', defaultValue: '', required: false }],
+        tree: {
+          rootNodeId: 'live',
+          nodes: {
+            live: {
+              id: 'live',
+              moduleId: 'base.image',
+              children: [],
+              props: { src: '' },
+              propBindings: { src: { paramId: 'removed' } },
+            },
+            orphan: {
+              id: 'orphan',
+              moduleId: 'base.image',
+              children: [],
+              props: { src: '' },
+              propBindings: { src: { paramId: 'declared' } },
+            },
+          },
+        },
+      }],
+    }
+    const page = makeVcRefPage({
+      componentId: 'hero',
+      propOverrides: { removed: '/uploads/stale.jpg', declared: '/uploads/orphan.jpg' },
+    })
+    const map = await prefetchMediaAssets(page as never, site as never, vcImageRegistry, db)
+    expect(map.size).toBe(0)
+    expect(queries).toEqual([])
+  })
+
+  it('skips media queries for VC refs with token, non-upload, non-object, missing, or unknown-VC overrides', async () => {
+    let queryCount = 0
+    const db = createFakeDb(async () => {
+      queryCount++
+      return { rows: [], rowCount: 0 }
+    })
+    const site = makeHeroVcSite()
+    const cases: Array<Record<string, unknown>> = [
+      { componentId: 'hero', propOverrides: { photo: '{currentEntry.featuredMedia}' } },
+      { componentId: 'hero', propOverrides: null },
+      { componentId: 'hero', propOverrides: ['/uploads/hero.jpg'] },
+      { componentId: 'hero', propOverrides: '/uploads/hero.jpg' },
+      { componentId: 'unknown-vc', propOverrides: { photo: '/uploads/hero.jpg' } },
+      { componentId: 'hero' },
+      { componentId: 'hero', propOverrides: {} },
+      { componentId: 'hero', propOverrides: { photo: 'https://cdn.example.com/hero.jpg' } },
+    ]
+    for (const refProps of cases) {
+      const map = await prefetchMediaAssets(makeVcRefPage(refProps) as never, site as never, vcImageRegistry, db)
+      expect(map.size).toBe(0)
+    }
+    expect(queryCount).toBe(0)
+  })
+
   it('collects media paths from inline and class background images in the same batched query', async () => {
     let queryCount = 0
     let queriedPaths: unknown[] = []

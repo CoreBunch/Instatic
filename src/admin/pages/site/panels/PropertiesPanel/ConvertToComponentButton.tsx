@@ -13,6 +13,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
+import { useMobileViewport } from '@admin/lib/mobileViewport'
 import { useEditorStore } from '@site/store/store'
 import { VisualComponentNameError } from '@site/store/slices/vcTreeOps'
 import { Button } from '@ui/components/Button'
@@ -33,6 +34,7 @@ interface ConvertToComponentButtonProps {
 // ---------------------------------------------------------------------------
 
 export function ConvertToComponentButton({ nodeId }: ConvertToComponentButtonProps) {
+  const phone = useMobileViewport()
   const [manualEditing, setManualEditing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -73,7 +75,7 @@ export function ConvertToComponentButton({ nodeId }: ConvertToComponentButtonPro
     return (
       <Button
         variant="secondary"
-        size="sm"
+        size={phone ? 'md' : 'sm'}
         onClick={() => {
           setManualEditing(true)
           setError(null)
@@ -120,14 +122,14 @@ export function ConvertToComponentButton({ nodeId }: ConvertToComponentButtonPro
         />
         <Button
           variant="primary"
-          size="sm"
+          size={phone ? 'md' : 'sm'}
           onClick={handleSubmit}
         >
           Create
         </Button>
         <Button
           variant="ghost"
-          size="sm"
+          size={phone ? 'md' : 'sm'}
           onClick={() => {
             setManualEditing(false)
             setError(null)

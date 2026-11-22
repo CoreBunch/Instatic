@@ -320,6 +320,8 @@ The **Site Explorer** panel (`src/admin/pages/site/panels/SiteExplorerPanel/`) s
 
 ### Converting a page to a template
 
+All three template targets expose **Search & social** and **Head tags**. Empty fields inherit the defaults in Explorer → Site → Global head settings. A title such as `{page.title} | {site.name}` resolves for each served page. See [Page head settings](publisher.md#page-head-settings) for precedence.
+
 Right-click a page row → **Use as template** → the **Template settings** dialog opens:
 
 | Field | Description |

@@ -1,5 +1,5 @@
 export { readPagesStats } from './pages'
 export { readPostsStats } from './posts'
 export { readPublishLineup } from './publishLineup'
-export { coerceCount, coerceBytes, buildRowPath } from './shared'
-export type { PagesStats, PostsStats, PublishLineupRow, PublishLineupStats } from './types'
+export { coerceCount, coerceBytes } from './shared'
+export type { PagesStats, PostsStats } from './types'
