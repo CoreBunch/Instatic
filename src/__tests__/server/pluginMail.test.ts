@@ -23,6 +23,7 @@ import {
 } from '@core/mail'
 import { hookBus } from '@core/plugins/hookBus'
 import { parsePluginManifest } from '@core/plugins/manifest'
+import { installPlugin } from '../../../server/repositories/plugins'
 import { undeclaredMailVariables } from '@core/plugins/manifestMail'
 import { configurePublicOrigins, resetPublicOrigins } from '../../../server/auth/security'
 import { handleCmsRequest } from '../../../server/handlers/cms'
@@ -1398,6 +1399,11 @@ describe('email for plugins', () => {
   describe('two plugins with related ids', () => {
     it('keeps `acme.desk` from touching the templates of `acme.desk.pro`', async () => {
       await install(BOTH)
+      // Such a pair can no longer be installed side by side; a site may still
+      // hold one from before. Put the second plugin's row in place the way an
+      // old install left it, then let its package through as a re-install.
+      const proManifest = parsePluginManifest({ ...manifest(BOTH), id: 'acme.desk.pro', name: 'Desk Pro', version: '0.9.0' })
+      await installPlugin(h.db, proManifest, proManifest.permissions)
       const pro = zipSync({
         'plugin.json': strToU8(JSON.stringify({ ...manifest(BOTH), id: 'acme.desk.pro', name: 'Desk Pro' })),
         'server/index.js': strToU8('export function activate() {}'),
@@ -1411,7 +1417,8 @@ describe('email for plugins', () => {
         headers: { get: (name: string) => (name.toLowerCase() === 'cookie' ? owner : null) },
         formData: async () => formData,
       } as unknown as Request
-      expect((await handleCmsRequest(req, h.db, { uploadsDir })).status).toBe(201)
+      // 200: an upgrade of the row above, not a fresh install.
+      expect((await handleCmsRequest(req, h.db, { uploadsDir })).status).toBe(200)
       const proKey = 'plugin.acme.desk.pro~ticket.reply'
       await h.cms(`/admin/api/cms/mail/templates/${proKey}`, {
         method: 'PUT', cookie: owner, json: { subject: 'Pro wording', body: 'Pro' },

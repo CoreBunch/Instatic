@@ -18,6 +18,8 @@
 import type { DbClient } from '../db/client'
 import { getPublishedPageSnapshotById } from '../repositories/publish'
 import { renderPublishedSnapshot } from './publicRenderer'
+import { getAccessIndex, pageAudience } from './accessGate'
+import { getPublishVersion } from './publishState'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
 
 // ---------------------------------------------------------------------------
@@ -66,7 +68,14 @@ async function republishSinglePage(db: DbClient, pageId: string): Promise<void> 
   // the side-effects are what the caller actually needs (lets plugins
   // catch up on pages published before they were activated).
   const rendered = await renderPublishedSnapshot(snapshot, { db, url: syntheticUrl })
-  await applyPublishedHtmlPipeline(rendered, db)
+  // A page behind an access rule is not public HTML: only plugins that may
+  // read members get to filter it, as when it is rendered for a member. The
+  // rules are the ones the public router applies (an entry template takes
+  // the rules of the tables it renders), and a page that is not in its own
+  // snapshot is not public.
+  const page = snapshot.site.pages.find((candidate) => candidate.id === snapshot.pageRowId)
+  const accessIndex = await getAccessIndex(db, getPublishVersion())
+  await applyPublishedHtmlPipeline(rendered, db, pageAudience(accessIndex, page))
 }
 
 /**

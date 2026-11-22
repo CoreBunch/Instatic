@@ -22,6 +22,7 @@ import { FilterBar, type FilterBarItem } from '@ui/components/FilterBar'
 import { Select } from '@ui/components/Select'
 import { Skeleton } from '@ui/components/Skeleton'
 import { canDeleteMedia, canWriteMedia } from '@admin/access'
+import { useConfirmMediaPurge } from '../../hooks/useConfirmMediaPurge'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import {
   ExplorerItemContextMenu,
@@ -126,6 +127,7 @@ function folderMatchesQuery(folder: CmsMediaFolder, query: string): boolean {
 
 export function MediaCanvas({ workspace, selectionMode = 'standard', mediaKind = 'any' }: MediaCanvasProps) {
   const currentUser = useCurrentAdminUser()
+  const confirmPurge = useConfirmMediaPurge(workspace.purgeAsset)
   const mobile = useMobileViewport()
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false)
   const viewOptionsId = useId()
@@ -560,7 +562,7 @@ export function MediaCanvas({ workspace, selectionMode = 'standard', mediaKind =
           onDelete={() => {
             const target = contextMenu.asset
             setContextMenu(null)
-            if (trashView) void workspace.purgeAsset(target.id)
+            if (trashView) confirmPurge(target)
             else void workspace.trashAsset(target.id)
           }}
           showRename={canWrite}

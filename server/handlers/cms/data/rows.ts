@@ -205,7 +205,8 @@ async function handleRowItemPatch(
   // plugins can validate / normalize / auto-fill cells — the same shared
   // helper the plugin `cms.content.*` surface applies.
   const filtered = await applyContentEntryCellsFilter(rawCells, {
-    tableSlug: table.slug,
+    scope,
+    table,
     entryId: rowId,
     actor: { kind: 'user', userId: user.id },
   })
@@ -429,6 +430,7 @@ async function handleRowTable(
   db: DbClient,
   params: RouteParams,
   scope: BranchScope,
+  options: CmsHandlerOptions,
 ): Promise<Response> {
   const rowId = params.id
   // Cross-collection move = structurally distinct from cell-level editing.
@@ -445,8 +447,28 @@ async function handleRowTable(
   const currentRow = await loadRowForAccess(db, scope, rowId, user, canEditDataRow)
   if (currentRow instanceof Response) return currentRow
 
+  const fromTable = await getDataTable(db, scope, currentRow.tableId)
   const result = await updateDataRowTable(db, scope, rowId, body.tableId, user.id)
   if (result.ok) {
+    // The entry now lives at its new table's address. Its baked page at the
+    // old one, and the baked pages that list either table, are stale: Layer A
+    // reads the disk slot with no DB awareness. A published entry stays
+    // published and is rendered live at the new address until the next
+    // publish bakes it there.
+    if (options.uploadsDir && isMainScope(scope) && result.row.tableId !== currentRow.tableId) {
+      const wasPublished = currentRow.status === 'published'
+      const retractions = [
+        // Where it was: its own page under the old route base, and that table's listings.
+        { row: currentRow, options: { wasPublished, ...(fromTable ? { bakedUnderRouteBase: fromTable.routeBase } : {}) } },
+        // Where it is now: the new table's listings.
+        { row: result.row, options: { wasPublished } },
+      ]
+      for (const { row, options: retract } of retractions) {
+        await retractDataRowArtefacts(db, options.uploadsDir, row, retract).catch((err) => {
+          console.error('[publish:row] failed to remove artefact for moved row', rowId, err)
+        })
+      }
+    }
     await recordRowAuditEvent(db, user, req, 'data.row.move', result.row)
     return jsonResponse({ row: result.row })
   }
@@ -514,7 +536,8 @@ async function handleRowVersionRestore(
   // `content.entry.cells` filter, then the slug derived from the cells —
   // the version's stored slug may since have been taken by another row.
   const restored = await applyContentEntryCellsFilter(version.cells, {
-    tableSlug: table.slug,
+    scope,
+    table,
     entryId: current.id,
     actor: { kind: 'user', userId: user.id },
   })
