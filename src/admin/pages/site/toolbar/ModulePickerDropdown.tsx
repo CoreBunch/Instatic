@@ -16,6 +16,7 @@
  * `src/__tests__/architecture/component-system-placement.test.ts`.
  */
 
+import { useMobileViewport } from '@admin/lib/mobileViewport'
 import { useRef, useState } from 'react'
 import { AppGridPlusGlyphIcon } from 'pixel-art-icons/icons/app-grid-plus-glyph'
 import { Button } from '@ui/components/Button'
@@ -31,23 +32,20 @@ export function ModulePickerDropdown({
   triggerClassName,
   triggerTestId = 'toolbar-add-module-btn',
 }: ModulePickerDropdownProps = {}) {
+  const phone = useMobileViewport()
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const handleInsertItem = useInsertInserterItem()
 
   const handleOpen = () => setOpen(true)
-  const handleClose = () => {
-    setOpen(false)
-    triggerRef.current?.focus()
-  }
 
   return (
     <>
       <Button
         ref={triggerRef}
         variant="primary"
-        size="sm"
-        iconOnly
+        size={phone ? 'md' : 'sm'}
+        iconOnly={!phone}
         accentFill
         className={triggerClassName}
         aria-label="Add to canvas"
@@ -57,12 +55,14 @@ export function ModulePickerDropdown({
         onClick={handleOpen}
         data-testid={triggerTestId}
       >
-        <AppGridPlusGlyphIcon size={13} />
+        <AppGridPlusGlyphIcon size={13} aria-hidden="true" />
+        {phone && 'Add'}
       </Button>
 
       {open && (
         <ModuleInserterDialog
-          onClose={handleClose}
+          triggerRef={triggerRef}
+          onClose={() => setOpen(false)}
           onInsertItem={handleInsertItem}
         />
       )}

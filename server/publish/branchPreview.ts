@@ -235,9 +235,9 @@ export async function renderBranchPreview(
     loopRuntimeVersion: LOOP_RUNTIME_VERSION,
   })
   // The same pipeline as a published page (plugin frontend assets, form
-  // tokens, module scripts, the `publish.*` hooks), so a form or a plugin's
-  // client script works on the preview too. The banner goes in last, past
-  // the filters.
+  // tokens, module scripts), so a form or a plugin's client script works on
+  // the preview too. Marked as a preview: plugin `publish.html` filters are
+  // not handed unpublished work. The banner goes in last.
   const moduleJsMap = buildPublishedSiteModuleJsMap(site, registry)
   const finalHtml = await applyPublishedHtmlPipeline(
     {
@@ -248,6 +248,7 @@ export async function renderBranchPreview(
       moduleScripts: resolveModuleScripts(rendered.jsModuleIds, moduleJsMap),
     },
     db,
+    'preview',
   )
   const banner = previewBanner(branch.name)
   // A function replacement: a `$` in the branch name must not be read as a

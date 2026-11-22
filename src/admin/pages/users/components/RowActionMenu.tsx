@@ -44,6 +44,12 @@ export function RowActionMenu({ triggerLabel, menuLabel, disabled, items }: RowA
         <ContextMenu
           ariaLabel={menuLabel}
           onClose={() => setOpen(false)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.stopPropagation()
+              triggerRef.current?.focus()
+            }
+          }}
           anchorRef={triggerRef}
           side="bottom"
           align="end"

@@ -42,6 +42,7 @@ import {
 import { getKeybindingForCommand } from '@admin/spotlight/keybindings'
 import { useEditorPreference } from '@site/preferences/editorPreferences'
 import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
+import { layerTextPreview } from './layerTextPreview'
 import { LayerTreeNodeContent } from './LayerTreeNodeContent'
 import { isNarrowEditorChromeViewport } from '@site/layout/responsiveChrome'
 import styles from './TreeNode.module.css'
@@ -53,6 +54,7 @@ interface TreeNodeProps {
   nodeId: string
   depth: number
   editable?: boolean
+  phone?: boolean
 }
 
 interface ContextMenuState {
@@ -63,7 +65,7 @@ interface ContextMenuState {
 // React.memo re-render bailout — exception #2: hot, recursive per-node tree row
 // rendered for every node in the document; skipping equal-prop re-renders here is
 // an O(N) critical path the React Compiler's within-render memoization can't cover.
-export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true }: TreeNodeProps) {
+export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true, phone = false }: TreeNodeProps) {
   // ── Per-node selectors — only THIS node re-renders on its own changes ──────
   const node = useEditorStore((s) => selectActiveCanvasPage(s)?.nodes[nodeId] ?? null)
   // Per-node selection: only the rows whose membership flips re-render per
@@ -120,7 +122,7 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
   const { activeId, target, invalidOverId, registerRow } = useDomPanelDndContext()
   const selectLayerNode = (mode?: 'replace' | 'toggle' | 'range') => {
     selectNode(nodeId, mode, {
-      preservePropertiesPanelCollapse: isNarrowEditorChromeViewport(),
+      propertiesPanel: isNarrowEditorChromeViewport() ? 'preserve' : 'open',
     })
   }
 
@@ -149,6 +151,7 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
 
   const definition = registry.get(node.moduleId)
   const displayName = getNodeDisplayName(node, definition, visualComponents)
+  const preview = phone ? layerTextPreview(node) : ''
   const htmlTag = getNodeHtmlTag(node, definition)
   const classNames = getNodeClassNames(node, classes)
   const hasChildren = node.children.length > 0
@@ -311,6 +314,7 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
         {...draggableAttributes}
         {...draggableListeners}
         role="treeitem"
+        aria-description={preview || undefined}
         aria-selected={isSelected}
         aria-expanded={hasChildren && !isRoot ? expanded : undefined}
         // aria-label names the row for AT, including locked/hidden state so screen
@@ -374,6 +378,7 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
         <LayerTreeNodeContent
           moduleId={node.moduleId}
           displayName={displayName}
+          preview={preview}
           htmlTag={htmlTag}
           classSelectorChip={classSelectorChip}
           hasChildren={hasChildren}
@@ -409,7 +414,7 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
 
       {/* Children — role="group" as required by WAI-ARIA tree pattern */}
       {hasChildren && expanded && (
-        <ChildrenGroup nodeId={nodeId} depth={depth} editable={editable} />
+        <ChildrenGroup nodeId={nodeId} depth={depth} editable={editable} phone={phone} />
       )}
 
       {/* Context menu — rendered via portal at document.body to escape the
@@ -457,7 +462,7 @@ export const TreeNode = memo(function TreeNode({ nodeId, depth, editable = true 
 
 import { useEditorStore as useStore } from '@site/store/store'
 
-function ChildrenGroup({ nodeId, depth, editable }: { nodeId: string; depth: number; editable: boolean }) {
+function ChildrenGroup({ nodeId, depth, editable, phone }: TreeNodeProps) {
   // Fall back to a module-level stable empty array: returning a fresh [] from
   // the selector would break referential equality every render (Guideline #239).
   const children = useStore((s) => selectActiveCanvasPage(s)?.nodes[nodeId]?.children) ?? EMPTY_CHILDREN
@@ -465,7 +470,7 @@ function ChildrenGroup({ nodeId, depth, editable }: { nodeId: string; depth: num
   return (
     <div role="group">
       {children.map((childId) => (
-        <TreeNode key={childId} nodeId={childId} depth={depth + 1} editable={editable} />
+        <TreeNode key={childId} nodeId={childId} depth={depth + 1} editable={editable} phone={phone} />
       ))}
     </div>
   )

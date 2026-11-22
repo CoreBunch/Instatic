@@ -52,7 +52,6 @@ export const ContentEntriesPublishArgsSchema = Type.Tuple([
     scheduledFor: Type.Optional(Type.String({ minLength: 1, maxLength: 64 })),
   }, { additionalProperties: false }),
 ])
-export const ContentEntriesMoveTableArgsSchema = Type.Tuple([SlugSchema, EntryIdSchema, SlugSchema])
 
 export const ContentEntriesCreateManyArgsSchema = Type.Tuple([
   SlugSchema,

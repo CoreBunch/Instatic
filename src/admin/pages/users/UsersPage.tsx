@@ -87,17 +87,9 @@ export function UsersPage() {
 
   return (
     <Tabs value={activeTab} onChange={setTab}>
-      <AdminPageLayout
-        workspace="users"
-        title="Users"
-        titleId="users-title"
-        description="Manage admin access, site members, custom roles, and security audit events."
-        tabs={tabs}
-      >
-        {/* No `loading` on the layout — the tabs below own their own
-            skeleton states, each matching their real (DataTable) layout
-            1:1 so the column ladder stays put when the data arrives. */}
+      <AdminPageLayout workspace="users" mode="workspace">
         <div className={styles.body}>
+          {tabs}
           {data.error && <p className={styles.error} role="alert">{data.error}</p>}
 
           <TabPanel value="users"><UsersTab data={data} canManageUsers={canManageUsers} /></TabPanel>

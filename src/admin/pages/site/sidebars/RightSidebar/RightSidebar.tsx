@@ -1,46 +1,19 @@
 import { useRef, type CSSProperties } from 'react'
-import { selectRightSidebarExpanded, useEditorStore } from '@site/store/store'
+import { useEditorStore } from '@site/store/store'
 import { PropertiesPanel } from '@site/panels/PropertiesPanel'
 import { SidebarResizeHandle } from '@admin/shared/SidebarResizeHandle'
 import styles from './RightSidebar.module.css'
 
-/**
- * Right-sidebar mode — picked by the parent layout based on workspace and
- * permissions. Decouples the sidebar's expanded/collapsed state from the
- * (async) availability of its `contentPanel`:
- *
- * - `site`     — Site editor. Width follows `sitePropertiesExpanded`
- *                (open iff a node/class is selected AND docked AND not
- *                collapsed). When expanded and no `contentPanel` is
- *                provided, falls back to the docked default
- *                `<PropertiesPanel>`.
- * - `hidden`   — Site viewer (no `pages.draft.save` capability). Always
- *                closed; renders nothing inside.
- */
-type RightSidebarMode = 'site' | 'hidden'
-
 interface RightSidebarProps {
-  mode: RightSidebarMode
+  docked: boolean
+  expanded: boolean
 }
 
-export function RightSidebar({ mode }: RightSidebarProps) {
+export function RightSidebar({ docked, expanded }: RightSidebarProps) {
   const sidebarRef = useRef<HTMLElement | null>(null)
   const propertiesPanel = useEditorStore((s) => s.propertiesPanel)
-  const propertiesPanelMode = useEditorStore((s) => s.propertiesPanelMode)
   const setPropertiesPanel = useEditorStore((s) => s.setPropertiesPanel)
-
-  const isDocked = propertiesPanelMode === 'docked'
-  const sitePropertiesExpanded = useEditorStore(selectRightSidebarExpanded)
-
-  // Width is derived purely from synchronous state — same model the
-  // left sidebar uses. No dependence on the async `contentPanel` prop
-  // means the sidebar lands at its final width on first paint and
-  // stays there, only changing when the user explicitly toggles
-  // open/close (which the CSS transition in RightSidebar.module.css
-  // animates smoothly).
-  const isExpanded = mode === 'site' ? sitePropertiesExpanded : false
-
-  const panelWidth = isExpanded ? propertiesPanel.width : 0
+  const panelWidth = expanded ? propertiesPanel.width : 0
 
   const style = {
     '--right-sidebar-panel-width': `${panelWidth}px`,
@@ -52,11 +25,11 @@ export function RightSidebar({ mode }: RightSidebarProps) {
       ref={sidebarRef}
       className={styles.sidebar}
       data-testid="right-sidebar"
-      data-expanded={isExpanded ? 'true' : 'false'}
-      data-mode={propertiesPanelMode}
+      data-expanded={expanded ? 'true' : 'false'}
+      data-mode={docked ? 'docked' : 'floating'}
       style={style}
     >
-      {isExpanded && (
+      {expanded && (
         <SidebarResizeHandle
           side="right"
           width={propertiesPanel.width}
@@ -68,11 +41,11 @@ export function RightSidebar({ mode }: RightSidebarProps) {
         />
       )}
 
-      {mode === 'site' && isDocked && (
+      {docked && (
         <div
           className={styles.panelSlot}
           data-testid="right-sidebar-panel-slot"
-          inert={isExpanded ? undefined : true}
+          inert={expanded ? undefined : true}
         >
           <PropertiesPanel variant="docked" />
         </div>

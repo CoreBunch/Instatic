@@ -17,3 +17,8 @@
     justify-content: center;
 }
 
+
+/* The spreadsheet uses the browser's native two-axis touch scrolling. */
+.canvas.canvas {
+    touch-action: auto;
+}

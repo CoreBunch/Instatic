@@ -77,7 +77,9 @@ describe('cms.content plugin API surface', () => {
     expect(source).toContain("'cms.content.entries.update'")
     expect(source).toContain("'cms.content.entries.delete'")
     expect(source).toContain("'cms.content.entries.publish'")
-    expect(source).toContain("'cms.content.entries.moveTable'")
+    // Moving an entry between tables is not a plugin call (it changes what is
+    // live and who may see it without the publish permission). Admin only.
+    expect(source).not.toContain('moveTable')
     expect(source).toContain("'cms.content.entries.createMany'")
     expect(source).toContain("'cms.content.entries.updateMany'")
     expect(source).toContain("'cms.content.entries.deleteMany'")

@@ -41,7 +41,7 @@
 }
 
 .size-xs {
-    --field-height: 24px;
+    --field-height: var(--control-height-xs);
     min-height: var(--field-height);
     padding: var(--space-4xs) var(--space-xs);
     font-size: var(--text-xs);
@@ -55,7 +55,7 @@
 }
 
 .size-md {
-    --field-height: 32px;
+    --field-height: var(--control-height-md);
     min-height: var(--field-height);
     padding: var(--space-xs) var(--space-m);
     font-size: var(--text-s);

@@ -41,6 +41,7 @@
  *     time (see `bagToCSS` in `core/publisher/classCss.ts`).
  */
 
+import { useMobileViewport } from '@admin/lib/mobileViewport'
 import { useId, useState } from 'react'
 import type { CSSPropertyBag } from '@core/page-tree'
 import { Button } from '@ui/components/Button'
@@ -325,18 +326,19 @@ function SpacingBox({
   onClear,
   nested,
 }: SpacingBoxProps) {
+  const phone = useMobileViewport()
   // Set count (used to enable/disable Clear button).
   const setCount = SIDES.filter((s) => state.storedFlags[s]).length
 
   return (
-    <div className={cn(styles.box, styles[`box--${box}`])} data-linked={linked ? 'true' : undefined}>
+    <div className={phone ? styles.phoneBox : cn(styles.box, styles[`box--${box}`])} data-linked={linked ? 'true' : undefined}>
       <div className={styles.boxHeader}>
         <span className={styles.boxLabel}>{label}</span>
         <div className={styles.boxHeaderActions}>
           <Button
             type="button"
             variant="ghost"
-            size="micro"
+            size={phone ? 'md' : 'micro'}
             iconOnly
             onClick={onToggleLinked}
             aria-pressed={linked}
@@ -349,7 +351,7 @@ function SpacingBox({
           <Button
             type="button"
             variant="ghost"
-            size="micro"
+            size={phone ? 'md' : 'micro'}
             iconOnly
             onClick={onClear}
             disabled={setCount === 0}
@@ -366,6 +368,7 @@ function SpacingBox({
         {SIDES.map((side) => (
           <SideInput
             key={side}
+            phone={phone}
             box={box}
             side={side}
             value={linked && linkedDraft !== null ? linkedDraft : state.effective[side]}
@@ -394,6 +397,7 @@ function SpacingBox({
 // ---------------------------------------------------------------------------
 
 interface SideInputProps {
+  phone: boolean
   box: Box
   side: Side
   value: string
@@ -411,6 +415,7 @@ interface SideInputProps {
 }
 
 function SideInput({
+  phone,
   box,
   side,
   value,
@@ -435,7 +440,7 @@ function SideInput({
   return (
     <label
       htmlFor={inputId}
-      className={cn(
+      className={phone ? styles.phoneSide : cn(
         styles.segment,
         styles[`segment--${side}`],
         isLinkedTarget && styles.segmentLinked,
@@ -443,17 +448,18 @@ function SideInput({
       )}
       data-state={isSet ? 'set' : 'unset'}
     >
+      {phone && <span>{side}</span>}
       <TokenAwareInput
         id={inputId}
         value={value}
         placeholder={placeholder || '0'}
         tokens={tokens}
-        fieldSize="xs"
-        overlay
-        tooltipOnOverflow
+        fieldSize={phone ? 'md' : 'xs'}
+        overlay={!phone}
+        tooltipOnOverflow={!phone}
         aria-label={`${box} ${side}`}
         menuAriaLabel={`${box} ${side} spacing tokens`}
-        inputClassName={styles.sideInput}
+        inputClassName={phone ? styles.phoneInput : styles.sideInput}
         onCommit={onCommit}
         onFocus={onFocus}
         onPreview={onPreview}

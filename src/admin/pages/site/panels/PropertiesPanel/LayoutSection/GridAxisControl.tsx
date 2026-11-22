@@ -32,6 +32,7 @@ export function GridAxisControl({ label, axis, value, isSet, onChange, onClear }
   return (
     <LabeledControl label={label} isSet={isSet}>
       <SegmentedControl
+        size="sm"
         fullWidth
         aria-label={axis === 'block' ? 'Align items' : 'Justify items'}
         value={value}

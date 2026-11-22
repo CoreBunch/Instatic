@@ -72,3 +72,19 @@
     background: var(--bg-surface-4);
     color: var(--text);
 }
+
+@media (max-width: 760px) {
+    .dataInspectorOpen > :not([data-mode="workspace"]) {
+        visibility: hidden;
+    }
+
+    .dataInspectorOpen > aside[data-mode="workspace"] {
+        --right-sidebar-panel-render-width: 100%;
+        --right-sidebar-panel-render-layout-width: 100%;
+        transition: none;
+    }
+
+    .dataInspectorOpen > aside[data-mode="workspace"] > [role="separator"] {
+        display: none;
+    }
+}

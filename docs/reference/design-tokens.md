@@ -84,6 +84,8 @@ Admin UI spacing uses the Core Framework-style `--space-*` scale directly. Use t
 
 These are admin tokens. The published-site Framework engine also emits short names such as `--space-s`; those belong to the generated site CSS, not admin chrome. Editor chrome injected into the canvas iframe maps admin spacing to `--chrome-space-*` before using it so it cannot override the site's Framework spacing.
 
+The large Button uses `--button-size-lg` (44px) for its height and its icon-only width. Layouts that reserve space for a large button use the same token.
+
 ---
 
 ## Surface hierarchy (achromatic base)
@@ -293,11 +295,13 @@ Used inside CodeMirror only. Don't reach for these in editor chrome.
 
 | Token                | Value | Use                                                          |
 |----------------------|-------|--------------------------------------------------------------|
-| `--radius-sm` | 3px   | Tight chips, micro-badges, segmented-control inner indicator |
+| `--radius-sm` | 3px   | Tight chips and micro-badges |
 | `--radius`    | 6px   | Default editor controls, toolbar buttons, ghost menu items   |
 | `--panel-radius`     | 12px  | Floating overlay panels                                      |
 | `--card-radius`      | 16px  | Borderless tile cards (Widget, dashboard cells, module inserter tiles) |
 | `--input-radius`     | 1em   | Pill-shaped inputs, class / property chips                   |
+| `--segment-track-radius` | `--panel-radius` | Segmented control track |
+| `--segment-radius` | Track radius minus `--space-4xs` | Inner segment on a borderless track. A bordered track also subtracts its border width. |
 | `--tooltip-radius`   | 6px   | Tooltips                                                     |
 
 ---

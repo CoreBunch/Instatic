@@ -95,7 +95,7 @@
 
 .notch {
     --notch-bg: var(--bg-body);
-    --notch-radius: 16px;
+    --notch-radius: var(--card-radius);
     --notch-corner: 16px;
     --notch-corner-cut: calc(var(--notch-corner) - 0.5px);
     position: relative;
@@ -142,6 +142,10 @@
             right top / var(--notch-corner) var(--notch-corner) no-repeat;
 }
 
+.notch .addButton {
+    border-radius: calc(var(--notch-radius) - var(--space-3xs));
+}
+
 .quickButton {
     color: var(--text-muted);
 }
@@ -165,4 +169,27 @@
 
 .floatingControl {
     pointer-events: auto;
+}
+
+.favorites {
+    gap: var(--space-3xs);
+}
+
+@media (min-width: 901px) {
+    .shell[data-compact="true"] {
+        left: calc(50% + var(--space-xl));
+    }
+
+    [data-toolbar-layout="two-rows"] .shell {
+        left: calc(50% - var(--space-xl));
+    }
+
+    .shell {
+        transition: left 180ms ease;
+    }
+}
+
+@media (max-width: 760px) {
+    .roller, .notch { max-width: 100%; }
+    .historyGroup { flex-shrink: 0; }
 }
