@@ -8,7 +8,7 @@ import { useEffect } from 'react'
 import { Type } from '@core/utils/typeboxHelpers'
 import type { AiToolOutput } from '@core/ai'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { withAmbientHeaders } from '@core/http'
+import { apiRequest, withAmbientHeaders } from '@core/http'
 import { readNdjsonStream } from './ndjsonStream'
 import { postToolResult } from './toolResultApi'
 
@@ -18,15 +18,13 @@ const RECONNECT_DELAY_MS = 3000
 // longer but still retry so the bridge self-heals once the session is valid.
 const AUTH_RETRY_DELAY_MS = 15000
 const STANDBY_RETRY_DELAY_MS = 15_000
-// A stream that lived at least this long ended because the server recycled
-// its idle lease, not because anything is wrong — reconnect immediately.
-// This matters in background/hidden webviews (a browser tab in the
-// background, a minimized window): timers there are throttled to minutes, but the
-// stream-end network event still fires, so a timerless reconnect is what
-// keeps the bridge alive without the window being focused.
+// Retry a previously healthy connection immediately, even in hidden tabs
+// where browsers throttle timers. Short failures still back off.
 const HEALTHY_STREAM_MIN_UPTIME_MS = 30_000
 
+const RenewalAckSchema = Type.Object({ ok: Type.Literal(true) })
 const BridgeEventSchema = Type.Union([
+  Type.Object({ type: Type.Literal('bridgePing') }),
   Type.Object({ type: Type.Literal('bridgeReady'), bridgeId: Type.String() }),
   Type.Object({
     type: Type.Literal('toolRequest'),
@@ -78,16 +76,14 @@ export async function runMcpWorkspaceBridgeConnection(
   dispatchTool: McpToolDispatcher,
   afterSuccessfulTool: McpAfterSuccessfulTool | undefined,
   lifecycleSignal: AbortSignal,
-  standby = false,
 ): Promise<McpBridgeConnectionOutcome> {
   const connectionController = new AbortController()
   const signal = AbortSignal.any([lifecycleSignal, connectionController.signal])
   let bridgeId = ''
 
   try {
-    const query = new URLSearchParams({ scope })
-    if (standby) query.set('standby', '1')
-    const res = await fetch(`${MCP_BRIDGE_PATH}?${query}`, withAmbientHeaders({
+    const path = `${MCP_BRIDGE_PATH}?scope=${scope}`
+    const res = await fetch(path, withAmbientHeaders({
       method: 'GET',
       credentials: 'same-origin',
       // The bridge body stays newline-delimited JSON, but the event-stream
@@ -104,6 +100,11 @@ export async function runMcpWorkspaceBridgeConnection(
       if (event.type === 'bridgeReady') {
         bridgeId = event.bridgeId
         console.info(`[mcp-workspace-bridge:${scope}] connected`)
+        continue
+      }
+
+      if (event.type === 'bridgePing') {
+        await apiRequest(path, { method: 'POST', body: { bridgeId }, schema: RenewalAckSchema, signal })
         continue
       }
 
@@ -138,9 +139,6 @@ export function useMcpWorkspaceBridge(
 
     const lifecycleController = new AbortController()
     let stopped = false
-    // A new workspace takes ownership. Automatic retries only take an empty
-    // slot, so older tabs cannot continually displace the current workspace.
-    let standby = false
 
     /**
      * Delay the next attempt — but let the tab becoming visible cut the wait
@@ -158,10 +156,7 @@ export function useMcpWorkspaceBridge(
           resolve()
         }
         const onVisible = (): void => {
-          if (document.visibilityState === 'visible') {
-            standby = false
-            settle()
-          }
+          if (document.visibilityState === 'visible') settle()
         }
         const timer = setTimeout(settle, delay)
         lifecycleController.signal.addEventListener('abort', settle, { once: true })
@@ -174,16 +169,12 @@ export function useMcpWorkspaceBridge(
         const startedAt = Date.now()
         let delay = RECONNECT_DELAY_MS
         try {
-          const onlyIfVacant = standby
-          standby = true
           const outcome = await runMcpWorkspaceBridgeConnection(
-            scope, dispatchTool, afterSuccessfulTool, lifecycleController.signal, onlyIfVacant,
+            scope, dispatchTool, afterSuccessfulTool, lifecycleController.signal,
           )
           if (outcome === 'auth') delay = AUTH_RETRY_DELAY_MS
           else if (outcome === 'occupied') delay = STANDBY_RETRY_DELAY_MS
           else if (Date.now() - startedAt >= HEALTHY_STREAM_MIN_UPTIME_MS) {
-            // The server recycled a healthy stream's idle lease — go
-            // straight back, no timer involved (see the constant's note).
             delay = 0
           }
         } catch (err) {

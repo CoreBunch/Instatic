@@ -35,7 +35,7 @@ describe('MCP editor bridge handler', () => {
     const { cookie } = await harness.createRoleUser({
       name: 'Site Reader', slug: 'mcp-site-standby', capabilities: ['site.read'],
     })
-    const path = BASE + '?scope=site&standby=1'
+    const path = BASE + '?scope=site'
     const first = await harness.ai(path, { cookie })
     try {
       expect(first.status).toBe(200)
