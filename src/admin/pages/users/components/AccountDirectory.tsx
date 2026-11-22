@@ -52,7 +52,7 @@ interface DirectoryProps {
 export function AccountDirectory({ kind, accounts, selectedId, onSelect, toolbar, empty, loading, footer, children }: DirectoryProps) {
   const selected = accounts.find((account) => account.id === selectedId)
   const panelId = useId()
-  const trigger = useRef<HTMLButtonElement | null>(null)
+  const selectedRow = useRef<HTMLButtonElement | null>(null)
   const closeButton = useRef<HTMLButtonElement | null>(null)
   const [narrow, setNarrow] = useState(() => window.matchMedia?.(NARROW_DIRECTORY_QUERY).matches ?? false)
   useEffect(() => {
@@ -61,14 +61,13 @@ export function AccountDirectory({ kind, accounts, selectedId, onSelect, toolbar
     media?.addEventListener('change', update)
     return () => media?.removeEventListener('change', update)
   }, [])
-  const openId = selected?.id
   useEffect(() => {
-    if (openId && !narrow) closeButton.current?.focus({ preventScroll: true })
-  }, [openId, narrow])
+    if (selectedId && !narrow) closeButton.current?.focus({ preventScroll: true })
+  }, [selectedId, narrow])
 
   function close() {
     onSelect(null)
-    trigger.current?.focus({ preventScroll: true })
+    selectedRow.current?.focus({ preventScroll: true })
   }
 
   const staff = kind === 'User'
@@ -111,7 +110,8 @@ export function AccountDirectory({ kind, accounts, selectedId, onSelect, toolbar
                   <DataTableCell>
                     <Button variant="ghost" align="start" className={styles.select} aria-expanded={account.id === selectedId}
                       aria-controls={account.id === selectedId ? panelId : undefined}
-                      onClick={(event) => { trigger.current = event.currentTarget; onSelect(account.id) }}
+                      ref={account.id === selectedId ? selectedRow : undefined}
+                      onClick={() => onSelect(account.id)}
                     >
                       <Identity account={account} />
                     </Button>
