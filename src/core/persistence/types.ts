@@ -23,6 +23,8 @@ interface SaveDirtyHints {
 }
 
 export interface SaveSiteOptions {
+  /** Bind a queued save to the branch that supplied its document. */
+  branchId?: string
   /** Dirty hints from the editor store. Absent → replace-mode full save. */
   dirty?: SaveDirtyHints
   /**
