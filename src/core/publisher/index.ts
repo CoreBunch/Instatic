@@ -6,11 +6,15 @@
 // relative paths and never through this barrel.
 
 export { publishPage } from './render'
-export type { DocumentMetaOverride, PublishedRuntimePackageImportmap } from './render'
+export type { PublishedRuntimePackageImportmap } from './render'
+export type { DocumentMetaOverride } from './headTags'
+export { serializeJsonLd } from './headTags'
 
-export { renderNode, resolveSpecialRenderer, getSpecialRendererModuleIds } from './renderNode'
+export { isHiddenFromRender, renderNode, resolveSpecialRenderer, getSpecialRendererModuleIds } from './renderNode'
 
-export { collectHoleSubtreeModuleIds } from './holeSubtreeModules'
+export { collectHoleSubtreeAssets } from './holeSubtreeModules'
+export { findDynamicNodeIds, subtreeDependsOnMember } from './dynamicDetection'
+export { showWhenPathsAllow, showWhenPathsAreGated, showWhenPathsTo } from './showWhenGate'
 
 export type {
   RenderConfig,
@@ -26,6 +30,7 @@ export {
   createBaseCspPlan,
   cspMetaTag,
   parseCspContent,
+  insertAfterCspMeta,
   rewriteCspMeta,
   serializeCsp,
   setCspDirective,
@@ -35,6 +40,8 @@ export {
 export { escapeHtml, isSafeUrl, safeUrl, sanitiseCssValue } from './utils'
 
 export { htmlAttributesAttr } from './htmlAttributesEmit'
+
+export { injectNodeInlineStyles, injectNodeClassIds } from './classInjection'
 
 export {
   bagToCSS,

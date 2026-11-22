@@ -1,0 +1,63 @@
+/* FloatingPanel — the panel's detached piece.
+   Position is JS-driven: opens beside the trigger, then follows the header
+   drag. */
+
+.panel {
+    position: fixed;
+    width: min(var(--floating-panel-width), calc(100vw - 16px));
+    left: var(--floating-panel-x);
+    top: var(--floating-panel-y);
+    z-index: var(--floating-panel-z-index);
+    max-height: calc(100vh - 16px);
+    overflow-y: auto;
+    border: 1px solid var(--border-muted);
+    border-radius: var(--panel-radius);
+    /* Same tone as the editor chrome the trigger lives in (the docked panel
+       is transparent over --bg-body) — the popout reads as a detached piece
+       of it, not a lighter foreign card. Height is carried by the border and
+       the shadow. The chrome ramp comes from data-surface="chrome" on the
+       element; the accent collapse mirrors PropertiesPanel's. */
+    background: var(--bg-body);
+    box-shadow: var(--shadow-panel);
+}
+
+/* Armed only for the snap-back after a drop. The panel must NOT animate on
+   open — it is first placed from guessed dimensions and then re-placed from
+   the measured ones, and a standing transition would turn that correction
+   into a visible slide across the screen. Pointer-following stays 1:1 for the
+   same reason. */
+.panel.gliding {
+    transition:
+        left 240ms cubic-bezier(0.22, 1, 0.36, 1),
+        top 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-s);
+    padding: var(--space-xs) var(--space-xs) 0 var(--space-s);
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+}
+
+.header:active {
+    cursor: grabbing;
+}
+
+/* The title fills the middle so × hugs the right edge whether or not the
+   drill-in back arrow leads the row. It stays the drag handle. */
+.title {
+    flex: 1 1 auto;
+    overflow: hidden;
+    color: var(--text-muted);
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.content { display: contents; }
+.content[data-drilled] { display: none; }

@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import {
   DEV_ORIGIN_ALLOWLIST,
+  canonicalIp,
+  visitorIpKey,
   clientIp,
   configurePublicOrigins,
   configureTrustedProxyCidrs,
@@ -273,6 +275,37 @@ describe('clientIp', () => {
     })
     stampSocketIp(req, '10.0.0.99')
     expect(clientIp(req)).toBe('203.0.113.7')
+  })
+})
+
+describe('canonicalIp', () => {
+  it('writes one spelling per address', () => {
+    expect(canonicalIp('203.0.113.7')).toBe('203.0.113.7')
+    expect(canonicalIp('::ffff:203.0.113.7')).toBe('203.0.113.7')
+    expect(canonicalIp('::FFFF:CB00:7107')).toBe('203.0.113.7')
+    expect(canonicalIp('2001:DB8:0:0:0:0:0:1')).toBe('2001:db8::1')
+    expect(canonicalIp('[2001:db8::1]')).toBe('2001:db8::1')
+    expect(canonicalIp('fe80::1%eth0')).toBe('fe80::1')
+    expect(canonicalIp('2001:0db8:0000:0000:0001:0000:0000:0001')).toBe('2001:db8::1:0:0:1')
+    expect(canonicalIp('1:0:3:4:5:6:7:8')).toBe('1:0:3:4:5:6:7:8')
+    expect(canonicalIp('::1')).toBe('::1')
+    expect(canonicalIp('not an address')).toBeNull()
+  })
+})
+
+describe('visitorIpKey', () => {
+  it('keys IPv4 by the address and IPv6 by its /64', () => {
+    expect(visitorIpKey('203.0.113.7')).toBe('203.0.113.7')
+    expect(visitorIpKey('::ffff:203.0.113.7')).toBe('203.0.113.7')
+    expect(visitorIpKey('2001:db8:1:2:3:4:5:6')).toBe('2001:db8:1:2::/64')
+    expect(visitorIpKey('2001:DB8:1:2:ffff::9')).toBe('2001:db8:1:2::/64')
+    expect(visitorIpKey('2001:db8::1')).toBe('2001:db8::/64')
+    // NAT64 (well-known prefix): keyed on the embedded IPv4 address, not one shared /64.
+    expect(visitorIpKey('64:ff9b::cb00:7107')).toBe('203.0.113.7')
+    expect(visitorIpKey('64:ff9b::203.0.113.8')).toBe('203.0.113.8')
+    // Outside the /96 it is an ordinary IPv6 address.
+    expect(visitorIpKey('64:ff9b:1::cb00:7107')).toBe('64:ff9b:1::/64')
+    expect(visitorIpKey('nope')).toBeNull()
   })
 })
 

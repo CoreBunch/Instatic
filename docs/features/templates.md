@@ -217,6 +217,7 @@ See the "Dynamic bindings" section below for the full source table.
 | `site`         | `ctx.site`                | Anywhere — site name, primary color                     |
 | `route`        | `ctx.route`               | URL-driven (`route.segments`, `route.slug`, `route.query.*`) |
 | `page`         | `ctx.page`                | Current page metadata                                   |
+| `member`       | `ctx.member`              | The signed-in member: `member.email`, `member.profile.<fieldId>`, `member.tagList`. Empty when signed out. Rendered per visitor, see [members](members.md) |
 
 ---
 
@@ -238,7 +239,7 @@ Source: `src/core/templates/tokenInterpolation.ts`.
 
 `resolveDynamicProps` walks a node's props and interpolates:
 
-- **every string-typed prop** — `text`, `href`, `src`, `alt`, and any module's own string prop. Richtext prop keys (`html`, `richtext`, `*html`, `*richtext`) additionally render the interpolated value as markdown, then sanitise the result with `sanitizeRichtext`. The editor canvas injects these through `dangerouslySetInnerHTML` and never runs the publisher's `escapeProps`, so the sanitiser has to live here for both surfaces to be safe.
+- **every string-typed prop** — `text`, `href`, `src`, `alt`, and any module's own string prop. Richtext prop keys (`html`, `richtext`, `*html`, `*richtext`) additionally render the interpolated value as markdown, then sanitise the result with `sanitizeRichtext`. The editor canvas injects these through `dangerouslySetInnerHTML` and never runs the publisher's `escapeProps`, so the sanitiser has to live here for both surfaces to be safe. Richtext content (entry bodies, bound and stored richtext props) uses the `RICHTEXT_CONTENT_CONFIG` profile, which admits `<img>`, `<figure>` and `<figcaption>` but keeps an image `src` only when it is http(s) or a same-origin relative path; the default profile used by admin surfaces such as the AI chat stays image-free.
 - **every value inside `htmlAttributes`** — the one prop holding strings a level down. An author writing `src="{currentEntry.video-link}"` on a custom tag gets the same substitution a first-class `href` prop gets. Attribute values are never markdown-rendered: an attribute is a value, not a body.
 
 Nothing else is descended into. `filters` on a loop, for example, is a free-form bag whose values are configuration rather than authored output.
@@ -306,6 +307,8 @@ DataMeta is fetched once from `/data/_meta` and cached module-level in `cache.ts
 The **Site Explorer** panel (`src/admin/pages/site/panels/SiteExplorerPanel/`) shows **Pages** and **Templates** in separate labelled sections. Clicking a template row opens it in the canvas like a page; the canvas preview uses the synthetic entry from `useTemplatePreviewContext`.
 
 ### Converting a page to a template
+
+All three template targets expose **Search & social** and **Head tags**. Empty fields inherit the defaults in Explorer → Site → Global head settings. A title such as `{page.title} | {site.name}` resolves for each served page. See [Page head settings](publisher.md#page-head-settings) for precedence.
 
 Right-click a page row → **Use as template** → the **Template settings** dialog opens:
 

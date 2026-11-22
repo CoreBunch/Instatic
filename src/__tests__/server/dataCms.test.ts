@@ -14,7 +14,7 @@ import {
 } from '../../../server/repositories/data'
 import { handleServerRequest } from '../../../server/router'
 import { resetForTests } from '../../../server/publish/renderCache'
-import { createFakeDb } from './dbTestFake'
+import { answerAccessIndexRead, createFakeDb } from './dbTestFake'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 
 type QueryHandler = (sql: string, params: unknown[]) => DbResult | undefined
@@ -22,6 +22,8 @@ type QueryHandler = (sql: string, params: unknown[]) => DbResult | undefined
 function makeDataFakeDb(handlers: QueryHandler[]) {
   return createFakeDb(async (rawSql, params): Promise<DbResult> => {
     const sql = rawSql.replace(/\s+/g, ' ').trim().toLowerCase()
+    const accessIndexRead = answerAccessIndexRead(sql)
+    if (accessIndexRead) return accessIndexRead
     for (const handler of handlers) {
       const result = handler(sql, params)
       if (result) return result
@@ -74,6 +76,7 @@ describe('data CMS repository', () => {
             primary_field_id: 'title',
             fields_json: defaultFields,
             created_by_user_id: null,
+            created_by_plugin_id: null,
             updated_by_user_id: null,
             created_at: rowDate('2026-05-01T10:00:00Z'),
             updated_at: rowDate('2026-05-01T10:00:00Z'),
@@ -95,6 +98,7 @@ describe('data CMS repository', () => {
       fields: defaultFields,
       system: false,
       createdByUserId: null,
+      createdByPluginId: null,
       updatedByUserId: null,
       createdAt: '2026-05-01T10:00:00.000Z',
       updatedAt: '2026-05-01T10:00:00.000Z',

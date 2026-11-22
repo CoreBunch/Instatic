@@ -72,7 +72,8 @@ test.describe('auth session lifecycle', () => {
     await login(page)
     await expectLoggedIn(page)
 
-    await page.getByTestId('account-menu-trigger').click()
+    await page.getByRole('button', { name: /Switch workspace/ }).click()
+    await page.getByRole('dialog', { name: 'Workspaces' }).getByTestId('account-menu-trigger').click()
     await expect(page.getByRole('menu', { name: 'Account menu' })).toBeVisible()
     await expectMobileAccountMenuContained(page)
 

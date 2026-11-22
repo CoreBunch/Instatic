@@ -7,24 +7,30 @@
  * and filters are thin shims that round-trip to the plugin's worker via the RPC layer.
  */
 
-import { canonicalPluginEventName, hookBus } from '@core/plugins/hookBus'
+import { canonicalPluginEventName, hookBus, MEMBER_HOOK_PREFIX } from '@core/plugins/hookBus'
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
 import type { DbClient } from '../../../db/client'
 import { replyApiOk } from '../apiReplies'
+import { assertHostPluginPermission } from '../registry'
 import { runHookListenerInWorker, runHookFilterInWorker } from '../rpc'
 import type { HostPluginRecord } from '../types'
+import { deliverHeldMailOutcomes } from './mail'
 
 export async function handleHooksOn(
   msg: ApiCallFor<'cms.hooks.on'>,
   entry: HostPluginRecord,
-  _db: DbClient,
+  db: DbClient,
 ): Promise<void> {
   const [{ event, listenerId }] = msg.args
+  // Member events name members; hearing them is reading members.
+  if (event.startsWith(MEMBER_HOOK_PREFIX)) assertHostPluginPermission(entry, 'members.read')
   entry.hookListeners.push({ pluginId: msg.pluginId, listenerId })
   // The hookBus listener is a thin shim that round-trips back to the worker.
   hookBus.on(msg.pluginId, event, async (payload: unknown) => {
     await runHookListenerInWorker(msg.pluginId, listenerId, event, payload)
   })
+  // News about its own email that arrived while it was not listening.
+  await deliverHeldMailOutcomes(db, msg.pluginId, event)
   replyApiOk(msg.pluginId, msg.correlationId)
 }
 

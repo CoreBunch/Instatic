@@ -10,13 +10,15 @@ CMS-native forms let the visual editor build semantic HTML forms from primitive 
 - Paste HTML, agent HTML insert/replace, and Super Import all use `@core/htmlImport`, so semantic HTML form tags import as these same primitive modules.
 - CMS form snapshots are derived at publish/request time by `src/core/forms/snapshot.ts`.
 - Public submissions go through `POST /_instatic/form/challenge` and `POST /_instatic/form/submit`, implemented in `server/forms/handler.ts`.
-- The browser runtime ships through the module-JS channel: `base.form`'s render() emits it as `js` when `mode === 'cms'` (`src/modules/base/forms/formRuntimeJs.ts`), published pages load it from `/_instatic/module-js/base.form.js`, and `server/forms/formRuntime.ts`'s `stampFormPageTokens` stamps `data-instatic-page-token` + `data-instatic-page-id` onto every CMS form tag — on baked pages and on hole fragments.
+- The browser runtime ships through the module-JS channel: `base.form`'s render() emits it as `js` when `mode === 'cms'` (`src/modules/base/forms/formRuntimeJs.ts`), published pages load it from `/_instatic/module-js/base.form.js?v=<contentHash>` (the hash of the runtime body, so a changed runtime is a new URL), and `server/forms/formRuntime.ts`'s `stampFormPageTokens` stamps `data-instatic-page-token` + `data-instatic-page-id` onto every CMS form tag — on baked pages and on hole fragments.
 
 ## Editor Model
 
 The editor exposes form primitives in the module picker.
 
 Primitives are the source of truth. A label is a `base.label` node, an input is a `base.input` node, and a submit button is a `base.submit` node. There is no hidden field-builder shape inside `base.form`; authors compose ordinary nodes, and every node remains directly editable after insertion.
+
+Every form part except `base.form-message` also carries an `htmlAttributes` bag (the Properties panel's Attributes view) for native attributes the module does not model, such as `inputmode`, `step`, `aria-describedby` and `data-*` hooks. The module emits its own attributes first and the bag after them, so a duplicate name never overrides a module-owned value (the browser keeps the first). HTML import fills the bag (see [html-import.md](html-import.md)).
 
 `base.form` has two modes:
 
@@ -35,13 +37,19 @@ The design canvas treats authored form controls as non-interactive editor conten
 
 The form setup block also exposes an editor-only preview state switch (`default`, `submitting`, `success`, `error`). It annotates the canvas form and message nodes with the same state shape the public runtime uses, without changing saved props or published HTML.
 
+## Member mode
+
+`mode: 'member'` turns the form into a member action (sign up, sign in, reset password, update profile, …) instead of a table submission. It posts to `/_instatic/members/<action>` and has no target table, honeypot or challenge: the member endpoints carry their own origin checks and rate limits. See [members](members.md) → "Building member pages in the editor".
+
+`base.form-message` with `kind: error` can name one field (`fieldName`); it then shows only errors about that field.
+
 ## Auto Wiring
 
 Auto wiring is structural:
 
 - A `base.label` with `targetMode: "auto"` targets the next form control below it in the same form subtree.
 - A `base.submit` inside a form submits the nearest form by normal HTML semantics. Its `formId` prop is only an override for out-of-form submit buttons.
-- `base.form-message` nodes can be inside the form or point at a form id.
+- `base.form-message` nodes can be inside the form or point at a form id; a form uses both. The one exception is a form repeated in a list: its id occurs more than once on the page, so a row that holds messages uses only its own.
 
 The published runtime finalizes auto labels in the browser because labels and inputs are independent nodes. It assigns an id to the next control when needed and sets the label's `for` attribute.
 
@@ -52,9 +60,15 @@ CMS-native submission is a two-step public flow:
 1. The runtime requests a short-lived challenge from `/_instatic/form/challenge` when the form attaches in the browser.
 2. The runtime posts values plus the challenge to `/_instatic/form/submit`.
 
+The challenge response carries `expiresInSeconds` and the form's `minSubmitSeconds`. The runtime (`src/modules/base/forms/formRuntimeJs.ts`) uses them so a visitor who lingers is not turned away:
+
+- It measures the challenge lifetime from the moment the response arrived, on the browser's own clock. The absolute `expiresAt` is never compared with the browser clock, so a visitor clock that disagrees with the server's changes nothing.
+- It replaces the held challenge 30 seconds before it expires, for as long as the form stays in the page.
+- The server's time trap counts from the challenge's issue time. When the visitor has had the form for at least `minSubmitSeconds` but the challenge in hand is younger than that (just refreshed, or fetched at submit because the earlier one expired or never arrived), the runtime waits out the difference before posting. A submit made sooner than `minSubmitSeconds` after the form attached is posted immediately and the server rejects it with `Form submitted too quickly`.
+
 The submit handler reloads the latest published site snapshot, derives the form snapshot from the published page tree, requires the target `DataTable` to be a non-system `data` table, validates fields against that table, and creates a `data_rows` record with `createDataRow`. After persistence, `server/forms/handler.ts` calls `emitContentEntryCreated` from `server/publish/contentEvents.ts` with the `system` actor, so plugins can react to successful submissions through the standard `content.entry.created` channel.
 
-Validation lives in `src/core/forms/validation.ts`. It rejects unknown fields, enforces required fields, coerces table field types, applies email/url/number/select checks, applies control min/max/pattern constraints, and caps payload size.
+Validation lives in `src/core/forms/validation.ts`. It rejects unknown fields, enforces required fields, coerces table field types, applies email/url/number/select checks, applies control min/max/pattern constraints, and caps payload size. A `select` or `multiSelect` submission may carry an option's `value` (what `base.option` nodes inserted from the table hold) or its `id`; the stored cell is always the option id.
 
 ## Security
 

@@ -20,6 +20,7 @@ import {
   type ContentAccessEntry,
 } from '@core/plugin-sdk'
 // Layout compilation maps HTML elements to base.* modules via the registry.
+import { parsePluginManifest } from '@core/plugins/manifest'
 import '@modules/base'
 
 describe('html tag', () => {
@@ -219,8 +220,8 @@ describe('definePack', () => {
       layouts: [{
         id: 'hero-section',
         name: 'Hero section',
-        html: '<section class="hero missing-rule"><h2>Big claim</h2></section>',
-        css: '.hero { padding: 96px; text-align: center; }',
+        html: '<section class="hero missing-rule" style="-webkit-text-fill-color: transparent"><h2>Big claim</h2></section>',
+        css: '.hero { padding: 96px; text-align: center; -webkit-background-clip: text !important; }',
       }],
     })
 
@@ -239,6 +240,9 @@ describe('definePack', () => {
     // The CSS engine expands shorthands to longhands.
     expect(heroClass?.styles.paddingTop).toBe('96px')
     expect(heroClass?.styles.textAlign).toBe('center')
+    expect(root.inlineStyles?.WebkitTextFillColor).toBe('transparent')
+    expect(heroClass?.styles.WebkitBackgroundClip).toBe('text')
+    expect(heroClass?.stylePriorities?.WebkitBackgroundClip).toBe('important')
 
     // The heading made it into the subtree.
     const allNodes = Object.values(layout.nodes)
@@ -324,6 +328,24 @@ describe('definePlugin', () => {
     ].sort())
     expect(definition.modules).toHaveLength(1)
     expect(definition.pack?.classes[0].id).toBe('acme.ui-kit/section')
+  })
+
+  it('carries appScopes into the manifest, as copies, and omits the field when there are none', () => {
+    const appScopes = [{ name: 'read', description: 'See your purchases and plan' }]
+    const definition = definePlugin({
+      id: 'acme.shop',
+      name: 'Shop',
+      version: '1.0.0',
+      permissions: [permissions.cmsRoutes, permissions.membersRead],
+      appScopes,
+    })
+    expect(definition.manifest.appScopes).toEqual(appScopes)
+    expect(definition.manifest.appScopes?.[0]).not.toBe(appScopes[0])
+    // The host accepts exactly what the builder wrote.
+    expect(parsePluginManifest(definition.manifest).appScopes).toEqual(appScopes)
+
+    const plain = definePlugin({ id: 'acme.shop', name: 'Shop', version: '1.0.0', permissions: [] })
+    expect('appScopes' in plain.manifest).toBe(false)
   })
 
   it('copies contentAccess into the manifest as an independent deep copy', () => {

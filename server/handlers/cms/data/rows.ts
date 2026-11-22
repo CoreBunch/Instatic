@@ -25,7 +25,6 @@ import {
 } from '../../../publish/contentEvents'
 import {
   cancelScheduledPublish,
-  getDataRow,
   getDataTable,
   listDataAuthorOptions,
   saveDataRowDraft,
@@ -38,10 +37,12 @@ import {
   getDataRowVersion,
   listDataRowVersions,
 } from '../../../repositories/data'
-import { publishDataRow, removeDataRowArtefact } from '../../../publish/publishRow'
+import { publishDataRow, retractDataRowArtefacts } from '../../../publish/publishRow'
 import { runPublishFlush } from '../../../publish/publishFlush'
 import { findUserById } from '../../../repositories/users'
 import { slugForTable } from '@core/data/cells'
+import { userHasCapability } from '../../../auth/authz'
+import { keepPageStructuralCells } from '../../../writePolicy/pageStructuralCells'
 import { badRequest, jsonResponse, readValidatedBody } from '../../../http'
 import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import type { CmsHandlerOptions } from '../shared'
@@ -54,18 +55,20 @@ import {
   RowTableBodySchema,
   RowUpsertBodySchema,
 } from './schemas'
-import {
-  canEditDataRow,
-  canPublishDataRow,
-  canReadDataRow,
-  canReadTable,
-  forbidden,
+import {  forbidden,
   requireDataAccess,
   requireDataAuthorManager,
   requireDataEditor,
   requireDataPublisher,
   requireDataRowMover,
 } from './access'
+import {
+  canEditDataRow,
+  canPublishDataRow,
+  canReadDataRow,
+  resolveRowAccess,
+  type RowCheck,
+} from '../../../auth/dataAccess'
 import { handleRowPreview } from './preview'
 import { isMainScope, type BranchScope } from '../../../branches/scope'
 
@@ -130,24 +133,20 @@ async function recordRowAuditEvent(
  * Load a row and run the caller's access check. Returns a Response on
  * 404 / forbidden so call sites can `if (row instanceof Response) return row`.
  */
+// Bind the shared row-access decision to HTTP: an invisible row (missing, or in
+// a table family the user cannot see) answers 404 so the id leaks nothing; a
+// visible row the operation is not permitted on answers 403.
 async function loadRowForAccess(
   db: DbClient,
   scope: BranchScope,
   rowId: string,
   user: AuthUser,
-  check: (user: AuthUser, row: DataRow) => boolean,
+  check: RowCheck,
 ): Promise<DataRow | Response> {
-  const row = await getDataRow(db, scope, rowId)
-  if (!row) return rowNotFound()
-  // Enforce the table-family read boundary BEFORE the row-ownership check. A
-  // persona granted a broad content.* capability but NOT data.system.tables.read
-  // satisfies row ownership on every row, so without this it could read, edit,
-  // and publish system-table rows (pages/posts drafts, author identity). The
-  // schema-read sibling already checks this; the row layer did not (GHSA-x69h).
-  const table = await getDataTable(db, scope, row.tableId)
-  if (!table || !canReadTable(user, table)) return rowNotFound()
-  if (!check(user, row)) return forbidden()
-  return row
+  const access = await resolveRowAccess(db, scope, rowId, user, check)
+  if (access.kind === 'not-found') return rowNotFound()
+  if (access.kind === 'forbidden') return forbidden()
+  return access.row
 }
 
 // ---------------------------------------------------------------------------
@@ -196,15 +195,22 @@ async function handleRowItemPatch(
   const table = await getDataTable(db, scope, currentRow.tableId)
   if (!table) return rowNotFound()
 
-  const rawCells = body.cells ?? currentRow.cells
+  // A page's access rule and head settings stay as stored unless this user may change them.
+  const rawCells = keepPageStructuralCells(
+    currentRow,
+    body.cells ?? currentRow.cells,
+    userHasCapability(user, 'site.structure.edit'),
+  )
   // Run the `content.entry.cells` filter pipeline before persistence so
   // plugins can validate / normalize / auto-fill cells — the same shared
   // helper the plugin `cms.content.*` surface applies.
-  const cells = await applyContentEntryCellsFilter(rawCells, {
+  const filtered = await applyContentEntryCellsFilter(rawCells, {
     tableSlug: table.slug,
     entryId: rowId,
     actor: { kind: 'user', userId: user.id },
   })
+  // Checked again after the filters: a plugin filter is not a way around the rule either.
+  const cells = keepPageStructuralCells(currentRow, filtered, userHasCapability(user, 'site.structure.edit'))
   const slug = slugForTable(table, cells)
 
   const row = await saveDataRowDraft(db, scope, rowId, { cells, slug }, user.id)
@@ -237,10 +243,11 @@ async function handleRowItemDelete(
   const row = await softDeleteDataRow(db, scope, rowId, user.id)
   if (!row) return rowNotFound()
   // Prune the baked public artefact — a deleted row must stop being served
-  // by Layer A, which reads the disk slot with no DB awareness (ISS-039).
+  // by Layer A, which reads the disk slot with no DB awareness (ISS-039) —
+  // along with the baked pages that list it through a loop over its table.
   // Only main is served: a branch row never had an artefact or a cached route.
   if (options.uploadsDir && isMainScope(scope)) {
-    await removeDataRowArtefact(db, options.uploadsDir, rowId, row.slug).catch((err) => {
+    await retractDataRowArtefacts(db, options.uploadsDir, row, { wasPublished: row.status === 'published' }).catch((err) => {
       console.error('[publish:row] failed to remove artefact for deleted row', rowId, err)
     })
   }
@@ -365,10 +372,11 @@ async function handleRowStatus(
   const row = await updateDataRowStatus(db, scope, rowId, body.status, user.id)
   if (!row) return rowNotFound()
   // draft and unpublished both leave public visibility — prune the baked
-  // artefact so Layer A stops serving the retracted content (ISS-039).
+  // artefact so Layer A stops serving the retracted content (ISS-039), and
+  // the baked pages that listed the row while it was published.
   // Only main has artefacts.
   if (options.uploadsDir && isMainScope(scope)) {
-    await removeDataRowArtefact(db, options.uploadsDir, rowId, row.slug).catch((err) => {
+    await retractDataRowArtefacts(db, options.uploadsDir, row, { wasPublished: currentRow.status === 'published' }).catch((err) => {
       console.error('[publish:row] failed to remove artefact for retracted row', rowId, err)
     })
   }
@@ -392,8 +400,12 @@ async function handleRowAuthor(
   const author = await findUserById(db, body.authorUserId)
   if (!author || author.status !== 'active') return badRequest('Author must be an active user')
 
-  const currentRow = await getDataRow(db, scope, rowId)
-  if (!currentRow) return rowNotFound()
+  // Reassignment is an edit of the row, so it rides the same table-family and
+  // ownership boundary as every other row write. Reading the row directly here
+  // let a content.edit.any persona without data.system.tables.read read and
+  // re-author system-table rows it could not open (GHSA-m425).
+  const currentRow = await loadRowForAccess(db, scope, rowId, user, canEditDataRow)
+  if (currentRow instanceof Response) return currentRow
 
   const row = await updateDataRowAuthor(db, scope, rowId, body.authorUserId, user.id)
   if (!row) return rowNotFound()
@@ -501,11 +513,14 @@ async function handleRowVersionRestore(
   // The restored cells go through the same pipeline as a draft save: the
   // `content.entry.cells` filter, then the slug derived from the cells —
   // the version's stored slug may since have been taken by another row.
-  const cells = await applyContentEntryCellsFilter(version.cells, {
+  const restored = await applyContentEntryCellsFilter(version.cells, {
     tableSlug: table.slug,
     entryId: current.id,
     actor: { kind: 'user', userId: user.id },
   })
+  // Restoring brings back a page's content, never who may open it or its
+  // head settings: both stay as they are now, whatever the old version carried.
+  const cells = keepPageStructuralCells(current, restored)
   const slug = slugForTable(table, cells)
   if (slug) {
     const holder = await getDataRowBySlug(db, scope, table.id, slug)

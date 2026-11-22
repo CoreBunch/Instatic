@@ -142,6 +142,18 @@ export const CAPABILITY_META: Record<CoreCapability, CapabilityMeta> = {
     label: 'Read audit log',
     description: 'View the audit log and the Dashboard activity widget.',
   },
+  'mail.manage': {
+    label: 'Manage email',
+    description: 'Open the Email workspace: add connectors, choose the sender, edit email templates, and read the delivery activity.',
+  },
+  'members.read': {
+    label: 'View members',
+    description: 'See the people who have an account on the published site, their tags and their activity.',
+  },
+  'members.manage': {
+    label: 'Manage members',
+    description: 'Invite, tag, suspend and delete site members, and change who can sign up.',
+  },
   // ---------------------------------------------------------------------
   // Data workspace — split from `content.manage`
   // ---------------------------------------------------------------------

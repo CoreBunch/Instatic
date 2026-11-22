@@ -12,6 +12,7 @@
 
 import type { Page, PageNode, SiteDocument } from '@core/page-tree'
 import type {
+  ClosedContent,
   LoopFetchResult,
   LoopItem,
   PrefetchedLoopEntitySource,
@@ -22,7 +23,8 @@ import { loopSourceRegistry } from '@core/loops/registry'
 import { firstImagePathFromMarkdown } from '@core/markdown/renderMarkdown'
 import { normalizeRouteBase } from '@core/templates/templateMatching'
 import { publicDataUserFromParts } from '@core/data/publicDataUser'
-import type { PublishedDataRow } from '@core/data/schemas'
+import type { DataField, DataRowCells, PublishedDataRow } from '@core/data/schemas'
+import { collectMediaIds, resolveLoopDirection, resolveMediaIdsToPaths, resolvedMediaOverlay, type LoopDirection } from '@core/loops'
 import type { DbClient } from '../db/client'
 import { walkRenderTree } from './renderTreeWalk'
 
@@ -40,15 +42,31 @@ interface ResolvedLoopData extends LoopFetchResult {
 type LoopDataMap = Map<string, ResolvedLoopData>
 
 /**
- * Project a published data row into a LoopItem. The single-row route uses
- * this to seed the publisher's entry stack with one frame representing the
- * row being viewed.
+ * Seed the publisher's entry stack with one frame representing the row being
+ * viewed (entry routes, branch previews, draft previews).
+ *
+ * The table's media fields are resolved to public paths exactly like the
+ * `data.rows` loop source does, so `{currentEntry.<mediaField>}` renders the
+ * same URL on an entry route as inside a loop — not the raw media id.
+ */
+export async function publishedDataRowToEntryItem(
+  db: DbClient,
+  row: PublishedDataRow,
+  fields: readonly DataField[],
+): Promise<LoopItem> {
+  const mediaPathMap = await resolveMediaIdsToPaths(db, collectMediaIds([{ cells_json: row.cells }], fields))
+  return publishedDataRowToLoopItem(row, resolvedMediaOverlay(row.cells as DataRowCells, fields, mediaPathMap))
+}
+
+/**
+ * Project a published data row into a LoopItem.
  *
  * `cells` are spread first so all table-defined fields are available in
- * bindings by their field id. System fields (id, tableId, author, etc.)
- * are overlaid after so they can never be shadowed by a user-defined cell.
+ * bindings by their field id, then `mediaOverlay` replaces media ids with
+ * resolved paths. System fields (id, tableId, author, etc.) are overlaid
+ * after so they can never be shadowed by a user-defined cell.
  */
-export function publishedDataRowToLoopItem(row: PublishedDataRow): LoopItem {
+function publishedDataRowToLoopItem(row: PublishedDataRow, mediaOverlay: DataRowCells): LoopItem {
   const tableRouteBase = normalizeRouteBase(row.tableRouteBase || `/${row.tableSlug}`)
   const permalink = `${tableRouteBase === '/' ? '' : tableRouteBase}/${row.slug}`
 
@@ -72,6 +90,7 @@ export function publishedDataRowToLoopItem(row: PublishedDataRow): LoopItem {
       // Cells — primary data, spread first so bindings can reference any
       // user-defined field by its fieldId.
       ...row.cells,
+      ...mediaOverlay,
       // System identity (overlay after cells so these are never shadowed)
       id: row.rowId,
       rowId: row.rowId,
@@ -144,7 +163,8 @@ interface LoopProps {
   sourceId: string
   filters: Record<string, unknown>
   orderBy: string
-  direction: 'asc' | 'desc'
+  /** The author's pick, or `undefined`: resolve with `resolveLoopDirection`. */
+  direction: LoopDirection | undefined
   limit: number
   offset: number
   pagination: 'none' | 'infinite'
@@ -160,7 +180,7 @@ export function readLoopProps(node: PageNode): LoopProps {
         ? (props.filters as Record<string, unknown>)
         : {},
     orderBy: typeof props.orderBy === 'string' ? props.orderBy : '',
-    direction: props.direction === 'asc' ? 'asc' : 'desc',
+    direction: props.direction === 'asc' || props.direction === 'desc' ? props.direction : undefined,
     limit: typeof props.limit === 'number' && props.limit > 0 ? Math.floor(props.limit) : 10,
     offset: typeof props.offset === 'number' && props.offset >= 0 ? Math.floor(props.offset) : 0,
     pagination: props.pagination === 'infinite' ? 'infinite' : 'none',
@@ -227,9 +247,10 @@ async function resolveOneLoop(
     db: DbClient
     site: SiteDocument
     url?: URL
-    request?: SourceRequestContext
+    requestFor?: (source: PrefetchedLoopEntitySource) => Promise<SourceRequestContext>
     branchId?: string
     drafts?: boolean
+    closed?: ClosedContent
   },
 ): Promise<ResolvedLoopData> {
   const props = readLoopProps(node)
@@ -242,19 +263,24 @@ async function resolveOneLoop(
     offset = props.offset + (pageNumber - 1) * props.pageSize
   }
 
+  // Built for this source alone: a shared source and a per-visitor one in
+  // the same render are told different things (`loopSourceRequest.ts`).
+  const request = ctx.requestFor ? await ctx.requestFor(source) : undefined
+
   const fetchCtx: SourceFetchContext = {
     db: ctx.db,
     site: ctx.site,
     filters: props.filters,
     orderBy: props.orderBy || (source.orderByOptions[0]?.id ?? ''),
-    direction: props.direction,
+    direction: resolveLoopDirection(props.direction, source),
     limit,
     offset,
-    // Request context — present only when rendering inside a Layer C hole.
-    // Built-in publish-time sources ignore it.
-    request: ctx.request,
+    // Request context — present only for a request-time render (a Layer C
+    // hole, a preview). Built-in publish-time sources ignore it.
+    request,
     branchId: ctx.branchId,
     drafts: ctx.drafts,
+    closed: ctx.closed,
   }
 
   try {
@@ -287,13 +313,15 @@ export async function prefetchLoopData(
   db: DbClient,
   url?: URL,
   options?: {
-    /** Per-request context for request-dependent sources (Layer C holes). */
-    request?: SourceRequestContext
+    /** The request each source is given, for request-time renders (Layer C holes, previews). */
+    requestFor?: (source: PrefetchedLoopEntitySource) => Promise<SourceRequestContext>
     /** Limit the walk to a subtree (the hole node id). Defaults to page root. */
     rootNodeId?: string
     /** Branch whose rows loops read; absent means main (publishing, public routes). */
     branchId?: string
     drafts?: boolean
+    /** What the visitor may not open; set on every public render. */
+    closed?: ClosedContent
   },
 ): Promise<LoopDataMap> {
   const nodes = collectLoopNodes(page, site, options?.rootNodeId)
@@ -303,7 +331,7 @@ export async function prefetchLoopData(
     nodes.map(async (node) => {
       const props = readLoopProps(node)
       const source = props.sourceId ? loopSourceRegistry.get(props.sourceId) : undefined
-      if (!source || source.kind === 'contextual') {
+      if (!source || source.kind === 'contextual' || source.kind === 'remote') {
         return [
           node.id,
           { items: [], totalItems: 0, pageNumber: 1, hasMore: false },
@@ -313,9 +341,10 @@ export async function prefetchLoopData(
         db,
         site,
         url,
-        request: options?.request,
+        requestFor: options?.requestFor,
         branchId: options?.branchId,
         drafts: options?.drafts,
+        closed: options?.closed,
       })
       return [node.id, data] as [string, ResolvedLoopData]
     }),

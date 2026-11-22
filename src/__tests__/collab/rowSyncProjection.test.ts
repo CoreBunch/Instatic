@@ -37,6 +37,7 @@ function makeProvider(site: ReturnType<typeof makeSite>) {
     status: () => 'connected',
     canSend: () => true,
     reconnectNow() {},
+    reopen() {},
     onStatus: () => () => {},
     onReset: () => () => {},
     destroy() {

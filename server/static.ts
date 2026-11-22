@@ -136,6 +136,25 @@ export async function serveStaticFile(
     : 'no-cache'
   const mime = contentType(filePath)
 
+  // `no-cache` means "revalidate before reuse", which only saves bytes when
+  // the response carries a validator. Without one, every editor preview
+  // reload re-downloaded every image and font in full.
+  const validators = fileValidators(file.size, file.lastModified)
+  if (req && isNotModified(req, validators, file.lastModified)) {
+    return new Response(null, {
+      status: 304,
+      headers: {
+        // Upload hardening needs the MIME even without a response body;
+        // otherwise revalidation turns inert images into attachments.
+        'content-type': mime,
+        'cache-control': cacheControl,
+        ...validators,
+        // Same `vary` as the 200 this revalidates (compressed bodies only).
+        ...(isCompressible(filePath, file.size) ? { 'vary': 'accept-encoding' } : {}),
+      },
+    })
+  }
+
   const buffer = await file.arrayBuffer()
   const bytes = new Uint8Array(buffer) as ResponseBytes
   const acceptEncoding = req?.headers.get('accept-encoding') ?? null
@@ -154,6 +173,7 @@ export async function serveStaticFile(
         // Tells caches the response varies based on the request encoding,
         // so a gzip-only client doesn't get served a cached brotli payload.
         'vary': 'accept-encoding',
+        ...validators,
       },
     })
   }
@@ -162,8 +182,37 @@ export async function serveStaticFile(
     headers: {
       'content-type': mime,
       'cache-control': cacheControl,
+      ...validators,
     },
   })
+}
+
+/**
+ * Weak ETag from size + mtime: any rewrite of the file (a media replace that
+ * keeps its path, a redeploy) changes it. Weak, because the same validator
+ * covers the identity, gzip and brotli bodies.
+ */
+function fileValidators(size: number, mtimeMs: number): { etag: string; 'last-modified': string } {
+  return {
+    etag: `W/"${size.toString(36)}-${Math.floor(mtimeMs).toString(36)}"`,
+    'last-modified': new Date(mtimeMs).toUTCString(),
+  }
+}
+
+/** RFC 9110 §13.1: `If-None-Match` wins; `If-Modified-Since` only without it. */
+function isNotModified(req: Request, validators: { etag: string }, mtimeMs: number): boolean {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false
+  const ifNoneMatch = req.headers.get('if-none-match')
+  if (ifNoneMatch !== null) {
+    const opaque = (tag: string) => tag.trim().replace(/^W\//, '')
+    const current = opaque(validators.etag)
+    return ifNoneMatch.split(',').some((tag) => tag.trim() === '*' || opaque(tag) === current)
+  }
+  const ifModifiedSince = req.headers.get('if-modified-since')
+  if (ifModifiedSince === null) return false
+  const since = Date.parse(ifModifiedSince)
+  // HTTP dates have whole-second precision.
+  return Number.isFinite(since) && Math.floor(mtimeMs / 1000) * 1000 <= since
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import type { Page, PageNode } from '@core/page-tree'
-import { reindexNodeParents } from '@core/page-tree'
+import { mergePageSeo, reindexNodeParents } from '@core/page-tree'
 import { firstOutletId, treeHasOutlet } from './outlet'
 
 type TerminalContent =
@@ -24,6 +24,11 @@ function hasMeaningfulBodyProps(node: PageNode): boolean {
  */
 export function composedNodeSourceId(composedId: string): string {
   return composedId.replace(/^(?:t\d+_)*c0_/, '')
+}
+
+/** IDs assigned when a page or inner layout is spliced into an outlet. */
+export function isComposedNodeId(id: string): boolean {
+  return /^(?:c0_|t\d+_)/.test(id)
 }
 
 /** Clone a tree's nodes with every id prefixed, returning the remapped root id. */
@@ -118,9 +123,10 @@ function spliceIntoOutlet(host: Nodes, hostRoot: string, inner: Nodes, innerRoot
  */
 export function composeTemplateChain(chain: Page[], terminal: TerminalContent): Page {
   const effective = chain.filter(treeHasOutlet)
+  const seo = mergePageSeo(...chain.map((template) => template.seo), terminal.kind === 'page' ? terminal.page.seo : undefined)
 
   if (effective.length === 0) {
-    if (terminal.kind === 'page') return terminal.page
+    if (terminal.kind === 'page') return seo ? { ...terminal.page, seo } : terminal.page
     // entry terminal with no usable outlet anywhere: render the innermost
     // matched template as-is (chrome without a body). `chain` is non-empty here
     // because the renderer 404s an entry route with no matching template.
@@ -130,6 +136,7 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
       slug: t.slug,
       title: t.title,
       ...(t.template ? { template: t.template } : {}),
+      ...(seo ? { seo } : {}),
       rootNodeId: t.rootNodeId,
       nodes: { ...t.nodes },
     }
@@ -155,7 +162,14 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
   // outlets, so any parentId copied from the source pages is now stale. Derive
   // it fresh from the composed children arrays before the page is rendered
   // (the publisher's sizes resolver reads parentId).
-  reindexNodeParents(acc.nodes)
+  //
+  // The composed map still shares node OBJECTS with the source pages wherever a
+  // node was not rekeyed, and those pages belong to the caller — on the public
+  // path, to the cached published site whose fingerprint validates every baked
+  // hole placeholder. Reindex copies, never the caller's nodes.
+  const nodes: Nodes = {}
+  for (const id in acc.nodes) nodes[id] = { ...acc.nodes[id] }
+  reindexNodeParents(nodes)
 
   return {
     id: innermost.id, // identifies "what was rendered" for the publish.html filter
@@ -170,7 +184,8 @@ export function composeTemplateChain(chain: Page[], terminal: TerminalContent): 
     // here meant a stylesheet scoped to an entry template never applied to that
     // template's own routes — the one place it was meant to.
     ...(innermost.template ? { template: innermost.template } : {}),
+    ...(seo ? { seo } : {}),
     rootNodeId: acc.rootId,
-    nodes: acc.nodes,
+    nodes,
   }
 }

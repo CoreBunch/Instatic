@@ -124,9 +124,8 @@ function renderBinding(
       onSet={onSet}
       onClear={onClear}
       binding={props.binding}
-    >
-      <input aria-label="Text" />
-    </DynamicBindingControl>,
+      renderControl={(labelAction) => <><input aria-label="Text" />{labelAction}</>}
+    />,
   )
 }
 
@@ -250,9 +249,8 @@ describe('DynamicBindingControl picker', () => {
         control={{ type: 'image', label: 'Image' }}
         onSet={(b) => { result = b }}
         onClear={() => {}}
-      >
-        <input aria-label="Image" />
-      </DynamicBindingControl>,
+        renderControl={(labelAction) => <><input aria-label="Image" />{labelAction}</>}
+      />,
     )
 
     fireEvent.click(screen.getByRole('button', { name: /bind image/i }))
@@ -298,9 +296,8 @@ describe('DynamicBindingControl picker', () => {
           { id: 'postSlug', label: 'Post slug' },
         ]}
         sourceLabel="Posts loop"
-      >
-        <input aria-label="Text" />
-      </DynamicBindingControl>,
+        renderControl={(labelAction) => <><input aria-label="Text" />{labelAction}</>}
+      />,
     )
     fireEvent.click(screen.getByRole('button', { name: /bind text/i }))
     await waitFor(() => expect(screen.getByRole('menu', { name: /bind text/i })).toBeDefined())

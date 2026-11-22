@@ -20,6 +20,8 @@
 
 import { normalizeImportedText } from './text'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
+import { normalizeAnchorTarget } from '@core/htmlAttributes'
+import { memberFormAction } from '@core/members'
 
 export interface ImportRule {
   /** CSS selector tested via `el.matches()`. */
@@ -68,6 +70,23 @@ const TEXT_INPUT_TYPES = [
   'file',
   'hidden',
 ] as const
+
+/**
+ * The SVG's markup minus its root `class`. The class names ride on the node's
+ * classIds like every element's, and the publisher (and canvas) put them back
+ * on the root; storing them in the markup too emitted `class="icon icon"`.
+ */
+function svgMarkupWithoutClass(el: Element): string {
+  if (!el.hasAttribute('class')) return el.outerHTML
+  const copy = el.cloneNode(true) as Element
+  copy.removeAttribute('class')
+  return copy.outerHTML
+}
+
+/** A bare `#`: the conventional "link to nowhere" a script wires up. */
+function isPlaceholderHref(href: string): boolean {
+  return href.trim() === '#'
+}
 
 function attr(el: Element, name: string): string {
   return el.getAttribute(name) ?? ''
@@ -142,11 +161,13 @@ function mapLoopProps(el: Element): Record<string, unknown> {
   const tableId = attr(el, 'data-table-id')
   const customTag = attr(el, 'data-custom-tag')
   const tag = attr(el, 'data-tag')
+  const direction = normalizedAttr(el, 'data-direction')
   return {
     sourceId: attr(el, 'data-source-id'),
     filters: tableId ? { tableId } : {},
     orderBy: attr(el, 'data-order-by'),
-    direction: normalizedAttr(el, 'data-direction') === 'asc' ? 'asc' : 'desc',
+    // No `data-direction`: the loop follows its source's default order.
+    ...(direction === 'asc' || direction === 'desc' ? { direction } : {}),
     limit: integerAttr(el, 'data-limit', 10, 1),
     offset: integerAttr(el, 'data-offset', 0, 0),
     pagination: normalizedAttr(el, 'data-pagination') === 'infinite' ? 'infinite' : 'none',
@@ -212,20 +233,29 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
   {
     match: 'form',
     map: (el) => {
-      const mode = normalizedAttr(el, 'data-instatic-form-mode') === 'cms' ? 'cms' : 'custom'
+      const declaredMode = normalizedAttr(el, 'data-instatic-form-mode')
+      const mode = declaredMode === 'cms' || declaredMode === 'member' ? declaredMode : 'custom'
+      // A member form posts to `/_instatic/members/<action>`; the action is its identity.
+      const memberAction = mode === 'member' ? attr(el, 'action').replace(/^\/_instatic\/members\//, '') : ''
+      const knownMemberAction = memberFormAction(memberAction)
       const redirectUrl = attr(el, 'data-instatic-success-redirect')
-      const successMessage = attr(el, 'data-instatic-success-message')
+      // A member form without its own message gets its action's wording (the
+      // text the Properties panel sets when the action is picked), not the
+      // generic form default. Signing out has none, so its message is empty.
+      const authoredMessage = attr(el, 'data-instatic-success-message')
+      const successMessage = authoredMessage || knownMemberAction?.successMessage
       return {
         moduleId: 'base.form',
         props: {
           mode,
           formId: formIdentifier(el),
           targetTableId: mode === 'cms' ? attr(el, 'data-instatic-target-table') : '',
-          action: attr(el, 'action'),
+          ...(knownMemberAction ? { memberAction } : {}),
+          action: mode === 'member' ? '' : attr(el, 'action'),
           method: normalizeFormMethod(el),
           successBehavior: redirectUrl ? 'redirect' : 'message',
           redirectUrl,
-          ...(successMessage ? { successMessage } : {}),
+          ...(successMessage !== undefined ? { successMessage } : {}),
         },
       }
     },
@@ -348,6 +378,8 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
             label: submitLabel(el),
             disabled: el.hasAttribute('disabled'),
             formId: optionalFormIdentifier(el),
+            name: attr(el, 'name'),
+            value: attr(el, 'value'),
           },
         }
       }
@@ -388,14 +420,22 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
   // treatment the plain anchor rule below gives a compound `<a>` — which keeps
   // href and target. The `btn` class rides along as a classId, so the swap does
   // not change how the element is styled.
+  //
+  // A `.btn` anchor whose href is a bare `#` stays a link too: base.button
+  // reads `#` as "no link" and renders a `<button>`, but the source element is
+  // an `<a>` that scripts and selectors (`a.btn`, `[href="#"]`) target.
+  //
+  // `target` is normalised, not copied: an empty attribute, `_top` or a named
+  // frame is not in `AnchorTargetSchema`. Preserve the intended browsing
+  // context here instead of relying on the publisher's default-target repair.
   {
     match: 'a.btn',
     map: (el) => {
       const text = normalizeImportedText(el.textContent ?? '')
       const href = el.getAttribute('href') ?? ''
-      const target = el.getAttribute('target') ?? '_self'
+      const target = normalizeAnchorTarget(el.getAttribute('target'))
 
-      return hasElementChild(el)
+      return hasElementChild(el) || isPlaceholderHref(href)
         ? { moduleId: 'base.link', props: { text, href, target } }
         : { moduleId: 'base.button', props: { label: text, href, target } }
     },
@@ -413,7 +453,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
       props: {
         text: normalizeImportedText(el.textContent ?? ''),
         href: el.getAttribute('href') ?? '',
-        target: el.getAttribute('target') ?? '_self',
+        target: normalizeAnchorTarget(el.getAttribute('target')),
       },
     }),
     recurse: hasElementChild,
@@ -428,7 +468,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
     map: (el) => ({
       moduleId: 'base.svg',
       props: {
-        svg: el.outerHTML,
+        svg: svgMarkupWithoutClass(el),
         title: el.getAttribute('aria-label') ?? '',
       },
     }),
@@ -461,9 +501,10 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
   // base.button is `canHaveChildren: false` and would keep only the text.
   // Submit buttons stay on base.submit even when compound: `core/forms`
   // identifies a form's submit control by that module id, so re-tagging one as
-  // a container would leave the form without a submit. A compound submit button
-  // therefore still keeps only its label — lifting that needs base.submit to
-  // accept children, which is a module change rather than an importer one.
+  // a container would leave the form without a submit. base.submit accepts
+  // children, so a compound submit recurses too and its content (an icon-only
+  // `<svg>`, an icon-font `<i>`, an `<img>`) survives as child nodes; `label`
+  // stays as the childless fallback, the base.link contract.
   {
     match: 'button',
     map: (el) => {
@@ -474,6 +515,8 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
             label: submitLabel(el),
             disabled: el.hasAttribute('disabled'),
             formId: optionalFormIdentifier(el),
+            name: attr(el, 'name'),
+            value: attr(el, 'value'),
           },
         }
       }
@@ -494,7 +537,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
         },
       }
     },
-    recurse: (el) => !isSubmitButton(el) && hasElementChild(el),
+    recurse: hasElementChild,
   },
 
   // ul / ol are BUILTIN_HTML_TAGS for base.container → container + RECURSE.
@@ -613,6 +656,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
         moduleId: 'base.video',
         props: {
           videoUrl,
+          poster: attr(el, 'poster'),
           autoplay: el.hasAttribute('autoplay'),
           loop: el.hasAttribute('loop'),
           muted: el.hasAttribute('muted'),

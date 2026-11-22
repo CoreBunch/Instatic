@@ -5,6 +5,7 @@
  */
 
 import type { CoreCapability } from '../../auth/capabilities'
+import type { PluginRateLimitStore } from './pluginRateLimit'
 import type { PluginManifest } from '@core/plugin-sdk'
 
 /**
@@ -19,6 +20,12 @@ export type HostRouteAccess =
   | { kind: 'capability'; capability: CoreCapability }
   | { kind: 'authenticated' }
   | { kind: 'public' }
+  /**
+   * A signed-in site member, optionally one holding `tag`. Public mount
+   * only. `appScope` names the manifest app scope an app's sign-in must
+   * carry to call the route with its token; null keeps it to browsers.
+   */
+  | { kind: 'member'; tag: string | null; appScope: string | null }
 
 interface HostRouteEntry {
   pluginId: string
@@ -41,6 +48,12 @@ interface HostHookFilterEntry {
 interface HostLoopSourceEntry {
   pluginId: string
   sourceId: string
+  /**
+   * New on every registration, so on every load of the plugin: an editor
+   * that holds sample items for the source can tell they came from an
+   * earlier load (an upgrade, a restart) and ask again.
+   */
+  revision: string
 }
 
 interface HostMediaAdapterEntry {
@@ -60,6 +73,11 @@ export interface HostPluginRecord {
   routes: Map<string, HostRouteEntry>
   hookListeners: HostHookListenerEntry[]
   hookFilters: HostHookFilterEntry[]
+  /**
+   * The VM-side id of the plugin's member export provider
+   * (`api.cms.members.exportProvider`), or null when it has none.
+   */
+  memberExportFilterId: string | null
   loopSources: HostLoopSourceEntry[]
   /** Media storage adapter ids registered by this plugin. */
   mediaAdapters: HostMediaAdapterEntry[]
@@ -74,6 +92,8 @@ export interface HostPluginRecord {
    * waiting for natural completion.
    */
   inflightFetches: Map<string, AbortController>
+  /** The plugin's own rate-limit counters (`cms.rateLimit.take`). Dropped with the record on unload. */
+  rateLimits: PluginRateLimitStore
 }
 
 export interface PendingRequest {

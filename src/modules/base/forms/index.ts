@@ -7,6 +7,7 @@
 import type { ModuleDefinition } from '@core/module-engine'
 import { registry } from '@core/module-engine'
 import { Type, Value, type Static } from '@core/utils/typeboxHelpers'
+import { submitUsesChildren } from './content'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
 import { safeUrl } from '@modules/base/utils/escape'
 import { FORM_RUNTIME_JS } from './formRuntimeJs'
@@ -33,9 +34,17 @@ import {
   HtmlAttributesPropSchemaOptions,
 } from '@modules/base/shared/htmlAttributes'
 import { htmlAttributesAttr } from '@core/publisher'
+import {
+  DEFAULT_MEMBER_FORM_ACTION,
+  MEMBER_FORM_ACTIONS,
+  memberFormAction,
+  memberFormActionPath,
+} from '@core/members'
 
 const FormPropsSchema = Type.Object({
-  mode: Type.Union([Type.Literal('cms'), Type.Literal('custom')], { default: 'cms' }),
+  mode: Type.Union([Type.Literal('cms'), Type.Literal('custom'), Type.Literal('member')], { default: 'cms' }),
+  /** Which member action a `member` form performs: a path under `/_instatic/members/`. */
+  memberAction: Type.String({ default: DEFAULT_MEMBER_FORM_ACTION }),
   formId: Type.String({ default: 'form' }),
   targetTableId: Type.String({ default: '' }),
   action: Type.String({ default: '' }),
@@ -54,6 +63,7 @@ const LabelPropsSchema = Type.Object({
   text: Type.String({ default: 'Label' }),
   targetMode: Type.Union([Type.Literal('auto'), Type.Literal('explicit')], { default: 'auto' }),
   targetId: Type.String({ default: '' }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type LabelProps = Static<typeof LabelPropsSchema>
@@ -87,6 +97,7 @@ const InputPropsSchema = Type.Object({
   minLength: Type.Number({ default: 0 }),
   maxLength: Type.Number({ default: 0 }),
   pattern: Type.String({ default: '' }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type InputProps = Static<typeof InputPropsSchema>
@@ -103,6 +114,7 @@ const TextareaPropsSchema = Type.Object({
   rows: Type.Number({ default: 4 }),
   minLength: Type.Number({ default: 0 }),
   maxLength: Type.Number({ default: 0 }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type TextareaProps = Static<typeof TextareaPropsSchema>
@@ -114,6 +126,7 @@ const SelectPropsSchema = Type.Object({
   required: Type.Boolean({ default: false }),
   disabled: Type.Boolean({ default: false }),
   multiple: Type.Boolean({ default: false }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type SelectProps = Static<typeof SelectPropsSchema>
@@ -123,6 +136,7 @@ const OptionPropsSchema = Type.Object({
   label: Type.String({ default: 'Option' }),
   selected: Type.Boolean({ default: false }),
   disabled: Type.Boolean({ default: false }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type OptionProps = Static<typeof OptionPropsSchema>
@@ -130,6 +144,7 @@ type OptionProps = Static<typeof OptionPropsSchema>
 const OptionGroupPropsSchema = Type.Object({
   label: Type.String({ default: 'Group' }),
   disabled: Type.Boolean({ default: false }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type OptionGroupProps = Static<typeof OptionGroupPropsSchema>
@@ -142,6 +157,7 @@ const ChoicePropsSchema = Type.Object({
   checked: Type.Boolean({ default: false }),
   required: Type.Boolean({ default: false }),
   disabled: Type.Boolean({ default: false }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type ChoiceProps = Static<typeof ChoicePropsSchema>
@@ -150,6 +166,13 @@ const SubmitPropsSchema = Type.Object({
   label: Type.String({ default: 'Submit' }),
   disabled: Type.Boolean({ default: false }),
   formId: Type.String({ default: '' }),
+  /**
+   * The button's own `name` and `value`, sent with the form only when this
+   * button is the one pressed. How a form with two buttons says which.
+   */
+  name: Type.String({ default: '' }),
+  value: Type.String({ default: '' }),
+  htmlAttributes: Type.Record(Type.String(), Type.String(), HtmlAttributesPropSchemaOptions),
 })
 
 type SubmitProps = Static<typeof SubmitPropsSchema>
@@ -157,6 +180,8 @@ type SubmitProps = Static<typeof SubmitPropsSchema>
 const FormMessagePropsSchema = Type.Object({
   formId: Type.String({ default: '' }),
   kind: Type.Union([Type.Literal('status'), Type.Literal('success'), Type.Literal('error')], { default: 'status' }),
+  /** An error message only: show it for errors about this one field instead of every error. */
+  fieldName: Type.String({ default: '' }),
   text: Type.String({ default: '' }),
 })
 
@@ -165,7 +190,7 @@ type FormMessageProps = Static<typeof FormMessagePropsSchema>
 export const FormModule: ModuleDefinition<FormProps> = {
   id: 'base.form',
   name: 'Form',
-  description: 'A CMS-native or custom HTML form.',
+  description: 'A CMS-native, member, or custom HTML form.',
   category: 'Forms',
   version: '1.0.0',
   icon: FileTextSolidIcon,
@@ -174,8 +199,15 @@ export const FormModule: ModuleDefinition<FormProps> = {
   schema: {
     mode: { type: 'select', label: 'Mode', options: [
       { label: 'CMS-native', value: 'cms' },
+      { label: 'Members', value: 'member' },
       { label: 'Custom action', value: 'custom' },
     ] },
+    memberAction: {
+      type: 'select',
+      label: 'Member action',
+      condition: { field: 'mode', eq: 'member' },
+      options: MEMBER_FORM_ACTIONS.map((entry) => ({ label: entry.label, value: entry.action })),
+    },
     formId: { type: 'text', label: 'Form ID', normalize: 'identifier' },
     targetTableId: { type: 'dataTable', label: 'Target data table', condition: { field: 'mode', eq: 'cms' } },
     action: { type: 'url', label: 'Action URL', condition: { field: 'mode', eq: 'custom' } },
@@ -206,6 +238,9 @@ export const FormModule: ModuleDefinition<FormProps> = {
       props.mode === 'cms' ? `data-instatic-target-table="${props.targetTableId}"` : '',
       props.mode === 'custom' ? `action="${safeUrl(props.action)}"` : '',
       props.mode === 'custom' ? `method="${props.method}"` : '',
+      // A member form is a real POST to the member endpoint, so it works with
+      // scripts off; the runtime upgrades it to an in-place submit.
+      props.mode === 'member' ? `action="${memberFormActionPath(props.memberAction)}" method="post"` : '',
       props.successBehavior === 'message' ? `data-instatic-success-message="${props.successMessage}"` : '',
       props.successBehavior === 'redirect' ? `data-instatic-success-redirect="${safeUrl(props.redirectUrl)}"` : '',
     ].filter(Boolean).join(' ')
@@ -216,12 +251,30 @@ export const FormModule: ModuleDefinition<FormProps> = {
       ? `<input type="text" name="${props.honeypotName}" autocomplete="off" tabindex="-1" data-instatic-honeypot hidden>`
       : ''
     return {
-      html: `<form ${attrs}${authored}>${honeypot}${renderedChildren.join('')}</form>`,
-      // CMS-native forms need the browser runtime; custom-action forms are
-      // plain HTML form submissions and ship zero JS.
-      ...(props.mode === 'cms' ? { js: FORM_RUNTIME_JS } : {}),
+      html: `<form ${attrs}${authored}>${honeypot}${memberHiddenInputs(props)}${renderedChildren.join('')}</form>`,
+      // CMS-native and member forms use the browser runtime; custom-action
+      // forms are plain HTML form submissions and ship zero JS.
+      ...(props.mode === 'custom' ? {} : { js: FORM_RUNTIME_JS }),
     }
   },
+}
+
+/**
+ * Hidden inputs a member form carries: the value from the page address it
+ * posts back (an emailed link's token or an app's sign-in request) and, for
+ * a script-less submit, where to go afterwards. The runtime fills the value
+ * in from the address; a render has no request to read it from. The server
+ * writes an app's sign-in request into a page it renders for one member
+ * (`stampAppRequestId`), so that form also posts without scripts.
+ */
+function memberHiddenInputs(props: FormProps): string {
+  if (props.mode !== 'member') return ''
+  const linkParam = memberFormAction(props.memberAction)?.linkParam
+  const token = linkParam ? `<input type="hidden" name="${linkParam}" data-instatic-member-link-param="${linkParam}">` : ''
+  const success = props.successBehavior === 'redirect' && props.redirectUrl
+    ? `<input type="hidden" name="_success" value="${safeUrl(props.redirectUrl)}">`
+    : ''
+  return token + success
 }
 
 export const LabelModule: ModuleDefinition<LabelProps> = {
@@ -240,6 +293,7 @@ export const LabelModule: ModuleDefinition<LabelProps> = {
       { label: 'Explicit', value: 'explicit' },
     ] },
     targetId: { type: 'text', label: 'Target ID', condition: { field: 'targetMode', eq: 'explicit' } },
+    htmlAttributes: htmlAttributesControl(),
   },
   propsSchema: LabelPropsSchema,
   defaults: Value.Create(LabelPropsSchema),
@@ -247,9 +301,9 @@ export const LabelModule: ModuleDefinition<LabelProps> = {
   htmlTag: 'label',
   render: (props) => {
     if (props.targetMode === 'explicit' && props.targetId) {
-      return { html: `<label for="${props.targetId}">${props.text}</label>` }
+      return { html: `<label for="${props.targetId}"${htmlAttributesAttr(props.htmlAttributes)}>${props.text}</label>` }
     }
-    return { html: `<label data-instatic-label-target="auto">${props.text}</label>` }
+    return { html: `<label data-instatic-label-target="auto"${htmlAttributesAttr(props.htmlAttributes)}>${props.text}</label>` }
   },
 }
 
@@ -281,7 +335,7 @@ export const InputModule: ModuleDefinition<InputProps> = {
     ['minlength', positiveNumber(props.minLength)],
     ['maxlength', positiveNumber(props.maxLength)],
     ['pattern', props.pattern],
-  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}>` }),
+  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}${htmlAttributesAttr(props.htmlAttributes)}>` }),
 }
 
 export const TextareaModule: ModuleDefinition<TextareaProps> = {
@@ -305,6 +359,7 @@ export const TextareaModule: ModuleDefinition<TextareaProps> = {
     rows: { type: 'number', label: 'Rows' },
     minLength: { type: 'number', label: 'Minimum length' },
     maxLength: { type: 'number', label: 'Maximum length' },
+    htmlAttributes: htmlAttributesControl(),
   },
   propsSchema: TextareaPropsSchema,
   defaults: Value.Create(TextareaPropsSchema),
@@ -319,7 +374,7 @@ export const TextareaModule: ModuleDefinition<TextareaProps> = {
     ['rows', props.rows],
     ['minlength', positiveNumber(props.minLength)],
     ['maxlength', positiveNumber(props.maxLength)],
-  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}>${props.value}</textarea>` }),
+  ])}${booleanAttrs(props, ['required', 'disabled', 'readOnly'])}${htmlAttributesAttr(props.htmlAttributes)}>${props.value}</textarea>` }),
 }
 
 export const SelectModule: ModuleDefinition<SelectProps> = {
@@ -338,6 +393,7 @@ export const SelectModule: ModuleDefinition<SelectProps> = {
     required: { type: 'toggle', label: 'Required' },
     disabled: { type: 'toggle', label: 'Disabled' },
     multiple: { type: 'toggle', label: 'Multiple' },
+    htmlAttributes: htmlAttributesControl(),
   },
   propsSchema: SelectPropsSchema,
   defaults: Value.Create(SelectPropsSchema),
@@ -349,7 +405,7 @@ export const SelectModule: ModuleDefinition<SelectProps> = {
       ['data-instatic-field-id', props.fieldId],
       ['name', props.name || props.fieldId],
       ['id', props.id],
-    ])}${booleanAttrs(props, ['required', 'disabled', 'multiple'])}>${renderedChildren.join('')}</select>`,
+    ])}${booleanAttrs(props, ['required', 'disabled', 'multiple'])}${htmlAttributesAttr(props.htmlAttributes)}>${renderedChildren.join('')}</select>`,
   }),
 }
 
@@ -367,6 +423,7 @@ export const OptionModule: ModuleDefinition<OptionProps> = {
     label: { type: 'text', label: 'Label' },
     selected: { type: 'toggle', label: 'Selected' },
     disabled: { type: 'toggle', label: 'Disabled' },
+    htmlAttributes: htmlAttributesControl(),
   },
   propsSchema: OptionPropsSchema,
   defaults: Value.Create(OptionPropsSchema),
@@ -375,7 +432,7 @@ export const OptionModule: ModuleDefinition<OptionProps> = {
   // `value` is emitted even when empty: an option with no value attribute
   // submits its own text instead, so dropping `value=""` turns the neutral
   // "any" choice into a filter value named after its label.
-  render: (props) => ({ html: `<option value="${String(props.value ?? '')}"${booleanAttrs(props, ['selected', 'disabled'])}>${props.label}</option>` }),
+  render: (props) => ({ html: `<option value="${String(props.value ?? '')}"${booleanAttrs(props, ['selected', 'disabled'])}${htmlAttributesAttr(props.htmlAttributes)}>${props.label}</option>` }),
 }
 
 export const OptionGroupModule: ModuleDefinition<OptionGroupProps> = {
@@ -390,13 +447,14 @@ export const OptionGroupModule: ModuleDefinition<OptionGroupProps> = {
   schema: {
     label: { type: 'text', label: 'Label' },
     disabled: { type: 'toggle', label: 'Disabled' },
+    htmlAttributes: htmlAttributesControl(),
   },
   propsSchema: OptionGroupPropsSchema,
   defaults: Value.Create(OptionGroupPropsSchema),
   component: OptionGroupEditor,
   htmlTag: 'optgroup',
   render: (props, renderedChildren) => ({
-    html: `<optgroup${attrs([['label', props.label]])}${booleanAttrs(props, ['disabled'])}>${renderedChildren.join('')}</optgroup>`,
+    html: `<optgroup${attrs([['label', props.label]])}${booleanAttrs(props, ['disabled'])}${htmlAttributesAttr(props.htmlAttributes)}>${renderedChildren.join('')}</optgroup>`,
   }),
 }
 
@@ -422,19 +480,31 @@ export const SubmitModule: ModuleDefinition<SubmitProps> = {
   version: '1.0.0',
   icon: SendSolidIcon,
   trusted: true,
-  canHaveChildren: false,
+  // Children carry imported icon-only submit content (an inline `<svg>`,
+  // an icon-font `<i>`, an `<img>`) as real nodes; `label` is the childless
+  // fallback. Same children-vs-text contract as base.link.
+  canHaveChildren: true,
   schema: {
-    label: { type: 'text', label: 'Label' },
+    label: { type: 'text', label: 'Label', placeholder: 'Displayed when no children' },
     disabled: { type: 'toggle', label: 'Disabled' },
     formId: { type: 'text', label: 'Form ID override', normalize: 'identifier' },
+    name: { type: 'text', label: 'Name', placeholder: 'Sent only when this button is pressed', normalize: 'identifier' },
+    value: { type: 'text', label: 'Value', condition: { field: 'name', notEq: '' } },
+    htmlAttributes: htmlAttributesControl(),
   },
   propsSchema: SubmitPropsSchema,
   defaults: Value.Create(SubmitPropsSchema),
   component: SubmitEditor,
   htmlTag: 'button',
-  render: (props) => ({
-    html: `<button type="submit"${attrs([['form', normalizeIdentifierValue(props.formId)]])}${booleanAttrs(props, ['disabled'])}>${props.label}</button>`,
-  }),
+  render: (props, renderedChildren) => {
+    const content = submitUsesChildren(renderedChildren.length)
+      ? renderedChildren.join('')
+      : props.label
+    const name = normalizeIdentifierValue(props.name)
+    return {
+      html: `<button type="submit"${attrs([['form', normalizeIdentifierValue(props.formId)], ['name', name], ['value', name ? props.value : '']])}${booleanAttrs(props, ['disabled'])}${htmlAttributesAttr(props.htmlAttributes)}>${content}</button>`,
+    }
+  },
 }
 
 export const FormMessageModule: ModuleDefinition<FormMessageProps> = {
@@ -453,6 +523,12 @@ export const FormMessageModule: ModuleDefinition<FormMessageProps> = {
       { label: 'Success', value: 'success' },
       { label: 'Error', value: 'error' },
     ] },
+    fieldName: {
+      type: 'text',
+      label: 'Only for field',
+      description: 'The name of one field. Leave empty to show every error.',
+      condition: { field: 'kind', eq: 'error' },
+    },
     text: { type: 'text', label: 'Text' },
   },
   propsSchema: FormMessagePropsSchema,
@@ -460,7 +536,7 @@ export const FormMessageModule: ModuleDefinition<FormMessageProps> = {
   component: FormMessageEditor,
   htmlTag: 'div',
   render: (props) => ({
-    html: `<div data-instatic-form-message="${props.kind}" data-instatic-form-id="${normalizeIdentifierValue(props.formId)}" role="${props.kind === 'error' ? 'alert' : 'status'}">${props.text}</div>`,
+    html: `<div data-instatic-form-message="${props.kind}" data-instatic-form-id="${normalizeIdentifierValue(props.formId)}"${props.kind === 'error' && props.fieldName ? ` data-instatic-form-field="${props.fieldName}"` : ''} role="${props.kind === 'error' ? 'alert' : 'status'}">${props.text}</div>`,
   }),
 }
 
@@ -494,6 +570,7 @@ function inputLikeSchema(typeLabel: string): ModuleDefinition<InputProps>['schem
     minLength: { type: 'number', label: 'Minimum length' },
     maxLength: { type: 'number', label: 'Maximum length' },
     pattern: { type: 'text', label: 'Pattern' },
+    htmlAttributes: htmlAttributesControl(),
   }
 }
 
@@ -520,6 +597,7 @@ function choiceModule(args: {
       checked: { type: 'toggle', label: 'Checked' },
       required: { type: 'toggle', label: 'Required' },
       disabled: { type: 'toggle', label: 'Disabled' },
+      htmlAttributes: htmlAttributesControl(),
     },
     propsSchema: ChoicePropsSchema,
     defaults: Value.Create(ChoicePropsSchema),
@@ -532,7 +610,7 @@ function choiceModule(args: {
         ['name', props.name || props.fieldId],
         ['id', props.id],
         ['value', props.value],
-      ])}${booleanAttrs(props, ['checked', 'required', 'disabled'])}>`,
+      ])}${booleanAttrs(props, ['checked', 'required', 'disabled'])}${htmlAttributesAttr(props.htmlAttributes)}>`,
     }),
   }
 }

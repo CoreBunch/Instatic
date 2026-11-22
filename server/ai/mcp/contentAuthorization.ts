@@ -4,22 +4,21 @@
  * The browser executes a relayed tool with the connector owner's admin cookie,
  * which may be more powerful than the deliberately narrowed connector token.
  * The generic tool gate checks the connector's capability names; this module
- * completes that check for own-vs-any capabilities before the request reaches
- * the browser, so the cookie cannot widen the delegated authority.
+ * completes that check with the shared row-access rules (table family plus
+ * own-vs-any ownership) before the request reaches the browser, so the cookie
+ * cannot widen the delegated authority. Same rules as the HTTP data routes
+ * and the server-side read tools: one decision, three callers.
  */
 import type { CoreCapability } from '@core/capabilities'
 import type { DbClient } from '../../db/client'
-import { getDataRow } from '../../repositories/data'
 import type { BranchScope } from '../../branches/scope'
+import { canEditDataRow, canPublishDataRow, resolveRowAccess, type RowCheck } from '../../auth/dataAccess'
 
-const DOCUMENT_EDIT_TOOLS = new Set([
-  'content_delete_document',
-  'content_set_document_field',
-  'content_set_document_fields',
-])
-
-const DOCUMENT_PUBLISH_TOOLS = new Set([
-  'content_set_document_status',
+const DOCUMENT_TOOL_CHECKS: ReadonlyMap<string, RowCheck> = new Map([
+  ['content_delete_document', canEditDataRow],
+  ['content_set_document_field', canEditDataRow],
+  ['content_set_document_fields', canEditDataRow],
+  ['content_set_document_status', canPublishDataRow],
 ])
 
 function inputDocumentId(input: unknown): string {
@@ -34,13 +33,6 @@ function inputDocumentId(input: unknown): string {
   return input.documentId
 }
 
-function ownsDocument(
-  row: { authorUserId: string | null; createdByUserId: string | null },
-  userId: string,
-): boolean {
-  return row.authorUserId === userId || (!row.authorUserId && row.createdByUserId === userId)
-}
-
 export async function authorizeMcpContentTool(
   db: DbClient,
   userId: string,
@@ -50,23 +42,13 @@ export async function authorizeMcpContentTool(
   /** The branch the connected workspace has open: the tool acts on that row. */
   scope: BranchScope,
 ): Promise<void> {
-  const checksEditOwnership = DOCUMENT_EDIT_TOOLS.has(toolName)
-  const checksPublishOwnership = DOCUMENT_PUBLISH_TOOLS.has(toolName)
-  if (!checksEditOwnership && !checksPublishOwnership) return
+  const check = DOCUMENT_TOOL_CHECKS.get(toolName)
+  if (!check) return
 
   const documentId = inputDocumentId(input)
-  const row = await getDataRow(db, scope, documentId)
-  if (!row) throw new Error(`Document ${documentId} not found.`)
-
-  if (checksEditOwnership) {
-    if (capabilities.includes('content.edit.any') || capabilities.includes('content.manage')) return
-    if (capabilities.includes('content.edit.own') && ownsDocument(row, userId)) return
+  const access = await resolveRowAccess(db, scope, documentId, { id: userId, capabilities }, check)
+  if (access.kind === 'not-found') throw new Error(`Document ${documentId} not found.`)
+  if (access.kind === 'forbidden') {
+    throw new Error(`Tool ${toolName} is not permitted for document ${documentId}.`)
   }
-
-  if (checksPublishOwnership) {
-    if (capabilities.includes('content.publish.any')) return
-    if (capabilities.includes('content.publish.own') && ownsDocument(row, userId)) return
-  }
-
-  throw new Error(`Tool ${toolName} is not permitted for document ${documentId}.`)
 }

@@ -11,6 +11,8 @@ export interface TrailingThrottle<A extends unknown[]> {
   call: (...args: A) => void
   /** Fire any pending trailing call now (used on unmount so nothing is lost). */
   flush: () => void
+  /** Drop a trailing edit superseded by an external change. */
+  cancel: () => void
 }
 
 export function createTrailingThrottle<A extends unknown[]>(
@@ -53,7 +55,14 @@ export function createTrailingThrottle<A extends unknown[]>(
     }
   }
 
-  return { call, flush }
+  const cancel = (): void => {
+    if (timer) clearTimeout(timer)
+    timer = null
+    pending = null
+    lastFiredAt = 0
+  }
+
+  return { call, flush, cancel }
 }
 
 /**

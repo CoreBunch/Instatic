@@ -21,6 +21,7 @@ import {
   createDataRow,
   createDataTable,
   listDataRows,
+  listDataTables,
   saveDataRowDraft,
   updateDataRowTable,
 } from '../../../server/repositories/data'
@@ -1018,6 +1019,46 @@ describe('collab relay', () => {
     const { doc: reseededSite } = await relay.openDoc(MAIN_SITE_DOC_ID)
     const pages = rostersMap(reseededSite).get('pages') as Y.Map<unknown>
     expect([...pages.keys()]).not.toContain(page.id)
+    relay.release(docId)
+  })
+
+  it('an open page document cannot write an old access rule back over an import', async () => {
+    const harness = await createCapabilityTestHarness()
+    cleanups.push(() => harness.cleanup())
+    const cookie = await harness.setupOwner()
+    const tables = await listDataTables(harness.db, MAIN_SCOPE)
+    const [page] = await listDataRows(harness.db, MAIN_SCOPE, 'pages')
+    const docId = `page:main:${page.id}`
+    const relay = createCollabRelay(harness.db, { persistDebounceMs: 60_000 })
+    cleanups.push(() => relay.destroy())
+    // Someone has the page open, with an unsaved edit, from before it was limited.
+    const retained = await relay.retain(docId)
+    editTitleUpdate(retained.doc, 'Edited while the page was still open to anyone')
+
+    const access = { level: 'members', onDeny: 'login' }
+    const response = await harness.cms('/admin/api/cms/import?strategy=merge-overwrite', {
+      method: 'POST',
+      cookie,
+      json: {
+        schemaVersion: 1,
+        exportedAt: new Date().toISOString(),
+        tables: tables.filter((table) => table.id === 'pages'),
+        rows: [{ ...page, cells: { ...page.cells, access } }],
+      },
+    })
+    expect(response.status).toBe(200)
+    await relay.flushAll()
+
+    const stored = async () =>
+      (await harness.db<{ cells_json: Record<string, unknown> }>`select cells_json from data_rows where id = ${page.id}`).rows[0]?.cells_json
+    expect((await stored())?.access).toEqual(access)
+
+    // The document people get from now on carries the rule, and saving it keeps the rule.
+    const rebound = await relay.openDoc(docId)
+    editTitleUpdate(rebound.doc, 'Edited after the import')
+    await relay.flushAll()
+    expect((await stored())?.access).toEqual(access)
+    expect(JSON.stringify((await stored())?.body)).toContain('Edited after the import')
     relay.release(docId)
   })
 

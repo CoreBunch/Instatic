@@ -33,7 +33,8 @@
  */
 import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
-import { htmlAttributesForReact, resolveHtmlTag, VOID_HTML_ELEMENTS } from '@core/htmlAttributes'
+import { resolveHtmlTag, VOID_HTML_ELEMENTS } from '@core/htmlAttributes'
+import { useCanvasHtmlAttributes } from '@modules/base/shared/useCanvasHtmlAttributes'
 import { CanvasModulePlaceholder } from '@ui/components/CanvasModulePlaceholder'
 import { ContainerSolidIcon } from 'pixel-art-icons/icons/container-solid'
 import type { ContainerStoredProps } from './props'
@@ -45,7 +46,7 @@ export const ContainerEditor: React.FC<ModuleComponentProps<ContainerStoredProps
   nodeWrapperProps,
 }) => {
   const Tag = resolveHtmlTag(props.tag, props.customTag)
-  const htmlAttrs = htmlAttributesForReact(props.htmlAttributes)
+  const htmlAttrs = useCanvasHtmlAttributes(props.htmlAttributes)
 
   // Void elements cannot have children. Render the element alone so React
   // does not throw. No empty-container placeholder is shown for void tags —

@@ -116,7 +116,7 @@ const FrameworkColorVariantOptionsSchema = withFallback(
   { enabled: true, count: 4 },
 )
 
-const FrameworkColorTokenSchema = Type.Object({
+export const FrameworkColorTokenSchema = Type.Object({
   id: Type.String(),
   /**
    * Free-form category label. Empty string means "uncategorized".
@@ -248,7 +248,7 @@ const TypographyMaxBreakpointSchema = Type.Object({
   scaleRatio: withFallback(Type.Union([Type.Number(), Type.String()]), 1.333),
 })
 
-const FrameworkTypographyGroupSchema = Type.Object({
+export const FrameworkTypographyGroupSchema = Type.Object({
   ...FrameworkScaleGroupBaseSchema.properties,
   /** Variable prefix — e.g. "text" produces --text-xs, --text-m, … */
   namingConvention: withFallback(Type.String(), 'text'),
@@ -280,7 +280,7 @@ const SpacingMaxBreakpointSchema = Type.Object({
   scaleRatio: withFallback(Type.Union([Type.Number(), Type.String()]), 1.414),
 })
 
-const FrameworkSpacingGroupSchema = Type.Object({
+export const FrameworkSpacingGroupSchema = Type.Object({
   ...FrameworkScaleGroupBaseSchema.properties,
   /** Variable prefix — e.g. "space" produces --space-xs, --space-m, … */
   namingConvention: withFallback(Type.String(), 'space'),
@@ -370,6 +370,17 @@ export const FrameworkPreferencesSettingsSchema = Type.Object({
   isRem: withFallback(Type.Boolean(), true),
   /** Whether generated framework utility CSS is tree-shaken to used class IDs. */
   treeShakeGeneratedFrameworkUtilities: withFallback(Type.Boolean(), true),
+  /**
+   * Whether framework CSS sets `html { font-size }` to `rootFontSize` (as a
+   * percentage of the browser default) so rem tokens render at the size the
+   * scale says. Only acts when `isRem` is on and `rootFontSize` is not 16.
+   *
+   * Optional with NO fallback on purpose: sites created before this field
+   * existed never emitted the rule, and their pages were tuned to the larger
+   * rem rendering. Absent means off, so those sites keep rendering exactly as
+   * before. The Core preset sets it to `true` for new frameworks.
+   */
+  emitRootFontSize: Type.Optional(Type.Boolean()),
 })
 
 export type FrameworkPreferencesSettings = Static<typeof FrameworkPreferencesSettingsSchema>

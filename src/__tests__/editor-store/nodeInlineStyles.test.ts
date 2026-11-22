@@ -1,6 +1,6 @@
 /**
  * Editor-store tests for the per-node inline-style actions
- * (`setNodeInlineStyles` / `removeNodeInlineStyleProperty`) — the "Style inline"
+ * (`setNodeInlineStyles`) — the "Style inline"
  * editing layer that writes to `node.inlineStyles`.
  */
 
@@ -52,7 +52,7 @@ describe('setNodeInlineStyles', () => {
   it('drops the inlineStyles field entirely once the last property is removed', () => {
     const id = setup()
     useEditorStore.getState().setNodeInlineStyles(id, { color: 'red' })
-    useEditorStore.getState().removeNodeInlineStyleProperty(id, 'color')
+    useEditorStore.getState().setNodeInlineStyles(id, { color: null })
     expect(nodeInline(id)).toBeUndefined()
   })
 
@@ -85,7 +85,7 @@ describe('setNodeInlineStyles', () => {
 
   it('a no-op patch (removing an absent key) records no change', () => {
     const id = setup()
-    useEditorStore.getState().removeNodeInlineStyleProperty(id, 'color')
+    useEditorStore.getState().setNodeInlineStyles(id, { color: null })
     // No entry was pushed: the next undo reverts the node INSERT itself.
     useEditorStore.getState().undo()
     expect(useEditorStore.getState().site!.pages[0].nodes[id]).toBeUndefined()

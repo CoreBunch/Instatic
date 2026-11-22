@@ -13,8 +13,10 @@ import React from 'react'
 import { render as renderReact } from '@testing-library/react'
 
 import { LinkModule } from '@modules/base/link'
+import { TextModule } from '@modules/base/text'
 import { ButtonModule } from '@modules/base/button'
 import { ListModule } from '@modules/base/list'
+import { FormModule } from '@modules/base/forms'
 import { ContainerModule } from '@modules/base/container'
 import { SvgModule } from '@modules/base/svg'
 import { anchorRel } from '@modules/base/shared/anchorTarget'
@@ -36,6 +38,17 @@ function renderEditor(
   )
 }
 
+describe('TextEditor canvas DOM', () => {
+  it('preserves an empty decorative span and its styling hooks', () => {
+    const { container } = renderEditor(
+      TextModule,
+      { tag: 'span', text: '', htmlAttributes: { 'aria-hidden': 'true' } },
+      { mcClassName: 'decoration' },
+    )
+    expect(container.querySelector('span.decoration[aria-hidden="true"]')?.textContent).toBe('')
+  })
+})
+
 describe('LinkEditor canvas DOM matches the shared helpers', () => {
   it('emits rel="noopener noreferrer" for _blank, none otherwise (== anchorRel)', () => {
     const blank = renderEditor(LinkModule, { href: 'https://e.com', target: '_blank' })
@@ -45,6 +58,16 @@ describe('LinkEditor canvas DOM matches the shared helpers', () => {
 
     const self = renderEditor(LinkModule, { href: 'https://e.com', target: '_self' })
     expect(self.container.querySelector('a')?.getAttribute('rel')).toBe(null)
+  })
+
+  it('merges an authored rel with the security rel exactly as the publisher does', () => {
+    const blank = renderEditor(LinkModule, { href: 'https://e.com', target: '_blank', htmlAttributes: { rel: 'nofollow' } })
+    const published = LinkModule.render({ ...LinkModule.defaults, href: 'https://e.com', target: '_blank', htmlAttributes: { rel: 'nofollow' } }, []).html
+    expect(blank.container.querySelector('a')?.getAttribute('rel')).toBe('nofollow noopener noreferrer')
+    expect(published).toContain('rel="nofollow noopener noreferrer"')
+
+    const self = renderEditor(LinkModule, { href: '/page/2/', target: '_self', htmlAttributes: { rel: 'next' } })
+    expect(self.container.querySelector('a')?.getAttribute('rel')).toBe('next')
   })
 
   it('renders children when present, falls back to text when empty (== linkUsesChildren)', () => {
@@ -75,6 +98,13 @@ describe('ButtonEditor canvas DOM matches resolveButtonAnchor', () => {
     const blank = renderEditor(ButtonModule, { href: 'https://e.com', target: '_blank', label: 'Go' })
     expect(blank.container.querySelector('a')?.getAttribute('rel')).toBe(anchorRel('_blank'))
   })
+
+  it('merges an authored rel with the security rel exactly as the publisher does', () => {
+    const blank = renderEditor(ButtonModule, { href: 'https://e.com', target: '_blank', label: 'Go', htmlAttributes: { rel: 'sponsored' } })
+    const published = ButtonModule.render({ ...ButtonModule.defaults, href: 'https://e.com', target: '_blank', label: 'Go', htmlAttributes: { rel: 'sponsored' } }, []).html
+    expect(blank.container.querySelector('a')?.getAttribute('rel')).toBe('sponsored noopener noreferrer')
+    expect(published).toContain('rel="sponsored noopener noreferrer"')
+  })
 })
 
 describe('ListEditor canvas DOM matches parseItems', () => {
@@ -88,6 +118,43 @@ describe('ListEditor canvas DOM matches parseItems', () => {
   it('renders <ol> for ordered, <ul> for unordered (== publisher tag)', () => {
     expect(renderEditor(ListModule, { listType: 'ordered', items: 'A' }).container.querySelector('ol')).not.toBeNull()
     expect(renderEditor(ListModule, { listType: 'unordered', items: 'A' }).container.querySelector('ul')).not.toBeNull()
+  })
+})
+
+describe('authored hidden attributes on the canvas', () => {
+  it('keeps an imported icon bank in the DOM and hides its container', () => {
+    const { container } = renderEditor(
+      ContainerModule,
+      { htmlAttributes: { hidden: '', 'aria-hidden': 'true' } },
+      { children: React.createElement('svg', { 'data-demo-icon': 'play' }) },
+    )
+    expect(container.querySelector('div[hidden] > svg[data-demo-icon="play"]')).not.toBeNull()
+  })
+
+  it('preserves hidden values and removes the attribute when the author clears it', () => {
+    const editor = (htmlAttributes: Record<string, string>) => (
+      <ContainerModule.component props={{ ...ContainerModule.defaults, htmlAttributes }} nodeId="bank" isSelected={false} />
+    )
+    const view = renderReact(editor({ hidden: 'until-found' }))
+    const element = view.container.firstElementChild!
+    expect(element.getAttribute('hidden')).toBe('until-found')
+    // A browser find or site script can reveal this node between editor renders.
+    element.removeAttribute('hidden')
+    view.rerender(editor({ hidden: 'until-found', title: 'Updated' }))
+    expect(element.hasAttribute('hidden')).toBe(false)
+    view.rerender(editor({ hidden: 'hidden' }))
+    expect(element.getAttribute('hidden')).toBe('hidden')
+    view.rerender(editor({ hidden: '' }))
+    expect(element.getAttribute('hidden')).toBe('')
+    view.rerender(editor({ 'aria-hidden': 'true' }))
+    expect(element.hasAttribute('hidden')).toBe(false)
+  })
+
+  it('also hides authored forms and anchors, including link-style buttons', () => {
+    for (const def of [FormModule, LinkModule, ButtonModule]) {
+      const { container } = renderEditor(def, { href: '/demo', htmlAttributes: { hidden: '' } })
+      expect(container.firstElementChild?.hasAttribute('hidden')).toBe(true)
+    }
   })
 })
 

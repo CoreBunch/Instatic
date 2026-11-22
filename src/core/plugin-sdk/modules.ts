@@ -143,6 +143,13 @@ export interface PluginModuleDefinition {
   /** Optional concrete root tag for layer/DOM tree display. */
   htmlTag?: string
   /**
+   * Class names `render()` writes into its HTML (or the module's frontend
+   * script toggles) that no node carries. Exact names or a `prefix*`. The
+   * publisher keeps the site's CSS for these classes; without the
+   * declaration, rules styling them are tree-shaken away at publish.
+   */
+  emittedClassNames?: string[]
+  /**
    * Package dependencies required when this module is inserted into a page.
    * Auto-written into the site's `package.json` so the Dependencies Panel
    * lists them. Used by the editor iframe runtime to build an import map

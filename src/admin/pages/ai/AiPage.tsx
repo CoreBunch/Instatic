@@ -24,7 +24,7 @@ import { DefaultsTab } from './tabs/DefaultsTab'
 import { AuditTab } from './tabs/AuditTab'
 import { McpTab } from './tabs/McpTab'
 import { McpOAuthAuthorizePage } from './McpOAuthAuthorizePage'
-import styles from './AiPage.module.css'
+import styles from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
 
 type Section = 'providers' | 'defaults' | 'mcp' | 'audit'
 

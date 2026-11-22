@@ -11,10 +11,6 @@ export function isOwnerUser(user: CmsCurrentUser): boolean {
   return user.role.slug === 'owner'
 }
 
-export function displayUserName(user: CmsCurrentUser): string {
-  return user.displayName.trim() || user.email
-}
-
 export function statusLabel(status: CmsCurrentUser['status']): string {
   return status === 'active' ? 'Active' : 'Suspended'
 }
@@ -30,5 +26,7 @@ export function formatCapabilitySummary(capabilities: string[]): string {
 }
 
 export function tabLabel(tab: Tab): string {
-  return tab === 'users' ? 'Users' : tab === 'roles' ? 'Roles' : 'Audit'
+  if (tab === 'users') return 'Admin users'
+  if (tab === 'members') return 'Site members'
+  return tab === 'roles' ? 'Roles' : 'Audit'
 }

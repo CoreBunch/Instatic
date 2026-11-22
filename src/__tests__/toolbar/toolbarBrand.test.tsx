@@ -58,7 +58,6 @@ function renderToolbarBrand(props: { siteName: string | null; faviconUrl?: strin
       <Toolbar
         siteName={props.siteName}
         faviconUrl={props.faviconUrl ?? null}
-        adminNavigationSlot={<span data-testid="toolbar-nav-slot" />}
         rightSlot={<span data-testid="toolbar-right-slot" />}
       />
     </Wrapper>,

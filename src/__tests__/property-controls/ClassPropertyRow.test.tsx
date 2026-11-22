@@ -22,16 +22,13 @@ describe('ClassPropertyRow remove button layout', () => {
       'utf-8',
     )
     const compactCss = css.replace(/\s+/g, '')
-    const controlLabelColumn = controlCss.match(/grid-template-columns:\s*(\d+px)\s+1fr/)?.[1]
-
-    expect(controlLabelColumn).toBe('100px')
-    expect(css).toMatch(/--class-remove-label-column:\s*100px/)
-    expect(css).toMatch(/--class-remove-row-center:\s*14px/)
+    expect(controlCss).toContain('grid-template-columns: var(--control-label-column) 1fr')
+    expect(css).toContain('--class-remove-row-center: calc(var(--control-height) / 2)')
     expect(css).toMatch(/--class-remove-button-size:\s*22px/)
     expect(css).toMatch(/--class-remove-fade-width:\s*36px/)
     expect(css).toMatch(/\.propertyRowWrap\[data-state="set"\]::after\s*\{[^}]*linear-gradient/s)
     expect(compactCss).toContain(
-      '.removeBtn{position:absolute;top:calc(var(--class-remove-row-center)-(var(--class-remove-button-size)/2));left:calc(var(--class-remove-label-column)-var(--class-remove-button-size)-4px)',
+      '.removeBtn{position:absolute;top:calc(var(--class-remove-row-center)-(var(--class-remove-button-size)/2));left:calc(var(--control-label-column)-var(--class-remove-button-size)-4px)',
     )
     expect(css).toMatch(/\.removeBtn\.removeBtn\s*\{[^}]*width:\s*var\(--class-remove-button-size\)/s)
     expect(css).toMatch(/\.removeBtn\.removeBtn\s*\{[^}]*height:\s*var\(--class-remove-button-size\)/s)

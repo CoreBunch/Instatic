@@ -5,9 +5,9 @@
  * NOT the render-cache LRU itself:
  *
  *   1. `publishVersion` — the monotonic counter bumped on every publish commit.
- *      `renderCache` reads it for staleness; Layer C hole placeholders stamp it;
- *      the hole endpoint compares against it. Repositories bump it after a
- *      publish/unpublish.
+ *      `renderCache` and snapshot memos read it for staleness. Repositories
+ *      bump it after a publish/unpublish. Hole placeholders use a stable
+ *      snapshot fingerprint instead of this process-local counter.
  *   2. `withPublishLock` — the in-process serializer that prevents two
  *      publishes' read-version → bake → bump-version windows from overlapping
  *      (ISS-038).
@@ -40,9 +40,7 @@ export function bumpPublishVersion(): number {
 }
 
 /**
- * Return the current publish version. Used by Layer C hole placeholders
- * (`data-instatic-version`), the hole endpoint to detect stale requests, and
- * the render cache for its staleness check.
+ * Return the current cache generation for published content.
  */
 export function getPublishVersion(): number {
   return publishVersion
@@ -51,8 +49,8 @@ export function getPublishVersion(): number {
 /**
  * Bump the publish version under the publish lock. The serialization matters
  * (ISS-038): a bare bump racing a publish's read-version → bake → bump window
- * would mis-stamp its baked hole shells as permanently stale. Call this from
- * every content mutation that retracts or moves a published route outside a
+ * would invalidate pre-warmed caches before the new artefacts are visible. Call
+ * this from every content mutation that retracts or moves a published route outside a
  * publish — unpublish, soft-delete, table move — so the render cache and the
  * versioned snapshot memos stop serving the retracted route.
  *
@@ -72,11 +70,9 @@ let publishChain: Promise<unknown> = Promise.resolve()
 /**
  * Run a publish operation under a single in-process lock so no two publishes'
  * read-version → bake → bump-version windows overlap (ISS-038). Without this,
- * two concurrent publishes both read version N, stamp every `<instatic-hole>`
- * shell with N+1, then each bump independently to N+2 — leaving baked shells
- * permanently mis-stamped (the hole endpoint serves them as stale). The lock
- * also serializes the two-slot artefact swap. JS is single-threaded, so a
- * promise-chain serializer is sufficient.
+ * two concurrent publishes could interleave their database writes, cache
+ * generations and two-slot artefact swaps, exposing inconsistent output. JS is
+ * single-threaded, so a promise-chain serializer is sufficient.
  */
 export function withPublishLock<T>(fn: () => Promise<T>): Promise<T> {
   const run = (): Promise<T> => fn()

@@ -263,6 +263,37 @@ describe('collab provider', () => {
     provider.destroy()
   })
 
+  it('reopen replaces a live socket at once and resyncs its docs on the new one', () => {
+    const sockets: FakeSocket[] = []
+    const provider = createCollabProvider({
+      createSocket: () => {
+        const socket = new FakeSocket()
+        sockets.push(socket)
+        return socket
+      },
+    })
+    const statuses: string[] = []
+    provider.onStatus((status) => statuses.push(status))
+    sockets[0].open()
+    provider.bind('page:p1')
+
+    provider.reopen()
+
+    // No backoff: the replacement exists before this call returns, and the
+    // socket authenticated by the old cookie is closed with its events cut.
+    expect(sockets.length).toBe(2)
+    expect(sockets[0].readyState).toBe(3)
+    expect(sockets[0].onclose).toBeNull()
+    expect(provider.canSend()).toBe(false)
+
+    sockets[1].open()
+    expect(provider.status()).toBe('connected')
+    expect(lastSyncMessageType(sockets[1], 'page:p1')).toBe(0) // step1 again
+    // The swap never reported an outage.
+    expect(statuses).not.toContain('offline')
+    provider.destroy()
+  })
+
   it('detaches a late-opening socket and every document listener on destroy', async () => {
     const socket = new FakeSocket()
     const provider = createCollabProvider({

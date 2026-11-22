@@ -323,6 +323,7 @@ export function useDataWorkspace({ shouldLoadRows }: DataWorkspaceOptions): Data
     setRowsError(null)
     const row = await createCmsDataRow(sourceRow.tableId, {
       cells: buildDuplicateRowCells(selectedTable, sourceRow, rows),
+      allocateSlug: true,
     })
     setRows((current) => updateRowList(current, row))
     setSelectedRowId(row.id)
