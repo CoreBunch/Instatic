@@ -2,9 +2,8 @@ import { useEditorStore } from '@site/store/store'
 import { findRenderedCanvasNodes } from './canvasNodeLookup'
 import { measureCanvasElementRect } from './canvasOverlayGeometry'
 
-/** Return to the active frame after the phone picker closes. Pan only when
- * the insertion would otherwise land outside the visible canvas. */
-export function revealInsertedCanvasNode(nodeId: string) {
+/** Focus the active frame and reveal its selected node after a phone panel closes. */
+export function revealSelectedCanvasNode(nodeId: string) {
   const state = useEditorStore.getState()
   const root = document.querySelector<HTMLElement>('[data-instatic-canvas-root]')
   if (!root || state.selectedNodeId !== nodeId) return

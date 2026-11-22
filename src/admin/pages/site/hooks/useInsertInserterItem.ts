@@ -1,5 +1,5 @@
 import { isMobileViewport } from '@admin/lib/mobileViewport'
-import { revealInsertedCanvasNode } from '@site/canvas/revealInsertedCanvasNode'
+import { revealSelectedCanvasNode } from '@site/canvas/revealSelectedCanvasNode'
 import type { SelectNodeOptions } from '@site/store/slices/selectionSlice'
 import { useEditorStore, selectActiveCanvasPage } from '@site/store/store'
 import { resolveInsertLocation, type InsertLocation } from '@site/store/insertLocation'
@@ -56,7 +56,7 @@ export function useInsertInserterItem() {
 
     if (phone) {
       if (item.kind === 'component') selectNode(nodeId, undefined, options)
-      requestAnimationFrame(() => revealInsertedCanvasNode(nodeId))
+      requestAnimationFrame(() => revealSelectedCanvasNode(nodeId))
     }
 
     pushToast({
