@@ -30,6 +30,7 @@ import {
 } from '@core/branches'
 import type { DbClient } from '../db/client'
 import { MAIN_SCOPE, isMainScope, type BranchScope } from './scope'
+import { routeVisibilityChanged } from '../publish/tableAccess'
 import { contentHash } from './contentHash'
 import {
   adapterFor,
@@ -258,6 +259,8 @@ export interface ApplyMergeInput {
   direction: MergeDirection
   resolutions: Readonly<Record<string, MergeResolution>>
   actorUserId: string | null
+  /** The uploads root, so a merge into main can drop baked pages. */
+  uploadsDir?: string
 }
 
 export interface ApplyMergeResult {
@@ -341,7 +344,12 @@ export async function applyBranchMerge(db: DbClient, input: ApplyMergeInput): Pr
     if (!merge) throw new Error('[branches] the merge transaction committed without a record')
     return { plan, into, intoNotices, merge }
   })
-  if (isMainScope(into)) await emitContentEvents(db, intoNotices, input.actorUserId)
+  if (isMainScope(into)) {
+    // A merge can move or delete entries, rename a table or move its route
+    // base on main: nothing baked or cached for the old shape may be served.
+    await routeVisibilityChanged(input.uploadsDir)
+    await emitContentEvents(db, intoNotices, input.actorUserId)
+  }
   return { plan, merge }
 }
 
@@ -365,6 +373,8 @@ export interface UndoMergeInput {
   branchId: string
   direction: MergeDirection
   actorUserId: string | null
+  /** The uploads root, so an undo on main can drop baked pages. */
+  uploadsDir?: string
 }
 
 export interface UndoMergeResult {
@@ -435,6 +445,11 @@ export async function undoBranchMerge(db: DbClient, input: UndoMergeInput): Prom
     if (mirrorOntoFrom) emitCollabNotices(from, fromNotices)
     return { merge: { ...record, undoneAt: new Date().toISOString() }, restoredCount: restored, intoNotices }
   })
-  if (isMainScope(into)) await emitContentEvents(db, intoNotices, input.actorUserId)
+  if (isMainScope(into)) {
+    // A merge can move or delete entries, rename a table or move its route
+    // base on main: nothing baked or cached for the old shape may be served.
+    await routeVisibilityChanged(input.uploadsDir)
+    await emitContentEvents(db, intoNotices, input.actorUserId)
+  }
   return { merge, restoredCount }
 }

@@ -17,6 +17,7 @@
  * different permissions for the same target.
  */
 
+import { hookRegistrationRefusal } from '../../../protocol/hookRules'
 import { TARGET_PERMISSIONS } from '../../../protocol/targets'
 
 // ------- the api object plugins receive -------
@@ -148,11 +149,18 @@ globalThis.__buildApi = function buildApi() {
     }
   }
 
+  // What each host event and filter needs is one table (hookRules.ts), shared
+  // with the host. The host is the authority and also checks the plugin's
+  // contentAccess entries; throwing here makes the refusal immediate, so a
+  // registration nobody awaited still fails loudly.
+  function assertMayRegisterHook(kind: 'event' | 'filter', name: string) {
+    const refusal = hookRegistrationRefusal(kind, name, meta.grantedPermissions)
+    if (refusal) throw new Error('Plugin "' + meta.id + '" cannot register for "' + name + '": ' + refusal)
+  }
+
   function on(event: unknown, listener: unknown) {
     assertTargetPermission('cms.hooks.on')
-    // Member events name members: hearing them needs the right to read members.
-    // (The host enforces the same rule; this makes the denial immediate.)
-    if (String(event).indexOf('member.') === 0) assertPermission('members.read')
+    assertMayRegisterHook('event', String(event))
     if (typeof listener !== 'function') throw new TypeError('Hook listener must be a function')
     const listenerId = __nextId('listener')
     globalThis.__plugin_handlers.listeners[listenerId] = listener as BootstrapFn
@@ -163,6 +171,7 @@ globalThis.__buildApi = function buildApi() {
 
   function filter(name: unknown, handler: unknown) {
     assertTargetPermission('cms.hooks.filter')
+    assertMayRegisterHook('filter', String(name))
     if (typeof handler !== 'function') throw new TypeError('Hook filter must be a function')
     const filterId = __nextId('filter')
     globalThis.__plugin_handlers.filters[filterId] = handler as BootstrapFn
@@ -613,10 +622,6 @@ globalThis.__buildApi = function buildApi() {
             publish: function (entryId: unknown, options: unknown) {
               assertTargetPermission('cms.content.entries.publish')
               return call('cms.content.entries.publish', [s, String(entryId), options || {}])
-            },
-            moveToTable: function (entryId: unknown, targetSlug: unknown) {
-              assertTargetPermission('cms.content.entries.moveTable')
-              return call('cms.content.entries.moveTable', [s, String(entryId), String(targetSlug)])
             },
             createMany: function (inputs: unknown) {
               assertTargetPermission('cms.content.entries.createMany')

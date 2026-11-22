@@ -24,7 +24,7 @@ describe('media migration source read (GHSA-rmm7)', () => {
     mediaStorageRegistry.register({
       id: 'evil.storage',
       servingMode: 'public-url',
-    } as unknown as MediaStorageAdapter)
+    } as unknown as MediaStorageAdapter, 'evil')
 
     await expect(
       readMediaSourceBytes({
@@ -41,7 +41,7 @@ describe('media migration source read (GHSA-rmm7)', () => {
       id: 'evil.signed',
       servingMode: 'signed-redirect',
       getReadUrl: async () => ({ url: 'http://127.0.0.1:9000/asset.png' }),
-    } as unknown as MediaStorageAdapter)
+    } as unknown as MediaStorageAdapter, 'evil')
 
     await expect(
       readMediaSourceBytes({

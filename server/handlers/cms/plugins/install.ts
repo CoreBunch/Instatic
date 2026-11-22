@@ -29,6 +29,8 @@ import {
   installPlugin,
   setPluginLifecycleStatus,
 } from '../../../repositories/plugins'
+import { assertNoNestedPluginId, NestedPluginIdError } from '../../../plugins/nestedPluginIds'
+import { createSerialQueue } from '../../../util/serialQueue'
 import { pluginRecordRekeyProblem, rekeyPluginRecords } from '../../../repositories/pluginRecords'
 import { parsePluginManifest } from '@core/plugins/manifest'
 import { withdrawnPluginAppScopeNames } from '@core/members'
@@ -103,6 +105,8 @@ export async function handlePluginsCollection(
       const grantedPermissions = readPermissionGrants(body.grantedPermissions)
       const grantError = assertPluginPermissionGrants(manifest, grantedPermissions)
       if (grantError) return grantError
+      const nested = await refuseNestedPluginId(db, manifest.id)
+      if (nested) return nested
       forgetHeldMailOutcomes(manifest.id)
       // A JSON install over an existing plugin is an upgrade of its manifest:
       // stored record keys must follow a changed `uniqueField` here too.
@@ -128,6 +132,20 @@ export async function handlePluginsCollection(
   }
 
   return methodNotAllowed()
+}
+
+/**
+ * The early answer, before a package's files are written. The check that
+ * counts runs again where the row is written (`storePluginManifest`).
+ */
+async function refuseNestedPluginId(db: DbClient, pluginId: string): Promise<Response | null> {
+  try {
+    await assertNoNestedPluginId(db, pluginId)
+    return null
+  } catch (err) {
+    if (err instanceof NestedPluginIdError) return badRequest(err.message)
+    throw err
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -169,6 +187,9 @@ export async function handlePackageInstall(
     const pluginPackage = await readPluginPackage(file)
     const grantError = assertPluginPermissionGrants(pluginPackage.manifest, grantedPermissions)
     if (grantError) return grantError
+
+    const nested = await refuseNestedPluginId(db, pluginPackage.manifest.id)
+    if (nested) return nested
 
     // Detect upgrade vs. fresh install BEFORE writing assets. The repository
     // does an upsert, but the lifecycle and rollback semantics differ
@@ -644,6 +665,9 @@ function resourcesToRekey(
  *
  * Returns the stored row and the scope names that were withdrawn.
  */
+/** Runs plugin row writes one after another. */
+const storeInTurn = createSerialQueue()
+
 async function storePluginManifest(
   db: DbClient,
   previous: PluginManifest | null,
@@ -654,7 +678,14 @@ async function storePluginManifest(
   const withdrawnAppScopes = previous
     ? withdrawnPluginAppScopeNames(previous.appScopes ?? [], manifest.appScopes ?? [])
     : null
-  const plugin = await db.transaction(async (tx) => {
+  // One store at a time in this process, with the nested-id check inside the
+  // transaction that writes the row: two installs of a nested pair arriving
+  // together cannot both find the table free of the other. (Several server
+  // instances on one Postgres database are not serialised by this; the boot
+  // warning and the ownership checks at registration cover a pair that
+  // slipped through there.)
+  const plugin = await storeInTurn(() => db.transaction(async (tx) => {
+    await assertNoNestedPluginId(tx, manifest.id)
     const installed = await installPlugin(tx, manifest, grantedPermissions)
     for (const { resource, capped } of resourcesToRekey(previous, manifest, options.restoring)) {
       await rekeyPluginRecords(tx, { pluginId: manifest.id, resourceId: resource.id }, resource.uniqueField, {
@@ -664,6 +695,6 @@ async function storePluginManifest(
     if (withdrawnAppScopes === null) await withdrawPluginAppScopes(tx, manifest.id)
     else if (withdrawnAppScopes.length > 0) await withdrawPluginAppScopes(tx, manifest.id, withdrawnAppScopes)
     return installed
-  })
+  }))
   return { plugin, withdrawnAppScopes: withdrawnAppScopes ?? [] }
 }

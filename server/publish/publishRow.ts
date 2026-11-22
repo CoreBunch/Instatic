@@ -14,10 +14,10 @@
  * owns the sequencing, rendering, and disk artefacts. The dependency
  * direction is one-way: publish → repositories, never back.
  */
-import { listProtectedTables } from '../repositories/data/tableAccess'
+import { loadAccessIndex, rowRouteRules } from './accessGate'
 import type { DbClient } from '../db/client'
 import type { DataRow, DataRowVersion } from '@core/data/schemas'
-import { normalizeRouteBase, resolveTemplateChain } from '@core/templates'
+import { resolveTemplateChain } from '@core/templates'
 import {
   getPublishedDataRowByRoute,
   getRowTableRouteBase,
@@ -150,8 +150,8 @@ async function writeDataRowArtefact(
   const newPath = publicDataPath(tableInfo.tableRouteBase, publishedRow.slug)
   // Entries of a protected table never go to disk; drop any file left from
   // before the table was protected.
-  const protectedBases = (await listProtectedTables(db)).map((table) => table.routeBase)
-  if (protectedBases.includes(normalizeRouteBase(tableInfo.tableRouteBase))) {
+  // Protected by any rule the public router applies to the entry's route.
+  if (rowRouteRules(await loadAccessIndex(db), publishedDataRow.tableId, newPath).length > 0) {
     await removeArtefactInPlace(uploadsDir, newPath)
     return
   }
@@ -166,7 +166,7 @@ async function writeDataRowArtefact(
   })
   if (!rendered) return
 
-  const html = await applyPublishedHtmlPipeline(rendered, db)
+  const html = await applyPublishedHtmlPipeline(rendered, db, 'public')
   await updateArtefactInPlace(uploadsDir, newPath, html)
 }
 
@@ -190,9 +190,16 @@ export function retractDataRowArtefacts(
   db: DbClient,
   uploadsDir: string,
   row: Pick<DataRow, 'id' | 'tableId' | 'slug'>,
-  options: { wasPublished: boolean },
+  options: {
+    wasPublished: boolean
+    /**
+     * The route base the row's page was baked under, when that is no longer
+     * the route base of the table the row is in now (the row was moved).
+     */
+    bakedUnderRouteBase?: string
+  },
 ): Promise<void> {
-  return retractDataRowArtefactsMany(db, uploadsDir, [{ ...row, wasPublished: options.wasPublished }])
+  return retractDataRowArtefactsMany(db, uploadsDir, [{ ...row, ...options }])
 }
 
 /**
@@ -203,12 +210,14 @@ export function retractDataRowArtefacts(
 export function retractDataRowArtefactsMany(
   db: DbClient,
   uploadsDir: string,
-  rows: ReadonlyArray<Pick<DataRow, 'id' | 'tableId' | 'slug'> & { wasPublished: boolean }>,
+  rows: ReadonlyArray<
+    Pick<DataRow, 'id' | 'tableId' | 'slug'> & { wasPublished: boolean; bakedUnderRouteBase?: string }
+  >,
 ): Promise<void> {
   return withPublishLock(async () => {
     const ownPaths: string[] = []
     for (const row of rows) {
-      const routeBase = await getRowTableRouteBase(db, row.id)
+      const routeBase = row.bakedUnderRouteBase ?? (await getRowTableRouteBase(db, row.id))
       if (routeBase !== null) ownPaths.push(publicDataPath(routeBase, row.slug))
     }
     await removeArtefactsInPlace(uploadsDir, ownPaths)
