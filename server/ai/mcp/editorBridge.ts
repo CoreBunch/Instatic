@@ -7,7 +7,7 @@
  * the editor holds a long-lived newline-delimited JSON stream open while
  * mounted. Its HTTP response is advertised as an event stream so reverse
  * proxies preserve incremental delivery. This module keeps one bridge per user
- * and workspace (the newest open instance wins) and lets the MCP server relay a
+ * and workspace (the first live instance owns it) and lets the MCP server relay a
  * browser tool call to the correct workspace before awaiting its result.
  *
  * Reuses the chat bridge machinery wholesale: `createBridge` issues the
@@ -28,18 +28,14 @@ interface EditorBridgeEntry {
   bridge: AiBrowserBridge
   /** The branch the connected workspace has open; browser tools act in it. */
   branchId: string
-  destroy: () => void
+  renew: () => void
 }
 
 export type EditorBridgeScope = 'site' | 'content'
 /**
- * How long a stream may sit with NO tool traffic before the server drops it.
- * This is an IDLE lease: every relayed tool request re-arms it, so an active
- * batch is never cut mid-flight (a fixed lease used to kill the stream at
- * exactly two minutes, failing whichever tool call straddled the boundary).
- * Its purpose is bounding orphan lifetime when a proxy fails to propagate a
- * closed downstream connection; the client reconnect loop restores a
- * legitimately alive workspace within seconds of the drop.
+ * Bound orphan lifetime if a proxy fails to propagate disconnect. Halfway
+ * through a quiet lease, ask the owning tab to renew it. An idle but live tab
+ * keeps the same bridge even while another editor is waiting.
  */
 const STREAM_IDLE_LEASE_MS = 120_000
 
@@ -55,6 +51,14 @@ export function getEditorBridgeForUser(
 
 export function hasEditorBridge(userId: string, scope: EditorBridgeScope): boolean {
   return byUser.get(userId)?.has(scope) ?? false
+}
+
+/** A reply can renew only the stream that requested it. */
+export function renewEditorBridge(userId: string, scope: EditorBridgeScope, bridgeId: string): boolean {
+  const owner = byUser.get(userId)?.get(scope)
+  if (!owner || owner.bridgeId !== bridgeId) return false
+  owner.renew()
+  return true
 }
 
 /** The branch the user's live workspace has open, or null when disconnected. */
@@ -77,7 +81,10 @@ export function createEditorBridgeStream(
     /** Test seam: the idle lease shrinks to milliseconds in unit tests. */
     idleLeaseMs?: number
   } = {},
-): ReadableStream<Uint8Array> {
+): ReadableStream<Uint8Array> | null {
+  // ReadableStream.start runs synchronously, so checking and claiming the
+  // slot is atomic across concurrent requests.
+  if (hasEditorBridge(userId, scope)) return null
   const { branchId = MAIN_BRANCH_ID, idleLeaseMs = STREAM_IDLE_LEASE_MS } = options
   let closeStream: (() => void) | null = null
 
@@ -115,29 +122,31 @@ export function createEditorBridgeStream(
       }
       closeStream = cleanup
 
+      const enqueue = (chunk: Uint8Array): void => {
+        if (closed) return
+        try {
+          controller.enqueue(chunk)
+        } catch {
+          cleanup()
+        }
+      }
+
       const armLease = (): void => {
         if (closed) return
         if (lease) clearTimeout(lease)
         lease = setTimeout(() => {
-          // Never recycle under a pending call: that rejected it while the
-          // editor was still working on it (its result then 404'd). Every
-          // pending call is bounded by the relay's per-call timeout, so an
-          // orphaned stream still drains and closes.
-          if (pendingCount() > 0) armLease()
-          else cleanup()
-        }, idleLeaseMs)
+          if (pendingCount() > 0) {
+            armLease()
+            return
+          }
+          lease = setTimeout(cleanup, idleLeaseMs / 2)
+          enqueue(encoder.encode('{"type":"bridgePing"}\n'))
+        }, idleLeaseMs / 2)
       }
 
       const emit = (event: AiStreamEvent): void => {
-        if (closed) return
-        try {
-          controller.enqueue(encodeStreamEvent(event))
-          // Tool traffic proves the stream is wanted — keep the idle lease
-          // from expiring under an active batch.
-          armLease()
-        } catch {
-          cleanup()
-        }
+        enqueue(encodeStreamEvent(event))
+        armLease()
       }
 
       // Serial: the editor runs relayed tools strictly one at a time, so
@@ -149,29 +158,15 @@ export function createEditorBridgeStream(
       destroyBridge = created.destroy
       pendingCount = created.pendingCount
 
-      // Newest instance of this workspace wins. The user's other workspace
-      // remains connected, so Site and Content may serve MCP simultaneously.
       const userBridges = byUser.get(userId) ?? new Map<EditorBridgeScope, EditorBridgeEntry>()
-      const previous = userBridges.get(scope)
-      if (previous) previous.destroy()
-      userBridges.set(scope, { bridgeId, bridge: created.bridge, branchId, destroy: destroyBridge })
+      userBridges.set(scope, { bridgeId, bridge: created.bridge, branchId, renew: armLease })
       byUser.set(userId, userBridges)
 
       emit({ type: 'bridgeReady', bridgeId })
 
       // Heartbeat blank line keeps proxies from idling the connection;
       // `readNdjsonStream` skips empty lines.
-      heartbeat = setInterval(() => {
-        if (closed) return
-        try {
-          controller.enqueue(encoder.encode('\n'))
-        } catch {
-          cleanup()
-        }
-      }, 25_000)
-      // Bound orphan lifetime when a proxy fails to propagate a closed
-      // downstream connection. Idle-based: re-armed by every relayed tool
-      // request, so only genuinely quiet streams recycle.
+      heartbeat = setInterval(() => enqueue(encoder.encode('\n')), 25_000)
       armLease()
 
       if (signal.aborted) cleanup()
