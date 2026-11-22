@@ -48,7 +48,7 @@ import {
   type CollabDocSet,
 } from '@core/collab'
 import { projectCollabDocument } from './collabProjection'
-import { allDocIdsForSite, collabBranchId, notifyCollabBranchGone } from './collabBranch'
+import { allDocIdsForSite, collabBranchId, needsSiteRosterAssembly, notifyCollabBranchGone } from './collabBranch'
 import { createDetachedCollabDocSet } from './detachedCollabDocs'
 import type { EditorStoreApi } from '@site/store/types'
 import { pruneCanvasSelectionDraft } from '../selectionSlice'
@@ -491,10 +491,9 @@ function registerProjectionGate(docId: string, binding: BoundCollabDoc, assemble
       resolveProjection()
     })
     scheduleProjection(docId)
-    // A row doc bound on demand (a peer created the row) re-assembles the
-    // site once its content arrives — the roster projection skipped it
-    // while it was empty.
-    if (assembleRoster && !isSiteDocId(docId)) scheduleProjection(siteDocId(collabBranchId()))
+    if (assembleRoster && needsSiteRosterAssembly(storeApi?.getState().site, docId)) {
+      scheduleProjection(siteDocId(collabBranchId()))
+    }
   })
 }
 
