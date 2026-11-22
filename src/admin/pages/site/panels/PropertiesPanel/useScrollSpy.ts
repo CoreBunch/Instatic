@@ -13,8 +13,7 @@
  *   - `scrollTo(sectionId)` scrolls the matching section to the top of the
  *     container, honouring the `propertiesSmoothScroll` preference. When
  *     `scrollTopId` is provided and matches the clicked id, it scrolls to the
- *     absolute top instead (used by StyleSurface so its Module anchor reveals
- *     the sticky search bar above the first section).
+ *     absolute top.
  *   - When `resetKey` changes (e.g. the selected node), `activeId` resets to
  *     `initialId` (during render, no stale-highlight flash) and the container
  *     scrolls back to the top.

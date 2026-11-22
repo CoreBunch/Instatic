@@ -29,7 +29,11 @@
  *   POST email/confirm     token
  *   POST profile           profile fields                        (signed in)
  *   POST delete            currentPassword                       (signed in)
- *   GET  logout            ?to=<site path>            (a sign-out link; same-site clicks only)
+ *   POST apps/disconnect   connection                (signed in; ends one app's sign-in)
+ *   POST apps/approve      request, decision          (signed in; answers an app's
+ *                          sign-in request: decision is `allow` or `deny`, and a post
+ *                          without one is refused, never taken as yes)
+ *   *    oauth/*           sign-in for apps, see `apps/handler.ts`
  *   GET  me                { member } or { member: null }
  *   GET  export            the member's own data as a JSON download
  *
@@ -44,8 +48,13 @@
 import type { DbClient } from '../db/client'
 import type { MemberErrorCode } from '@core/members'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
-import { clientIp, isSiteOrigin, originAllowed } from '../auth/security'
+import { clientIp, isCrossSiteFetch, isSiteOrigin, originAllowed } from '../auth/security'
 import { jsonResponse, readTextBodyWithLimit, RequestBodyTooLargeError, setCookieHeader } from '../http'
+import { answerAppSignIn, disconnectApp } from './apps/approval'
+import { handleMemberOAuthRequest } from './apps/handler'
+import { exportMemberDataWithPlugins } from '../plugins/host/memberExport'
+import { MEMBER_OAUTH_PATH_PREFIX } from './apps/protocol'
+import { memberLimits } from './limits'
 import { memberLinkOrigin, memberMailAvailable } from './mail'
 import { findMemberById, toCurrentMember } from './repository'
 import {
@@ -54,7 +63,6 @@ import {
   confirmEmailChange,
   confirmSignInLink,
   deleteAccount,
-  exportMemberData,
   logIn,
   logOut,
   requestEmailChange,
@@ -72,6 +80,7 @@ import {
   clearSignupNonceCookie,
   findMemberSession,
   memberSessionCookie,
+  readAppRequestMarker,
   readMemberSessionToken,
   readSignupNonce,
   signupNonceCookie,
@@ -126,8 +135,7 @@ async function readFields(req: Request): Promise<Fields | null> {
 export function originOk(req: Request): boolean {
   if (!req.headers.get('origin')) return false
   if (!originAllowed(req)) return false
-  const fetchSite = req.headers.get('sec-fetch-site')
-  return !fetchSite || fetchSite === 'same-origin' || fetchSite === 'none'
+  return !isCrossSiteFetch(req)
 }
 
 /** The signed-in member behind this request, or null. */
@@ -252,6 +260,7 @@ function buildResponse(req: Request, fields: Fields, outcome: MemberOutcome): Re
           code: outcome.code,
           ...(outcome.member ? { member: outcome.member } : {}),
           ...(outcome.landing ? { landing: outcome.landing } : {}),
+          ...(outcome.appRedirect ? { appRedirect: outcome.appRedirect } : {}),
         }),
         { status: 200, headers },
       )
@@ -272,7 +281,10 @@ function buildResponse(req: Request, fields: Fields, outcome: MemberOutcome): Re
 
   const back = refererPath(req) ?? '/'
   let location: string
-  if (outcome.ok) {
+  if (outcome.ok && outcome.appRedirect) {
+    // The one answer that leaves the site: back to the app that asked.
+    location = outcome.appRedirect
+  } else if (outcome.ok) {
     const chosen = safeRedirectPath(fields._success) ?? safeRedirectPath(outcome.landing)
     location = chosen ? withParams(chosen, {}) : withParams(back, { member_ok: outcome.code })
   } else {
@@ -299,7 +311,7 @@ async function buildContext(db: DbClient, req: Request): Promise<MemberActionCon
 
 /** Fields that are part of the protocol, not of a member's profile. */
 const RESERVED_FIELDS = new Set([
-  'email', 'password', 'token', 'currentPassword', 'newPassword', '_success', '_error',
+  'email', 'password', 'token', 'request', 'decision', 'connection', 'currentPassword', 'newPassword', '_success', '_error',
 ])
 
 function profileFieldsOf(fields: Fields): Fields {
@@ -349,7 +361,9 @@ async function runAction(
   }
 
   // Everything below needs a signed-in member.
-  if (!['password/change', 'email/change', 'profile', 'delete'].includes(action)) return null
+  if (!['password/change', 'email/change', 'profile', 'delete', 'apps/approve', 'apps/disconnect'].includes(action)) {
+    return null
+  }
   const current = await resolveSignedInMember(db, req)
   if (!current) return respond(req, fields, signedOut)
 
@@ -364,6 +378,12 @@ async function runAction(
       }))
     case 'profile':
       return respond(req, fields, await updateProfile(ctx, current, profileFieldsOf(fields)))
+    case 'apps/approve':
+      return respond(req, fields, await answerAppSignIn(ctx, current, {
+        requestId: field('request'), browserMarker: readAppRequestMarker(req), decision: field('decision'),
+      }))
+    case 'apps/disconnect':
+      return respond(req, fields, await disconnectApp(ctx, current, { connection: field('connection') }))
     default:
       return respond(req, fields, await deleteAccount(ctx, current, {
         currentPassword: fields.currentPassword,
@@ -371,46 +391,14 @@ async function runAction(
   }
 }
 
-/**
- * A sign-out link. A GET carries no `Origin`, so the check is that a visitor
- * clicked it on a page of this site. A link in an email or on another site,
- * an image or script that points here, and a prefetch do not sign anyone out.
- * The answer is always a redirect to a page of the site.
- */
-function linkFromThisSite(req: Request): boolean {
-  const purpose = req.headers.get('sec-purpose') ?? req.headers.get('purpose')
-  if (purpose?.includes('prefetch')) return false
-  const fetchSite = req.headers.get('sec-fetch-site')
-  if (fetchSite) {
-    if (fetchSite !== 'same-origin') return false
-    const mode = req.headers.get('sec-fetch-mode')
-    const dest = req.headers.get('sec-fetch-dest')
-    return (!mode || mode === 'navigate') && (!dest || dest === 'document')
-  }
-  // Neither header: nothing says where the click came from, so do nothing.
-  const referer = req.headers.get('referer')
-  if (!referer) return false
-  try {
-    return isSiteOrigin(req, new URL(referer).origin)
-  } catch {
-    return false
-  }
-}
-
-async function signOutFromLink(req: Request, db: DbClient, url: URL): Promise<Response> {
-  const location = safeRedirectPath(url.searchParams.get('to')) ?? '/'
-  const res = new Response(null, { status: 303, headers: { ...NO_STORE, location } })
-  if (!linkFromThisSite(req)) return res
-  const outcome = await logOut(await buildContext(db, req), await resolveSignedInMember(db, req))
-  for (const cookie of outcomeCookies(req, outcome, false)) setCookieHeader(res, cookie)
-  return res
-}
-
 function notFound(): Response {
   return jsonResponse({ error: 'Not found' }, { status: 404, headers: NO_STORE })
 }
 
 export async function handleMemberRequest(req: Request, db: DbClient, url: URL): Promise<Response> {
+  // Sign-in for apps is called by the app, not by a page of this site: it has
+  // its own checks instead of the cookie and same-origin rules below.
+  if (url.pathname.startsWith(MEMBER_OAUTH_PATH_PREFIX)) return handleMemberOAuthRequest(req, db, url)
   const action = url.pathname.slice(MEMBERS_PATH_PREFIX.length).replace(/\/+$/, '')
 
   if (req.method === 'GET') {
@@ -422,13 +410,21 @@ export async function handleMemberRequest(req: Request, db: DbClient, url: URL):
       )
     }
     if (action === 'export') {
+      // A link on another site must not start an export (it asks every plugin).
+      if (isCrossSiteFetch(req)) return jsonResponse({ error: 'Forbidden' }, { status: 403, headers: NO_STORE })
       const current = await resolveSignedInMember(db, req)
       if (!current) return jsonResponse({ error: 'Sign in first.' }, { status: 401, headers: NO_STORE })
-      return jsonResponse(await exportMemberData(db, current.member), {
+      const allowed = memberLimits.exportPerMember.consume(current.member.id)
+      if (!allowed.ok) {
+        return jsonResponse(
+          { error: 'You downloaded your data a few times already. Try again later.' },
+          { status: 429, headers: { ...NO_STORE, 'retry-after': String(Math.ceil(allowed.retryAfterMs / 1000)) } },
+        )
+      }
+      return jsonResponse(await exportMemberDataWithPlugins(db, current.member), {
         headers: { ...NO_STORE, 'content-disposition': 'attachment; filename="my-account-data.json"' },
       })
     }
-    if (action === 'logout') return signOutFromLink(req, db, url)
     return notFound()
   }
 

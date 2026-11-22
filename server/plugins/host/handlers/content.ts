@@ -64,7 +64,7 @@ import {
 import { replyApiOk } from '../apiReplies'
 import type { HostPluginRecord } from '../types'
 import { MAIN_SCOPE } from '../../../branches/scope'
-import { keepPageAccess } from '../../../writePolicy/pageAccessCell'
+import { keepPageStructuralCells, newPageStructuralCells } from '../../../writePolicy/pageStructuralCells'
 
 // Projection helpers (DB → wire shapes) live in `contentProjection.ts`.
 
@@ -249,11 +249,12 @@ export async function handleContentEntriesCreate(
   const table = await resolveTableBySlug(db, tableSlug)
   assertContentTableAccess(entry, table, 'write')
   const actor: PluginActor = { kind: 'plugin', pluginId: msg.pluginId }
-  const cells = await applyContentEntryCellsFilter(input.cells, {
+  // A plugin may create a page, not set how it is indexed.
+  const cells = newPageStructuralCells(table.id, await applyContentEntryCellsFilter(input.cells, {
     tableSlug,
     entryId: 'new',
     actor,
-  })
+  }))
   const slug = input.slug ?? denormalizeSlug(table, cells)
   const created = await createDataRow(
     db,
@@ -294,8 +295,8 @@ export async function handleContentEntriesUpdate(
     db,
     MAIN_SCOPE,
     entryId,
-    // A plugin edits a page's content; who may open the page is not its to change.
-    { cells: keepPageAccess(existing, filteredCells), slug: nextSlug || existing.slug },
+    // A plugin edits a page's content; who may open the page and its head settings are not its to change.
+    { cells: keepPageStructuralCells(existing, filteredCells), slug: nextSlug || existing.slug },
     null,
     msg.pluginId,
   )
@@ -400,7 +401,7 @@ export async function handleContentEntriesCreateMany(
   // runs INSIDE the same plugin's worker; running it inside the per-row
   // transaction would tie up the DB connection.
   const prepared = await Promise.all(inputs.map(async (input) => {
-    const cells = await applyContentEntryCellsFilter(input.cells, { tableSlug, entryId: 'new', actor })
+    const cells = newPageStructuralCells(table.id, await applyContentEntryCellsFilter(input.cells, { tableSlug, entryId: 'new', actor }))
     const slug = input.slug ?? denormalizeSlug(table, cells)
     return { tableId: table.id, cells, slug }
   }))
@@ -442,7 +443,7 @@ export async function handleContentEntriesUpdateMany(
     const nextSlug = patch.slug ?? denormalizeSlug(table, filteredCells)
     prepared.push({
       id,
-      input: { cells: keepPageAccess(existing, filteredCells), slug: nextSlug || existing.slug },
+      input: { cells: keepPageStructuralCells(existing, filteredCells), slug: nextSlug || existing.slug },
       changedIds,
     })
   }
@@ -582,7 +583,7 @@ export async function handleContentTreeReplace(
     db,
     MAIN_SCOPE,
     entryId,
-    { cells: keepPageAccess(row, nextCells), slug: row.slug },
+    { cells: keepPageStructuralCells(row, nextCells), slug: row.slug },
     null,
     msg.pluginId,
   )

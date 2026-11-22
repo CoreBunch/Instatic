@@ -17,12 +17,12 @@
  *   - No Tailwind, no inline styles except dynamic CSS custom properties
  *   - role="alert" / role="status" per toast kind
  *   - Close affordance + optional action use the Button primitive
- *   - Pixel-art icons only (close, circle-alert, warning-diamond)
+ *   - Pixel-art icons only
  */
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@ui/components/Button'
-import { cn } from '@ui/cn'
+import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { CircleAlertSolidIcon } from 'pixel-art-icons/icons/circle-alert-solid'
 import { WarningDiamondSolidIcon } from 'pixel-art-icons/icons/warning-diamond-solid'
@@ -62,10 +62,9 @@ function ariaRoleForKind(kind: ToastKind): 'alert' | 'status' {
 }
 
 function ToastIcon({ kind }: { kind: ToastKind }) {
-  if (kind === 'error') return <CircleAlertSolidIcon size={14} aria-hidden="true" />
-  if (kind === 'warning') return <WarningDiamondSolidIcon size={14} aria-hidden="true" />
-  // success / info share the circle-alert glyph at lower visual weight
-  return <CircleAlertSolidIcon size={14} aria-hidden="true" />
+  if (kind === 'success') return <CheckIcon size={20} />
+  if (kind === 'warning') return <WarningDiamondSolidIcon size={20} />
+  return <CircleAlertSolidIcon size={20} />
 }
 
 export function ToastProvider() {
@@ -149,7 +148,7 @@ function ToastItem({ toast }: { toast: Toast }) {
     <div
       role={ariaRoleForKind(toast.kind)}
       aria-live={toast.kind === 'error' || toast.kind === 'warning' ? 'assertive' : 'polite'}
-      className={cn(styles.toast, styles[`kind-${toast.kind}`])}
+      className={styles.toast}
       data-toast-kind={toast.kind}
       data-toast-location={toast.location}
     >
@@ -162,28 +161,27 @@ function ToastItem({ toast }: { toast: Toast }) {
         {toast.location && (
           <p className={styles.location}>{toast.location}</p>
         )}
-      </div>
-      <div className={styles.actions}>
         {toast.action && (
           <Button
             variant="secondary"
-            size="micro"
+            size="xs"
+            className={styles.action}
             onClick={() => void handleAction()}
             disabled={actionPending}
           >
             <span>{toast.action.label}</span>
           </Button>
         )}
-        <Button
-          variant="ghost"
-          size="micro"
-          iconOnly
-          aria-label="Dismiss notification"
-          onClick={() => dismissToast(toast.id)}
-        >
-          <CloseIcon size={12} aria-hidden="true" />
-        </Button>
       </div>
+      <Button
+        variant="ghost"
+        size="xs"
+        iconOnly
+        aria-label="Dismiss notification"
+        onClick={() => dismissToast(toast.id)}
+      >
+        <CloseIcon size={14} aria-hidden="true" />
+      </Button>
     </div>
   )
 }

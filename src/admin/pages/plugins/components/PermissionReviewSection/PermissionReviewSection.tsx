@@ -20,7 +20,7 @@
  * banner ("No new permissions in this update") so the user can confirm
  * with confidence.
  *
- * Also displays three manifest allowlists, each in its own section:
+ * Also displays the manifest's allowlists, each in its own section:
  *
  *   • `contentAccess` — the CMS tables whose entries the plugin can touch,
  *     with per-table modes. The `@own-created` marker renders as the
@@ -29,14 +29,27 @@
  *     code will talk to (e.g. `threejs.org`, `*.cdn.example.com`).
  *   • `frontend.origins` — each host a plugin may load scripts or embed
  *     frames from on published pages, listed in plain words.
+ *   • `mail.templates` — each email the plugin can send, with its subject
+ *     and body, shown in the same script-less frame the Email workspace
+ *     previews with. Approving a plugin's email is approving what it says
+ *     in the site's name.
  *
  * Permissions describe broad CMS capabilities ("inject scripts", "write
- * content"); the allowlists describe the concrete tables and origins those
- * capabilities apply to. All of them are security-relevant: a plugin with
- * `frontend.assets` plus an unexpected host entry can exfiltrate visitor
- * data, and an upgrade adding `write` mode on an already-approved table is
- * a silent privilege expansion. Each section diffs new/existing/dropped
- * rows on upgrade so nothing slips in unreviewed.
+ * content"); the allowlists describe the concrete tables, origins and
+ * messages those capabilities apply to. All of them are security-relevant:
+ * a plugin with `frontend.assets` plus an unexpected host entry can
+ * exfiltrate visitor data, and an upgrade adding `write` mode on an
+ * already-approved table is a silent privilege expansion. Each section
+ * diffs new/existing/dropped rows on upgrade so nothing slips in
+ * unreviewed.
+ *
+ * Also lists the manifest's `appScopes`: what an app a site member signed in
+ * to may later be allowed to do through the plugin. Over an existing install
+ * each is marked new, reworded, unchanged or removed (`diffPluginAppScopes`):
+ * a member allowed a scope in the words of its description, so the server
+ * withdraws the reworded and removed ones at the update, and the owner is
+ * told before confirming. The "no new permissions" reassurance is withheld
+ * whenever the scopes differ.
  */
 import { lt as semverLt } from 'semver'
 import { Button } from '@ui/components/Button'
@@ -44,11 +57,16 @@ import {
   permissionDescription,
   type ContentAccessEntry,
   type ContentAccessMode,
+  type PluginAppScope,
   type PluginFrontendOrigins,
+  type PluginMailTemplateDeclaration,
   type PluginManifest,
   type PluginPermission,
 } from '@core/plugin-sdk'
+import { diffPluginAppScopes, type PluginAppScopeChange, type PluginAppScopeDiffRow } from '@core/members'
+import { renderMailTemplate, sampleMailVariables } from '@core/mail'
 import { permissionLabel } from '@core/plugins/manifest'
+import { pluginMailTemplateKey } from '@core/plugins/manifestMail'
 import {
   computePermissionDiff,
   type PermissionDiffRow,
@@ -78,10 +96,49 @@ interface PermissionReviewPending {
    */
   previousContentAccess?: ContentAccessEntry[]
   /**
+   * The previously-installed manifest's `appScopes`. A scope the new
+   * manifest removes or rewords is withdrawn at the update, so the review
+   * marks each one.
+   */
+  previousAppScopes?: PluginAppScope[]
+  /**
    * The previously-installed manifest's `frontend.origins` (when this is an
    * upgrade), so a script or frame origin the upgrade adds shows as new.
    */
   previousFrontendOrigins?: PluginFrontendOrigins
+  /**
+   * The previously-installed manifest's `mail.templates` (when this is an
+   * upgrade), so a template the upgrade adds or rewords shows as such.
+   */
+  previousMailTemplates?: PluginMailTemplateDeclaration[]
+}
+
+type MailTemplateStatus = 'new' | 'changed' | 'existing'
+
+/** How a template in the new manifest compares with the installed one's. */
+function mailTemplateStatus(
+  template: PluginMailTemplateDeclaration,
+  previous: readonly PluginMailTemplateDeclaration[] | undefined,
+): MailTemplateStatus {
+  const before = previous?.find((candidate) => candidate.key === template.key)
+  if (!before) return 'new'
+  // Everything the owner approved: what it says, what it is called, and what
+  // each variable is (a `text` variable turned `link` can carry an address).
+  const approved = (declaration: PluginMailTemplateDeclaration) =>
+    JSON.stringify([
+      declaration.subject,
+      declaration.body,
+      declaration.label,
+      declaration.description,
+      declaration.variables.map((variable) => [variable.name, variable.kind ?? 'text']).sort(),
+    ])
+  return approved(before) === approved(template) ? 'existing' : 'changed'
+}
+
+const MAIL_TEMPLATE_BADGE: Record<MailTemplateStatus, string> = {
+  new: 'New',
+  changed: 'Changed',
+  existing: 'Already approved',
 }
 
 type HostDiffStatus = 'new' | 'existing' | 'dropped'
@@ -139,6 +196,21 @@ function formatContentAccessModes(modes: readonly ContentAccessMode[]): string {
   return joined.charAt(0).toUpperCase() + joined.slice(1)
 }
 
+const APP_SCOPE_BADGE: Record<PluginAppScopeChange, { label: string; className: string }> = {
+  new: { label: 'New', className: styles.badgeNew },
+  changed: { label: 'Reworded', className: styles.badgeNew },
+  unchanged: { label: 'Unchanged', className: styles.badgeExisting },
+  removed: { label: 'Removed', className: styles.badgeDropped },
+}
+
+/** The row tint the permission rows use, for an app scope's change. */
+const APP_SCOPE_ROW_STATUS: Record<PluginAppScopeChange, PermissionDiffStatus> = {
+  new: 'new',
+  changed: 'new',
+  unchanged: 'existing',
+  removed: 'dropped',
+}
+
 export function PermissionReviewSection({
   pending,
   uploading,
@@ -171,6 +243,18 @@ export function PermissionReviewSection({
 
   const newCount = rows.filter((row) => row.status === 'new').length
 
+  // App scopes are compared whenever the plugin is already installed, a
+  // reinstall of the same version included: the server withdraws on what the
+  // two manifests say, not on the version number.
+  const comparesAppScopes = isInstalled && !isDowngrade
+  const declaredAppScopes = pending.manifest.appScopes ?? []
+  const appScopeRows: PluginAppScopeDiffRow[] = comparesAppScopes
+    ? diffPluginAppScopes(pending.previousAppScopes ?? [], declaredAppScopes)
+    : declaredAppScopes.map((scope) => ({ ...scope, status: 'new' }))
+  const withdrawnAppScopeCount = comparesAppScopes
+    ? appScopeRows.filter((row) => row.status === 'changed' || row.status === 'removed').length
+    : 0
+  const appScopesDiffer = comparesAppScopes && appScopeRows.some((row) => row.status !== 'unchanged')
   const originGroups = [
     {
       kind: 'scripts',
@@ -191,6 +275,20 @@ export function PermissionReviewSection({
       ),
     },
   ] as const
+  const mailTemplates = (pending.manifest.mail?.templates ?? []).map((template) => ({
+    template,
+    status: isUpgrade ? mailTemplateStatus(template, pending.previousMailTemplates) : ('new' as const),
+    preview: renderMailTemplate(
+      {
+        key: pluginMailTemplateKey(pending.manifest.id, template.key),
+        subject: template.subject,
+        body: template.body,
+        variables: template.variables,
+      },
+      { 'site.name': 'Your site', 'site.url': '', ...sampleMailVariables(template.variables) },
+    ),
+  }))
+  const changedMailCount = isUpgrade ? mailTemplates.filter((row) => row.status !== 'existing').length : 0
   const originRowCount = originGroups.reduce((count, group) => count + group.rows.length, 0)
   const newOriginCount = isUpgrade
     ? originGroups.reduce((count, group) => count + group.rows.filter((row) => row.status === 'new').length, 0)
@@ -270,7 +368,19 @@ export function PermissionReviewSection({
         </div>
       )}
 
-      {isUpgrade && newCount === 0 && rows.length > 0 && (
+      {withdrawnAppScopeCount > 0 && (
+        <div className={styles.alert} role="alert" data-testid="app-scope-diff-alert">
+          This {isReinstall ? 'reinstall' : 'update'} rewords or removes{' '}
+          <strong>
+            {withdrawnAppScopeCount} thing{withdrawnAppScopeCount === 1 ? '' : 's'} apps were allowed to do
+          </strong>{' '}
+          through the plugin. Members who allowed an app one of them are signed out of that app and will be
+          asked again, and it is taken off your registered apps until you give it back under Users, Site
+          members, Apps.
+        </div>
+      )}
+
+      {isUpgrade && newCount === 0 && rows.length > 0 && !appScopesDiffer && (
         <div className={styles.alert} role="status" data-testid="permission-diff-noop">
           No new permissions in this update.
         </div>
@@ -386,6 +496,44 @@ export function PermissionReviewSection({
         </div>
       )}
 
+      {appScopeRows.length > 0 && (
+        <div className={styles.networkSection} data-testid="permission-review-app-scopes">
+          <div className={styles.networkHeader}>
+            <strong>Access for apps</strong>
+            <span className={styles.description}>
+              An app a site member signs in to can be allowed to do these through the plugin. Nothing is
+              allowed until you give it to an app under Users, Site members, Apps, and the member agrees.
+            </span>
+          </div>
+          <ul className={styles.list}>
+            {appScopeRows.map((scope) => (
+              <li
+                key={scope.name}
+                className={styles.row}
+                data-status={APP_SCOPE_ROW_STATUS[scope.status]}
+                data-app-scope={scope.name}
+                data-app-scope-status={scope.status}
+              >
+                <div className={styles.label}>
+                  <span>{scope.description}</span>
+                  {comparesAppScopes && (
+                    <span className={`${styles.badge} ${APP_SCOPE_BADGE[scope.status].className}`}>
+                      {APP_SCOPE_BADGE[scope.status].label}
+                    </span>
+                  )}
+                </div>
+                {scope.was !== undefined && (
+                  <span className={styles.description}>Members allowed it as: {scope.was}</span>
+                )}
+                <span className={styles.description}>
+                  <code>{`plugin:${pending.manifest.id}:${scope.name}`}</code>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {originRowCount > 0 && (
         <div
           className={styles.allowlistSection}
@@ -437,6 +585,60 @@ export function PermissionReviewSection({
         </div>
       )}
 
+      {mailTemplates.length > 0 && (
+        <div className={styles.networkSection} data-testid="permission-review-mail-templates">
+          <div className={styles.networkHeader}>
+            <strong>
+              Adds {mailTemplates.length} email template{mailTemplates.length === 1 ? '' : 's'}
+            </strong>
+            <span className={styles.description}>
+              These are the only emails the plugin can send. They are sent from your site's address, and you
+              can reword each one under Email → Templates.
+            </span>
+          </div>
+          {changedMailCount > 0 && (
+            <div className={styles.alert} role="alert" data-testid="mail-templates-diff-alert">
+              <span>
+                This update adds or changes{' '}
+                <strong>{changedMailCount} email template{changedMailCount === 1 ? '' : 's'}</strong>. Read the
+                highlighted ones before continuing.
+              </span>
+            </div>
+          )}
+          <ul className={styles.list}>
+            {mailTemplates.map(({ template, status, preview }) => (
+              <li
+                key={template.key}
+                className={styles.row}
+                data-mail-template={template.key}
+                data-status={status === 'existing' ? 'existing' : isUpgrade ? 'new' : undefined}
+                data-mail-status={status}
+              >
+                <div className={styles.label}>
+                  <span>{template.label}</span>
+                  {isUpgrade && (
+                    <span className={`${styles.badge} ${status === 'existing' ? styles.badgeExisting : styles.badgeNew}`}>
+                      {MAIL_TEMPLATE_BADGE[status]}
+                    </span>
+                  )}
+                </div>
+                <span className={styles.description}>{template.description}</span>
+                <details className={styles.mailPreview} open={isUpgrade && status !== 'existing'}>
+                  <summary>Read the email</summary>
+                  <p className={styles.mailSubject}>{preview.subject}</p>
+                  <iframe
+                    className={styles.mailBody}
+                    title={`${template.label} email`}
+                    sandbox=""
+                    srcDoc={preview.html}
+                  />
+                </details>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className={styles.actions}>
         <Button
           variant="secondary"
@@ -466,8 +668,8 @@ export function PermissionReviewSection({
                 : isReinstall
                   ? `Reinstall ${pending.manifest.version}`
                   : isUpgrade
-                    ? newCount > 0
-                      ? `Approve ${newCount} new and update to ${pending.manifest.version}`
+                    ? newCount > 0 || changedMailCount > 0
+                      ? `Approve ${newCount + changedMailCount} new and update to ${pending.manifest.version}`
                       : `Update to ${pending.manifest.version}`
                     : 'Approve and Install'}
           </span>

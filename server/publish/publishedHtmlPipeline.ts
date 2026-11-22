@@ -65,11 +65,7 @@ export async function applyPublishedHtmlPipeline(
   const withFormTokens = stampFormPageTokens(withInjections, rendered.pageId)
   // Module-JS channel: one external <script defer> per moduleId the page
   // needs; relaxes CSP script-src to 'self' iff at least one tag landed.
-  const withModuleScripts = injectModuleScripts(
-    withFormTokens,
-    rendered.jsModuleIds,
-    rendered.publishVersion,
-  )
+  const withModuleScripts = injectModuleScripts(withFormTokens, rendered.moduleScripts)
   const filtered = await hookBus.applyFilter('publish.html', withModuleScripts, {
     siteId: rendered.siteId,
     pageId: rendered.pageId,

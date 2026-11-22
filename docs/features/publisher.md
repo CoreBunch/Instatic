@@ -53,6 +53,7 @@ A caller that changes a table's public rows on main and holds an uploads dir mus
 ```text
 src/core/publisher/
 ├── render.ts                       — publishPage (entry point + page-level orchestration)
+├── headTags.ts                     — buildDocumentHead: <title>, lang, description, favicon, page.seo tags, serializeJsonLd
 ├── renderNode.ts                   — recursive node walker; emits <instatic-hole> for nodes in dynamicNodeIds
 ├── renderConfig.ts                 — RenderConfig (read-only inputs) + RenderAccumulators (mutable outputs) + RenderNodeFn
 ├── renderVisualComponentRef.ts     — inline a Visual Component instance into the page
@@ -83,7 +84,7 @@ server/publish/
 ├── frontendInjections.ts           — splice plugin <script>/<link>/<meta> into HTML
 ├── canvasStylesheets.ts            — plugin stylesheets as CSS text for the editor canvas
 ├── mediaPresentation.ts            — media URL materialization for originals + responsive variants
-├── renderTreeWalk.ts               — walkRenderTree: visits every node that contributes to a rendered page (page nodes + VC definition trees, cycle-guarded); single source of truth for loop-prefetch and media-prefetch
+├── renderTreeWalk.ts               — walkRenderTree: visits every node that contributes to a rendered page (page nodes + VC definition trees, cycle-guarded, hidden subtrees skipped as the renderer skips them); single source of truth for loop-prefetch and media-prefetch
 ├── mediaPrefetch.ts, loopPrefetch.ts — pre-warm caches needed by the renderer
 ├── republish.ts                    — bulk re-publish on site-level changes
 ├── publishScheduler.ts             — scheduled publish jobs
@@ -133,6 +134,8 @@ For each node, bottom-up:
 ```
 
 The walker is recursive. Each node's HTML output is a pure function of its node + its already-rendered children — no cross-node coupling. The only shared mutable state is the `RenderAccumulators` bag (`cssMap`, `infiniteLoopIds`, `holeNodeIds`), which is threaded as an explicit parameter rather than hidden in the read-only config — so every place that appends to it is visible at the call site.
+
+When a layout wraps content, the baked fragment ID belongs to the composed tree. The fragment endpoint resolves the originating published route and composes the same page or entry template chain before evaluating ancestor visibility and rendering the dynamic subtree. Standalone authored IDs use the published node index directly. The loop runtime sends the visitor’s path and query when requesting another page of results. Inside a layout, the loop endpoint resolves the same composed tree and uses its entry, page, site and route bindings for appended items. A shell containing an infinite list inside a deferred fragment includes the loop runtime, which attaches the Load more button when the list appears. Republish older shells that omitted this runtime to enable the button.
 
 ---
 
@@ -209,6 +212,7 @@ See [docs/features/loops.md](loops.md) for sources, filters, and registration.
 | 1    | Module flagged `dynamic: true` in the registry | Node is a hole |
 | 2    | Node has a `dynamicBindings` entry whose source is request-dependent (`route.query.*`) | Node is a hole |
 | 2b   | A string prop contains a `{source.field}` token whose source is request-dependent | Node is a hole |
+| 2c   | A `showIf` condition tests a query parameter (`source: 'query'`) | Node is a hole, cached per query like a `route.query.*` binding |
 | 3    | `moduleId === 'base.loop'` AND the loop source declares `requestDependent: true` or `perVisitor: true` | Loop is a hole |
 | 3.5  | `moduleId === 'base.loop'` AND the loop source is static, but its body (transitively, including nested loops and referenced VC trees) contains any request-dependent node | Loop is promoted to a single hole; all body descendants are suppressed |
 | 4    | `moduleId === 'base.visual-component-ref'` whose VC definition tree contains any dynamic node | The outer VC ref node is a hole; inner VC node ids are never promoted |
@@ -234,7 +238,7 @@ class registry, which wins over framework, which wins over reset.
 reset-<hash>.css       = PUBLISHER_RESET_CSS                       ← reset.ts (cross-browser baseline)
 framework-<hash>.css   = buildSiteFrameworkCss(site)               ← frameworkCss.ts (root font size when opted in, spacing, typography, …)
                        + collectModuleCSS(via CssCollector)        ← deduped per-moduleId CSS
-style-<hash>.css       = collectClassCSS(site)                     ← user-defined StyleRule entries, incl. raw @keyframes
+style-<hash>.css       = collectClassCSS(site, registry)           ← user-defined StyleRule entries, incl. raw @keyframes
 userStyles-<hash>.css  = collectUserStylesheetCss(site, page)      ← author stylesheets, scoped to this page
 ```
 
@@ -257,7 +261,7 @@ plus global preflight.
 
 Media-library background images are optimized in the same publish pass as
 `<img srcset>`. `mediaPrefetch.ts` collects `/uploads/...` URLs from
-image/media module props, node `inlineStyles.backgroundImage`, and StyleRule
+image/media module props, literal Visual Component param overrides bound to image/media props, node `inlineStyles.backgroundImage`, and StyleRule
 `backgroundImage` values (including breakpoint/context overrides), then
 batch-fetches their media rows. During CSS emission,
 `responsiveBackground.ts` rewrites each matched `url('/uploads/original.png')`
@@ -268,7 +272,9 @@ a background does not become the selectable source for modern browsers. CSS
 `image-set()` supports density descriptors (`1x`, `2x`, etc.), not HTML
 `srcset` width descriptors (`640w` + `sizes`), so the background ladder is a
 DPR-oriented mirror of the same variant policy rather than a literal copy of
-the `<img sizes>` algorithm.
+the `<img sizes>` algorithm. Descriptors are relative to a 1024px reference,
+except under `background-size: auto` (or unset), where they are relative to the
+original's recorded width so the background keeps the original's size.
 
 `reset` / `framework` / `style` are page-invariant — every page on the site
 shares the same hash. `userStyles` is **page-scoped**: each author stylesheet
@@ -381,18 +387,49 @@ The publisher emits `<head>` in this order:
 
 1. `<meta charset="utf-8">`
 2. `<meta name="viewport" content="width=device-width, initial-scale=1">`
-3. `<title>` — the entry's `seoTitle` (post-type entries only) → `settings.metaTitle` → `page.title` → site name, then token-interpolated against the render context before escaping, so `{currentEntry.*}` resolves per-entry on entry routes (e.g. `{currentEntry.name} | Acme`) and `{page.*}` / `{site.*}` / `{route.*}` work everywhere
-4. `<meta name="description">` — the entry's `seoDescription` (post-type entries only) → `settings.metaDescription`; omitted when neither is set, and token-interpolated the same way
-5. `<link rel="icon">` if a favicon is configured
+3. `<title>` — the entry's `seoTitle` (post-type entries only) → page, template and global SEO title → `settings.metaTitle` → `page.title` → site name, then token-interpolated against the render context before escaping, so `{currentEntry.*}` resolves per-entry on entry routes (e.g. `{currentEntry.name} | Acme`) and `{page.*}` / `{site.*}` / `{route.path}`-style route tokens work everywhere (not `{route.query.*}` or `{member.*}`, see "Page head settings")
+4. `<meta name="description">` — the entry's `seoDescription` (post-type entries only) → `page.seo.description` → `settings.metaDescription`; omitted when none is set, and token-interpolated the same way
+5. The page's head settings (`page.seo`, below), then `<link rel="icon">` from `page.seo.favicon` → `settings.faviconUrl`
 6. `<script type="importmap">` mapping bare specifiers (e.g. `three`) to `/_instatic/runtime/cache/<hash>/...` URLs
 7. Runtime asset `<script>` tags (`scriptTagsForRuntimeAssets`)
 8. `<link rel="stylesheet" href="/_instatic/css/<bundle>-<hash>.css">` per bundle
 9. **`head` placement** plugin-injected tags (after the publisher's own head, before custom user head content)
 10. `<meta http-equiv="Content-Security-Policy" content="...">` — assembled based on what's actually in the page
 
+### Page head settings (`page.seo`)
+
+The social card image, X image, favicon, touch icons and image preload links can be selected or uploaded in the media library. The URL option accepts external images and template expressions.
+
+A page carries its own search, sharing and browser `<head>` settings in `page.seo` (`PageSeoSchema`, `src/core/page-tree/pageSeo.ts`), stored as the page row's `seo` cell and edited in Page settings → **Search & social** / **Head tags**, by `site_set_page_seo`, or filled by the static site importer from each page's `<head>` ([site-import.md](site-import.md) → "Page head"). `buildDocumentHead` (`src/core/publisher/headTags.ts`) emits them after the description, in this order: canonical, robots, color-scheme, theme-color (one per entry, with `media`), favicon, extra `<link>`s, Open Graph, Twitter, extra `<meta>`s, JSON-LD.
+
+The shape is structured, never raw HTML:
+
+| Field | Emits |
+|---|---|
+| `title`, `description` | Rows 3 and 4 above (fallbacks to the site settings) |
+| `canonical`, `robots`, `colorScheme`, `themeColors[]`, `favicon {href,type?}` | Their one tag each |
+| `openGraph {type,url,siteName,title,description,image,imageAlt}` | `og:*` properties, only the fields that are set |
+| `twitter {card,site,creator,title,description,image}` | `twitter:*` names, only the fields that are set (crawlers fall back to `og:*`) |
+| `links[]` | `<link>` with `rel` from `PAGE_HEAD_LINK_RELS` (alternate, preload, prefetch, preconnect, dns-prefetch, icon, apple-touch-icon, mask-icon, manifest, author, license, me, help, search); `as` only on preload, from `PAGE_HEAD_PRELOAD_AS` (no `script`) |
+| `meta[]` | `<meta name\|property>`; names limited to `[A-Za-z0-9:._-]`, `RESERVED_PAGE_META_NAMES` refused, `http-equiv` not expressible |
+| `jsonLd[]` | One `<script type="application/ld+json">` per block |
+
+Rules the emitter keeps:
+
+- **Every value is attribute-escaped; every URL must pass `isSafeUrl`** (canonical, favicon, link hrefs, `og:url`, `og:image`, `twitter:image`) or its tag is dropped. Extra meta content with a dangerous scheme is dropped.
+- **JSON-LD is parsed and re-serialised.** Text that is not a JSON object or array is omitted; `<`, `>`, `&` are written as `\u003c` / `\u003e` / `\u0026`, so a block can never close its `<script>` or open a comment. Data blocks are not executed, so they add nothing to the CSP `script-src`.
+- **Global → template → page.** Site explorer → Global head settings edits `site.settings.seo`. Each matching template supplies overrides from outermost to innermost, including an everywhere template without an outlet. The page's own settings take precedence. Open Graph and X fields inherit individually. A non-empty list replaces the corresponding inherited list, and a favicon replaces the whole favicon. Empty editor fields show inherited values as placeholders. Template placeholders retain token patterns and page placeholders resolve them for the current page. Clearing an override restores inheritance. Use `{page.title} | {site.name}` at global or template level for a per-page title.
+- **Entry routes use the matched post-type template's `seo` as a pattern.** The entry's own `seoTitle` / `seoDescription` (`documentMeta`) outrank it. A template canonical with no token would point every entry at one URL, so it becomes the entry's own permalink (on that canonical's origin when it is absolute); a canonical or `og:url` with a token resolves per entry; a token-less `og:url` is omitted. Everything else applies to every entry as written, including `robots`: a `noindex` template hides all its entries.
+- **A page that lists its own `icon` links** (size or media variants) gets no site favicon on top.
+- **`{route.query.*}` and `{member.*}` resolve empty in every head value** (title and description included). The head is cached with the page under its path and canonical query, never per visitor or per raw query, so those tokens would freeze one request's value into later responses. `{page.*}` names the served page, also under a layout.
+- **Text, URL and JSON-LD string values are token-interpolated** like the title, so one template page can write `{currentEntry.title} | Acme`, a per-entry canonical, or per-entry structured data. JSON-LD is interpolated after parsing and only in values, so a token can never break the JSON.
+- **An external web manifest gets a CSP `manifest-src`** (`'self'` plus its origin), returned as `DocumentHead.cspSources` and merged into the page's CSP plan; a same-origin manifest needs nothing beyond `default-src 'self'`.
+- **An unset field emits nothing.** An unset field falls back through the layers before the publisher omits it.
+- **Changing it needs `site.structure.edit`** on every write path: `pageDiff.ts` for editor saves, and `keepPageStructuralCells` (`server/writePolicy/pageStructuralCells.ts`) for the generic row paths (rows API, version restore, plugin content calls, AI tree tools, bundle import), which also normalise the cell through `parsePageSeo`. Creating a page row (rows API, plugin `entries.create` / `createMany`, a bundle import of a new page id) keeps `seo` only for a caller with that right (`newPageStructuralCells`).
+
 ### `documentMeta` — per-render `<head>` overrides
 
-Rows 3 and 4 above take their most specific value from `PublishPageOptions.documentMeta`, a `{ title?, description? }` the caller supplies for this render only. A post-type entry's authored `seoTitle` / `seoDescription` are row cells, not fields of the composed template `Page`, so both entry render paths read them with `readEntrySeoOverride(cells)` (`src/core/data/cells.ts`) and pass them here:
+Rows 3 and 4 above take their most specific value from `PublishPageOptions.documentMeta`, ahead of the page's own `seo` values,, a `{ title?, description? }` the caller supplies for this render only. A post-type entry's authored `seoTitle` / `seoDescription` are row cells, not fields of the composed template `Page`, so both entry render paths read them with `readEntrySeoOverride(cells)` (`src/core/data/cells.ts`) and pass them here:
 
 | Path | File |
 |---|---|
@@ -425,7 +462,7 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 
 ## Module JS channel
 
-`render()` may return `js` next to `html`/`css` (`RenderOutput`, `src/core/module-engine/types.ts`). The walker dedupes it per moduleId into `RenderAccumulators.jsMap`; `publishPage` reports per-page candidates (`jsModuleIds` = render-emitted ids ∪ every moduleId inside the page's hole subtrees via `collectHoleSubtreeModuleIds`); the server intersects candidates with the site-wide map (`buildPublishedSiteModuleJsMap`) and injects one external `<script defer>` per module before `</body>`. JS is never inlined — no `</script>` escaping anywhere. Pages with no module JS ship zero script tags and keep `script-src 'none'`. The CMS form runtime is the first consumer: `base.form` emits it when `mode === 'cms'` (`src/modules/base/forms/formRuntimeJs.ts`); token stamping stays server-side (`stampFormPageTokens`, applied to baked pages and hole fragments).
+`render()` may return `js` next to `html`/`css` (`RenderOutput`, `src/core/module-engine/types.ts`). The walker dedupes it per moduleId into `RenderAccumulators.jsMap`; `publishPage` reports per-page candidates (`jsModuleIds` = render-emitted ids ∪ every moduleId inside the page's hole subtrees via `collectHoleSubtreeAssets`); the server intersects candidates with the site-wide map (`buildPublishedSiteModuleJsMap`, narrowed by `resolveModuleScripts`) and injects one external `<script defer>` per module before `</body>`. Each tag's `?v=` is a short SHA-256 of that module's JS body (`assetContentVersion` in `server/publish/assetVersion.ts`), so the URL changes exactly when the body does. It is never `publishVersion`: that counter restarts at 0 on every boot, so it would repeat a URL browsers cached before a restart or upgrade. The asset route always serves the latest published snapshot's body; it sends `public, max-age=3600` when `?v=` names that body and `no-cache` otherwise, so a page baked before the script changed never caches a body its URL does not name. Every response carries `ETag: "<contentHash>"`, and a request whose `If-None-Match` names it (a weak `W/` tag or a comma-separated list included) gets `304 Not Modified` with no body, so a stale URL revalidates on each view instead of downloading the script again. Such a page keeps its old tag until the next full publish, so a browser that already cached the old URL may run the old script for up to an hour. The two runtime tags follow the same rule through the same helper (`serveVersionedScript` in `server/publish/assetVersion.ts`): the hole runtime's `?v=` is `HOLE_RUNTIME_VERSION` (the hash of `HOLE_RUNTIME_JS`) and the loop runtime's is `LOOP_RUNTIME_VERSION` (the hash of `LOOP_RUNTIME_JS`). `publishPage` takes both as options (`holeRuntimeVersion`, `loopRuntimeVersion`) because the core publisher cannot import the server's runtimes; a render that supplies none (the AI read surface, the editor preview) emits the tag with no query. JS is never inlined — no `</script>` escaping anywhere. Pages with no module JS ship zero script tags and keep `script-src 'none'`. The CMS form runtime is the first consumer: `base.form` emits it when `mode === 'cms'` (`src/modules/base/forms/formRuntimeJs.ts`); token stamping stays server-side (`stampFormPageTokens`, applied to baked pages and hole fragments).
 
 ---
 
@@ -447,7 +484,8 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `server/publish/publishedHtmlPipeline.ts`       | Post-process: DOMPurify the final HTML, run plugin `publish.html` filter, splice in declarative tags from plugin manifests, inject runtime assets. Runs at publish time only — never per-request. |
 | `server/publish/siteCssBundle.ts`               | Hash the four CSS strings, write `uploads/css/...` files. The framework bundle's module-CSS half comes from the shared walk in `siteModuleAssets.ts`. |
 | `server/publish/siteModuleAssets.ts`            | `collectSiteModuleAssets` — the one full-site render walk whose accumulators feed BOTH the framework CSS bundle (`cssMap`) and the published module-JS map (`jsMap`). |
-| `server/publish/moduleJsBundle.ts`              | Module-JS channel: `buildSiteModuleJsMap` (fresh), `buildPublishedSiteModuleJsMap` (memoised per publishVersion + site, invalidated by `bumpPublishVersion()`), and `injectModuleScripts` (per-page `<script defer>` tags + CSP `script-src 'self'` relaxation). |
+| `server/publish/moduleJsBundle.ts`              | Module-JS channel: `buildSiteModuleJsMap` (fresh), `buildPublishedSiteModuleJsMap` (memoised per publishVersion + site, invalidated by `bumpPublishVersion()`), `resolveModuleScripts` (a page's candidate ids → the scripts it loads, each with its body's content hash), and `injectModuleScripts` (per-page `<script defer>` tags + CSP `script-src 'self'` relaxation). |
+| `server/publish/assetVersion.ts`                | `assetContentVersion(body)`: the short SHA-256 stamped as `?v=` on module-JS, hole-runtime and loop-runtime script tags, so a script URL is a content address that survives restarts. `serveVersionedScript(req, url, { body, version })`: the one response rule the three routes share (1 h public cache only when `?v=` names the body, `no-cache` otherwise, `ETag` and `304` on both). |
 | `server/publish/republish.ts`                   | Bulk re-publish on settings change (touches every page).            |
 | `server/publish/publishScheduler.ts`            | Scheduled publish jobs (cron-style).                                |
 | `server/publish/frontendInjections.ts`          | Compute plugin `<script>`/`<link>`/`<meta>` tags, preserve per-kind manifest attributes, protect host-owned attributes, and derive CSP entries. |
@@ -455,11 +493,11 @@ Because `serializeCsp` sorts, the same plugins + adapters always emit a **byte-i
 | `src/core/publisher/responsiveBackground.ts`    | Convert media-library `background-image: url(...)` values into optimized variant fallback + `image-set(...)` declarations. |
 | `server/publish/mediaPrefetch.ts`               | Collect every image/media-typed prop and every media-library background-image URL from the full render tree — including VC definition trees — via `walkRenderTree`, then batch-fetch matching `media_assets` rows into a `Map<publicPath, MediaAsset>` before render. Uses `MEDIA_ASSET_COLUMNS` and `mapMediaAssetRow` from `server/repositories/mediaAssetMapping.ts` (shared with the admin repository) so the published page and the admin panel always see one identical asset shape. |
 | `server/publish/loopPrefetch.ts`                | Collect every `base.loop` node from the full render tree — including VC definition trees — via `walkRenderTree`, fetch each source's items, and return a `Map<nodeId, ResolvedLoopData>` before render so the walker is purely synchronous. Also exports `canonicalRenderQuery(searchParams)` — strips all non-loop-pagination params from a URL's query, returning only `loop_<nodeId>_page` keys in sorted order (or `''` when none remain). Used by `publicRouter.ts` to normalise the Layer B cache key and Layer A fast-path eligibility. |
-| `server/publish/renderTreeWalk.ts`              | `walkRenderTree(nodes, rootNodeId, site, onNode)` — visits every node that contributes to a rendered page: all page-tree nodes reachable from `rootNodeId`, plus all nodes inside each referenced VC's definition tree (recursively, cycle-guarded by a `Set<vcId>`). Used by both `mediaPrefetch.ts` and `loopPrefetch.ts` so their traversal logic can't drift apart. |
+| `server/publish/renderTreeWalk.ts`              | `walkRenderTree(nodes, rootNodeId, site, onNode)` — visits every node that contributes to a rendered page: all page-tree nodes reachable from `rootNodeId`, plus all nodes inside each referenced VC's definition tree (recursively, cycle-guarded by a `Set<vcId>`). Used by both `mediaPrefetch.ts` and `loopPrefetch.ts` so their traversal logic can't drift apart. Hidden nodes follow the renderer: `renderNode` emits nothing for a hidden node and what is under it (`isHiddenFromRender` in `@core/publisher`, the one predicate both read), so the walk stops there and nothing under it is fetched or looked up. The exception is a hidden `base.slot-instance` under a VC ref: the renderer grafts its children into the slot outlet without reading the instance's own `hidden` flag, so they render and the walk goes into them. Gated by `src/__tests__/server/renderTreeWalkHidden.test.ts`, which publishes a page holding every case. |
 | `server/publish/runtime/packageServer.ts`       | Serve per-site `bun install` workspace under `/_instatic/runtime/cache/`. |
-| `server/publish/loopRuntime.ts`                 | The loop runtime asset (small JS shim used by certain loop variants).|
-| `server/handlers/cms/hole.ts`                   | `GET /_instatic/hole-runtime.js` (serves `HOLE_RUNTIME_JS`) and `GET /_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` (renders a node subtree at request time for Layer C islands). |
-| `server/handlers/cms/moduleJs.ts`               | `GET /_instatic/module-js/<moduleId>.js?v=<publishVersion>` — serves a module's render-emitted JS from the memoised site map; validates the untrusted moduleId segment; 404 unknown; `text/javascript`; `cache-control: public, max-age=3600`. |
+| `server/publish/loopRuntime.ts`                 | The loop runtime asset (small JS shim used by infinite loops): `LOOP_RUNTIME_JS` and `LOOP_RUNTIME_VERSION` (its content hash, the `?v=` on the runtime's script tag). |
+| `server/handlers/cms/hole.ts`                   | `GET /_instatic/hole-runtime.js?v=<contentHash>` (serves `HOLE_RUNTIME_JS` through `serveVersionedScript`) and `GET /_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` (renders a node subtree at request time for Layer C islands). |
+| `server/handlers/cms/moduleJs.ts`               | `GET /_instatic/module-js/<moduleId>.js?v=<contentHash>` — serves a module's render-emitted JS from the memoised site map; validates the untrusted moduleId segment; 404 unknown; `text/javascript`; `cache-control: public, max-age=3600` when `?v=` is the hash of the body served, `no-cache` otherwise; `ETag` on both and `304` on a matching `If-None-Match` (`serveVersionedScript`). |
 | `server/richtextSanitizer.ts`                   | Installs the server's jsdom-backed DOMPurify runtime without global DOM objects. |
 
 ### `publishedHtmlPipeline.ts` — the plugin filter point
@@ -475,7 +513,7 @@ applyPublishedHtmlPipeline(renderedOutput, db)
     ├─→ Emit `publish.before` hook (plugins can prepare state)
     ├─→ Splice in declarative tags from plugin manifests' `frontend.assets[]`
     ├─→ Stamp form page tokens onto CMS-native <form> tags (`stampFormPageTokens`)
-    ├─→ Inject per-module published JS: one `<script src="/_instatic/module-js/<id>.js?v=N" defer data-instatic-module-js="<id>">` per moduleId in the page's injection set (render-emitted ∪ hole-subtree ∩ site jsMap), sorted; CSP script-src → 'self' iff ≥ 1 tag
+    ├─→ Inject per-module published JS: one `<script src="/_instatic/module-js/<id>.js?v=<contentHash>" defer data-instatic-module-js="<id>">` per moduleId in the page's injection set (render-emitted ∪ hole-subtree ∩ site jsMap), sorted; CSP script-src → 'self' iff ≥ 1 tag
     ├─→ Run `publish.html` filters in registration order (plugins transform the HTML string)
     ├─→ Emit `publish.after` hook
     └─→ Return final HTML
@@ -585,9 +623,11 @@ tryServePublicRoute (server/router.ts)
 The visitor-facing artefacts are:
 1. **Disk files in the active slot** (`uploads/published/current/<route>.html`) — every route, as a complete document or a hole shell. Final HTML, post-filter, frontend assets baked in. Rebuilt on each full publish; a row publish rewrites the row's own file and removes the files that loop over its table.
 2. **In-memory LRU entries** — for requests Layer A does not answer: loop pagination, a route whose bake failed, and a route removed from the slot because a table it loops over changed. Filled lazily, evicted on every publish.
-3. **`<instatic-hole>` fragment responses** at `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` — for dynamic nodes inside otherwise-cacheable pages. Fetched lazily by the IntersectionObserver runtime; shared responses are cached in Layer B, while per-visitor holes bypass it.
+3. **`<instatic-hole>` fragment responses** at `/_instatic/hole/<nodeId>?v=<snapshotHash>&u=<page-url>` — for dynamic nodes inside otherwise-cacheable pages. Fetched lazily by the IntersectionObserver runtime; shared responses are cached in Layer B, while per-visitor holes bypass it and are sent `Cache-Control: private, no-store`. A hole is per-visitor when any list in its subtree uses a `perVisitor` source, including a list nested in another list's item or inside a Visual Component (`subtreeHasPerVisitorSource`). Each source gets its own request (`server/publish/loopSourceRequest.ts`, shared with the `/_instatic/loop/<id>` paging endpoint): only a per-visitor source is given the cookies and the signed-in member (`ctx.request.member`); a shared render never carries either.
 
-The published `SiteDocument` is stored once per publish in `site_snapshots` and referenced by `data_row_versions.site_snapshot_id`; the `PublishedPageSnapshot` reassembled from that join remains the canonical audit record — all three layers derive from it. At request time it is memoised per publish version (`server/publish/publishedSnapshotCache.ts`, shared by the public router's row resolution, the hole endpoint, and the loop endpoint), and `renderPublicResolution` serves a warm Layer B entry *before* any route resolution — a cache hit does zero DB work.
+Both fragment endpoints render from the **composed** tree the visitor was served, never from a raw page. `composedRouteForPath` (`server/publish/composedRoute.ts`) resolves the caller's page URL (`u` for a hole, `pagePath` for a list page) the way the public router does: a page at the slug spliced into its layout chain, else a published entry in its entry templates (seeding `currentEntry` with the entry), else the 404 page. The node is looked up there under the id the page carried: page content under a layout is prefixed by composition (`c0_<id>`), and a layout element that holds the outlet (a show-when box, an element with a `route.query.*` token) is rendered with the page content inside it. A node that is not in the tree of the route the URL names is a 404. The fragment's access rules are the routed page's (or the entry table's) plus those indexed for the path. The infinite-list endpoint seeds its iterations with the same entry stack, so `parentEntry` resolves as it does in the page.
+
+The published `SiteDocument` is stored once per publish in `site_snapshots` and referenced by `data_row_versions.site_snapshot_id`; the `PublishedPageSnapshot` reassembled from that join remains the canonical audit record — all three layers derive from it. At request time it is memoised per publish version (`server/publish/publishedSnapshotCache.ts`, shared by the public router's row resolution, and as `getPublishedSiteForVersion` (site + fingerprint) by the hole and loop endpoints), and `renderPublicResolution` serves a warm Layer B entry *before* any route resolution — a cache hit does zero DB work.
 
 ---
 
@@ -657,5 +697,5 @@ This is rare and requires architectural review — most "new behavior" fits with
   - `src/__tests__/publisher/cspPlan.test.ts` — CSP determinism (byte-identical output for the same inputs)
   - `src/__tests__/server/dynamicDetection.test.ts` — Rules 1–4 (module flag, bindings, tokens, loop source, VC ref)
   - `src/__tests__/server/dynamicDetectionLoop.test.ts` — Rule 3.5 static loop body promotion
-  - `src/__tests__/server/dynamicIslandsPlugin.test.ts` — end-to-end confirmation of plugin loop sources as Layer C holes: protocol schema accepts `requestDependent`/`perVisitor`; dynamic detection classifies them under Rule 3; shared holes cache per query; per-visitor holes bypass the cache (`no-store`) and re-render every request; the versioned snapshot memo loads from DB once per publish version
+  - `src/__tests__/server/dynamicIslandsPlugin.test.ts` — end-to-end confirmation of plugin loop sources as Layer C holes: protocol schema accepts `requestDependent`/`perVisitor`; dynamic detection classifies them under Rule 3; shared holes cache per query; per-visitor holes bypass the cache (`private, no-store`) and re-render every request; the versioned snapshot memo loads from DB once per publish version
   - `src/__tests__/server/siteCssBundleMemo.test.ts` — `buildPublishedSiteCssBundle` memo: the O(all-pages) walk runs once per publish snapshot, `bumpPublishVersion()` invalidates the memo, memoized output is byte-identical to the un-memoized builder, and `userStyles` is never memoized (page-scoped)

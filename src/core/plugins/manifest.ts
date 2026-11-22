@@ -16,8 +16,11 @@ import {
   PLUGIN_PERMISSION_VALUES,
   permissionLabel as sdkPermissionLabel,
 } from '@core/plugin-sdk'
+import { PLUGIN_APP_SCOPE_NAME_PATTERN, plainLine, readsAsBuiltInAppScope } from '@core/members'
 import { collectEnabledAdminPages, pluginAdminPageRoute } from './manifestAdminPages'
+import { settingDefinitionSchema } from './manifestSettings'
 import { assertFrontendCoherent, frontendDeclarations, frontendSchema } from './manifestFrontend'
+import { assertMailCoherent, mailDeclarations, mailSchema } from './manifestMail'
 import { SAFE_ASSET_PATH_PATTERN } from './manifestPatterns'
 
 // Admin-page route helpers and resource-record helpers live in sibling
@@ -29,7 +32,12 @@ export {
   frontendOriginAllowsHost,
   isExternalFrontendScriptSrc,
 } from './manifestFrontend'
-export { findPluginResource, validatePluginRecordData } from './resourceRecords'
+export {
+  deriveRecordUniqueKey,
+  findPluginResource,
+  pluginRecordUniqueKey,
+  validatePluginRecordData,
+} from './resourceRecords'
 
 const PLUGIN_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/
 /**
@@ -131,6 +139,12 @@ const resourceSchema = Type.Object({
   singularLabel: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
   pluralLabel: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
   fields: Type.Array(resourceFieldSchema, { minItems: 1, maxItems: 50 }),
+  /**
+   * A `text` field whose value must be unique among the resource's records.
+   * The host keeps it in an indexed column, which is what makes
+   * `createIfAbsent` and `getByKey` atomic. See docs/features/plugin-system.md.
+   */
+  uniqueField: Type.Optional(Type.String({ pattern: RESOURCE_FIELD_ID_PATTERN.source })),
 })
 
 const adminPageSchema = Type.Object({
@@ -142,80 +156,6 @@ const adminPageSchema = Type.Object({
   content: contentSchema,
 })
 
-// `settings` schema — a discriminated union over the supported types, mirroring
-// `PluginSettingDefinition` in `src/core/plugin-sdk/builders/settings.ts`.
-// The Static type of each variant is assignment-compatible with the
-// corresponding `PluginSettingDefinition` branch (Array<T> extends
-// ReadonlyArray<T>), so parsePluginManifest needs no cast for `settings`.
-const SETTING_ID_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_-]*$/
-
-// Base properties shared by every setting variant.
-const settingBaseProps = {
-  id: Type.String({ pattern: SETTING_ID_PATTERN.source }),
-  label: Type.String({ minLength: 1, maxLength: 80 }),
-  description: Type.Optional(Type.String({ maxLength: 500 })),
-  required: Type.Optional(Type.Boolean()),
-  secret: Type.Optional(Type.Boolean()),
-}
-
-const settingOptionSchema = Type.Object({
-  label: Type.String({ minLength: 1, maxLength: 80 }),
-  value: Type.String({ minLength: 1, maxLength: 80 }),
-})
-
-const settingDefinitionSchema = Type.Union([
-  Type.Object({
-    ...settingBaseProps,
-    type: Type.Literal('text'),
-    placeholder: Type.Optional(Type.String({ maxLength: 120 })),
-    default: Type.Optional(Type.String()),
-  }),
-  Type.Object({
-    ...settingBaseProps,
-    type: Type.Literal('textarea'),
-    placeholder: Type.Optional(Type.String({ maxLength: 120 })),
-    rows: Type.Optional(Type.Number({ minimum: 1 })),
-    default: Type.Optional(Type.String()),
-  }),
-  Type.Object({
-    ...settingBaseProps,
-    type: Type.Literal('number'),
-    min: Type.Optional(Type.Number()),
-    max: Type.Optional(Type.Number()),
-    step: Type.Optional(Type.Number()),
-    unit: Type.Optional(Type.String({ maxLength: 16 })),
-    default: Type.Optional(Type.Number()),
-  }),
-  Type.Object({
-    ...settingBaseProps,
-    type: Type.Literal('toggle'),
-    default: Type.Optional(Type.Boolean()),
-  }),
-  Type.Object({
-    ...settingBaseProps,
-    type: Type.Literal('select'),
-    // Required field — a select setting must declare its options.
-    options: Type.Array(settingOptionSchema, { minItems: 1 }),
-    default: Type.Optional(Type.String()),
-  }),
-  Type.Object({
-    ...settingBaseProps,
-    type: Type.Literal('color'),
-    format: Type.Optional(Type.Union([Type.Literal('hex'), Type.Literal('rgba')])),
-    default: Type.Optional(Type.String()),
-  }),
-  Type.Object({
-    ...settingBaseProps,
-    type: Type.Literal('url'),
-    default: Type.Optional(Type.String()),
-  }),
-  Type.Object({
-    ...settingBaseProps,
-    type: Type.Literal('password'),
-    placeholder: Type.Optional(Type.String({ maxLength: 120 })),
-    default: Type.Optional(Type.String()),
-  }),
-])
 
 // Marketplace metadata — author, license, URLs, keywords, visual icon.
 // Validated at the manifest boundary so a malicious zip can't inject
@@ -280,6 +220,18 @@ const manifestSchema = Type.Object({
     }, { additionalProperties: false }),
     { maxItems: 50 },
   )),
+  // What an app a member signed in to may do through this plugin; see
+  // `PluginManifest.appScopes`. Coherence (unique names, `members.read`) is
+  // checked below.
+  appScopes: Type.Optional(Type.Array(
+    Type.Object({
+      name: Type.String({ pattern: PLUGIN_APP_SCOPE_NAME_PATTERN }),
+      description: Type.String({ minLength: 1, maxLength: 120 }),
+    }, { additionalProperties: false }),
+    { maxItems: 20 },
+  )),
+  // Adds a section to a member's data export; see `PluginManifest.memberDataExport`.
+  memberDataExport: Type.Optional(Type.Boolean()),
   entrypoints: Type.Optional(Type.Object({
     server: Type.Optional(Type.String({ pattern: SAFE_ASSET_PATH_PATTERN.source })),
     editor: Type.Optional(Type.String({ pattern: SAFE_ASSET_PATH_PATTERN.source })),
@@ -288,6 +240,8 @@ const manifestSchema = Type.Object({
   })),
   // Published-page tags and third-party origins: see `./manifestFrontend`.
   frontend: Type.Optional(frontendSchema),
+  // Email templates the plugin can send: see `./manifestMail`.
+  mail: Type.Optional(mailSchema),
   assetBasePath: Type.Optional(Type.String({ pattern: ASSET_BASE_PATH_PATTERN.source })),
   resources: Type.Array(resourceSchema, { maxItems: 20, default: [] }),
   adminPages: Type.Array(adminPageSchema, { maxItems: 20, default: [] }),
@@ -356,6 +310,49 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     }
   }
 
+  if (data.memberDataExport && !data.permissions.includes('members.read')) {
+    throw new Error(
+      'Invalid plugin manifest: `memberDataExport` requires the `members.read` permission. ' +
+        'Add "members.read" to `permissions`.',
+    )
+  }
+
+  // App scopes hand an app the signed-in member through this plugin's member
+  // routes, so they need what a member route needs, and each name once.
+  if (data.appScopes && data.appScopes.length > 0) {
+    if (!data.permissions.includes('members.read')) {
+      throw new Error(
+        `Invalid plugin manifest: \`appScopes\` requires the \`members.read\` permission. ` +
+          `Add "members.read" to \`permissions\`.`,
+      )
+    }
+    const names = data.appScopes.map((scope) => scope.name)
+    const repeated = names.find((name, index) => names.indexOf(name) !== index)
+    if (repeated) throw new Error(`Invalid plugin manifest: app scope "${repeated}" is declared twice`)
+    // A member reads the description before allowing an app. Characters that
+    // reorder or hide text have no place in it.
+    const unreadable = data.appScopes.find((scope) => /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(scope.description))
+    if (unreadable) {
+      throw new Error(
+        `Invalid plugin manifest: the description of app scope "${unreadable.name}" contains control or invisible characters`,
+      )
+    }
+    // What is left after the cleaning the approval page applies has to say
+    // something: a description of spaces would show the member nothing.
+    const blank = data.appScopes.find((scope) => plainLine(scope.description) === '')
+    if (blank) {
+      throw new Error(`Invalid plugin manifest: the description of app scope "${blank.name}" is empty`)
+    }
+    // And it has to be the plugin's own: not the words core uses for the
+    // built-in scopes, which would pass the plugin's access off as theirs.
+    const imitating = data.appScopes.find((scope) => readsAsBuiltInAppScope(scope.description))
+    if (imitating) {
+      throw new Error(
+        `Invalid plugin manifest: the description of app scope "${imitating.name}" repeats the text of a built-in scope`,
+      )
+    }
+  }
+
   // Entrypoint ↔ permission coherence. Editor entrypoints are unsandboxed
   // plugin JavaScript dynamically imported into the admin window, so they
   // require the `editor.code` permission — without this check a
@@ -390,6 +387,22 @@ export function parsePluginManifest(input: unknown): PluginManifest {
         throw new Error(`Invalid plugin manifest: duplicate field "${field.id}"`)
       }
       duplicateFields.add(field.id)
+    }
+
+    if (resource.uniqueField !== undefined) {
+      const keyField = resource.fields.find((field) => field.id === resource.uniqueField)
+      if (!keyField) {
+        throw new Error(
+          `Invalid plugin manifest: resource "${resource.id}" names "${resource.uniqueField}" as its uniqueField, ` +
+            `but declares no field with that id.`,
+        )
+      }
+      if (keyField.type !== 'text') {
+        throw new Error(
+          `Invalid plugin manifest: the uniqueField of resource "${resource.id}" must be a "text" field; ` +
+            `"${keyField.id}" is "${keyField.type}".`,
+        )
+      }
     }
 
     return resource as PluginResource
@@ -463,6 +476,7 @@ export function parsePluginManifest(input: unknown): PluginManifest {
   // would silently inject tags onto every published page with no consent
   // screen ever showing the grant.
   if (data.frontend) assertFrontendCoherent(data.frontend, data.permissions)
+  if (data.mail) assertMailCoherent(data.mail, data.permissions)
 
   // Content access coherence — required when any `cms.content.*` permission
   // is granted; each mode in `modes[]` requires the matching permission.
@@ -563,6 +577,8 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     networkAllowedHosts: data.networkAllowedHosts ? [...data.networkAllowedHosts] : undefined,
     // Per-table allowlist for the `api.cms.content.*` surface — required
     // when any `cms.content.*` permission is granted (coherence checked above).
+    appScopes: data.appScopes ? data.appScopes.map((scope) => ({ name: scope.name, description: scope.description })) : undefined,
+    memberDataExport: data.memberDataExport,
     contentAccess: data.contentAccess
       ? data.contentAccess.map((entry) => ({ table: entry.table, modes: [...entry.modes] }))
       : undefined,
@@ -572,6 +588,7 @@ export function parsePluginManifest(input: unknown): PluginManifest {
     adminPages,
     pack: data.pack,
     frontend: data.frontend ? frontendDeclarations(data.frontend) : undefined,
+    mail: data.mail ? mailDeclarations(data.mail) : undefined,
     settings: data.settings,
     author: data.author,
     license: data.license,

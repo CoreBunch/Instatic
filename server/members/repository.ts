@@ -191,6 +191,17 @@ export async function anonymizeMember(db: DbClient, memberId: string): Promise<v
   await db.transaction(async (tx) => {
     await tx`delete from member_sessions where member_id = ${memberId}`
     await tx`delete from member_tokens where member_id = ${memberId}`
+    // Sign-ins to apps go with the account, and with them the device names
+    // the apps gave ("Ada's MacBook").
+    await tx`
+      delete from member_app_tokens
+       where grant_id in (select id from member_app_grants where member_id = ${memberId})
+    `
+    await tx`
+      delete from member_app_codes
+       where grant_id in (select id from member_app_grants where member_id = ${memberId})
+    `
+    await tx`delete from member_app_grants where member_id = ${memberId}`
     await tx`delete from member_tags where member_id = ${memberId}`
     await tx`
       update member_events set ip_address = null, user_agent = null, metadata_json = '{}'
@@ -207,6 +218,33 @@ export async function anonymizeMember(db: DbClient, memberId: string): Promise<v
   emitMemberHook('member.deleted', { memberId })
 }
 
+/**
+ * Members deleted after a point, oldest deletion first, ordered by
+ * (deleted_at, id) so deletions in the same instant still page cleanly.
+ * `after` is the last one the caller saw, or null for the start.
+ */
+export async function listDeletedMembersSince(
+  db: DbClient,
+  after: { deletedAt: string; id: string } | null,
+  limit: number,
+): Promise<Array<{ id: string; deletedAt: string }>> {
+  const { rows } = after
+    ? await db<{ id: string; deleted_at: Date | string }>`
+        select id, deleted_at from members
+         where deleted_at is not null
+           and (deleted_at > ${after.deletedAt} or (deleted_at = ${after.deletedAt} and id > ${after.id}))
+         order by deleted_at, id
+         limit ${limit}
+      `
+    : await db<{ id: string; deleted_at: Date | string }>`
+        select id, deleted_at from members
+         where deleted_at is not null
+         order by deleted_at, id
+         limit ${limit}
+      `
+  return rows.map((row) => ({ id: row.id, deletedAt: isoDate(row.deleted_at) }))
+}
+
 // ─── Tags ──────────────────────────────────────────────────────────────────
 
 /** Tags the member holds right now: granted by any source and not expired. */
@@ -217,6 +255,29 @@ export async function listActiveMemberTags(db: DbClient, memberId: string): Prom
      order by tag
   `
   return rows.map((row) => row.tag)
+}
+
+/**
+ * The tags a member holds right now, each with the moment it runs out (null
+ * when it does not). A tag granted by several sources lasts as long as its
+ * longest grant.
+ */
+export async function listActiveMemberTagExpiries(
+  db: DbClient,
+  memberId: string,
+): Promise<Array<{ tag: string; expiresAt: string | null }>> {
+  const { rows } = await db<{ tag: string; expires_at: string | null }>`
+    select tag, expires_at from member_tags
+     where member_id = ${memberId} and (expires_at is null or expires_at > ${nowIso()})
+     order by tag
+  `
+  const expiries = new Map<string, string | null>()
+  for (const row of rows) {
+    const known = expiries.get(row.tag)
+    if (known === undefined) expiries.set(row.tag, row.expires_at)
+    else if (known !== null && (row.expires_at === null || row.expires_at > known)) expiries.set(row.tag, row.expires_at)
+  }
+  return [...expiries].map(([tag, expiresAt]) => ({ tag, expiresAt }))
 }
 
 /**
@@ -239,6 +300,31 @@ export async function grantMemberTag(
     source: input.source,
     expiresAt: input.expiresAt,
   })
+}
+
+/**
+ * Grant a tag from one source, with no end, unless that source already
+ * grants it and the grant is still active. An active grant keeps its end
+ * date: a repeated call neither extends nor shortens it. An expired one is
+ * replaced. Returns whether a grant was added or replaced.
+ */
+export async function grantMemberTagIfAbsent(
+  db: DbClient,
+  input: { memberId: string; tag: string; source: string },
+): Promise<boolean> {
+  if (!isGrantableMemberTag(input.tag)) throw new Error(`"${input.tag}" is not a tag a member can be given`)
+  const now = nowIso()
+  const { rows } = await db<{ tag: string }>`
+    insert into member_tags (member_id, tag, source, expires_at, created_at)
+    values (${input.memberId}, ${input.tag}, ${input.source}, ${null}, ${now})
+    on conflict (member_id, tag, source) do update
+      set expires_at = excluded.expires_at, created_at = excluded.created_at
+      where member_tags.expires_at is not null and member_tags.expires_at <= ${now}
+    returning tag
+  `
+  if (rows.length === 0) return false
+  emitMemberHook('member.tagged', { memberId: input.memberId, tag: input.tag, source: input.source, expiresAt: null })
+  return true
 }
 
 /** Withdraw one source's grant of a tag. Other sources' grants stay. */
@@ -280,11 +366,16 @@ export type MemberEventKind =
   | 'email_changed'
   | 'profile_updated'
   | 'deleted'
+  | 'app_connected'
+  | 'app_disconnected'
+  // Done by a plugin (`metadata.plugin` names it), not by the member.
+  | 'created_by_plugin'
   // Done by an administrator, not by the member.
   | 'invited'
   | 'suspended'
   | 'unsuspended'
   | 'signed_out_by_admin'
+  | 'app_disconnected_by_admin'
   | 'tag_granted'
   | 'tag_revoked'
 

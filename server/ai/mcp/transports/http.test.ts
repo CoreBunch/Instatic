@@ -4,8 +4,9 @@ import { sqliteMigrations } from '../../../db/migrations-sqlite'
 import { runMigrations } from '../../../db/runMigrations'
 import type { DbClient } from '../../../db/client'
 import { createBearerConnection } from '../connectors/store'
-import { generatePersonalAccessToken, hashMcpSecret } from '../connectors/token'
+import { generatePersonalAccessToken } from '../connectors/token'
 import { handleMcpHttp } from './http'
+import { hashOpaqueToken } from '../../../oauth/secrets'
 
 function initBody() {
   return JSON.stringify({
@@ -71,7 +72,7 @@ beforeEach(async () => {
   token = generatePersonalAccessToken()
   await createBearerConnection(db, {
     userId: 'u1', label: 'L',
-    capabilities: ['ai.chat', 'content.manage', 'site.read'], tokenHash: await hashMcpSecret(token),
+    capabilities: ['ai.chat', 'content.manage', 'site.read'], tokenHash: await hashOpaqueToken(token),
   })
 })
 

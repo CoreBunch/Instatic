@@ -3,7 +3,8 @@
  *
  * Render strategy:
  *  - Empty (no children authored): show a hint placeholder so the author
- *    knows to drop a template subtree inside.
+ *    knows to drop a template subtree inside. It also carries the loop's
+ *    preview notice, if there is one.
  *  - Has children: render them directly inside a single wrapper element
  *    whose tag is resolved from the author's `tag` / `customTag` props
  *    (defaults to `<div>`). The wrapper takes the user's class assignments
@@ -23,11 +24,19 @@ import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
 import { CanvasModulePlaceholder } from '@ui/components/CanvasModulePlaceholder'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
-import { htmlAttributesForReact, resolveHtmlTag } from '@core/htmlAttributes'
+import { resolveHtmlTag } from '@core/htmlAttributes'
+import { useCanvasHtmlAttributes } from '@modules/base/shared/useCanvasHtmlAttributes'
+import { LoopPreviewRetry } from '@site/canvas/LoopPreviewNotice'
+import { useLoopPreviewNotice } from '@site/canvas/useLoopPreviewItems'
 
 export const LoopEditor: React.FC<ModuleComponentProps> = ({ props, children, mcClassName, nodeWrapperProps, nodeId }) => {
   const hasChildren = React.Children.count(children) > 0
+  // With children the iterations preview shows this notice in their place
+  // (`LoopIterationsPreview`); an empty loop has only this placeholder to say
+  // that its source is unavailable or its plugin's preview failed.
+  const notice = useLoopPreviewNotice(props)
 
+  const htmlAttrs = useCanvasHtmlAttributes(props.htmlAttributes)
   if (!hasChildren) {
     return (
       <CanvasModulePlaceholder
@@ -35,6 +44,8 @@ export const LoopEditor: React.FC<ModuleComponentProps> = ({ props, children, mc
         className={mcClassName}
         icon={<BoxStackSolidIcon size={16} color="currentColor" />}
         label="Empty loop"
+        description={notice ? <output data-loop-preview-notice="">{notice.message}</output> : undefined}
+        actions={notice?.onRetry ? <LoopPreviewRetry onRetry={notice.onRetry} /> : undefined}
       />
     )
   }
@@ -52,7 +63,7 @@ export const LoopEditor: React.FC<ModuleComponentProps> = ({ props, children, mc
     Tag,
     {
       ...nodeWrapperProps,
-      ...htmlAttributesForReact(props.htmlAttributes),
+      ...htmlAttrs,
       className: mcClassName,
       'data-instatic-loop': nodeId,
       'data-instatic-loop-page': '1',

@@ -1,4 +1,5 @@
-import { Suspense, lazy, useState } from 'react'
+import { VersionHistoryDialog } from '@admin/shared/VersionHistoryDialog'
+import { Suspense, useState } from 'react'
 import { CalendarSolidIcon } from 'pixel-art-icons/icons/calendar-solid'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { CircleAlertSolidIcon } from 'pixel-art-icons/icons/circle-alert-solid'
@@ -44,11 +45,6 @@ interface ContentToolbarProps {
 // ---------------------------------------------------------------------------
 
 type PublishButtonState = 'idle' | 'busy' | 'success' | 'error'
-
-// Opened rarely — loaded on first open so the content route chunk stays small.
-const VersionHistoryDialog = lazy(() =>
-  import('@admin/shared/VersionHistoryDialog').then((m) => ({ default: m.VersionHistoryDialog })),
-)
 
 interface ToolbarViewState {
   statusText: string

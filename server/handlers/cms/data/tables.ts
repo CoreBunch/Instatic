@@ -34,6 +34,7 @@ import {
   listDataTablesWithCounts,
   softDeleteDataTable,
   updateDataTable,
+  appendDataTableFields,
   createDataRow,
   getDataRowBySlug,
   nextFreeDataRowSlug,
@@ -70,7 +71,8 @@ import {
   assertSystemTableUpdateAllowed,
   protectedBuiltInCreateCellKey,
 } from '@core/data/systemTableGuard'
-import { requireStepUp } from '../../../auth/authz'
+import { requireStepUp, userHasCapability } from '../../../auth/authz'
+import { newPageStructuralCells } from '../../../writePolicy/pageStructuralCells'
 import { isMainScope, MAIN_SCOPE, type BranchScope } from '../../../branches/scope'
 import { isGrantableMemberTag, PUBLIC_ACCESS } from '@core/members'
 import { getTableAccess } from '../../../repositories/data/tableAccess'
@@ -281,6 +283,20 @@ async function handleTableItem(
     const body = await readValidatedBody(req, TablePatchBodySchema)
     if (!body) return badRequest('Invalid table payload')
 
+    if (body.appendFields !== undefined) {
+      if (Object.keys(body).length !== 1) {
+        return badRequest('Provide only the fields to append')
+      }
+      const fields = normalizeDataTableFields(body.appendFields)
+      if (table.system && fields.some(field => field.builtIn)) {
+        return badRequest('System tables cannot add built-in fields')
+      }
+      const updated = await appendDataTableFields(db, scope, tableId, fields, user.id)
+      if (!updated) return jsonResponse({ error: 'Table not found' }, { status: 404 })
+      await recordTableAuditEvent(db, user, req, 'data.table.update', updated)
+      return jsonResponse({ table: updated })
+    }
+
     const update = buildTablePatch(body, user.id)
     if ('error' in update) return badRequest(update.error)
 
@@ -382,6 +398,8 @@ async function handleTableRows(
       entryId: 'new',
       actor: { kind: 'user', userId: user.id },
     })
+    // Head settings on a new page need the same right as changing them later.
+    cells = newPageStructuralCells(tableId, cells, userHasCapability(user, 'site.structure.edit'))
     let slug = slugForTable(table, cells)
 
     // A slug collision is an ordinary, recoverable authoring conflict, but the

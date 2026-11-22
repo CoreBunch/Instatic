@@ -1,5 +1,6 @@
 import { isEmittableProperty, sanitiseCssValue } from '@core/publisher'
-import type { ImportWarning, AssetRef, NewStyleRule } from './types'
+import type { AssetRef, NewStyleRule } from './types'
+import type { ImportWarning } from './warnings'
 
 type ParseDeclarations = (
   style: CSSStyleDeclaration,

@@ -13,8 +13,7 @@
     display: flex;
     align-items: center;
     height: var(--tree-row-h);
-    padding-left: var(--tree-row-pl);
-    padding-right: var(--space-l);
+    padding-inline: var(--tree-row-pl) var(--space-s);
     gap: var(--space-4xs);
     border-radius: 8px;
     color: var(--text-muted);

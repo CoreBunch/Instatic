@@ -21,7 +21,9 @@ import type {
   ContentAccessEntry,
   InstalledPlugin,
   PluginManifest,
+  PluginAppScope,
   PluginFrontendOrigins,
+  PluginMailTemplateDeclaration,
   PluginPermission,
 } from '@core/plugin-sdk'
 import { requestCmsSiteReload } from '@admin/state/adminEvents'
@@ -70,8 +72,16 @@ interface PendingInstall {
    * them as "New".
    */
   previousContentAccess?: ContentAccessEntry[]
+  /**
+   * `appScopes` from the manifest of the existing install. The dialog diffs
+   * it against the new manifest's, since a scope that is removed or
+   * reworded is withdrawn from apps and members at the update.
+   */
+  previousAppScopes?: PluginAppScope[]
   /** `frontend.origins` from the existing install, diffed the same way. */
   previousFrontendOrigins?: PluginFrontendOrigins
+  /** `mail.templates` from the existing install: an added or reworded email is flagged. */
+  previousMailTemplates?: PluginMailTemplateDeclaration[]
 }
 
 /**
@@ -344,7 +354,11 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
           ? { previousNetworkAllowedHosts }
           : {}),
         ...(previousContentAccess !== undefined ? { previousContentAccess } : {}),
+        ...(existing?.manifest.appScopes !== undefined
+          ? { previousAppScopes: existing.manifest.appScopes }
+          : {}),
         ...(previousFrontendOrigins !== undefined ? { previousFrontendOrigins } : {}),
+        ...(existing ? { previousMailTemplates: existing.manifest.mail?.templates ?? [] } : {}),
       })
     } catch (err) {
       setError(getErrorMessage(err, 'Could not install plugin'))

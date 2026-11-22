@@ -17,12 +17,14 @@ export function TextareaControl({
   isOverride,
   disabled,
   layout,
+  labelAction,
 }: TextareaControlProps) {
   return (
     <ControlRow
       propKey={propKey}
       label={label}
       layout={layout}
+      labelAction={labelAction}
       isOverride={isOverride}
       disabled={disabled}
     >

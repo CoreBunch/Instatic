@@ -28,10 +28,13 @@ import {
   type MemberProfile,
   type MemberProfileField,
 } from '@core/members'
+import { listConnectedMemberApps } from '@core/loops'
 import { MAIL_ADDRESS_PATTERN } from '@core/mail'
 import { MIN_PASSWORD_LENGTH } from '@core/utils/passwordPolicy'
 import { hashPassword, hashSessionToken, verifyPassword } from '../auth/tokens'
+import { revokeAllMemberAppGrants } from './apps/store'
 import { memberLimits } from './limits'
+import { discardQueuedMailForMember } from '../mail/delivery'
 import { emitMemberHook } from './hooks'
 import { memberLinkPage, memberTokenLink, queueMemberMail } from './mail'
 import { getMemberPagePaths, resolveMemberPagePaths } from './pages'
@@ -85,6 +88,8 @@ export type MemberSuccessCode =
   | 'signed_out'
   | 'updated'
   | 'deleted'
+  | 'app_approved'
+  | 'app_refused'
 
 export type MemberOutcome =
   | {
@@ -100,6 +105,11 @@ export type MemberOutcome =
        * from (`?next=`) nor the form says: the owner's "after signing in" page.
        */
       landing?: string
+      /**
+       * An app sign-in was answered: the app's own address to send the browser
+       * to, already checked against the addresses registered for that app.
+       */
+      appRedirect?: string
     }
   | { ok: false; code: MemberErrorCode; field?: string; retryAfterMs?: number }
 
@@ -472,6 +482,7 @@ export async function setPasswordWithLink(
   await setMemberPasswordHash(ctx.db, member.id, await hashPassword(input.password))
   await markMemberVerified(ctx.db, member.id)
   await revokeAllMemberSessions(ctx.db, member.id)
+  await revokeAllMemberAppGrants(ctx.db, member.id)
   await withdrawMemberTokens(ctx.db, member.id)
   await recordMemberEvent(ctx.db, member.id, 'password_reset', ctx)
   if (kind === 'reset') {
@@ -519,6 +530,7 @@ export async function changePassword(
   await setMemberPasswordHash(ctx.db, member.id, await hashPassword(input.newPassword))
   // Replace this session too: a stolen copy of the old token dies with the rest.
   await revokeAllMemberSessions(ctx.db, member.id)
+  await revokeAllMemberAppGrants(ctx.db, member.id)
   await withdrawMemberTokens(ctx.db, member.id)
   await recordMemberEvent(ctx.db, member.id, 'password_changed', ctx)
   queueMemberMail(ctx.db, { kind: 'password_changed', to: member.email })
@@ -571,6 +583,7 @@ export async function confirmEmailChange(
 
   if (!(await setMemberEmail(ctx.db, member.id, consumed.payload.email))) return fail('email_taken')
   await revokeAllMemberSessions(ctx.db, member.id)
+  await revokeAllMemberAppGrants(ctx.db, member.id)
   await withdrawMemberTokens(ctx.db, member.id)
   await recordMemberEvent(ctx.db, member.id, 'email_changed', ctx)
   return startSession(ctx, member)
@@ -600,6 +613,7 @@ export async function deleteAccount(
   if (denied) return denied
   await recordMemberEvent(ctx.db, current.member.id, 'deleted', ctx)
   await anonymizeMember(ctx.db, current.member.id)
+  await discardQueuedMailForMember(ctx.db, current.member.id)
   return { ok: true, code: 'deleted', session: 'clear' }
 }
 
@@ -618,6 +632,12 @@ export async function exportMemberData(db: DbClient, member: MemberRecord): Prom
     profile: member.profile,
     tags: await listActiveMemberTags(db, member.id),
     sessions: await listMemberSessions(db, member.id),
+    connectedApps: (await listConnectedMemberApps(db, member.id)).map((app) => ({
+      app: app.name,
+      device: app.device,
+      connectedAt: app.connectedAt,
+      lastUsedAt: app.lastUsedAt,
+    })),
     activity: await listMemberEvents(db, member.id),
   }
 }

@@ -15,8 +15,10 @@
  *     its own folder selection / scroll position / filter state without
  *     leaking into the Media page if it's open elsewhere.
  */
-import { useEffect, useEffectEvent, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { isMobileViewport, useMobileViewport } from '@admin/lib/mobileViewport'
+import canvasLayout from '@admin/layouts/AdminCanvasLayout/AdminCanvasLayout.module.css'
 import { Button } from '@ui/components/Button'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import type { CmsMediaAsset } from '@core/persistence/cmsMedia'
@@ -96,8 +98,17 @@ function MediaPickerModalBody({
   onPick,
   onPickMultiple,
 }: Omit<MediaPickerModalProps, 'open'>) {
+  const closeButton = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const trigger = document.activeElement
+    closeButton.current?.focus({ preventScroll: true })
+    return () => {
+      if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus({ preventScroll: true })
+    }
+  }, [])
+  const phone = useMobileViewport()
   const workspace = useMediaWorkspace()
-  const [activePanel, setActivePanel] = useState<MediaSidebarPanelId | null>('folders')
+  const [activePanel, setActivePanel] = useState<MediaSidebarPanelId | null>(() => isMobileViewport() ? null : 'folders')
 
   // Constrain the canvas to the requested media kind so an image control
   // can't accidentally pick a video. useEffectEvent reads the latest
@@ -190,13 +201,15 @@ function MediaPickerModalBody({
         aria-modal="true"
         aria-label={pickerTitle(mediaKind)}
         data-testid="media-picker-modal"
+        data-ui-dialog="true"
       >
         <header className={styles.header}>
           <h2 className={styles.title}>{pickerTitle(mediaKind)}</h2>
           <Button
             variant="ghost"
-            size="sm"
+            size={phone ? 'lg' : 'sm'}
             iconOnly
+            ref={closeButton}
             aria-label="Close picker"
             onClick={onClose}
           >
@@ -204,14 +217,18 @@ function MediaPickerModalBody({
           </Button>
         </header>
 
-        <div className={styles.body}>
+        <div className={canvasLayout.editorBody}>
           <MediaSidebar
             workspace={workspace}
             activePanel={activePanel}
             onActivePanelChange={setActivePanel}
           />
-          <div className={styles.canvasArea}>
-            <MediaCanvas workspace={workspace} selectionMode={allowMultiple ? 'multiple' : 'standard'} />
+          <div className={canvasLayout.canvasStage}>
+            <MediaCanvas
+              workspace={workspace}
+              mediaKind={mediaKind}
+              selectionMode={allowMultiple ? 'multiple' : 'standard'}
+            />
           </div>
         </div>
 
@@ -223,12 +240,12 @@ function MediaPickerModalBody({
             selectionCount={allowMultiple ? pickedMany.length : picked ? 1 : 0}
           />
           <div className={styles.footerActions}>
-            <Button variant="ghost" size="sm" onClick={onClose}>
+            <Button variant="ghost" size={phone ? 'lg' : 'sm'} onClick={onClose}>
               Cancel
             </Button>
             <Button
               variant="primary"
-              size="sm"
+              size={phone ? 'lg' : 'sm'}
               disabled={allowMultiple ? !canCommitMany : !canCommit}
               onClick={commit}
             >

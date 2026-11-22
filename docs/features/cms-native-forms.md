@@ -10,13 +10,15 @@ CMS-native forms let the visual editor build semantic HTML forms from primitive 
 - Paste HTML, agent HTML insert/replace, and Super Import all use `@core/htmlImport`, so semantic HTML form tags import as these same primitive modules.
 - CMS form snapshots are derived at publish/request time by `src/core/forms/snapshot.ts`.
 - Public submissions go through `POST /_instatic/form/challenge` and `POST /_instatic/form/submit`, implemented in `server/forms/handler.ts`.
-- The browser runtime ships through the module-JS channel: `base.form`'s render() emits it as `js` when `mode === 'cms'` (`src/modules/base/forms/formRuntimeJs.ts`), published pages load it from `/_instatic/module-js/base.form.js`, and `server/forms/formRuntime.ts`'s `stampFormPageTokens` stamps `data-instatic-page-token` + `data-instatic-page-id` onto every CMS form tag — on baked pages and on hole fragments.
+- The browser runtime ships through the module-JS channel: `base.form`'s render() emits it as `js` when `mode === 'cms'` (`src/modules/base/forms/formRuntimeJs.ts`), published pages load it from `/_instatic/module-js/base.form.js?v=<contentHash>` (the hash of the runtime body, so a changed runtime is a new URL), and `server/forms/formRuntime.ts`'s `stampFormPageTokens` stamps `data-instatic-page-token` + `data-instatic-page-id` onto every CMS form tag — on baked pages and on hole fragments.
 
 ## Editor Model
 
 The editor exposes form primitives in the module picker.
 
 Primitives are the source of truth. A label is a `base.label` node, an input is a `base.input` node, and a submit button is a `base.submit` node. There is no hidden field-builder shape inside `base.form`; authors compose ordinary nodes, and every node remains directly editable after insertion.
+
+Every form part except `base.form-message` also carries an `htmlAttributes` bag (the Properties panel's Attributes view) for native attributes the module does not model, such as `inputmode`, `step`, `aria-describedby` and `data-*` hooks. The module emits its own attributes first and the bag after them, so a duplicate name never overrides a module-owned value (the browser keeps the first). HTML import fills the bag (see [html-import.md](html-import.md)).
 
 `base.form` has two modes:
 
@@ -47,7 +49,7 @@ Auto wiring is structural:
 
 - A `base.label` with `targetMode: "auto"` targets the next form control below it in the same form subtree.
 - A `base.submit` inside a form submits the nearest form by normal HTML semantics. Its `formId` prop is only an override for out-of-form submit buttons.
-- `base.form-message` nodes can be inside the form or point at a form id.
+- `base.form-message` nodes can be inside the form or point at a form id; a form uses both. The one exception is a form repeated in a list: its id occurs more than once on the page, so a row that holds messages uses only its own.
 
 The published runtime finalizes auto labels in the browser because labels and inputs are independent nodes. It assigns an id to the next control when needed and sets the label's `for` attribute.
 

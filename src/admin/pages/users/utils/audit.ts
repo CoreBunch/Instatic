@@ -185,10 +185,14 @@ export function auditTitle(
       return `Email template ${event.targetId ?? ''} was reset`
     case 'member.invite':
       return `Member ${member} was invited`
+    case 'member.create':
+      return `Member ${member} was given an account by ${pluginId}`
     case 'member.suspend':
       return `Member ${member} was suspended`
     case 'member.unsuspend':
       return `Member ${member} was restored`
+    case 'member.export':
+      return `Member ${member}'s data was downloaded`
     case 'member.signout':
       return `Member ${member} was signed out everywhere`
     case 'member.delete':
@@ -199,6 +203,12 @@ export function auditTitle(
       return `Member ${member} lost the tag ${metadataString(event.metadata, 'tag') ?? ''}`
     case 'member.settings.update':
       return 'Member settings were changed'
+    case 'member.app.create':
+      return `App ${metadataString(event.metadata, 'name') ?? 'unknown'} was allowed to sign members in`
+    case 'member.app.delete':
+      return `App ${metadataString(event.metadata, 'name') ?? 'unknown'} was removed from member sign-in`
+    case 'member.app.disconnect':
+      return `Member ${member} was signed out of the app ${metadataString(event.metadata, 'app') ?? 'unknown'}`
     case 'ai.credential.created':
       return `AI credential ${aiCredential} was created`
     case 'ai.credential.updated':

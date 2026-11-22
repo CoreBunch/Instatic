@@ -1,11 +1,13 @@
 /**
  * What an administrator does with members: list and search them, look at
- * one, invite, tag, suspend, sign out, delete.
+ * one, invite, tag, suspend, sign out, delete. Also the account a plugin
+ * creates without an invitation (`ensureMember`).
  *
  * Like the rest of `server/members`, nothing here knows about admin users,
  * capabilities or HTTP: the cms handler (`server/handlers/cms/members.ts`)
  * decides who may call these, and audits the call.
  */
+import { discardQueuedMailForMember } from '../mail/delivery'
 import type { DbClient } from '../db/client'
 import type {
   MemberAdminStatus,
@@ -14,6 +16,7 @@ import type {
   MemberListResponse,
   MemberTagGrant,
 } from '@core/members'
+import { listConnectedMemberApps } from '@core/loops'
 import { isoDate, nowIso } from '@core/utils/isoDate'
 import { memberLinkPage, memberTokenLink, queueMemberMail } from './mail'
 import { getMemberPagePaths } from './pages'
@@ -23,11 +26,13 @@ import {
   findMemberByEmail,
   findMemberById,
   grantMemberTag,
+  grantMemberTagIfAbsent,
   listMemberEvents,
   setMemberProfile,
   recordMemberEvent,
   type MemberRecord,
 } from './repository'
+import { revokeAllMemberAppGrants, revokeMemberAppGrant } from './apps/store'
 import { listMemberSessions, revokeAllMemberSessions } from './sessions'
 import { issueMemberToken, withdrawMemberTokens } from './tokens'
 
@@ -249,10 +254,11 @@ async function listTagGrants(db: DbClient, memberId: string): Promise<MemberTagG
 export async function getMemberForAdmin(db: DbClient, memberId: string): Promise<MemberDetail | null> {
   const member = await findMemberById(db, memberId)
   if (!member) return null
-  const [item, grants, sessions, events] = await Promise.all([
+  const [item, grants, sessions, connectedApps, events] = await Promise.all([
     listItemFor(db, member),
     listTagGrants(db, member.id),
     listMemberSessions(db, member.id),
+    listConnectedMemberApps(db, member.id),
     listMemberEvents(db, member.id, 50),
   ])
   return {
@@ -261,6 +267,13 @@ export async function getMemberForAdmin(db: DbClient, memberId: string): Promise
     profile: member.profile,
     grants,
     sessions,
+    connectedApps: connectedApps.map((app) => ({
+      id: app.id,
+      name: app.name,
+      device: app.device,
+      connectedAt: app.connectedAt,
+      lastUsedAt: app.lastUsedAt,
+    })),
     events: events.map((event) => ({ kind: event.kind, createdAt: event.createdAt, ipAddress: event.ipAddress })),
   }
 }
@@ -329,6 +342,53 @@ export async function inviteMember(
   }
 }
 
+// ─── Ensure (plugins) ──────────────────────────────────────────────────────
+
+/**
+ * The member with this address, created when there is none. For a plugin
+ * that must give someone an account (a buyer, say) whether or not the site
+ * can send email.
+ *
+ * A created member is like an invited one who has not accepted: active, no
+ * password, address not confirmed (`pending` in the admin). Nothing is
+ * emailed and no link is issued. They get in later through any flow that
+ * proves the address: a sign-in link, a password reset, an invitation, or
+ * signing up with that address.
+ *
+ * Safe to call twice at once: the partial unique index on the address
+ * decides which insert wins, and the loser returns the winner's row. An
+ * existing member is returned as it is, suspended included; nothing is
+ * re-activated. A deleted member is anonymised (the address is gone from the
+ * row), so it cannot be recognised and the address gets a fresh account.
+ *
+ * `tags` are granted from `source` with no end, except where `source`
+ * already grants that tag and the grant is still active: that grant, and its
+ * end date, stay as they are. An expired grant is replaced.
+ */
+export async function ensureMember(
+  db: DbClient,
+  input: { email: string; tags: readonly string[]; source: string },
+): Promise<{ member: MemberRecord; created: boolean }> {
+  let member = await findMemberByEmail(db, input.email)
+  let created = false
+  if (!member) {
+    const fresh = await createMember(db, { email: input.email.trim(), passwordHash: null, profile: {}, verified: false })
+    if (fresh) {
+      member = fresh
+      created = true
+      await recordMemberEvent(db, fresh.id, 'created_by_plugin', NO_REQUEST, { plugin: input.source })
+    } else {
+      // Lost the race to another call for the same address: theirs is the member.
+      member = await findMemberByEmail(db, input.email)
+    }
+  }
+  if (!member) throw new Error('The member could not be created')
+  for (const tag of input.tags) {
+    await grantMemberTagIfAbsent(db, { memberId: member.id, tag, source: input.source })
+  }
+  return { member, created }
+}
+
 // ─── Changes to one member ─────────────────────────────────────────────────
 
 /**
@@ -347,18 +407,31 @@ export async function setMemberSuspended(db: DbClient, memberId: string, suspend
   `
   if (suspended) {
     await revokeAllMemberSessions(db, memberId)
+    await revokeAllMemberAppGrants(db, memberId)
     await withdrawMemberTokens(db, memberId)
   }
   await recordMemberEvent(db, memberId, suspended ? 'suspended' : 'unsuspended', NO_REQUEST)
   return true
 }
 
-/** End every session of a member. They can sign in again. */
+/** End every session of a member, in browsers and in apps. They can sign in again. */
 export async function signOutMemberEverywhere(db: DbClient, memberId: string): Promise<boolean> {
   if (!(await findMemberById(db, memberId))) return false
   await revokeAllMemberSessions(db, memberId)
+  await revokeAllMemberAppGrants(db, memberId)
   await recordMemberEvent(db, memberId, 'signed_out_by_admin', NO_REQUEST)
   return true
+}
+
+/**
+ * Sign a member out of one app and return the app's name. Null when that
+ * approval is not this member's, or is already over.
+ */
+export async function disconnectMemberAppAsAdmin(db: DbClient, memberId: string, grantId: string): Promise<string | null> {
+  const revoked = await revokeMemberAppGrant(db, memberId, grantId)
+  if (!revoked) return null
+  await recordMemberEvent(db, memberId, 'app_disconnected_by_admin', NO_REQUEST, { app: revoked.appName })
+  return revoked.appName
 }
 
 /** Delete a member for good (see `anonymizeMember`). */
@@ -366,5 +439,6 @@ export async function deleteMemberAsAdmin(db: DbClient, memberId: string): Promi
   if (!(await findMemberById(db, memberId))) return false
   await recordMemberEvent(db, memberId, 'deleted', NO_REQUEST, { by: 'admin' })
   await anonymizeMember(db, memberId)
+  await discardQueuedMailForMember(db, memberId)
   return true
 }

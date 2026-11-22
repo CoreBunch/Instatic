@@ -17,9 +17,10 @@ import {
   revokeConnector,
   toConnectionView,
 } from '../connectors/store'
-import { generatePersonalAccessToken, hashMcpSecret } from '../connectors/token'
+import { generatePersonalAccessToken } from '../connectors/token'
 import { MCP_ENDPOINT_PATH } from '../paths'
 import { isRemoteMcpEndpoint } from '../oauth/protocol'
+import { hashOpaqueToken } from '../../../oauth/secrets'
 
 const CONNECTIONS_BASE = '/admin/api/ai/mcp/connections'
 const ACCESS_TOKENS_PATH = '/admin/api/ai/mcp/access-tokens'
@@ -101,7 +102,7 @@ async function handleCreateAccessToken(req: Request, db: DbClient): Promise<Resp
       userId: userOrResponse.id,
       label,
       capabilities,
-      tokenHash: await hashMcpSecret(accessToken),
+      tokenHash: await hashOpaqueToken(accessToken),
       ttlDays: body.ttlDays,
     })
     await createAuditEvent(db, {

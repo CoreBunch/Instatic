@@ -8,9 +8,13 @@ describe('CanvasContextSelector labels', () => {
   )
 
   it('uses author-facing context labels instead of exposing breakpoint/media as peers', () => {
-    expect(source).toContain("label: 'Viewport'")
-    expect(source).toContain("label: 'Environment'")
-    expect(source).not.toContain("label: 'Breakpoint'")
+    const dialog = readFileSync(
+      new URL('../../admin/pages/site/canvas/CanvasContextDialog.tsx', import.meta.url),
+      'utf-8',
+    )
+    expect(dialog).toContain("label: 'Viewport'")
+    expect(dialog).toContain("label: 'Environment'")
+    expect(dialog).not.toContain("label: 'Breakpoint'")
   })
 
   it('uses the selector trigger as the only active-context summary', () => {
@@ -20,8 +24,8 @@ describe('CanvasContextSelector labels', () => {
   })
 
   it('omits redundant condition details when the label is the query', () => {
-    expect(source).toContain('const showDetail = def.label.trim() !== detail.trim()')
-    expect(source).toContain('{showDetail && <span className={styles.rowDetail}>{detail}</span>}')
+    expect(source).toContain('detail: def.label.trim() === query.trim() ? null : query')
+    expect(source).toContain('{context.detail && <span className={styles.rowDetail}>{context.detail}</span>}')
     expect(source).not.toContain(
       '<span className={styles.rowDetail}>{conditionLabel(def.condition)}</span>',
     )

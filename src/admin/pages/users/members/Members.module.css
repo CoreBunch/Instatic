@@ -1,8 +1,6 @@
-/* Site members tab. The list-and-detail surface itself is the shared ListDetail module. */
-
 .headerActions {
     display: flex;
-    flex: none;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-s);
 }
@@ -13,24 +11,9 @@
     align-items: center;
     gap: var(--space-s);
     margin: 0;
-    padding: var(--space-l) var(--space-2xl);
-    border-radius: var(--card-radius);
-    background: var(--bg-surface-2);
     color: var(--text-muted);
     font-size: var(--text-s);
     line-height: 1.5;
-}
-
-.filters {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-l);
-}
-
-.search {
-    flex: 1 1 240px;
-    min-width: 200px;
 }
 
 .filterSelect {
@@ -38,34 +21,16 @@
     min-width: 150px;
 }
 
-.rowTags {
+.sectionHeading, .listFooter, .disclosure span {
     display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: var(--space-3xs);
-    max-width: 240px;
-}
-
-/* ── Detail panel ── */
-.detailActions {
-    display: flex;
-    flex-wrap: wrap;
+    align-items: center;
     gap: var(--space-s);
 }
 
-.detailSection {
-    display: grid;
-    gap: var(--space-s);
-}
-
-.detailSection h4 {
-    margin: 0;
-    color: var(--text-subtle);
-    font-size: var(--text-xs);
-    font-weight: 700;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-}
+.sectionHeading { justify-content: space-between; }
+.listFooter, .disclosure span { color: var(--text-subtle); font-size: var(--text-xs); }
+.disclosures { display: grid; gap: var(--space-s); }
+.disclosure.disclosure { padding-inline: 0; font-size: var(--text-s); border-radius: var(--radius); }
 
 .plain {
     margin: 0;
@@ -90,13 +55,7 @@
     align-items: center;
     gap: var(--space-s);
     padding: var(--space-xs) 0;
-    border-bottom: 1px solid var(--bg-surface);
     font-size: var(--text-s);
-}
-
-.grant:last-child,
-.timeline li:last-child {
-    border-bottom: 0;
 }
 
 .grantMain {
@@ -115,19 +74,21 @@
     color: var(--danger-text);
 }
 
+.appName,
 .timeline span {
     color: var(--text-bright);
 }
 
 .addTag {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 150px) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: end;
     gap: var(--space-s);
 }
 
 .addTag label {
     display: grid;
+    min-width: 0;
     gap: var(--space-3xs);
     color: var(--text-subtle);
     font-size: var(--text-xs);
@@ -172,10 +133,14 @@
 
 @media (max-width: 760px) {
     .fieldRow,
-    .pageGrid,
-    .addTag {
+    .pageGrid {
         grid-template-columns: minmax(0, 1fr);
     }
+}
+
+@media (max-width: 320px) {
+    .addTag { grid-template-columns: minmax(0, 1fr) auto; }
+    .addTag label:first-child { grid-column: 1 / -1; }
 }
 
 /* An invitation link beside its Copy button. */
@@ -184,4 +149,91 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-s);
+}
+
+/* ── Apps dialog ── */
+.apps {
+    display: grid;
+    gap: var(--space-px);
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    border-radius: var(--card-radius);
+    background: var(--bg-surface);
+    list-style: none;
+}
+
+.app {
+    display: grid;
+    gap: var(--space-s);
+    padding: var(--space-l) var(--space-xl);
+    background: var(--bg-surface-2);
+}
+
+.appHead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-s);
+}
+
+.appName {
+    color: var(--text-bright);
+    font-size: var(--text-s);
+    font-weight: 600;
+}
+
+.appFacts {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-xs) var(--space-l);
+    margin: 0;
+    font-size: var(--text-xs);
+    line-height: 1.45;
+}
+
+.appFacts dt {
+    color: var(--text-subtle);
+}
+
+.appFacts dd {
+    display: grid;
+    gap: var(--space-4xs);
+    min-width: 0;
+    margin: 0;
+    color: var(--text);
+}
+
+.appFacts code {
+    overflow-wrap: anywhere;
+}
+
+.appFacts .appId {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-s);
+}
+
+.appConfirm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-s);
+}
+
+.appConfirm p {
+    flex: 1 1 240px;
+    margin: 0;
+    color: var(--warning-text);
+    font-size: var(--text-xs);
+    line-height: 1.45;
+}
+
+.appSubmit {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-l);
 }

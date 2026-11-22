@@ -20,6 +20,7 @@ import {
   type ContentAccessEntry,
 } from '@core/plugin-sdk'
 // Layout compilation maps HTML elements to base.* modules via the registry.
+import { parsePluginManifest } from '@core/plugins/manifest'
 import '@modules/base'
 
 describe('html tag', () => {
@@ -327,6 +328,24 @@ describe('definePlugin', () => {
     ].sort())
     expect(definition.modules).toHaveLength(1)
     expect(definition.pack?.classes[0].id).toBe('acme.ui-kit/section')
+  })
+
+  it('carries appScopes into the manifest, as copies, and omits the field when there are none', () => {
+    const appScopes = [{ name: 'read', description: 'See your purchases and plan' }]
+    const definition = definePlugin({
+      id: 'acme.shop',
+      name: 'Shop',
+      version: '1.0.0',
+      permissions: [permissions.cmsRoutes, permissions.membersRead],
+      appScopes,
+    })
+    expect(definition.manifest.appScopes).toEqual(appScopes)
+    expect(definition.manifest.appScopes?.[0]).not.toBe(appScopes[0])
+    // The host accepts exactly what the builder wrote.
+    expect(parsePluginManifest(definition.manifest).appScopes).toEqual(appScopes)
+
+    const plain = definePlugin({ id: 'acme.shop', name: 'Shop', version: '1.0.0', permissions: [] })
+    expect('appScopes' in plain.manifest).toBe(false)
   })
 
   it('copies contentAccess into the manifest as an independent deep copy', () => {

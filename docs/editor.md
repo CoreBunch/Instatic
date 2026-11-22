@@ -244,7 +244,7 @@ src/admin/
 ### Cross-page primitives
 
 - **`SpotlightRoot`** — Cmd+K command palette. Owns its own command registry (`spotlight/commands/`), provider runner (`providers/`), scopes, keybindings, recents, telemetry. Available from every workspace.
-- **`AdminSectionNavigation`** — top-of-screen workspace switcher. Plugins add entries to it, so the row has no upper bound: `useFittingEntryCount` measures how many entries fit in the space the toolbar leaves, and the rest move into a trailing "More" menu (`AdminNavMoreMenu`). The right-hand toolbar controls never shrink, so the toolbar never grows wider than the window.
+- **`AdminSectionNavigation`** — top-of-screen workspace switcher. At widths up to 760px, tapping the site/workspace label opens a modal bottom sheet. Every permitted workspace and plugin page gets a labeled tile, with the current route checked. Settings, Account, Branches and View live sit in the footer. Workspace actions such as Publish stay in the header. At wider widths, plugins add entries to it, so the row has no upper bound: `useFittingEntryCount` measures how many entries fit in the space the toolbar leaves, and the rest move into a trailing "More" menu (`AdminNavMoreMenu`). The right-hand toolbar controls never shrink, so the toolbar never grows wider than the window.
 - **`AccountMenuButton`** — top-right avatar / account menu.
 - **`Panel`, `PanelHeader`, `SidebarResizeHandle`** — generic floating-panel chrome reused across the editor, content, and data workspaces.
 - **`StepUp`** — re-auth dialog gating sensitive actions.
@@ -302,6 +302,8 @@ boundary deeper.
 
 `SiteExplorerPanel` (`src/admin/pages/site/panels/SiteExplorerPanel/`) is the editor's concept browser for pages, templates, Visual Components, stylesheets, and scripts. Every section renders through `SiteExplorerTreeSection`, which uses the shared `Tree*` primitives from `src/admin/pages/site/ui/Tree/` for depth indent, chevrons, selection chrome, and DnD row affordances.
 
+Each section header in the Site and Code tabs uses a plus button to create an item. The button's accessible label and tooltip name the item type.
+
 Organization is persisted in `site.explorer` on the site shell. Folders are decorative and flat: they group editor rows only, and never change page slugs, public URLs, component identity, or file paths. The homepage is the page whose slug is `index`; it is always pinned as the first Pages row and does not receive organization drag handlers.
 
 **Store actions** on `siteSlice` for explorer management:
@@ -329,7 +331,7 @@ Organization is persisted in `site.explorer` on the site shell. Folders are deco
 
 **Undo/redo** uses patch-based history: every undoable mutation captures Mutative `[next, forward, inverse]` patch pairs scoped to the `SiteDocument`. Undo applies `entry.inverse`, redo applies `entry.forward` — O(change) in both time and memory, not O(site). A 50-deep history holds kilobytes of patches instead of hundreds of megabytes of full-site clones. See [`docs/reference/editor-history.md`](reference/editor-history.md).
 
-The store is composed of **12 slices**, each created by a factory in `store/slices/`:
+The store is composed of **14 slices**, each created by a factory in `store/slices/`:
 
 | Slice                  | Owns                                                                       |
 |------------------------|----------------------------------------------------------------------------|
@@ -345,6 +347,8 @@ The store is composed of **12 slices**, each created by a factory in `store/slic
 | `sitePanelSlice`       | Dependency manifest + site runtime settings                                |
 | `clipboardSlice`       | Copy / cut / paste of layer subtrees, persisted editor-wide                |
 | `inlineEditSlice`      | `activeInlineEdit` — the canvas inline text-edit session (double-click to edit) |
+| `layoutsSlice`         | Saved layouts: save / insert / rename / delete                             |
+| `fragmentsSlice`       | Insert fragment dialog flag + `insertFragment` and `applyTheme` (one undo step each) — see [`features/fragments.md`](features/fragments.md) |
 
 The combined `EditorStore` type lives at `store/types.ts` so each slice can import it without going through `store.ts` (this eliminates the historical store ↔ slice cycles).
 
@@ -392,8 +396,10 @@ Selectors are pure reads. Mutations go through actions (`useEditorStore.getState
 
 `CanvasRoot` switches between two rendering surfaces based on `canvasView`:
 
-- **Design mode** (`canvasView === 'design'`): `CanvasRoot` → `CanvasTransformLayer` → `BreakpointFrame` → `IframeFrameSurface` → `NodeRenderer`. Each breakpoint gets its own iframe rendered side-by-side inside the pan/zoom transform layer. The author sees all breakpoints at once and can zoom in/out. The canvas opens at 50% (`INITIAL_ZOOM`) so several frames fit in view; reset (Cmd/Ctrl+0, the toolbar % button) goes to 100% (`RESET_ZOOM`).
+- **Design mode** (`canvasView === 'design'`): `CanvasRoot` → `CanvasTransformLayer` → `BreakpointFrame` → `IframeFrameSurface` → `NodeRenderer`. Each breakpoint gets its own iframe rendered side-by-side inside the pan/zoom transform layer. The author sees all breakpoints at once and can zoom in/out. On phones the initial frame fits the available canvas width up to 100%. The default viewport is Mobile on phones and Desktop elsewhere, and a saved viewport choice takes precedence. Larger screens open at 50% (`INITIAL_ZOOM`). Resetting with Cmd/Ctrl+0 or the toolbar percentage button zooms to 100% (`RESET_ZOOM`) around the visible canvas center, preserving the current work area.
 - **Live mode** (`canvasView === 'live'`): `CanvasRoot` → `CanvasLiveSurface` → `IframeFrameSurface` → `NodeRenderer`. A single real-size frame at 100% width (optionally clamped to a selected breakpoint's width) scrolls normally. The toolbar zoom controls pin to 100% and disable with the reason in their tooltip ("Live mode always shows 100% zoom.") — the stored design-canvas zoom is preserved for the return to design mode. Resizable with side handles. Because the live frame is flush with the top of the canvas surface, both chrome controls — `CanvasNotch` (top-center) and `CanvasModeToggle` (top-left) — render in **peek** mode: they park above the top edge and roll down on hover/`:focus-within`, so they do not overlay the page's own header. In design mode they are always pinned.
+
+The Site canvas measures the expanded insert notch, mode switch and editing context against the canvas width whenever the side panels, favorite list or context label change size. At narrow widths, favorites fold toward **Add**, leaving Undo, Redo and Add. The editing context folds to its device or condition icon and retains its accessible name. If the compact controls still cannot fit beside the mode switch, the switch sits on a second row. Widening the canvas restores both controls. The picker checks the current context. Choosing a viewport brings the selected block into view, or centers the frame when no block is rendered there. On phones the picker is available directly on the design canvas. Properties shows the scope beside the active selector. Desktop edits the base styles, while inline styles apply at all sizes. **Manage contexts** holds the add, edit and delete actions. Opening **Add context** or editing a context loads `CanvasContextDialog` on demand. The shared reduced-motion preference makes the change immediate.
 
 Both modes use the same `IframeFrameSurface` and the same `NodeRenderer` — they are fully editable (click-to-select, properties panel, structural edits all work). The only difference is the layout wrapper. They also share the loading treatment: while the page is hydrating, design mode renders a `CanvasFrameSkeletonFrame` per breakpoint and live mode renders the same `CanvasFrameSkeleton` inside its single frame's width model.
 
@@ -415,7 +421,11 @@ Ring and toolbar positions are computed on each animation frame via a RAF loop (
 
 Each tick is split into a read phase and a write phase to keep the loop cheap at 60fps. The read phase resolves tracked elements through a `CanvasNodeElementCache` (`canvasNodeLookup.ts` — cached until the element disconnects or the iframe swaps documents, so no per-frame `querySelector` document scans), snapshots the shared iframe/canvas-root geometry once per tick via `createCanvasOverlayMeasureSession` (`canvasOverlayGeometry.ts`), and measures every rect — the toolbar anchors to the union of the ring rects already measured, never a second query/measure pass. The write phase then applies styles, skipping any write whose rect is already applied. Steady-state frames are therefore a few cached-layout reads with zero writes, and because no write lands between reads, changing rects never force per-ring reflows. **Keep new overlay work inside this read-then-write structure.**
 
-### Inline text editing (double-click)
+### Inline text editing
+
+On a phone, tapping editable text in the design canvas selects the block and shows **Edit text**, **Properties**, and, for structure editors, **Layer actions**. Edit text focuses the actual block in its breakpoint frame. **Done** ends the edit and returns focus to the canvas. The existing collaboration session persists edits as they are typed.
+
+On phones, selecting an Image block with a literal source exposes **Replace image** in the same toolbar. Empty blocks show **Choose image**. The action requires content editing and media library access. Choosing a library asset updates the block’s base `src` across breakpoints and returns focus to the selected image. Cancel returns to the same block. Dynamically bound sources stay in Properties.
 
 Double-clicking a node whose module declares `inlineTextEdit` (`base.text`, `base.button`, childless `base.link`) edits the text **in place**: the node's own element inside the breakpoint iframe becomes the editor. `NodeRenderer` builds an `InlineEditBinding` and the module spreads `inlineEditableElementProps(binding)` onto its real root element, making it `contentEditable="plaintext-only"` (seeded once via `dangerouslySetInnerHTML` from the escaped initial value, with `\n` → `<br>`). There is no overlay and no typography mirroring — the author edits the actual published element, so the editing surface is byte-identical to what publishes. Every keystroke reads the text back with `readInlineEditableText(el)` (`el.innerText`) and commits live through `updateNodeProps`, so all breakpoint frames preview the edit; the burst coalesces into one undo entry. For single-line modules Enter commits + closes; for multiline `base.text`, Enter inserts a hard break (stored as `\n`, rendered as `<br>` everywhere) and Cmd/Ctrl+Enter commits. Blur commits + closes; Escape reverts via a single `undo()`. Canvas shortcuts (Delete/Cmd+D) are suppressed mid-edit by the `activeInlineEdit` guard in `useCanvasKeyboardShortcuts`. Session state is `activeInlineEdit` in `inlineEditSlice`. Full design: [`docs/features/canvas-iframe-per-frame.md`](features/canvas-iframe-per-frame.md) → "Inline text editing (in-place `contentEditable`)".
 
@@ -523,6 +533,10 @@ Canvas-internal values are not CSS tokens — they are raw integers intentionall
 
 42px-wide vertical strip on the far left. Primary navigation panels sit in the top group; global workspace actions such as the AI assistant are pinned to the bottom group. Each button gets an automatic rail tint from its full panel identity, with repeats avoided inside the visible rail group, and opens a panel in the left sidebar. Implementation: `src/admin/pages/site/sidebars/PanelRail/PanelRail.module.css`.
 
+In portrait viewports up to 760px wide, the Site, Content, Data and Media workspaces place the docked rail panel below the canvas. Closing it gives the canvas the full workspace height. Returning to a wider viewport restores the saved sidebar width.
+
+The Explorer’s **Site** tab opens with the site name and its **Global head settings** gear, followed by collapsible Pages, Templates and Components branches. The **Code** tab uses the same tree for Styles and Scripts. In both tabs, each branch keeps its create actions visible while collapsed.
+
 The primary rail group is, in order: **Explorer** (`database-solid` icon, `gold` accent — carried over from the standalone Layers rail button it replaced), **Framework**, **Selectors**, **Dependencies**. The AI assistant lives alone in the bottom global group. Read-only callers (Viewer / Client) see only the Explorer rail button — the structural Framework / Selectors / Dependencies panels and the agent are dropped from both the rail and their panel mounts.
 
 ### Left sidebar
@@ -530,7 +544,7 @@ The primary rail group is, in order: **Explorer** (`database-solid` icon, `gold`
 Opens the rail-selected panel:
 
 - `ExplorerPanel` — the consolidated navigation panel. One `<Panel>` shell hosting a top `SegmentedControl` with **Layers / Site / Code / Media** tabs (default **Layers**). Each tab renders the corresponding panel in its headerless `tab` variant — the ExplorerPanel shell owns the chrome (header + tabs + close):
-  - **Layers** → `DomPanel` (layer tree of the current page). The search row has an **Insert module** button beside it that opens the shared `ModuleInserterDialog` via `useInsertInserterItem` — same command surface and selection-relative target resolution as the canvas `+` and toolbar `+ Add`.
+  - **Layers** → `DomPanel` (layer tree of the current page). The search row has an **Insert module** button beside it that opens the shared `ModuleInserterDialog` via `useInsertInserterItem` — same command surface and selection-relative target resolution as the canvas `+` and toolbar `+ Add`. On phones, Layers shows and searches literal block text. Select a layer and tap **Move** to choose a sibling and place it before or after that sibling. A successful move closes Explorer and reveals the selected layer on the canvas. Undo restores its previous position.
   - **Site** → `SiteExplorerPanel` with `sectionGroup="site"` (Pages, Templates, Components — the renderable site structure).
   - **Code** → the SAME `SiteExplorerPanel` instance with `sectionGroup="code"` (Styles, Scripts — raw source files opened in the editor). Site and Code share one mount so they share one DnD scope + selection; two instances would each register `useDndMonitor` and double-handle every explorer drag.
   - **Media** → `MediaExplorerPanel` (quick media insert / asset library).
@@ -576,6 +590,8 @@ The Framework panel's **Type** tab stores Google/custom font assets and editable
 When the user clicks a rule in the Selectors Panel, the Properties Panel switches to **selector-editing mode** — the body shows style controls for that rule directly, and the header renders `SelectorHeader` with the rule's CSS selector, an inline rename input, and a delete button. The delete and rename actions are only shown for non-generated rules and require `site.style.edit`.
 
 When an eligible node is selected on a page canvas (not root, not already a ref, not inside VC mode), a **Componentize** button (`ConvertToComponentButton`) appears next to the class picker. Clicking it, or triggering `openComponentizeEditor(nodeId)` from the layer context menu, opens an inline name-input strip and, on confirmation, calls `convertNodeToComponent(nodeId, name)` to extract the subtree into a new Visual Component. Full details: [`docs/features/visual-components.md`](features/visual-components.md) → "Componentizing existing page content".
+
+The Properties panel uses the same section editor for inline and selector styles. The rail follows the section order: Position, Size, Layout, Spacing, Styles, Typography, Effects, Transforms and Interaction. For text elements, Typography follows Position. Size pairs each dimension with its sizing mode; the ratio lock updates both numeric dimensions in one edit when their units match. Spacing edits each side of the margin and padding bands. On phones, Properties fills the workspace and the Section picker jumps to a style category. Margin and Padding each have four labeled fields. Phone inspector rows, form actions and canvas notch buttons share the medium control height. The spacing labels are part of the fields’ tap targets. **Back to canvas** commits the focused field and returns focus to the canvas with the block still selected. Returning to a wider viewport restores the preferred docked or floating inspector. Styles groups visibility, opacity, backgrounds, overflow and borders. For numeric inspector fields, drag horizontally or use the arrow buttons or Up/Down keys. Shift multiplies the step by ten. Scrubbing previews the change on the canvas as you drag, commits once on release, preserves the CSS unit and leaves token references and expressions editable as text. Fill supports solid colors and linear, radial and conic gradients. Editing a gradient preserves the other background layers. Gradients with custom positions or unresolved color stops open as authored CSS. The Fill, text, border and shadow pickers share Framework colors. **Save to Framework** creates an ordinary Framework color token and binds a solid field to its CSS variable. In a gradient, saving a color or choosing an existing token binds only the selected stop. Moving that stop preserves the reference; editing its color directly replaces the reference with a literal. The picker and canvas edit the first gradient in a layered background and preserve its sibling images. Linear gradients have draggable canvas stops and an angle handle. Gradients with custom geometry or stops outside the visual controls remain editable as CSS. Border opens a side editor for width, style, and color. Radius supports linked and individual corners, including dragging on the canvas. The Effects menu adds drop shadows, inner shadows, layer blur and background blur. Use a section’s **+** for additional properties. Stored and inherited values remain visible, and the search field below the scrolling list reveals matching properties. Attributes and conditional Visibility retain their own tabs.
 
 ### Sidebar motion model
 
@@ -638,7 +654,7 @@ Because the controller is imported only by the lazy section components, the edit
 
 `src/admin/pages/site/module-picker/` has two insertion surfaces:
 
-- `ModuleInserterDialog` — the full modal (category rail, search, grid/list view, wireframe previews, recents, drag-to-canvas insertion). Two entry points open it: the toolbar `+` button (`ModulePickerDropdown`) and the canvas selection toolbar's "Insert module" button (`CanvasInsertModuleButton`). Both share `useInsertInserterItem` (`src/admin/pages/site/hooks/useInsertInserterItem.ts`), so target resolution and dispatch are identical for both flows.
+- `ModuleInserterDialog` — the full modal (category rail, search, grid/list view, wireframe previews, recents, drag-to-canvas insertion). The canvas notch and toolbar (`ModulePickerDropdown`), selection toolbar (`CanvasInsertModuleButton`) and Layers panel open it. All share `useInsertInserterItem` (`src/admin/pages/site/hooks/useInsertInserterItem.ts`), so target resolution and dispatch are identical across these entry points.
 - DOM-panel context menus keep the compact `ModulePicker` inside `ContextMenuSubmenu`; those flows need a small anchored submenu rather than the full modal.
 
 Data sources:
@@ -649,11 +665,13 @@ Data sources:
 - **Recent:** per-browser local state in `instatic-module-inserter-v1`, validated with TypeBox before use.
 - **Favorites:** per-user server state in `user_preferences` key `module-inserter`, validated with TypeBox by `src/core/persistence/userPreferences.ts` and used by `CanvasNotch`.
 
+On phones, the full picker opens in list view with labeled categories and leaves the keyboard closed until Search receives focus. Swiping browses results. Tapping a result selects the inserted block and returns focus to the canvas. If the insertion is offscreen, the editor pans the active frame to show it. Phone and desktop grid/list choices are stored separately.
+
 The modal uses the tile-card pattern from `docs/design.md`: `--bg-surface` parent, 1px grid gap, `--bg-surface-2` tiles, `--card-radius`, categorical accents via `data-accent`, and an achromatic `--focus-ring` selection state. Wireframe image regions reuse `--canvas-placeholder-bg`.
 
 ### Saved layouts
 
-Right-clicking a layer (DOM panel or canvas) offers **Save as layout…** — page mode only, disabled with an inline reason on the page root. The action opens `LayoutNameDialog` (`src/admin/pages/site/dialogs/`), then `saveNodeAsLayout` captures the node + its whole subtree **and every referenced style rule** into a `SavedLayout` (`@core/layouts`) on `site.layouts`. The snapshot shape deliberately mirrors the clipboard payload, and both flows share one engine (`@site/store/subtreeSnapshot`): collecting a subtree + its classes, and restoring a snapshot with fresh node ids, scoped classes cloned with remapped `scope.nodeId`, framework classes re-matched by name, and regular classes reused-or-reimported. Inserting a saved layout therefore reproduces the original selection exactly, the same way paste would.
+Right-clicking a layer (DOM panel or canvas) offers **Save as layout…** — page mode only, disabled with an inline reason on the page root. The action opens `LayoutNameDialog` (`src/admin/pages/site/dialogs/`), then `saveNodeAsLayout` captures the node + its whole subtree **and every referenced style rule** into a `SavedLayout` (`@core/layouts`) on `site.layouts`. The snapshot shape deliberately mirrors the clipboard payload, and both flows share one engine (`@site/store/subtreeSnapshot`): collecting a subtree + its classes, and restoring a snapshot with fresh node ids, scoped classes cloned with remapped `scope.nodeId`, framework classes re-matched by name, and regular classes reused-or-reimported. Inserting a saved layout therefore reproduces the original selection exactly, the same way paste would. Layouts are same-site snapshots that match regular classes by id; to move a section between sites use a fragment ([`features/fragments.md`](features/fragments.md)), which matches classes, components and tokens by name and brings the rules, tokens, tables and media they need.
 
 Saved layouts persist as rows in the `layouts` system table (`savedLayoutFromRow` / `savedLayoutToCells` in `@core/data/layoutFromRow`) through the same transactional site-document save as pages and components (`PUT /admin/api/cms/site-document`, dirty-tracked per layout id with explicit deleted-layout ids). Plugins can ship layouts too — `definePack({ layouts: [{ id, name, html, css? }] })` entries are authored as clean HTML (+ CSS) and compiled to snapshot form at plugin build time (`compilePackLayout`, using the same HTML-import pipeline as "Paste HTML here…"); they install into the same table with ids namespaced `<pluginId>/<id>` and are replaced on pack re-sync (see [`docs/features/plugin-system.md`](features/plugin-system.md)). The inserter's Layouts section groups them accordingly: the user's **Saved** layouts first, then one group per plugin labelled with the plugin's display name (`composeLayoutsSection` + `pluginRuntime.getPluginName`). In the inserter, snapshot-borne hazards disable items inline instead of failing on click: a snapshot carrying a `base.outlet` follows the outlet module's own placement rules, and in VC mode a snapshot whose component refs would create a dependency cycle is disabled. Refs to since-deleted Visual Components are stripped at insertion time. Right-clicking a saved layout in the inserter offers Rename… (closes the inserter and reopens `LayoutNameDialog`) and Delete (immediate — it's an undoable site mutation — confirmed via toast).
 
@@ -672,6 +690,8 @@ Architecture:
 - **`recentStore.ts`** — recently-used hits.
 - **`keybindings.ts`** — declarative keybinding registry.
 - **`state.ts`, `stateHandlers.ts`** — palette state machine.
+
+**Insert fragment from file…** (`editor.insertFragment`, `commands/fragments.ts`) opens `InsertFragmentModal` (`src/admin/modals/InsertFragment/`), lazily mounted by `AdminCanvasEditorBody` while `insertFragmentModalOpen`; see [`features/fragments.md`](features/fragments.md).
 
 The palette is wired so that **plugin-registered commands work the same as built-in ones**. Spotlight is the editor's keyboard surface.
 
@@ -764,7 +784,7 @@ See [docs/features/plugin-system.md](features/plugin-system.md) for the plugin S
   - `src/admin/pages/site/store/slices/site/nodeActions.ts` — tree mutation actions that call `mutateActiveTree`
   - `src/admin/pages/site/canvas/CanvasRoot.tsx` — canvas mount
   - `src/admin/spotlight/SpotlightRoot.tsx` — Cmd+K palette
-  - `src/admin/pages/site/panels/PropertiesPanel/PropertiesPanelBody.tsx` — branch router for selector, multi-select, VC, and selected-node inspector surfaces; owns the node-level Styles/Attributes/Visibility switch (Visibility holds `ShowWhenControl`; its tab shows a dot while the node has a show-when rule)
+  - `src/admin/pages/site/panels/PropertiesPanel/PropertiesPanelBody.tsx` — branch router for selector, multi-select, VC, and selected-node inspector surfaces; owns the node-level Styles/Attributes/Visibility switch (Visibility holds `ShowWhenControl` and `ShowIfControl`; its tab shows a dot while the node has a show-when rule or a show-if condition)
   - `src/admin/pages/site/panels/PropertiesPanel/ClassPicker.tsx` — unified selector picker UI (entry point: pill strip, input, creation flow)
   - `src/admin/pages/site/panels/PropertiesPanel/HtmlAttributesPanel.tsx` — selected-node Attributes view for editing safe `props.htmlAttributes`
   - `src/admin/pages/site/panels/PropertiesPanel/htmlAttributesModel.ts` — pure row normalization, validation, and dirty-key helpers for the Attributes view
@@ -781,7 +801,7 @@ See [docs/features/plugin-system.md](features/plugin-system.md) for the plugin S
   - `src/admin/pages/site/panels/SiteExplorerPanel/useSiteExplorerDnd.ts` — DnD monitor for explorer organization drag-and-drop
   - `src/admin/pages/site/store/slices/site/explorerActions.ts` — 6 explorer store actions wired to `mutateSite`
   - `src/admin/pages/site/hooks/useInsertInserterItem.ts` — shared `onInsertItem` handler for `ModuleInserterDialog` (toolbar `+` and canvas selection toolbar both use it)
-  - `src/admin/pages/site/property-controls/DynamicBindingControl/` — binding affordance wrapper + single-pane picker popover; `cache.ts` holds the DataMeta fetch + module-level cache
+  - `src/admin/pages/site/property-controls/DynamicBindingControl/` — binding affordance + single-pane picker popover. `PropertyControlRenderer` builds each control through `renderControl(labelAction)`; the unbound affordance is handed in as `labelAction` and lands in the control's own label row (`ControlRow`'s `labelAction` slot, revealed on row hover / focus), so it never covers a control and edges stay aligned whether a prop is bindable or not; `cache.ts` holds the DataMeta fetch + module-level cache
   - `src/admin/pages/site/property-controls/TokenAwareInput.tsx` — shared token-autocomplete input primitive (suggestion filtering, commit, live preview, Suggested/All dropdown)
   - `src/admin/pages/site/property-controls/tokenUtils.ts` — `Token` shape, `useSpacingTokens`, `useTypographyTokens` hooks, and pure helpers (`resolveTokenValue`, `displayTokenValue`, `looksLikeDirectValue`, `isLivePreviewable`)
 - Gate tests:

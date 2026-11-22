@@ -24,6 +24,10 @@
  *                              mint a live abortId, so the lookup just no-ops.
  *   - `crypto.digest` / `crypto.signHmac` — pure computation, no I/O, no
  *                              privilege escalation (same model as `Math`/`JSON`).
+ *   - `cms.site.publicUrl`   — the site's public address, which every visitor
+ *                              already knows.
+ *   - `cms.rateLimit.take`   — the plugin's own in-memory counters; nothing
+ *                              outside the plugin is read or changed.
  *
  * Conditional/extra checks that CANNOT live in a static target→permission map
  * stay in their handlers (host + VM both keep them):
@@ -55,6 +59,9 @@ export const TARGET_PERMISSIONS = {
   'cms.storage.create': 'cms.storage',
   'cms.storage.update': 'cms.storage',
   'cms.storage.delete': 'cms.storage',
+  'cms.storage.get': 'cms.storage',
+  'cms.storage.getByKey': 'cms.storage',
+  'cms.storage.createIfAbsent': 'cms.storage',
   // Network — outbound HTTP (allowlist enforced separately in host/network.ts).
   'network.fetch': 'network.outbound',
   // Scheduled jobs
@@ -88,6 +95,12 @@ export const TARGET_PERMISSIONS = {
   'cms.content.republishAll': 'cms.content.publish',
   'cms.members.get': 'members.read',
   'cms.members.invite': 'members.write',
+  'cms.members.ensure': 'members.write',
+  'cms.members.emailStatus': 'members.write',
+  'cms.members.exportProvider': 'members.read',
+  'cms.members.deletedSince': 'members.read',
   'cms.members.tags.grant': 'members.tags',
   'cms.members.tags.revoke': 'members.tags',
+  'cms.mail.send': 'mail.send',
+  'cms.mail.sendExternal': 'mail.send.external',
 } satisfies Partial<Record<AllowedApiTarget, PluginPermission>>

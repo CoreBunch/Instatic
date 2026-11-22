@@ -1,6 +1,7 @@
 /**
  * TypeBox schemas for the `cms.members.*` api-call arguments: looking a site
- * member up, inviting one, and granting or withdrawing the plugin's own tags.
+ * member up, inviting or creating one, asking whether the site can email
+ * members, and granting or withdrawing the plugin's own tags.
  */
 import { Type } from '@sinclair/typebox'
 import { MEMBER_EMAIL_MAX_LENGTH, MEMBER_TAG_PATTERN } from '@core/members'
@@ -22,6 +23,25 @@ export const MembersInviteArgsSchema = Type.Tuple([
     { email: EmailSchema, tags: Type.Optional(Type.Array(TagSchema, { maxItems: 20 })) },
     { additionalProperties: false },
   ),
+])
+
+/** Same shape as an invitation: the address, and tags granted when they are not already. */
+export const MembersEnsureArgsSchema = MembersInviteArgsSchema
+
+export const MembersEmailStatusArgsSchema = Type.Tuple([])
+
+/** Where the plugin left off (null from the start) and how many ids to return. */
+export const MembersDeletedSinceArgsSchema = Type.Tuple([
+  Type.Union([Type.String({ minLength: 1, maxLength: 200 }), Type.Null()]),
+  Type.Object(
+    { limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 1000 })) },
+    { additionalProperties: false },
+  ),
+])
+
+/** The VM-side id of the plugin's export provider (it runs through the filter dispatcher). */
+export const MembersExportProviderArgsSchema = Type.Tuple([
+  Type.Object({ filterId: Type.String({ minLength: 1, maxLength: 64 }) }, { additionalProperties: false }),
 ])
 
 export const MembersTagsGrantArgsSchema = Type.Tuple([

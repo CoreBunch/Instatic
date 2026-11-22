@@ -169,6 +169,12 @@ export async function* runToolLoop<TMessage>(
         if (projected) {
           replayOverflowRetried = true
           messages = adapter.mapHistory({ ...req, messages: projected })
+          // The remapped array is a different (usually shorter) array: every
+          // tracked index now points at an unrelated message, and
+          // `applyHeavyElision` would overwrite whatever sits there — an
+          // assistant `tool_calls` message included, which is exactly the
+          // orphaned-call shape strict providers reject.
+          heavyMessages.length = 0
           continue
         }
       }

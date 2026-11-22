@@ -66,6 +66,18 @@ export const MemberTagGrantSchema = Type.Object({
 })
 export type MemberTagGrant = Static<typeof MemberTagGrantSchema>
 
+/** An app the member is signed in to: one approval that is still live. */
+export const MemberConnectedAppSchema = Type.Object({
+  /** The approval; what a disconnect names. */
+  id: Type.String(),
+  name: Type.String(),
+  device: Type.String(),
+  connectedAt: Type.String(),
+  /** Null until the app first uses its sign-in. */
+  lastUsedAt: Type.Union([Type.String(), Type.Null()]),
+})
+export type MemberConnectedApp = Static<typeof MemberConnectedAppSchema>
+
 export const MemberDetailSchema = Type.Object({
   member: MemberListItemSchema,
   emailVerified: Type.Boolean(),
@@ -80,6 +92,8 @@ export const MemberDetailSchema = Type.Object({
       userAgent: Type.Union([Type.String(), Type.Null()]),
     }),
   ),
+  /** Apps the member is signed in to, newest first. */
+  connectedApps: Type.Array(MemberConnectedAppSchema),
   /** The newest activity, newest first. */
   events: Type.Array(
     Type.Object({
@@ -134,6 +148,8 @@ export const MemberPageOptionSchema = Type.Object({
   publishedPath: Type.Union([Type.String(), Type.Null()]),
   /** The member form actions found on the page. */
   formActions: Type.Array(Type.String()),
+  /** The page's Access lets only signed-in members in (all of them, or those with a tag). */
+  membersOnly: Type.Boolean(),
 })
 export type MemberPageOption = Static<typeof MemberPageOptionSchema>
 
@@ -164,3 +180,51 @@ export const MemberInviteResponseSchema = Type.Object({
   /** The invitation link, only when it was asked for with `delivery: 'link'`. It is not stored and not shown again. */
   link: Type.Optional(Type.String()),
 })
+
+// ─── Sign-in for apps ──────────────────────────────────────────────────────
+
+/** A scope by name: a built-in one, or `plugin:<pluginId>:<name>`. The server checks it is on offer. */
+const MemberAppScopeSchema = Type.String({ minLength: 1, maxLength: 200 })
+
+/** A scope an owner can give an app, with the words a member reads for it. */
+export const MemberAppScopeOptionSchema = Type.Object({
+  scope: Type.String(),
+  text: Type.String(),
+  /** The plugin that declares it; absent for a built-in scope. */
+  plugin: Type.Optional(Type.Object({ id: Type.String(), name: Type.String() })),
+})
+export type MemberAppScopeOption = Static<typeof MemberAppScopeOptionSchema>
+
+/** An app the site owner registered, which may ask a member to sign in. */
+export const MemberAppSchema = Type.Object({
+  /** The client id the app sends when it asks. */
+  id: Type.String(),
+  name: Type.String(),
+  /** Where the app may be sent back to after the member answers. */
+  redirectUris: Type.Array(Type.String()),
+  scopes: Type.Array(Type.String()),
+  createdAt: Type.String(),
+})
+export type MemberApp = Static<typeof MemberAppSchema>
+
+export const MemberAppListResponseSchema = Type.Object({
+  apps: Type.Array(MemberAppSchema),
+  /** What an app can be given on this site right now: the built-in scopes and those of active plugins. */
+  availableScopes: Type.Array(MemberAppScopeOptionSchema),
+})
+export type MemberAppListResponse = Static<typeof MemberAppListResponseSchema>
+
+export const CreateMemberAppBodySchema = Type.Object(
+  {
+    name: Type.String({ minLength: 1, maxLength: 80 }),
+    redirectUris: Type.Array(Type.String({ minLength: 1, maxLength: 2000 }), { minItems: 1, maxItems: 10 }),
+    scopes: Type.Array(MemberAppScopeSchema, { minItems: 1, maxItems: 30 }),
+  },
+  { additionalProperties: false },
+)
+export type CreateMemberAppBody = Static<typeof CreateMemberAppBodySchema>
+
+/** The file name of one member's data download, the same on the server and in the admin. */
+export function memberDataFilename(memberId: string): string {
+  return `member-${memberId}-data.json`
+}

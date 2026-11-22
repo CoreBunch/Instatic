@@ -30,10 +30,6 @@ export function CanvasInsertModuleButton({
   const triggerRef = useRef<HTMLButtonElement>(null)
   const handleInsertItem = useInsertInserterItem()
 
-  const handleClose = () => {
-    setOpen(false)
-    triggerRef.current?.focus()
-  }
 
   return (
     <>
@@ -54,7 +50,8 @@ export function CanvasInsertModuleButton({
 
       {open && (
         <ModuleInserterDialog
-          onClose={handleClose}
+          triggerRef={triggerRef}
+          onClose={() => setOpen(false)}
           onInsertItem={handleInsertItem}
         />
       )}

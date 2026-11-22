@@ -19,6 +19,7 @@
  */
 
 import { useRef, useEffect, useCallback } from 'react'
+import { isMobileViewport } from '@admin/lib/mobileViewport'
 import { useGesture } from '@use-gesture/react'
 import { useEditorStore, type EditorStore } from '@site/store/store'
 import {
@@ -28,8 +29,10 @@ import {
   clampZoom,
   clampPan,
   incrementalScaleFromPinchMovement,
+  RESET_ZOOM,
 } from '@site/canvas/math'
 import { panToCenterBreakpointFrame } from '@site/canvas/canvasDomGeometry'
+import { CANVAS_RESET_ZOOM_EVENT } from '@site/canvas/canvasEvents'
 import {
   CANVAS_DRAG_PAN_BUTTONS,
   isCanvasPointerPanActive,
@@ -89,6 +92,7 @@ function cssAttrEscape(value: string): string {
 export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanvasOptions) {
   // Ref-based transform — not React state — avoids re-renders during interaction
   const transformRef = useRef<Transform>({ zoom: 1, panX: 0, panY: 0 })
+  const fittedPhoneFrame = useRef(false)
   const rafRef = useRef<number | null>(null)
   const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const animatingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -100,7 +104,20 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
   const setCanvasTransform = useEditorStore((s) => s.setCanvasTransform)
   const zoomIn = useEditorStore((s) => s.zoomIn)
   const zoomOut = useEditorStore((s) => s.zoomOut)
-  const resetView = useEditorStore((s) => s.resetView)
+
+  /**
+   * Resolve the current canvas viewport center, in canvas-local coords.
+   * Keyboard reset uses this as its zoom origin so the user's current work
+   * area stays in view while changing the scale.
+   */
+  // Exception #1: referenced by resetCanvasZoom, which is itself an effect
+  // dependency; exhaustive-deps needs this geometry helper to stay stable.
+  const getViewportCenter = useCallback((): { x: number; y: number } | null => {
+    const el = canvasRootRef.current
+    if (!el) return null
+    const rect = el.getBoundingClientRect()
+    return { x: rect.width / 2, y: rect.height / 2 }
+  }, [canvasRootRef])
 
   // ─── DOM write helper ─────────────────────────────────────────────────────
 
@@ -203,15 +220,34 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
   }
 
   // Exception #1: referenced in the Cmd/Ctrl+0 reset shortcut's useEffect dep array.
-  const resetCanvasView = useCallback(() => {
-    resetView()
-    transformRef.current = { zoom: 1, panX: 0, panY: 0 }
-    applyTransformToDOM(transformRef.current, true)
-  }, [resetView, applyTransformToDOM])
+  const resetCanvasZoom = useCallback(() => {
+    if (commitTimerRef.current) {
+      clearTimeout(commitTimerRef.current)
+      commitTimerRef.current = null
+    }
+
+    const current = transformRef.current
+    const center = getViewportCenter()
+    const next = center
+      ? applyZoom(current.zoom, RESET_ZOOM, center.x, center.y, current.panX, current.panY)
+      : { zoom: RESET_ZOOM, panX: current.panX, panY: current.panY }
+    const committed = {
+      zoom: next.zoom,
+      panX: clampPan(next.panX),
+      panY: clampPan(next.panY),
+    }
+
+    // Update the ref before the store so the external-store subscriber sees
+    // the values already applied and does not issue a second DOM write.
+    transformRef.current = committed
+    setCanvasTransform(committed.zoom, committed.panX, committed.panY)
+    applyTransformToDOM(committed, true)
+  }, [applyTransformToDOM, getViewportCenter, setCanvasTransform])
 
   /**
    * Pan the canvas so the given breakpoint's frame is horizontally centered and
-   * its top sits just below the viewport top — keeping the current zoom. Used to
+   * its top sits just below the viewport top. On phones the initial frame fits
+   * the canvas width (up to 100%); subsequent centers keep the current zoom. Used to
    * honour the user's "Default viewport" preference: opening a site should focus
    * the chosen frame instead of always landing on the left-most (mobile) frame.
    *
@@ -236,7 +272,12 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
       )
       if (!frame) return false
 
-      const cur = transformRef.current
+      const cur = { ...transformRef.current }
+      if (!fittedPhoneFrame.current && isMobileViewport() && frame.offsetWidth && root.clientWidth) {
+        cur.zoom = clampZoom(Math.min(1, root.clientWidth / frame.offsetWidth))
+        applyTransformToDOM(cur)
+        fittedPhoneFrame.current = true
+      }
       const target = panToCenterBreakpointFrame(root, frame, cur)
       if (!target) return false
 
@@ -286,6 +327,20 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
     }
   }, [])
 
+  // The toolbar lives outside CanvasRoot, so it routes reset requests through
+  // this hook. Keeping the request here ensures the live transform ref and
+  // its pending debounced store commit are handled as one operation.
+  useEffect(() => {
+    function onResetZoom() {
+      if (enabled) resetCanvasZoom()
+    }
+
+    document.addEventListener(CANVAS_RESET_ZOOM_EVENT, onResetZoom)
+    return () => {
+      document.removeEventListener(CANVAS_RESET_ZOOM_EVENT, onResetZoom)
+    }
+  }, [enabled, resetCanvasZoom])
+
   // ─── Browser-style reset shortcut ─────────────────────────────────────────
 
   useEffect(() => {
@@ -300,28 +355,16 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
       ) return
 
       e.preventDefault()
-      resetCanvasView()
+      resetCanvasZoom()
     }
 
     document.addEventListener('keydown', onKeyDown)
     return () => {
       document.removeEventListener('keydown', onKeyDown)
     }
-  }, [resetCanvasView])
+  }, [resetCanvasZoom])
 
   // ─── Keyboard shortcuts ───────────────────────────────────────────────────
-
-  /**
-   * Resolve the current canvas viewport center, in canvas-local coords.
-   * Used as the zoom origin for keyboard +/− shortcuts so the zoom is
-   * anchored to the middle of the visible area, not the document top-left.
-   */
-  const getViewportCenter = (): { x: number; y: number } | null => {
-    const el = canvasRootRef.current
-    if (!el) return null
-    const rect = el.getBoundingClientRect()
-    return { x: rect.width / 2, y: rect.height / 2 }
-  }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Don't intercept typing — let inputs and contenteditables consume keys.
@@ -346,11 +389,11 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
       else zoomOut()
     } else if ((e.metaKey || e.ctrlKey) && e.key === '0') {
       e.preventDefault()
-      resetCanvasView()
+      resetCanvasZoom()
     } else if (e.key === '1' && e.shiftKey) {
       // `Shift+1` → Reset to 100% zoom (legacy muscle-memory shortcut).
       e.preventDefault()
-      resetCanvasView()
+      resetCanvasZoom()
     }
     // Ctrl/Cmd+Z / Ctrl/Cmd+Shift+Z handled by App-level listener
   }
@@ -358,7 +401,7 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
   // ─── External zoom/pan sync ───────────────────────────────────────────────
   //
   // ZoomControls (toolbar + buttons) and any other external caller update the
-  // Zustand store directly via zoomIn/zoomOut/resetView.  The DOM transform
+  // Zustand store directly via zoomIn/zoomOut/zoomTo.  The DOM transform
   // layer is NOT subscribed to the store via React state (intentional perf
   // design — avoids re-renders during 60fps gestures).  Without this
   // subscription those external actions only update the zoom indicator number
@@ -379,6 +422,10 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
       ([zoom, panX, panY]) => {
         const cur = transformRef.current
         if (zoom !== cur.zoom || panX !== cur.panX || panY !== cur.panY) {
+          if (commitTimerRef.current) {
+            clearTimeout(commitTimerRef.current)
+            commitTimerRef.current = null
+          }
           transformRef.current = { zoom, panX, panY }
           // External transform updates (toolbar buttons, +/− keys, agent
           // tools, undo/redo) animate to the new value. Continuous gestures

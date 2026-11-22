@@ -1,24 +1,11 @@
-/** Words for a member's status and activity, shared by the list and the detail panel. */
-import type { MemberAdminStatus } from '@core/members'
-
-export const STATUS_LABEL: Record<MemberAdminStatus, string> = {
-  active: 'Active',
-  pending: 'Pending',
-  suspended: 'Suspended',
-}
-
-export const STATUS_TONE: Record<MemberAdminStatus, 'success' | 'warning' | 'danger'> = {
-  active: 'success',
-  pending: 'warning',
-  suspended: 'danger',
-}
-
 const EVENT_LABEL: Record<string, string> = {
   signup: 'Signed up',
   verified: 'Confirmed their email address',
   login: 'Signed in',
   login_failed: 'Failed to sign in',
   logout: 'Signed out',
+  app_connected: 'Signed an app in',
+  app_disconnected: 'Disconnected an app',
   magic_link_requested: 'Asked for a sign-in link',
   password_reset_requested: 'Asked to reset their password',
   password_reset: 'Chose a new password',
@@ -27,10 +14,12 @@ const EVENT_LABEL: Record<string, string> = {
   email_changed: 'Changed their email address',
   profile_updated: 'Updated their profile',
   deleted: 'Account deleted',
+  created_by_plugin: 'Given an account by a plugin',
   invited: 'Invited by an administrator',
   suspended: 'Suspended by an administrator',
   unsuspended: 'Restored by an administrator',
   signed_out_by_admin: 'Signed out everywhere by an administrator',
+  app_disconnected_by_admin: 'An app was disconnected by an administrator',
   tag_granted: 'Given a tag by an administrator',
   tag_revoked: 'A tag was removed by an administrator',
 }

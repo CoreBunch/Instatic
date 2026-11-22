@@ -276,7 +276,7 @@ export function ModelPicker({
         ref={triggerRef}
         type="button"
         variant="ghost"
-        size={variant === 'field' ? 'md' : 'xs'}
+        size={variant === 'field' ? 'md' : 'sm'}
         align={variant === 'field' ? 'between' : 'center'}
         fullWidth={variant === 'field'}
         disabled={disabled}

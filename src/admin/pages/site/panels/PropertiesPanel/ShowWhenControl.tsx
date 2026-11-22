@@ -20,6 +20,8 @@ const AUDIENCE_OPTIONS: Array<{ value: Audience; label: string }> = [
   { value: 'signedIn', label: 'Signed-in members' },
   { value: 'signedOut', label: 'Signed-out visitors' },
   { value: 'tags', label: 'Members with a tag' },
+  { value: 'appAsking', label: 'Members an app is asking to sign in' },
+  { value: 'noAppAsking', label: 'Members no app is asking for' },
 ]
 
 const HINT: Record<Audience | 'nobody', string> = {
@@ -27,6 +29,8 @@ const HINT: Record<Audience | 'nobody', string> = {
   signedIn: 'Left out of the page for visitors who are not signed in.',
   signedOut: 'Left out of the page for signed-in members. Good for "Sign in" links.',
   tags: 'Only members holding one of these tags get this element.',
+  appAsking: 'For the page where apps are approved: shown only when an app sent the member there.',
+  noAppAsking: 'For the page where apps are approved: shown when a member opens it without an app asking.',
   nobody: 'This rule could not be read, so nobody gets the element. Pick an option to fix it.',
 }
 

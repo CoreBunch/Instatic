@@ -18,7 +18,13 @@
 import type { DbClient } from '../db/client'
 import { accessAllows, parseAccessRule, type AccessRule, type CurrentMember } from '@core/members'
 import type { Page } from '@core/page-tree'
-import { buildMemberFrame, isTemplatePage, normalizeRouteBase, type MemberFrame } from '@core/templates'
+import {
+  buildMemberFrame,
+  isTemplatePage,
+  normalizeRouteBase,
+  type MemberAppRequestFrame,
+  type MemberFrame,
+} from '@core/templates'
 import { resolveSignedInMember } from '../members/handlers'
 import { getMemberPagePaths } from '../members/pages'
 import { toCurrentMember } from '../members/repository'
@@ -163,8 +169,11 @@ export function visitorFromRequest(db: DbClient, req: Request): Visitor {
  * or null for a signed-out visitor. (Leaving the slot out altogether means
  * the render is for nobody in particular; see `TemplateRenderDataContext`.)
  */
-export function memberFrameFor(member: CurrentMember | null): MemberFrame | null {
-  return member ? buildMemberFrame(member) : null
+export function memberFrameFor(
+  member: CurrentMember | null,
+  appRequest: MemberAppRequestFrame | null = null,
+): MemberFrame | null {
+  return member ? buildMemberFrame(member, appRequest) : null
 }
 
 const SIGNED_OUT: Visitor = () => Promise.resolve(null)

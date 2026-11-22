@@ -122,6 +122,7 @@ export function FloatingActionBar({
         <Button
           variant="ghost"
           size="sm"
+          shape="pill"
           iconOnly
           aria-label={closeLabel}
           tooltip={closeLabel}

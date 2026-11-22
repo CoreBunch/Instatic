@@ -51,6 +51,7 @@ export const MEDIA_ASSET_INSERT_COLUMNS = [
   'storage_adapter_id',
   'externally_hosted',
   'alt_text',
+  'content_hash',
 ] as const
 
 export interface MediaAssetRow {

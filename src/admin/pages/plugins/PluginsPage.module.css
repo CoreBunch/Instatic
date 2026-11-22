@@ -185,6 +185,12 @@
 }
 
 .resourceField span,
+.resourceRecordUnreadable {
+    margin: 0;
+    color: var(--warning-text);
+    font-size: var(--text-s);
+}
+
 .resourceRecord dt {
     color: var(--text-subtle);
     font-size: var(--text-xs);

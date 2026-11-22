@@ -14,7 +14,7 @@
     align-items: center;
     gap: var(--space-4xs);
     padding: var(--space-4xs);
-    border-radius: 12px;
+    border-radius: var(--segment-track-radius);
     background: var(--bg-body);
     box-shadow: 0 6px 18px var(--scrim-30);
     pointer-events: auto;
@@ -29,7 +29,7 @@
     height: 22px;
     padding: 0;
     border: 0;
-    border-radius: 9px;
+    border-radius: var(--segment-radius);
     background: transparent;
     color: var(--text-muted);
     line-height: 1;

@@ -7,7 +7,7 @@
  * renaming a page's slug keeps every link pointing at it — no broken links, no
  * manual find-and-replace.
  *
- * Format: `cms:page:<pageId>` with an optional trailing `#fragment`
+ * Format: `cms:page:<pageId>` with an optional query string and fragment
  *   - `cms:page:abc123`            → `/club`        (or `/` for the home page)
  *   - `cms:page:abc123#features`   → `/club#features`
  *
@@ -22,15 +22,14 @@ const PAGE_REF_PREFIX = 'cms:page:'
 
 interface ParsedPageRef {
   pageId: string
-  /** Includes the leading `#`, or `''` when absent. */
-  fragment: string
+  /** Includes the leading `?` or `#`, or `''` when absent. */
+  suffix: string
 }
 
-/** Build a page-reference value for the given page id (+ optional fragment). */
-export function makePageRef(pageId: string, fragment?: string): string {
-  if (!fragment) return `${PAGE_REF_PREFIX}${pageId}`
-  const frag = fragment.startsWith('#') ? fragment : `#${fragment}`
-  return `${PAGE_REF_PREFIX}${pageId}${frag}`
+/** Build a page-reference value for the given page id (+ optional query or fragment). */
+export function makePageRef(pageId: string, suffix = ''): string {
+  const separator = suffix && !suffix.startsWith('#') && !suffix.startsWith('?') ? '#' : ''
+  return `${PAGE_REF_PREFIX}${pageId}${separator}${suffix}`
 }
 
 /** Whether a value is a page reference. */
@@ -42,9 +41,10 @@ export function isPageRef(value: unknown): value is string {
 export function parsePageRef(value: unknown): ParsedPageRef | null {
   if (!isPageRef(value)) return null
   const rest = value.slice(PAGE_REF_PREFIX.length)
-  const hashIdx = rest.indexOf('#')
-  if (hashIdx === -1) return { pageId: rest, fragment: '' }
-  return { pageId: rest.slice(0, hashIdx), fragment: rest.slice(hashIdx) }
+  const start = rest.search(/[?#]/)
+  return start < 0
+    ? { pageId: rest, suffix: '' }
+    : { pageId: rest.slice(0, start), suffix: rest.slice(start) }
 }
 
 /**
@@ -62,5 +62,5 @@ export function resolvePageRef(
   if (!parsed) return null
   const page = pages.find((p) => p.id === parsed.pageId)
   if (!page) return '#'
-  return `${pagePublicPath(page.slug)}${parsed.fragment}`
+  return `${pagePublicPath(page.slug)}${parsed.suffix}`
 }

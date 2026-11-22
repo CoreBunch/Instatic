@@ -9,10 +9,11 @@
  */
 import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
+import { useCanvasHtmlAttributes } from '@modules/base/shared/useCanvasHtmlAttributes'
 import { anchorHtmlAttributes } from '@modules/base/shared/anchorTarget'
 import { inlineEditableElementProps } from '@modules/base/shared/inlineText'
 import { linkUsesChildren } from './content'
-import { linkHref, type LinkStoredProps } from './props'
+import type { LinkStoredProps } from './props'
 
 export const LinkEditor: React.FC<ModuleComponentProps<LinkStoredProps>> = ({ props, children, mcClassName, nodeWrapperProps, inlineEdit }) => {
   const childCount = Array.isArray(children) ? children.length : children != null ? 1 : 0
@@ -20,13 +21,14 @@ export const LinkEditor: React.FC<ModuleComponentProps<LinkStoredProps>> = ({ pr
   // `inlineEdit` is set the element edits its `text` prop in place.
   const content = linkUsesChildren(childCount) ? children : (props.text ?? 'Link text')
   const { attributes, rel } = anchorHtmlAttributes(props.htmlAttributes, props.target)
+  const htmlAttrs = useCanvasHtmlAttributes(attributes, inlineEdit?.ref)
   return React.createElement(
     'a',
     {
       ...nodeWrapperProps,
-      ...attributes,
-      href: linkHref(props) || '#',
-      target: props.target,
+      ...htmlAttrs,
+      href: props.href || '#',
+      target: props.target || undefined,
       rel: rel ?? undefined,
       className: mcClassName,
       ...(inlineEdit ? inlineEditableElementProps(inlineEdit) : {}),

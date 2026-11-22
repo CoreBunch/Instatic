@@ -29,7 +29,7 @@ import {
   type Ref,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { Input } from '@ui/components/Input'
+import { NumericStyleInput } from './NumericStyleInput'
 import { Tooltip } from '@ui/components/Tooltip'
 import { ContextMenu, ContextMenuItem } from '@ui/components/ContextMenu'
 import { useEditorPreference } from '@site/preferences/editorPreferences'
@@ -74,6 +74,10 @@ interface TokenAwareInputProps {
   onDraftClear?: () => void
   /** Side-effect fired when the input gains focus (e.g. tracking last-focused field). */
   onFocus?: () => void
+  /** Unit appended to bare numbers after token resolution. */
+  adjustable?: boolean
+  minimum?: number
+  implicitUnit?: string
   fieldSize?: 'xs' | 'sm' | 'md'
   /** Aria label for the input — required when there's no visible label. */
   'aria-label': string
@@ -121,6 +125,9 @@ export function TokenAwareInput({
   onDraftChange,
   onDraftClear,
   onFocus,
+  adjustable,
+  minimum,
+  implicitUnit = 'px',
   fieldSize = 'sm',
   'aria-label': ariaLabel,
   className,
@@ -188,7 +195,7 @@ export function TokenAwareInput({
           .slice(0, 8)
 
     const commit = (raw: string) => {
-      const resolved = resolveTokenValue(raw, tokens)
+      const resolved = resolveTokenValue(raw, tokens, implicitUnit)
       onClearPreview?.()
       onCommit(resolved)
       onDraftClear?.()
@@ -201,7 +208,7 @@ export function TokenAwareInput({
     // on, since it reflects an explicit edit the user is making.
     const previewToken = (rawValue: string) => {
       if (!hoverPreviewEnabled || !onPreview) return
-      const resolved = resolveTokenValue(rawValue, tokens)
+      const resolved = resolveTokenValue(rawValue, tokens, implicitUnit)
       onPreview(resolved)
     }
 
@@ -221,7 +228,7 @@ export function TokenAwareInput({
     const previewDraft = (rawValue: string) => {
       if (!onPreview) return
       if (!isLivePreviewable(rawValue)) return
-      const resolved = resolveTokenValue(rawValue, tokens)
+      const resolved = resolveTokenValue(rawValue, tokens, implicitUnit)
       onPreview(resolved)
     }
 
@@ -241,7 +248,12 @@ export function TokenAwareInput({
     const showAllHeader = allOthers.length > 0
 
     const inputEl = (
-      <Input
+      <NumericStyleInput
+        onScrubPreview={previewDraft}
+        onClearPreview={onClearPreview}
+        defaultUnit={implicitUnit}
+        min={minimum}
+        onAdjust={adjustable ? (next) => { setDraft(next); commit(next) } : undefined}
         ref={inputRef}
         id={id}
         type="text"

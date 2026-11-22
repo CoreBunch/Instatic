@@ -63,13 +63,20 @@ const AuditActionSchema = Type.Union([
   Type.Literal('mail.template.reset'),
   // Site members — see docs/features/members.md.
   Type.Literal('member.invite'),
+  // A plugin gave an address an account (`api.cms.members.ensure`); metadata names the plugin.
+  Type.Literal('member.create'),
   Type.Literal('member.suspend'),
   Type.Literal('member.unsuspend'),
   Type.Literal('member.signout'),
+  // An administrator downloaded a member's data (GET /members/:id/export).
+  Type.Literal('member.export'),
   Type.Literal('member.delete'),
   Type.Literal('member.tag.grant'),
   Type.Literal('member.tag.revoke'),
   Type.Literal('member.settings.update'),
+  Type.Literal('member.app.create'),
+  Type.Literal('member.app.delete'),
+  Type.Literal('member.app.disconnect'),
   // AI runtime — see `docs/plans/2026-05-26-ai-runtime-rewrite.md` § Audit.
   Type.Literal('ai.credential.created'),
   Type.Literal('ai.credential.updated'),
