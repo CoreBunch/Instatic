@@ -874,6 +874,9 @@ test.describe('visual builder', () => {
         .first()
         .fill('data-track')
       await propertiesPanel.getByRole('textbox', { name: 'data-track value' }).fill(trackValue)
+      const fieldHeight = await propertiesPanel.getByRole('textbox', { name: 'data-track value' })
+        .evaluate((input) => getComputedStyle(input).height)
+      await expect(propertiesPanel.getByRole('button', { name: 'Remove data-track' })).toHaveCSS('height', fieldHeight)
       await expect(canvasHeadline).toHaveAttribute('data-track', trackValue)
 
       await propertiesPanel.getByRole('button', { name: 'Add attribute' }).click()

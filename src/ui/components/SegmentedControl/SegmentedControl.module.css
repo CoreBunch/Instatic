@@ -10,6 +10,8 @@
  */
 
 .group {
+    box-sizing: border-box;
+    height: var(--control-size);
     display: inline-flex;
     align-items: stretch;
     gap: var(--space-4xs);
@@ -17,6 +19,10 @@
     padding: var(--space-4xs);
     border: var(--space-px) solid var(--overlay-20);
     background: var(--overlay-5);
+}
+
+.group[data-size="micro"] {
+    padding-block: 0;
 }
 
 .fullWidth {
@@ -33,6 +39,8 @@
  * transparent / pressed look wins regardless of stylesheet load order. */
 .group .segment.segment {
     position: relative;
+    height: auto;
+    padding-block: 0;
     flex: 0 0 auto;
     min-width: 0;
     border-radius: calc(var(--segment-radius) - var(--space-px));
@@ -56,15 +64,11 @@
     background: var(--bg-surface);
 }
 
-/* Trailing modifier — used by the render-prop's `trailingClassName`. Switches
- * the segment from "stretch to fill" to "fixed-square icon button" so a
- * chevron-down dropdown trigger never absorbs flex slack and reads as a
- * 1:1 icon-only button alongside the wider primary segments. The width
- * matches the segment's intrinsic 26px height (size-sm Button) so the
- * trailing tile renders perfectly square. */
+/* Keep the trailing action square inside the track at every size. */
 .group .segment.trailing.trailing {
-    flex: 0 0 26px;
-    width: 26px;
+    flex: 0 0 auto;
+    width: auto;
+    aspect-ratio: 1;
 }
 
 .segmentContent {

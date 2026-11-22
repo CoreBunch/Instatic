@@ -177,6 +177,7 @@ export function DropdownSwitcher({
       {...{ [dataValueAttr]: value ?? '' }}
     >
       <SegmentedControl
+        size="sm"
         fullWidth
         aria-label={capitalized}
         value={isPrimary ? value : undefined}

@@ -1,0 +1,19 @@
+.micro {
+    --control-size: 18px;
+}
+
+.xs {
+    --control-size: var(--control-height-xs);
+}
+
+.sm {
+    --control-size: var(--control-height);
+}
+
+.md {
+    --control-size: var(--control-height-md);
+}
+
+.lg {
+    --control-size: var(--button-size-lg);
+}

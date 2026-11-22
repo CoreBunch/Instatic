@@ -1,8 +1,7 @@
 /*
  * ListDetail — a list of records beside the details of the selected one.
  *
- * Shared by the Email activity log and the Site members tab so both read the
- * same: one rounded surface, the list on the left, the selected record's
+ * The Email activity log presents the list on the left and the selected record’s
  * facts on the right, stacking under 1100px. A status is a tone
  * (`data-tone="success" | "warning" | "danger"`), never a raw colour.
  */

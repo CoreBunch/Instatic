@@ -91,7 +91,7 @@
 }
 
 .size-xs {
-    min-height: 24px;
+    min-height: var(--control-height-xs);
     padding: var(--space-4xs) var(--space-xs);
     gap: var(--space-2xs);
     font-size: var(--text-xs);

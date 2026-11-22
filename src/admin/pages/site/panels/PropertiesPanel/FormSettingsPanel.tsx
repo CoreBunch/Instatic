@@ -429,7 +429,6 @@ function FormTargetTableRow({
             onChange={handleTableChange}
           />
           <Button
-            className={styles.createTableButton}
             variant="secondary"
             size="sm"
             iconOnly
