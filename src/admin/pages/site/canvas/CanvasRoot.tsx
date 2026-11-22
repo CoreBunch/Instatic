@@ -45,6 +45,7 @@ import { useRuntimeScriptBuild } from './useRuntimeScriptBuild'
 import { useCanvasToolbarLayout } from './useCanvasToolbarLayout'
 import { CanvasNotch } from './CanvasNotch'
 import { CanvasModeToggle } from './CanvasModeToggle'
+import { panSelectedCanvasNodeIntoView } from './revealSelectedCanvasNode'
 import { CanvasContextSelector } from './CanvasContextSelector'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import { usePublishEditorPresence } from '@site/collab/awarenessState'
@@ -179,7 +180,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
     action &&
     breakpoints.some((bp) => bp.id === activeBreakpointId && bp.previewFrame !== false)
   const phoneEditing = phone && editingText
-  const showContext = breakpoints.length > 0 && !isLive && rightSidebarExpanded && (permissions.canEditStyle || permissions.canEditStructure)
+  const showContext = breakpoints.length > 0 && !isLive && !phoneEditing && (phone || rightSidebarExpanded) && (permissions.canEditStyle || permissions.canEditStructure)
   const toolbarLayout = useCanvasToolbarLayout(canvasRef, editable && !phoneEditing, showContext, phone)
   const compactChrome = toolbarLayout !== 'expanded'
   const [layerActionsFor, setLayerActionsFor] = useState<string | null>(null)
@@ -251,8 +252,8 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   // and depending on the object would re-run this effect — cancelling the
   // in-flight retry before it fires — on every keystroke during load. Keying on
   // the id (null during the skeleton phase) means we run once per document:
-  // ordinary editing never yanks the canvas, and breakpoint switches (toolbar,
-  // node clicks) keep the designer's place.
+  // ordinary edits and clicks inside frames preserve the designer's place.
+  // Explicit picker navigation reveals its target separately.
   //
   // We retry on a short timer rather than requestAnimationFrame because the
   // frames mount a few ticks after the effect runs (the per-frame iframes lay
@@ -599,7 +600,15 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
               callers who can edit style or structure. Content-only Clients and
               pure Viewers get the same plain frames without this affordance. */}
           {showContext && (
-            <CanvasContextSelector compact={compactChrome} />
+            <CanvasContextSelector
+              compact={compactChrome}
+              onPickBreakpoint={(id) => {
+                setActiveBreakpoint(id)
+                if (!selectedNodeId || !panSelectedCanvasNodeIntoView(selectedNodeId)) {
+                  centerOnBreakpointFrame(id)
+                }
+              }}
+            />
           )}
 
           {/*

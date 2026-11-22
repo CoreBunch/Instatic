@@ -24,8 +24,8 @@ describe('CanvasContextSelector labels', () => {
   })
 
   it('omits redundant condition details when the label is the query', () => {
-    expect(source).toContain('const showDetail = def.label.trim() !== detail.trim()')
-    expect(source).toContain('{showDetail && <span className={styles.rowDetail}>{detail}</span>}')
+    expect(source).toContain('detail: def.label.trim() === query.trim() ? null : query')
+    expect(source).toContain('{context.detail && <span className={styles.rowDetail}>{context.detail}</span>}')
     expect(source).not.toContain(
       '<span className={styles.rowDetail}>{conditionLabel(def.condition)}</span>',
     )

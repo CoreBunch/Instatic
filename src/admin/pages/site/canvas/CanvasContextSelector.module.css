@@ -121,15 +121,6 @@
         color-mix(in srgb, var(--accent-1) 20%, transparent);
 }
 
-/* Dropdown panel — the anchored ContextMenu renders inline (not portaled), so
- * it inherits the shell's `pointer-events: none`. Re-enable it here or the
- * menu's clicks/hover fall through to the canvas (and dismiss the menu). */
-.menuPanel {
-    pointer-events: auto;
-}
-
-/* Dropdown rows */
-
 .menuRow {
     display: flex;
     align-items: center;
@@ -141,9 +132,12 @@
     justify-content: flex-start;
     gap: var(--space-s);
     min-width: 0;
+    min-height: 40px;
+    width: 100%;
 }
 
-.menuRowActive.menuRowActive {
+.menuRowMain[aria-checked="true"] {
+    background: var(--accent-1-10);
     color: var(--success-text);
 }
 
@@ -157,26 +151,34 @@
 }
 
 .rowDetail {
-    flex: 0 0 auto;
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     color: var(--text-muted);
     font-size: var(--text-2xs);
     font-weight: 700;
 }
 
-.rowAction.rowAction {
-    flex: 0 0 auto;
-    color: var(--text-muted);
+.check {
+    flex: 0 0 16px;
 }
 
-.rowAction.rowAction:hover {
-    color: var(--success-text);
+.remove.remove {
+    min-width: 40px;
+    min-height: 40px;
+    width: auto;
 }
 
-.rowRemove.rowRemove {
-    flex: 0 0 auto;
-    color: var(--text-muted);
-}
+@media (pointer: coarse) {
+    .triggerPill.triggerPill {
+        min-width: 44px;
+        min-height: 44px;
+        justify-content: center;
+    }
 
-.rowRemove.rowRemove:hover {
-    color: var(--danger-light);
+    .menuRowMain.menuRowMain,
+    .remove.remove {
+        min-height: 44px;
+    }
 }

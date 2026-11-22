@@ -210,7 +210,7 @@ SITE-005 note: full module picker coverage is automated in `visual-builder.e2e.t
 
 SITE-011 note: `visual-builder.e2e.ts` inserts Text on a fresh page, creates a ten-part grouped ambient selector from the class picker, and asserts the class picker input's right edge stays inside `data-testid="right-sidebar"`. Before the fix the picker grid sized its column to the chip's max-content and the input ended about 1900px past the sidebar edge.
 
-SITE-010 notch coverage in `site-canvas-notch.e2e.ts` opens the breakpoint menu and block picker in the compact state, uses Undo and Redo, then closes Explorer at the same browser width to restore the expanded controls.
+SITE-010 notch coverage in `site-canvas-notch.e2e.ts` opens the breakpoint menu and block picker in the compact state, uses Undo and Redo, then closes Explorer at the same browser width to restore the expanded controls. A keyboard-driven round trip changes class padding on Mobile and checks the block is visible in each frame and the Desktop value is preserved.
 
 BUILDER-005 note: undo/redo history is automated in `visual-builder.e2e.ts`. The regression creates and reloads a disposable page to prove clean loaded history state, inserts Text, uses Ctrl/Cmd+Z and Ctrl/Cmd+Shift+Z to undo/redo the visible layer, uses the notch Undo button, inserts Container to prove Redo is cleared by a new edit, then saves/reloads and verifies the saved Container persists while transient history controls reset. Focused store regressions also prove undo/redo prunes selection ids for nodes removed by restored history, so the next insertion cannot silently target a stale node.
 

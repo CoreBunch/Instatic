@@ -1,19 +1,5 @@
-/**
- * CanvasContextSelector — the single "editing context" switcher (top-right of
- * the canvas).
- *
- * One control for the whole condition axis (unified-condition-axis plan). A
- * dropdown lists, with one consistent row design (icon · name · detail):
- *   - viewport contexts (from `site.breakpoints`) — selecting one reframes the
- *     canvas and targets that viewport's styles;
- *   - custom conditions (reusable @media / @container / @supports from
- *     `site.conditions`) — selecting one keeps the current frame but routes
- *     style-panel edits to that condition's `contextStyles` bag.
- * Each custom row carries an inline × to delete it; a footer offers
- * "Add context…" and "Manage…". A viewport context stores both a canvas frame
- * width and the media query that publishes its class overrides.
- */
-import { lazy, Suspense, useRef, useState, type SyntheticEvent } from 'react'
+/** The design canvas picker for viewport and custom style contexts. */
+import { lazy, Suspense, useEffect, useRef, useState, type SyntheticEvent } from 'react'
 import { useEditorStore } from '@site/store/store'
 import type { Breakpoint, ConditionDef } from '@core/page-tree'
 import { conditionLabel } from '@core/page-tree'
@@ -29,7 +15,7 @@ import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
 import { ChevronDownIcon } from 'pixel-art-icons/icons/chevron-down'
-import { cn } from '@ui/cn'
+import { CheckIcon } from 'pixel-art-icons/icons/check'
 import type { ContextDialogMode } from './CanvasContextDialog'
 import { NotchFold } from './NotchFold'
 import styles from './CanvasContextSelector.module.css'
@@ -42,17 +28,32 @@ const EMPTY_CONDITIONS: ReadonlyArray<ConditionDef> = []
 
 const CanvasContextDialog = lazy(() => import('./CanvasContextDialog'))
 
-export function CanvasContextSelector({ compact = false }: { compact?: boolean }) {
+interface ContextSelectorProps {
+  compact: boolean
+  onPickBreakpoint: (id: string) => void
+}
+
+export function CanvasContextSelector({ compact, onPickBreakpoint }: ContextSelectorProps) {
   const breakpoints = useEditorStore((s) => s.site?.breakpoints ?? EMPTY_BREAKPOINTS)
   const conditions = useEditorStore((s) => s.site?.conditions ?? EMPTY_CONDITIONS)
   const activeBreakpointId = useEditorStore((s) => s.activeBreakpointId)
   const activeConditionId = useEditorStore((s) => s.activeConditionId)
-  const setActiveBreakpoint = useEditorStore((s) => s.setActiveBreakpoint)
   const setActiveConditionId = useEditorStore((s) => s.setActiveConditionId)
   const removeCondition = useEditorStore((s) => s.removeCondition)
   const removeBreakpoint = useEditorStore((s) => s.removeBreakpoint)
 
-  const [menuOpen, setMenuOpen] = useState(false)
+  const [menu, setMenu] = useState<'pick' | 'manage' | null>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!menu) return
+    // The anchored menu is hidden until its first measurement completes.
+    const frame = requestAnimationFrame(() => {
+      const target = menuRef.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')
+        ?? menuRef.current?.querySelector<HTMLButtonElement>('button')
+      target?.focus({ preventScroll: true })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [menu])
   // null = closed; 'add' = add a new context; { bp } / { def } = edit that one.
   const [dialog, setDialog] = useState<ContextDialogMode | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -63,11 +64,34 @@ export function CanvasContextSelector({ compact = false }: { compact?: boolean }
 
   if (breakpoints.length === 0) return null
 
-  const activeConditionValid = activeConditionId !== null && conditions.some((c) => c.id === activeConditionId)
-  const activeCondition = activeConditionValid ? conditions.find((c) => c.id === activeConditionId) : undefined
+  const activeCondition = conditions.find(condition => condition.id === activeConditionId)
   const activeBp = breakpoints.find((b) => b.id === activeBreakpointId) ?? breakpoints[0]
 
-  const closeMenu = () => setMenuOpen(false)
+  const label = activeCondition?.label ?? activeBp.label
+  const closeMenu = () => setMenu(null)
+  const focusTrigger = () => {
+    // A new context can replace the trigger's tooltip wrapper during commit.
+    requestAnimationFrame(() => triggerRef.current?.focus({ preventScroll: true }))
+  }
+
+  const contexts = [
+    ...breakpoints.map(bp => ({
+      id: bp.id, label: bp.label, detail: `${bp.width}px`, icon: <BreakpointIcon name={bp.icon} />,
+      active: !activeCondition && bp.id === activeBp.id,
+      pick: () => onPickBreakpoint(bp.id), edit: { bp }, kind: 'breakpoint',
+      remove: breakpoints.length > 1 ? () => removeBreakpoint(bp.id) : null,
+    })),
+    ...conditions.map(def => {
+      const query = conditionLabel(def.condition)
+      return {
+        id: def.id, label: def.label, detail: def.label.trim() === query.trim() ? null : query,
+        icon: <SlidersHorizontalIcon size={12} aria-hidden="true" />,
+        active: def.id === activeConditionId,
+        pick: () => setActiveConditionId(def.id), edit: { def }, kind: 'condition',
+        remove: () => removeCondition(def.id),
+      }
+    }),
+  ]
 
   return (
     <div
@@ -84,129 +108,123 @@ export function CanvasContextSelector({ compact = false }: { compact?: boolean }
           size="micro"
           className={styles.triggerPill}
           aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          aria-label={`Editing context: ${activeCondition?.label ?? activeBp?.label ?? ''}`}
-          tooltip={compact ? `Editing context: ${activeCondition?.label ?? activeBp?.label}` : 'Editing context'}
-          onClick={() => setMenuOpen((v) => !v)}
+          aria-expanded={menu !== null}
+          aria-label={`Editing context: ${label}`}
+          tooltip={compact ? `Editing context: ${label}` : 'Editing context'}
+          onClick={() => setMenu(menu ? null : 'pick')}
+          onKeyDown={(event) => {
+            event.stopPropagation()
+            if (event.key === 'ArrowDown') {
+              event.preventDefault()
+              setMenu('pick')
+            }
+          }}
         >
-          {activeConditionValid
+          {activeCondition
             ? <SlidersHorizontalIcon size={12} aria-hidden="true" />
             : <BreakpointIcon name={activeBp?.icon ?? 'monitor'} />}
           <NotchFold compact={compact} className={styles.contextDetails}>
             <span className={styles.triggerLabel}>
-              {activeConditionValid ? (activeCondition?.label ?? 'Condition') : (activeBp?.label ?? '')}
+              {label}
             </span>
             <ChevronDownIcon size={10} aria-hidden="true" />
           </NotchFold>
         </Button>
       </div>
 
-      {menuOpen && (
+      {menu && (
         <ContextMenu
-          ariaLabel="Editing context"
+          ref={menuRef}
+          ariaLabel={menu === 'pick' ? 'Editing context' : 'Manage contexts'}
+          maxHeight={400}
+          onKeyDown={(event) => {
+            event.stopPropagation()
+            if (event.key === 'Escape') focusTrigger()
+            if (event.key === 'Tab') {
+              event.preventDefault()
+              closeMenu()
+              focusTrigger()
+              return
+            }
+            if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+            event.preventDefault()
+            const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button:enabled')]
+            const index = buttons.indexOf(document.activeElement as HTMLButtonElement)
+            const step = event.key === 'ArrowDown' ? 1 : -1
+            buttons[(index + step + buttons.length) % buttons.length]?.focus()
+          }}
           anchorRef={triggerRef}
           triggerRef={triggerRef}
           onClose={closeMenu}
           minWidth={236}
           side="bottom"
           align="end"
-          menuClassName={styles.menuPanel}
         >
-          {breakpoints.map((bp) => {
-            const isActive = !activeConditionValid && bp.id === activeBreakpointId
-            return (
-              <div key={bp.id} className={styles.menuRow}>
+          {contexts.map(context => (
+            <div key={`${context.kind}-${context.id}`} className={styles.menuRow}>
+              {menu === 'pick' ? (
                 <ContextMenuItem
-                  className={cn(styles.menuRowMain, isActive && styles.menuRowActive)}
-                  aria-current={isActive ? 'true' : undefined}
-                  onClick={() => { setActiveBreakpoint(bp.id); closeMenu() }}
+                  role="menuitemradio"
+                  aria-checked={context.active}
+                  className={styles.menuRowMain}
+                  onClick={() => {
+                    context.pick()
+                    closeMenu()
+                    focusTrigger()
+                  }}
                 >
-                  <BreakpointIcon name={bp.icon} />
-                  <span className={styles.rowLabel}>{bp.label}</span>
-                  <span className={styles.rowDetail}>{bp.width}px</span>
+                  {context.icon}
+                  <span className={styles.rowLabel}>{context.label}</span>
+                  {context.detail && <span className={styles.rowDetail}>{context.detail}</span>}
+                  <span className={styles.check} aria-hidden="true">{context.active && <CheckIcon size={13} />}</span>
                 </ContextMenuItem>
-                <Button
-                  variant="ghost"
-                  size="micro"
-                  className={styles.rowAction}
-                  aria-label={`Edit ${bp.label} breakpoint`}
-                  tooltip="Edit breakpoint"
-                  onClick={(e) => { e.stopPropagation(); closeMenu(); setDialog({ bp }) }}
-                >
-                  <EditSolidIcon size={11} aria-hidden="true" />
-                </Button>
-                {breakpoints.length > 1 && (
-                  <Button
-                    variant="ghost"
-                    size="micro"
-                    className={styles.rowRemove}
-                    aria-label={`Delete ${bp.label} breakpoint`}
-                    tooltip="Delete breakpoint"
-                    onClick={(e) => { e.stopPropagation(); removeBreakpoint(bp.id) }}
+              ) : (
+                <>
+                  <ContextMenuItem
+                    className={styles.menuRowMain}
+                    aria-label={`Edit ${context.label} ${context.kind}`}
+                    onClick={() => { closeMenu(); setDialog(context.edit) }}
                   >
-                    <CloseIcon size={11} aria-hidden="true" />
-                  </Button>
-                )}
-              </div>
-            )
-          })}
-
-          {conditions.length > 0 && <ContextMenuSeparator />}
-
-          {conditions.map((def) => {
-            const isActive = activeConditionValid && def.id === activeConditionId
-            const detail = conditionLabel(def.condition)
-            const showDetail = def.label.trim() !== detail.trim()
-            return (
-              <div key={def.id} className={styles.menuRow}>
-                <ContextMenuItem
-                  className={cn(styles.menuRowMain, isActive && styles.menuRowActive)}
-                  aria-current={isActive ? 'true' : undefined}
-                  onClick={() => { setActiveConditionId(def.id); closeMenu() }}
-                >
-                  <SlidersHorizontalIcon size={12} aria-hidden="true" />
-                  <span className={styles.rowLabel}>{def.label}</span>
-                  {showDetail && <span className={styles.rowDetail}>{detail}</span>}
-                </ContextMenuItem>
-                <Button
-                  variant="ghost"
-                  size="micro"
-                  className={styles.rowAction}
-                  aria-label={`Edit ${def.label} condition`}
-                  tooltip="Edit condition"
-                  onClick={(e) => { e.stopPropagation(); closeMenu(); setDialog({ def }) }}
-                >
-                  <EditSolidIcon size={11} aria-hidden="true" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="micro"
-                  className={styles.rowRemove}
-                  aria-label={`Delete ${def.label} condition`}
-                  tooltip="Delete condition"
-                  onClick={(e) => { e.stopPropagation(); removeCondition(def.id) }}
-                >
-                  <CloseIcon size={11} aria-hidden="true" />
-                </Button>
-              </div>
-            )
-          })}
-
+                    <EditSolidIcon size={12} aria-hidden="true" />
+                    <span className={styles.rowLabel}>{context.label}</span>
+                  </ContextMenuItem>
+                  {context.remove && (
+                    <ContextMenuItem
+                      danger
+                      className={styles.remove}
+                      aria-label={`Delete ${context.label} ${context.kind}`}
+                      onClick={context.remove}
+                    >
+                      <CloseIcon size={12} aria-hidden="true" />
+                    </ContextMenuItem>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
           <ContextMenuSeparator />
-
+          {menu === 'manage' && (
+            <ContextMenuItem className={styles.menuRowMain} onClick={() => { closeMenu(); setDialog('add') }}>
+              <PlusIcon size={12} aria-hidden="true" />
+              Add context…
+            </ContextMenuItem>
+          )}
           <ContextMenuItem
             className={styles.menuRowMain}
-            onClick={() => { closeMenu(); setDialog('add') }}
+            onClick={() => setMenu(menu === 'pick' ? 'manage' : 'pick')}
           >
-            <PlusIcon size={12} aria-hidden="true" />
-            <span className={styles.rowLabel}>Add context…</span>
+            <SlidersHorizontalIcon size={12} aria-hidden="true" />
+            {menu === 'pick' ? 'Manage contexts…' : 'Back to picker'}
           </ContextMenuItem>
         </ContextMenu>
       )}
 
       {dialog !== null && (
         <Suspense fallback={null}>
-          <CanvasContextDialog mode={dialog} onClose={() => setDialog(null)} />
+          <CanvasContextDialog mode={dialog} onClose={() => {
+            setDialog(null)
+            focusTrigger()
+          }} />
         </Suspense>
       )}
     </div>

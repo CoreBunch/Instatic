@@ -1370,7 +1370,7 @@ async function switchEditingContext(page: Page, label: 'Desktop' | 'Mobile'): Pr
     .getByTestId('canvas-context-selector')
     .getByRole('button', { name: /Editing context:/ })
     .click()
-  await page.getByRole('menuitem', { name: new RegExp(label) }).click()
+  await page.getByRole('menuitemradio', { name: new RegExp(label) }).click()
   await expect(
     page.getByRole('button', { name: new RegExp(`Switch to ${label} breakpoint`), pressed: true }),
   ).toBeVisible()
