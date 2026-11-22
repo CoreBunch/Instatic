@@ -81,6 +81,14 @@
   border-top-right-radius: 12px;
 }
 
+/* The flush context notch paints this corner. Clipping its composited layers
+   a second time leaves a pale antialiased arc over a light canvas frame. */
+@media (min-width: 901px) {
+  .canvasStageRightSidebarOpen:has([data-canvas-context-notch]) {
+    border-top-right-radius: 0;
+  }
+}
+
 .importHtmlLoadingDialog.importHtmlLoadingDialog {
   width: min(1040px, calc(100vw - 48px));
   max-height: min(760px, calc(100vh - 48px));

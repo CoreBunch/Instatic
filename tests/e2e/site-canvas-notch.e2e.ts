@@ -1,0 +1,48 @@
+import { expect, test } from '@playwright/test'
+import { createPage, insertNotchModule, openSiteEditor } from './helpers'
+
+test('folds the insert and breakpoint notches as panels narrow the canvas (SITE-010)', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 800 })
+  await openSiteEditor(page)
+  await createPage(page, 'Canvas controls', `notches-${Date.now()}`)
+  await insertNotchModule(page, 'text')
+  const notch = page.getByTestId('canvas-notch')
+  const context = page.getByRole('button', { name: 'Editing context: Desktop' })
+  await expect(context).toBeVisible()
+  const favorite = notch.getByRole('button', { name: 'Add Text', exact: true })
+  await expect(favorite).toBeVisible()
+  await favorite.focus()
+  await page.setViewportSize({ width: 1100, height: 800 })
+  await expect(favorite).toHaveCount(0)
+  await expect(notch.getByRole('button')).toHaveCount(3)
+  const suffix = context.locator('[data-notch-fold]')
+  await expect(suffix).toHaveCSS('width', '0px')
+  await expect(notch.getByRole('button', { name: 'Add to canvas' })).toBeFocused()
+
+  // Keep the browser width fixed. The space recovered from Explorer alone
+  // must restore both the favorite buttons and the viewport label.
+  await page.getByTestId('panel-rail-explorer').click()
+  await expect(favorite).toBeVisible()
+  await expect.poll(() => suffix.evaluate(el => el.clientWidth)).toBeGreaterThan(40)
+  await page.getByTestId('panel-rail-explorer').click()
+  await expect(favorite).toHaveCount(0)
+  await expect(notch.getByRole('button', { name: 'Add to canvas' })).toBeInViewport()
+
+  await context.click()
+  await expect(page.getByRole('menu', { name: 'Editing context' })).toBeVisible()
+  await page.getByRole('button', { name: 'Edit Desktop breakpoint' }).click()
+  await expect(page.getByRole('dialog', { name: 'Edit viewport' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await context.click()
+  await page.getByRole('menuitem', { name: 'Add context…' }).click()
+  const newContext = page.getByRole('dialog', { name: 'Add context' })
+  await newContext.getByRole('button', { name: 'Environment media query' }).click()
+  await page.keyboard.press('Escape')
+  const add = notch.getByRole('button', { name: 'Add to canvas' })
+  await add.click()
+  const picker = page.getByRole('dialog', { name: 'Add to canvas' })
+  await picker.locator('[data-module-id="base.text"]').first().click()
+  await expect(picker).toBeHidden()
+  await notch.getByRole('button', { name: 'Undo' }).click()
+  await notch.getByRole('button', { name: 'Redo' }).click()
+})

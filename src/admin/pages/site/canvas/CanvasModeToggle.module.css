@@ -15,6 +15,12 @@
     pointer-events: none;
 }
 
+/* When even the compact controls cannot share the top edge, give the mode
+   switch its own row below the insert notch. Keep the live peek handle on top. */
+[data-toolbar-layout="two-rows"] .shell:not(.shellPeek) {
+    top: 40px;
+}
+
 /* Wrapper that rolls up out of view in peek mode; the pill rides inside it. */
 .roller {
     display: inline-flex;

@@ -42,6 +42,7 @@ import { CanvasTransformLayer } from './CanvasTransformLayer'
 import { CanvasLiveSurface } from './CanvasLiveSurface'
 import { AgentSnapshotFrame } from './AgentSnapshotFrame'
 import { useRuntimeScriptBuild } from './useRuntimeScriptBuild'
+import { useCanvasToolbarLayout } from './useCanvasToolbarLayout'
 import { CanvasNotch } from './CanvasNotch'
 import { CanvasModeToggle } from './CanvasModeToggle'
 import { CanvasContextSelector } from './CanvasContextSelector'
@@ -178,6 +179,9 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
     action &&
     breakpoints.some((bp) => bp.id === activeBreakpointId && bp.previewFrame !== false)
   const phoneEditing = phone && editingText
+  const showContext = breakpoints.length > 0 && !isLive && rightSidebarExpanded && (permissions.canEditStyle || permissions.canEditStructure)
+  const toolbarLayout = useCanvasToolbarLayout(canvasRef, editable && !phoneEditing, showContext, phone)
+  const compactChrome = toolbarLayout !== 'expanded'
   const [layerActionsFor, setLayerActionsFor] = useState<string | null>(null)
   const showLayerActions = layerActionsFor !== null && layerActionsFor === selectedNodeId
   // Auto-dim non-active breakpoints when a layer is selected and the
@@ -482,6 +486,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
           tabIndex={0}
           data-testid="canvas-root"
           data-instatic-canvas-root="true"
+          data-toolbar-layout={toolbarLayout}
           data-canvas-state={canvasPage ? 'canvas-ready' : 'canvas-empty'}
           data-canvas-view={canvasView}
           data-hide-layer-actions={phoneEditing || (showPhoneContentActions && !showLayerActions) || undefined}
@@ -517,6 +522,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
               {editable && (
                 <CanvasNotch
                   peek={isLive}
+                  compact={compactChrome}
                   floatingControl={
                     activeDocument?.kind === 'visualComponent' ? (
                       <Suspense fallback={null}>
@@ -592,8 +598,8 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
               (viewports + custom conditions), so it's only meaningful for
               callers who can edit style or structure. Content-only Clients and
               pure Viewers get the same plain frames without this affordance. */}
-          {!isLive && rightSidebarExpanded && (permissions.canEditStyle || permissions.canEditStructure) && (
-            <CanvasContextSelector />
+          {showContext && (
+            <CanvasContextSelector compact={compactChrome} />
           )}
 
           {/*
