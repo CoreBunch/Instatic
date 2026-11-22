@@ -4,6 +4,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type RefObject,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
@@ -20,6 +21,8 @@ import {
   type CanvasDropPreview,
 } from '@site/canvas/canvasInsertionDrop'
 import { clearCanvasPointerRelay, markCanvasPointerRelay } from '@site/canvas/canvasPointerRelay'
+import { useModuleInserterViewport } from './useModuleInserterViewport'
+import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
 import { Kbd } from '@ui/components/Kbd'
@@ -70,6 +73,7 @@ import { useModuleInserterPreference } from './useModuleInserterPreference'
 import styles from './ModuleInserterDialog.module.css'
 
 interface ModuleInserterDialogProps {
+  triggerRef: RefObject<HTMLButtonElement | null>
   onClose: () => void
   onInsertItem: (
     item: ModuleInserterItem,
@@ -96,19 +100,20 @@ const SECTIONS: readonly SectionDefinition[] = [
 ]
 
 export function ModuleInserterDialog({
-  onClose,
+  triggerRef,
+  onClose: closeDialog,
   onInsertItem,
 }: ModuleInserterDialogProps) {
-  const prefs = readModuleInserterPrefs()
+  const { phone, backdropRef, closeRef } = useModuleInserterViewport()
+  const [prefs, setPrefs] = useState(readModuleInserterPrefs)
   const [query, setQuery] = useState('')
   const [section, setSection] = useState<ModuleInserterSectionId>('modules')
   const [selectedKeyOverride, setSelectedKeyOverride] = useState<string | null>(null)
   const [zone, setZone] = useState<InserterZone>('search')
-  const [view, setView] = useState<InserterView>(prefs.view)
+  const view = phone ? prefs.phoneView ?? 'list' : prefs.view
   const [recentRefs, setRecentRefs] = useState<ModuleInserterRecentRef[]>(prefs.recent)
   const [drag, setDrag] = useState<DragVisualState | null>(null)
   const [savedLayoutMenu, setSavedLayoutMenu] = useState<SavedLayoutMenuState | null>(null)
-  const backdropRef = useRef<HTMLDivElement | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const suppressClickRef = useRef(false)
@@ -147,12 +152,12 @@ export function ModuleInserterDialog({
     filteredSavedLayouts,
     (pluginId) => pluginRuntime.getPluginName(pluginId),
   )
-  const items = itemsForSection(section, {
+  const items = {
     modules: filteredModules,
     layouts: layoutsSection.items,
     components: filteredComponents,
     recent: filteredRecent,
-  })
+  }[section]
 
   // Group labels for the Layouts section, keyed by each group's first item.
   const groupLabelByKey = section === 'layouts' ? layoutsSection.labelByKey : new Map<string, string>()
@@ -170,18 +175,14 @@ export function ModuleInserterDialog({
   }
 
   useEffect(() => {
-    const id = window.setTimeout(() => searchRef.current?.focus(), 0)
-    return () => window.clearTimeout(id)
-  }, [])
-
-  useEffect(() => {
+    if (phone) return
     if (zone !== 'search') {
       if (document.activeElement === searchRef.current) searchRef.current?.blur()
       return
     }
     const id = window.setTimeout(() => searchRef.current?.focus(), 0)
     return () => window.clearTimeout(id)
-  }, [zone])
+  }, [phone, zone])
 
   useEffect(() => {
     const container = scrollRef.current
@@ -192,6 +193,15 @@ export function ModuleInserterDialog({
     if (!selected) return
     scrollSelectedItemIntoView(container, selected, source)
   }, [selectedKey, section, query, view])
+
+  // Shared by the document key handler and pickItem. An expanded trigger may
+  // remount when its tooltip returns, so restore focus after React commits.
+  const onClose = useCallback(() => {
+    closeDialog()
+    requestAnimationFrame(() => {
+      if (document.activeElement === document.body) triggerRef.current?.focus({ preventScroll: true })
+    })
+  }, [closeDialog, triggerRef])
 
   // Required because the document keydown effect depends on this function;
   // eslint cannot see the React Compiler's runtime identity stability.
@@ -215,6 +225,23 @@ export function ModuleInserterDialog({
       if (key === 'Escape') {
         event.preventDefault()
         onClose()
+        return
+      }
+
+      if (phone) {
+        if (event.isComposing) return
+        if (key === 'Enter' && event.target === searchRef.current && selectedItem) {
+          event.preventDefault()
+          pickItem(selectedItem, undefined, 'click')
+        } else if (key === 'Tab') {
+          const controls = backdropRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)')
+          const first = controls?.[0]
+          const last = controls?.[controls.length - 1]
+          if (first && last && event.target === (event.shiftKey ? first : last)) {
+            event.preventDefault()
+            ;(event.shiftKey ? last : first).focus()
+          }
+        }
         return
       }
 
@@ -325,18 +352,17 @@ export function ModuleInserterDialog({
 
     document.addEventListener('keydown', onKeyDown)
     return () => document.removeEventListener('keydown', onKeyDown)
-  }, [items, onClose, pickItem, section, selectedKey, view, zone])
+  }, [backdropRef, items, onClose, phone, pickItem, section, selectedItem, selectedKey, view, zone])
 
   function updateView(next: InserterView) {
-    setView(next)
-    writeModuleInserterView(next)
+    setPrefs(writeModuleInserterView(next, phone))
   }
 
   function handlePointerDown(
     item: ModuleInserterItem,
     event: ReactPointerEvent<HTMLButtonElement>,
   ) {
-    if (event.button !== 0) return
+    if (event.button !== 0 || (phone && event.pointerType === 'touch')) return
     // Disabled items can't be dragged to the canvas either.
     if (item.disabledReason) return
     const startX = event.clientX
@@ -448,6 +474,11 @@ export function ModuleInserterDialog({
           <div className={styles.brand}>
             <AppGridPlusGlyphIcon size={18} aria-hidden="true" />
             <span>Add to canvas</span>
+            {phone && (
+              <Button ref={closeRef} variant="secondary" size="lg" iconOnly aria-label="Close block picker" onClick={onClose}>
+                <CloseIcon size={16} aria-hidden="true" />
+              </Button>
+            )}
           </div>
 
           <nav className={styles.sectionList} aria-label="Module categories">
@@ -472,7 +503,7 @@ export function ModuleInserterDialog({
                     setZone('grid')
                   }}
                   data-accent={item.accent}
-                  tabIndex={-1}
+                  tabIndex={phone ? 0 : -1}
                   aria-current={isActive ? 'page' : undefined}
                   aria-label={item.name}
                 >
@@ -514,17 +545,17 @@ export function ModuleInserterDialog({
               value={query}
               onValueChange={setQuery}
               onFocus={() => setZone('search')}
-              placeholder="Search every module, layout & component..."
-              aria-label="Search modules"
+              placeholder={phone ? `Search ${selectedSection.name.toLowerCase()}…` : 'Search every module, layout & component...'}
+              aria-label={phone ? `Search ${selectedSection.name.toLowerCase()}` : 'Search modules'}
               className={styles.searchField}
             />
-            <Kbd className={styles.escHint}>Esc</Kbd>
+            {!phone && <Kbd className={styles.escHint}>Esc</Kbd>}
           </div>
 
           <div className={styles.sectionHeader} data-accent={selectedSection.accent}>
             <span className={styles.sectionBar} aria-hidden="true" />
             <span className={styles.sectionTitle}>{selectedSection.name}</span>
-            <span className={styles.headerCount}>{items.length} items</span>
+            <span className={styles.headerCount}>{items.length} {items.length === 1 ? 'item' : 'items'}</span>
             <SegmentedControl<InserterView>
               value={view}
               onChange={updateView}
@@ -568,8 +599,9 @@ export function ModuleInserterDialog({
                     )}
                     <ModuleInserterItemButton
                       item={item}
+                      phone={phone}
                       view={view}
-                      selected={selectedKey === item.key}
+                      selected={selectedKey === item.key && (!phone || query.trim() !== '')}
                       favorite={isFavorite(recentRefForItem(item))}
                       onSelect={() => {
                         selectionSourceRef.current = 'pointer'
@@ -631,21 +663,6 @@ export function ModuleInserterDialog({
 
   if (typeof document === 'undefined') return null
   return createPortal(dialog, document.body)
-}
-
-function itemsForSection(
-  section: ModuleInserterSectionId,
-  groups: {
-    modules: ModuleInserterItem[]
-    layouts: ModuleInserterItem[]
-    components: ModuleInserterItem[]
-    recent: ModuleInserterItem[]
-  },
-): ModuleInserterItem[] {
-  if (section === 'layouts') return groups.layouts
-  if (section === 'components') return groups.components
-  if (section === 'recent') return groups.recent
-  return groups.modules
 }
 
 function emptyTitleForSection(section: ModuleInserterSectionId): string {

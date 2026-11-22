@@ -15,6 +15,7 @@ import {
   updateCmsDataRowStatus,
 } from '@core/persistence'
 import { useWorkspaceLayout } from '@admin/state/workspaceLayout'
+import { isMobileViewport } from '@admin/lib/mobileViewport'
 import type {
   DataTable,
   DataRow,
@@ -93,7 +94,7 @@ export function useContentWorkspace({
     selectedEntryRef.current = entry
     editorViewRef.current = null
     setSelectedEntry(entry)
-    if (entry) setRightPanel({ collapsed: false })
+    if (entry && !isMobileViewport()) setRightPanel({ collapsed: false })
   }, [setRightPanel])
 
   useEffect(() => {

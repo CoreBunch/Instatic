@@ -22,6 +22,12 @@
  *       site, not an admin user), optionally one holding a tag. Served only
  *       on the public plugin mount. The plugin must hold `members.read`.
  *
+ *   { kind: 'member', appScope: 'read' }
+ *       As above, and an app the member signed in to may call the route
+ *       with its access token when that sign-in carries the scope
+ *       `plugin:<pluginId>:read`. The name must be declared in the plugin
+ *       manifest's `appScopes`.
+ *
  * The previous `capability: null` shape was ambiguous — it looked like
  * "logged-in user is enough" but actually meant "no auth at all". The
  * tagged union forces plugin authors to make the intent explicit at
@@ -29,7 +35,7 @@
  */
 
 import { Type } from '@sinclair/typebox'
-import { MEMBER_TAG_PATTERN } from '@core/members'
+import { MEMBER_TAG_PATTERN, PLUGIN_APP_SCOPE_NAME_PATTERN } from '@core/members'
 
 const RouteMethodSchema = Type.Union([
   Type.Literal('GET'),
@@ -62,6 +68,7 @@ const RouteAccessSchema = Type.Union([
     {
       kind: Type.Literal('member'),
       tag: Type.Optional(Type.String({ pattern: MEMBER_TAG_PATTERN })),
+      appScope: Type.Optional(Type.String({ pattern: PLUGIN_APP_SCOPE_NAME_PATTERN })),
     },
     { additionalProperties: false },
   ),

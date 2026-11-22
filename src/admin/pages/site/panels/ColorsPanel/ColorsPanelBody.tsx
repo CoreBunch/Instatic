@@ -86,6 +86,7 @@ export function ColorsPanelBody() {
       category,
       darkModeEnabled: false,
     })
+    if (!token) return
     setExpandedTokenId(token.id)
     setCreateDialogOpen(false)
   }

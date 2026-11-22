@@ -8,6 +8,7 @@
  *   GET /admin/api/cms/dashboard/storage
  *   GET /admin/api/cms/dashboard/publish-lineup
  *   GET /admin/api/cms/dashboard/activity
+ *   GET /admin/api/cms/dashboard/domain
  *
  * One endpoint per dashboard widget data domain. Each runs only the
  * queries that domain needs, so:
@@ -33,6 +34,7 @@
 import type { DbClient } from '../../../db/client'
 import { requireCapability, userHasCapability } from '../../../auth/authz'
 import type { CoreCapability } from '../../../auth/capabilities'
+import { configuredPublicOrigin } from '../../../auth/security'
 import { jsonResponse, methodNotAllowed } from '../../../http'
 import { CMS_API_PREFIX, type CmsHandlerOptions } from '../shared'
 import { resolveTimeZone } from '../../../time'
@@ -63,6 +65,7 @@ const DASHBOARD_READERS: Record<string, DashboardEndpoint> = {
   'storage':        { reader: readStorageStats,   capability: 'storage.elect' },
   'publish-lineup': { reader: (db, _options, ctx) => readPublishLineup(db, ctx.principal),  capability: 'dashboard.read' },
   'activity':       { reader: readRecentActivity, capability: 'audit.read' },
+  'domain':         { reader: async () => ({ publicOrigin: configuredPublicOrigin() }), capability: 'dashboard.read' },
 }
 
 export async function handleDashboardRoutes(

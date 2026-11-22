@@ -85,3 +85,9 @@
     flex: 0 1 auto;
     min-width: 0;
 }
+
+@media (max-width: 760px) {
+    .treeArea [role="treeitem"] { min-height: var(--button-size-lg); }
+    .searchFill input { font-size: max(1rem, var(--text-l)); }
+    .searchFill { min-height: var(--button-size-lg); }
+}

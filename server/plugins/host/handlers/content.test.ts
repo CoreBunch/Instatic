@@ -22,6 +22,7 @@ import { parsePluginManifest } from '@core/plugins/manifest'
 import { OWN_CREATED_TABLES_MARKER, type ContentAccessEntry } from '@core/plugin-sdk'
 import { assertContentTableAccess } from '../registry'
 import type { HostPluginRecord } from '../types'
+import { PluginRateLimitStore } from '../pluginRateLimit'
 import {
   handleContentEntriesCreate,
   handleContentEntriesList,
@@ -50,10 +51,12 @@ function pluginRecord(id: string, contentAccess: ContentAccessEntry[]): HostPlug
     routes: new Map(),
     hookListeners: [],
     hookFilters: [],
+    memberExportFilterId: null,
     loopSources: [],
     mediaAdapters: [],
     mediaUrlTransformers: [],
     inflightFetches: new Map(),
+    rateLimits: new PluginRateLimitStore(10),
   }
 }
 

@@ -249,7 +249,25 @@ On main, `applySiteBundle` validates references and runtime bytes before mutatio
 
 After commit, an empty static slot replaces the previous baked output and the render cache generation changes. The existing public renderer serves restored snapshots immediately; no draft republish or script rebuild is needed. Runtime dependency caches for active snapshots are prepared before the transaction. Import into a branch changes drafts only and never activates published versions on main.
 
-Malformed references, missing runtime files, size mismatches and CRC failures are rejected before replace can delete target data. Publication restore requires publishing capabilities and step-up authentication in addition to the normal import gates. This format preserves future exports; it does not reconstruct publication data absent from older bundles.
+Malformed references, missing runtime files, size mismatches and CRC failures are rejected before replace can delete target data. Publication restore requires publishing capabilities and step-up authentication in addition to the normal import gates. So does a bundle that carries a `scheduled` row into main: the scheduler publishes that row when it falls due, so importing it is a publish (`authorizeImportedPublication` in `server/handlers/cms/import.ts`). This format preserves future exports; it does not reconstruct publication data absent from older bundles.
+
+#### Rows the import cannot publish
+
+On main a row is served through its published version, and `status = 'published'` is the switch that serves it. A bundle row's `published` status is therefore a claim the import can only honour by restoring a live version. A bundle exported before publication travelled in it has no `publication` section, so it brings none.
+
+`landingPublication` (`server/handlers/cms/importApply.ts`) decides the state each row lands with, for both import endpoints and every strategy:
+
+| Bundle row | Target | Lands as |
+|---|---|---|
+| `published`, and the import restores a live version for it | any | `published`, as the bundle says |
+| `published`, no live version restored | new row | `draft`, `publishedAt` cleared |
+| `published`, no live version restored | row already on main (`merge-overwrite`) | the publication state the row already has; only its draft content is replaced |
+| `published`, no live version restored | row already on main with a pending schedule | `draft`, schedule cancelled: the scheduler would otherwise publish the content the import just put in its place |
+| `draft`, `unpublished`, `scheduled` | any | as the bundle says (a `scheduled` row on main needs publishing rights, see "Capability gates") |
+
+So the import never creates a row that reads Published with nothing public, and never puts a row that was taken offline back up on its old version. A row that is live stays live on its local version while the bundle replaces its draft. `ImportResult.rowsImportedAsDraft` counts the rows that landed as drafts for this reason (new rows and cancelled schedules); the Site Import completion step reports it and tells the operator to publish, and the success toast carries the count. Importing such a bundle with `replace` therefore leaves the public site unpublished until the operator publishes again.
+
+A branch serves nothing, so rows imported into a branch keep the status the bundle gives them.
 
 ### Replace and the media library
 
@@ -266,13 +284,13 @@ The JSON handler:
 1. Checks the strategy gate (`authorizeImportStrategy`), validates the bundle against `SiteBundleSchema`, then checks the shell gate (`authorizeImportedShell`); see the capability gates below.
 2. Calls `applySiteBundle`, which wraps the apply in a **single DB transaction** on the collab-aware write lane:
    - Tables: insert / update / delete per strategy.
-   - Rows: insert / update / soft-delete per strategy, preserving schedules.
+   - Rows: insert / update / soft-delete per strategy, preserving schedules. A `published` row lands published only when a live version is restored for it (see "Rows the import cannot publish").
    - Publication: restore versions, frozen snapshots, runtime files and active pointers for imported rows on main.
    - Site shell: if the bundle carries `site`, overwrite the `site` row.
    - `replace` only: the media library (see above), folders, and redirects.
 3. Removes the bytes of media rows a `replace` deleted.
 4. **Outside the transaction**, writes media bytes to `uploads/<storagePath>`. Before writing, the handler calls `assertPathWithin(uploadsDir, target)` (from `server/util/pathWithin.ts`) as a defense-in-depth check — the schema already forbids traversal, but the sink re-asserts containment after `path.join()` resolves symlinks. Media writes are best-effort — if a disk write fails, the row import has already committed and the asset is skipped with a log entry.
-5. Returns `ImportResult` with counts.
+5. Returns `ImportResult` with counts, including `rowsImportedAsDraft`.
 
 The archive handler:
 
@@ -302,7 +320,7 @@ Primary merge identity is **id**: a row in the bundle with the same id as an exi
 An import never opens something that was limited to members (`applySiteBundle` in `server/handlers/cms/importApply.ts`, tested in `importAccessRules.test.ts`):
 
 - **Tables.** A table's rule is the `data_tables.access_json` column, which the bundle's table writes do not set. A stored rule always stays, including through `replace`, which deletes and recreates custom tables. The bundle's `tableAccess` is only used to add a rule to a table that has none: on `replace` and `merge-overwrite` for every table in the bundle, on `merge-add` only for tables it creates. A bundle that carries a rule for a table it brings needs what the table access endpoint needs (`authorizeImportedTableAccess`): the right to manage each such table, tags a member can be granted, and step-up. Each table the import limits is recorded in the audit log as `data.table.access` with `source: "import"` (`recordImportedTableAccess`).
-- **Pages.** A page's rule is the `access` cell of its row, so it travels with the row. On `replace` and `merge-overwrite`, a page that already exists keeps its stored rule unless the importer holds `site.structure.edit` (`keepPageAccess`). The same holds for the published versions restored from the bundle's publication history: each gets the rule its address was published with, or the draft's rule.
+- **Pages.** A page's rule is the `access` cell of its row, so it travels with the row. On `replace` and `merge-overwrite`, a page that already exists keeps its stored rule, and its `seo` head settings, unless the importer holds `site.structure.edit` (`keepPageStructuralCells`). Global head settings also require this capability in the imported site shell and restored publication snapshots. Page head settings follow the same rule everywhere the bundle carries them: the row, each restored published version's `seo` cell, and each page of the restored site snapshots (what the public renderer reads). Without that right an existing page keeps its draft's settings and a new page gets none; with it they are normalised through `parsePageSeo`. The same holds for the published versions restored from the bundle's publication history: each gets the rule its address was published with, or the draft's rule.
 - **Addresses, not only ids.** A different table that ends up on a protected table's route base, or a different page on a protected page's slug, takes that rule.
 
 ### Capability gates
@@ -314,7 +332,7 @@ An import never opens something that was limited to members (`applySiteBundle` i
 | Apply (any strategy)                  | `data.import`                                       |
 | Apply with `replace` strategy         | `data.import` AND `content.manage` AND step-up      |
 | Apply bundle that carries `site` shell| ALSO `site.structure.edit`                          |
-| Apply bundle containing publication history | ALSO `pages.publish`, `content.publish.any` and step-up |
+| Apply bundle that publishes: published versions, or a `scheduled` row imported into main | ALSO `pages.publish`, `content.publish.any` and step-up |
 | Apply bundle carrying a table access rule | ALSO `data.custom.tables.manage` / `data.system.tables.manage` for those tables, and step-up |
 
 ---
@@ -323,7 +341,7 @@ An import never opens something that was limited to members (`applySiteBundle` i
 
 The export → import path round-trips losslessly for everything in the bundle. This is verified by:
 
-- `src/__tests__/server/bundlePublishedState.test.ts` — published/draft separation, collection loops, schedules, history, runtime bytes, selected rows, permissions and invalid-archive rollback on SQLite and PostgreSQL.
+- `src/__tests__/server/bundlePublishedState.test.ts` — published/draft separation, collection loops, schedules, history, runtime bytes, selected rows, permissions and invalid-archive rollback on SQLite and PostgreSQL. Also bundles without a `publication` section: published rows land as drafts under every strategy and both endpoints, a live row stays live, and a retracted row stays offline. And scheduled rows: importing one into main needs publishing rights on both endpoints, and an overwrite cancels the pending schedule of the row it replaces.
 - `tests/e2e/backup-published-state.e2e.ts` — UI backup restore replaces later published content while retaining the backed-up unfinished draft.
 
 - `src/__tests__/architecture/cmsTransferExport.test.ts` — export produces a valid bundle.
@@ -361,6 +379,8 @@ Save the response ZIP to disk (browser handles the download automatically).
 3. On the destination host: open **Import Site** from Spotlight or the Data workspace, then drop the exported ZIP bundle.
 4. Review the preview and import with `strategy: replace`.
 5. Visitors immediately see the backed-up published state; newer unfinished edits remain drafts. Do not republish to finish restoration: publishing would intentionally replace the restored public content with those drafts.
+
+A bundle exported before publication travelled in it is the exception: it restores drafts only. The completion step says how many rows it marked published arrived as drafts; publish the site and those rows to put them live.
 
 ### Selective export (one table only)
 
@@ -409,6 +429,7 @@ A nightly cron can hit `/admin/api/cms/export` with an admin session cookie and 
 ## Related
 
 - [docs/architecture.md](../architecture.md) — system overview
+- [docs/features/fragments.md](fragments.md) — `fragmentSourceFromBundleArchive` reads the export archive to extract fragments
 - [docs/server.md](../server.md) — handler patterns + transactions
 - [docs/features/content-storage.md](content-storage.md) — `data_tables` + `data_rows` schemas
 - [docs/features/media.md](media.md) — imported media falls back to originals when variants are absent

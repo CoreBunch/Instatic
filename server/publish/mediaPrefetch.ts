@@ -17,7 +17,8 @@
  *     transparently picks up the new variant list.
  */
 
-import type { Page, SiteDocument } from '@core/page-tree'
+import { selectVisualComponentById, type Page, type SiteDocument } from '@core/page-tree'
+import { safePropOverrides } from '@core/visualComponents'
 import type { IModuleRegistry } from '@core/module-engine'
 import {
   collectNodeBackgroundImagePaths,
@@ -52,6 +53,33 @@ function collectMediaPaths(page: Page, site: SiteDocument, registry: IModuleRegi
   // Descend into referenced VC definition trees so an image/media prop inside a
   // VC body is resolved too (ISS-022).
   walkRenderTree(page.nodes, page.rootNodeId, site, (node) => {
+    if (node.moduleId === 'base.visual-component-ref' && typeof node.props?.componentId === 'string') {
+      const overrides = safePropOverrides(node.props)
+      const vc = selectVisualComponentById(site, node.props.componentId.trim())
+      if (vc && vc.params.length > 0 && Object.keys(overrides).length > 0) {
+        const declaredParamIds = new Set(vc.params.map((param) => param.id))
+        const seenNodes = new Set<string>()
+        const stack = [vc.tree.rootNodeId]
+        while (stack.length > 0) {
+          const childId = stack.pop()!
+          if (seenNodes.has(childId)) continue
+          seenNodes.add(childId)
+          const child = vc.tree.nodes[childId]
+          if (!child || child.moduleId === 'base.slot-outlet') continue
+          if (child.propBindings) {
+            const schema = registry.get(child.moduleId)?.schema
+            for (const [key, binding] of Object.entries(child.propBindings)) {
+              if (!declaredParamIds.has(binding.paramId)) continue
+              const type = schema?.[key]?.type
+              if (type !== 'image' && type !== 'media') continue
+              const value = Object.hasOwn(overrides, binding.paramId) ? overrides[binding.paramId] : undefined
+              if (typeof value === 'string' && value.startsWith('/uploads/')) paths.add(value)
+            }
+          }
+          for (const nextId of child.children) stack.push(nextId)
+        }
+      }
+    }
     const def = registry.get(node.moduleId)
     if (!def) return
     collectNodeBackgroundImagePaths(node, paths)

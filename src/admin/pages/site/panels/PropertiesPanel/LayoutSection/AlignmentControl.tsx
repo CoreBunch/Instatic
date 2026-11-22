@@ -53,6 +53,7 @@ export function AlignmentControl({
   return (
     <LabeledControl label={label} isSet={isSet}>
       <SegmentedControl
+        size="sm"
         fullWidth
         aria-label={axis === 'main' ? 'Justify content' : 'Align items'}
         value={value}

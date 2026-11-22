@@ -22,6 +22,15 @@ export const PluginRecordSchema = Type.Object({
   pluginId: Type.String(),
   resourceId: Type.String(),
   data: Type.Record(Type.String(), Type.Unknown()),
+  /** The value of the resource's `uniqueField`, or null when it has none. */
+  uniqueKey: Type.Union([Type.String(), Type.Null()]),
+  /** Starts at 0 and goes up by one on every update. Pass it as `ifVersion`. */
+  version: Type.Integer({ minimum: 0 }),
+  /**
+   * Set when the stored data is not a JSON object and could not be read:
+   * `data` is then `{}`. Such a record can be deleted but not updated.
+   */
+  unreadable: Type.Optional(Type.Literal(true)),
   createdAt: Type.String(),
   updatedAt: Type.String(),
 })
@@ -101,3 +110,32 @@ export const StorageListResultSchema = Type.Object({
 })
 
 export type StorageListResult = Static<typeof StorageListResultSchema>
+
+// ---------------------------------------------------------------------------
+// Unique keys and conditional writes
+// ---------------------------------------------------------------------------
+
+/** Longest value a resource's `uniqueField` may hold. */
+export const STORAGE_UNIQUE_KEY_MAX_LENGTH = 512
+
+/** Options for `update` and `delete`: apply only while the version matches. */
+export const StorageWriteOptionsSchema = Type.Object(
+  { ifVersion: Type.Optional(Type.Integer({ minimum: 0 })) },
+  { additionalProperties: false },
+)
+
+export type StorageWriteOptions = Static<typeof StorageWriteOptionsSchema>
+
+export const StorageCreateIfAbsentResultSchema = Type.Object({
+  record: PluginRecordSchema,
+  created: Type.Boolean(),
+})
+
+export type StorageCreateIfAbsentResult = Static<typeof StorageCreateIfAbsentResultSchema>
+
+/**
+ * Error-message prefixes for storage refusals. The plugin RPC carries only a
+ * message string, so a plugin tells these apart with `message.startsWith(...)`.
+ */
+export const STORAGE_DUPLICATE_PREFIX = 'storage_duplicate:'
+export const STORAGE_CONFLICT_PREFIX = 'storage_conflict:'

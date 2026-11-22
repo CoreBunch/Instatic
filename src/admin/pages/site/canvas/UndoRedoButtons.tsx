@@ -13,6 +13,7 @@
  * Shortcut display strings come from the keybindings registry (keybindings.ts)
  * — not hardcoded here.
  */
+import { useMobileViewport } from '@admin/lib/mobileViewport'
 import { useEffect } from 'react'
 import { useCanUndo, useCanRedo, useUndo, useRedo } from '@site/store/store'
 import { UndoIcon } from 'pixel-art-icons/icons/undo'
@@ -26,6 +27,7 @@ const kbUndo = getKeybindingForCommand('editor.undo')
 const kbRedo = getKeybindingForCommand('editor.redo')
 
 export function UndoRedoButtons() {
+  const phone = useMobileViewport()
   const canUndo = useCanUndo()
   const canRedo = useCanRedo()
   const undo = useUndo()
@@ -69,7 +71,7 @@ export function UndoRedoButtons() {
     >
       <Button
         variant="ghost"
-        size="sm"
+        size={phone ? 'md' : 'sm'}
         iconOnly
         className={styles.quickButton}
         aria-label="Undo"
@@ -84,7 +86,7 @@ export function UndoRedoButtons() {
 
       <Button
         variant="ghost"
-        size="sm"
+        size={phone ? 'md' : 'sm'}
         iconOnly
         className={styles.quickButton}
         aria-label="Redo"

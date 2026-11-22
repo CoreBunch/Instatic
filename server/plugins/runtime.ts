@@ -48,6 +48,9 @@ import {
 } from '@core/plugins/modulePackLoader'
 import { jsonResponse } from '../http'
 import { hookBus } from '@core/plugins/hookBus'
+import { setQueuedMailOutcomeHandler } from '../mail/outcomes'
+import { syncPluginMailTemplates } from '../mail/pluginTemplates'
+import { announcePluginMailOutcome } from './host/handlers/mail'
 import { requireAuthenticatedUser, requireCapability } from '../auth/authz'
 import { clearPluginCrashCounter, setCrashRecoveryHandler } from './host/crashRecovery'
 import { setPluginHostContext } from './host/registry'
@@ -261,6 +264,7 @@ export async function handleServerPluginRuntimeRequest(
       : null,
     // The admin mount never identifies a site member.
     member: null,
+    app: null,
   })
 }
 
@@ -369,11 +373,22 @@ function registerCrashRecoveryHandler(db: DbClient, uploadsDir: string): void {
         occurredAt: new Date().toISOString(),
       })
     } catch (err) {
-      // Re-activation itself failed. The next round-trip will record this
-      // as another crash event via the worker's normal error path; if the
-      // failure is repeatable the budget will be exceeded and the plugin
-      // will park in error state on its own. Log here for ops visibility.
+      // Re-activation itself failed. `activate` may have registered routes
+      // and hooks before it threw, and the plugin's row still said `active`.
+      // Unload what is left and say so in its status, as a failed activation
+      // does, so status and behaviour agree.
       console.error(`[plugin:${pluginId}] auto-respawn re-activation failed:`, err)
+      try {
+        await unloadPluginInWorker(pluginId)
+      } catch (unloadErr) {
+        console.error(`[plugin:${pluginId}] unload after a failed re-activation failed:`, unloadErr)
+      }
+      await setPluginLifecycleStatus(
+        db,
+        pluginId,
+        'error',
+        `Could not restart after a crash: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   })
 }
@@ -396,6 +411,11 @@ export async function activateInstalledServerPlugins(
   await resetPluginWorker()
   resetPluginModulePacks()
   hookBus.reset()
+  // Email templates are NOT cleared here: mail other plugins have waiting
+  // must still find its template while everything reloads. They are brought
+  // in line with the database, one plugin at a time, at the end.
+  // A plugin hears what became of the email it queued, and only its own.
+  setQueuedMailOutcomeHandler(announcePluginMailOutcome)
 
   // Start the scheduler tick. Idempotent — a re-bind with the same
   // process keeps the existing interval pointed at the same DbClient.
@@ -478,4 +498,5 @@ export async function activateInstalledServerPlugins(
       }
     }
   }
+  await syncPluginMailTemplates(db)
 }

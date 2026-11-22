@@ -19,7 +19,7 @@
  * is returned separately: the node is rendered for a visitor if at least one
  * path lets them through, which is exactly where they would see it.
  */
-import { readShowWhen, showWhenAllows, type ShowWhen } from '@core/members'
+import { readShowWhen, showWhenAllows, type ShowWhen, type ShowWhenVisitor } from '@core/members'
 import { selectVisualComponentById, type Page, type SiteDocument } from '@core/page-tree'
 import { firstOutletId, resolveTemplateChain } from '@core/templates'
 
@@ -51,7 +51,7 @@ export function showWhenPathsTo(
   page: Page,
   site: SiteDocument,
   nodeId: string,
-  options: { includeSelf: boolean },
+  options: { includeSelf: boolean; composed?: boolean },
 ): Rule[][] {
   const paths: Rule[][] = []
 
@@ -105,7 +105,10 @@ export function showWhenPathsTo(
     for (const childId of node.children) visit(nodes, childId, withOwn, seenComponents, outlets)
   }
 
-  visit(page.nodes as Record<string, WalkNode>, page.rootNodeId, layoutRulesAbove(page, site), new Set(), null)
+  // A composed tree already contains the enclosing layouts, including chrome
+  // outside the outlet. Only an authored tree needs the external ancestor rules.
+  const above = options.composed ? [] : layoutRulesAbove(page, site)
+  visit(page.nodes as Record<string, WalkNode>, page.rootNodeId, above, new Set(), null)
   return paths
 }
 
@@ -132,7 +135,7 @@ export function showWhenPathsAreGated(paths: readonly Rule[][]): boolean {
   return paths.length === 0 || paths.some((rules) => rules.length > 0)
 }
 
-/** May a visitor with these tags (`null` when signed out) be given the node? */
-export function showWhenPathsAllow(paths: readonly Rule[][], memberTags: readonly string[] | null): boolean {
-  return paths.some((rules) => rules.every((rule) => showWhenAllows(rule, memberTags)))
+/** May this visitor (`null` when signed out) be given the node? */
+export function showWhenPathsAllow(paths: readonly Rule[][], visitor: ShowWhenVisitor | null): boolean {
+  return paths.some((rules) => rules.every((rule) => showWhenAllows(rule, visitor)))
 }

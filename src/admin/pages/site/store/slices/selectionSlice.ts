@@ -16,8 +16,8 @@ import { flattenSubtree, getParent } from '@core/page-tree'
  */
 type SelectionMode = 'replace' | 'toggle' | 'range'
 
-interface SelectNodeOptions {
-  preservePropertiesPanelCollapse?: boolean
+export interface SelectNodeOptions {
+  propertiesPanel?: 'open' | 'preserve' | 'close'
 }
 
 interface SelectionSlice {
@@ -258,12 +258,12 @@ function applySelection(
   const nextActiveClassId = getSelectionActiveClassId(current, nextAnchor)
   // A node with inline styles but no class opens directly in inline-edit mode.
   const nextInlineEditing = nextActiveClassId === null && nodeHasInlineStyles(current, nextAnchor)
-  const shouldPreservePropertiesCollapse =
-    options.preservePropertiesPanelCollapse &&
-    current.propertiesPanel.collapsed &&
-    nextAnchor !== null
+  const keepCanvasVisible = nextAnchor !== null && (
+    options.propertiesPanel === 'close' ||
+    (options.propertiesPanel === 'preserve' && current.propertiesPanel.collapsed)
+  )
   const shouldCollapseProperties =
-    shouldPreservePropertiesCollapse || (!nextAnchor && !current.selectedSelectorClassId)
+    keepCanvasVisible || (!nextAnchor && !current.selectedSelectorClassId)
 
   const idsChanged = !arraysEqual(current.selectedNodeIds, nextIds)
   const anchorChanged = !Object.is(current.selectedNodeId, nextAnchor)
@@ -285,13 +285,16 @@ function applySelection(
     state.selectedNodeId = nextAnchor
     if (nextAnchor) state.selectedSelectorClassId = null
     state.activeClassId = nextActiveClassId
-    if (shouldPreservePropertiesCollapse) {
+    if (keepCanvasVisible) {
       state.propertiesPanelAutoOpenSuppressed = true
     }
     // Each new selection seeds its own edit target — inline mode for an
     // inline-only node, otherwise class/empty — never carrying a prior node's
     // inline-editing mode across.
-    if (anchorChanged) state.inlineStyleEditing = nextInlineEditing
+    if (anchorChanged) {
+      state.inlineStyleEditing = nextInlineEditing
+      state.radiusScope = null
+    }
     if (panelChanged) state.propertiesPanel.collapsed = shouldCollapseProperties
     if (current.componentizeEditorRequest?.nodeId !== nextAnchor) {
       state.componentizeEditorRequest = null

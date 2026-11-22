@@ -23,6 +23,7 @@ import { devStackBunError } from '../server/bunVersion'
 import { createDbClient } from '../server/db'
 import { runMigrations } from '../server/db/runMigrations'
 import { handleCmsRequest } from '../server/handlers/cms'
+import { createMemberApp } from '../server/members/apps/store'
 import { createMember, grantMemberTag, saveMemberSettings } from '../server/members/repository'
 import { publishDraftSite } from '../server/publish/publishSite'
 import { createDataRow, listDataRows, saveDataRowDraft } from '../server/repositories/data'
@@ -45,6 +46,12 @@ const MEMBERS = [
 
 function log(message: string): void {
   console.error(`[members-demo] ${message}`)
+}
+
+// The accounts above have fixed, published passwords: never on a live installation.
+if (process.env.NODE_ENV === 'production') {
+  log('Refusing to run with NODE_ENV=production: the demo creates accounts with fixed, public passwords.')
+  process.exit(1)
 }
 
 const bunError = devStackBunError(Bun.version)
@@ -110,6 +117,14 @@ for (const member of MEMBERS) {
   for (const tag of member.tags) await grantMemberTag(db, { memberId: created.id, tag, source: 'admin', expiresAt: null })
 }
 
+// An app members can sign in to, for `bun run demo:member-app`.
+const demoApp = await createMemberApp(db, {
+  name: 'Demo terminal app',
+  redirectUris: ['http://127.0.0.1/callback'],
+  scopes: ['profile', 'access'],
+  createdByUserId: owner.id,
+})
+
 await publishDraftSite(db, owner.id, UPLOADS_DIR)
 await db.close()
 
@@ -137,6 +152,9 @@ for (const member of MEMBERS) {
   log(`Member:  ${member.email} / ${MEMBER_PASSWORD}${member.tags.length > 0 ? `   (tags: ${member.tags.join(', ')})` : ''}`)
 }
 log('Emails are captured, not sent: read them under Email → Activity in the admin.')
+log('')
+log('Sign an app in as a member (in a second terminal):')
+log(`  bun run demo:member-app -- --site ${ORIGIN} --app ${demoApp.id}`)
 log('')
 
 let shuttingDown = false

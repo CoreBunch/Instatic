@@ -17,7 +17,8 @@ import { runMigrations } from '../../db/runMigrations'
 import type { DbClient } from '../../db/client'
 import { handleMcpHttp } from './index'
 import { createBearerConnection } from './connectors/store'
-import { generatePersonalAccessToken, hashMcpSecret } from './connectors/token'
+import { generatePersonalAccessToken } from './connectors/token'
+import { hashOpaqueToken } from '../../oauth/secrets'
 
 let db: DbClient
 let token: string
@@ -33,7 +34,7 @@ beforeEach(async () => {
   await createBearerConnection(db, {
     userId: 'u1', label: 'Claude Code',
     capabilities: ['ai.chat', 'ai.tools.write', 'site.read', 'site.structure.edit', 'content.manage', 'data.system.tables.read'],
-    tokenHash: await hashMcpSecret(token),
+    tokenHash: await hashOpaqueToken(token),
   })
 })
 
@@ -103,7 +104,7 @@ describe('MCP end-to-end (2026-07-28 stateless requests, real handler)', () => {
     await createBearerConnection(db, {
       userId: 'u1', label: 'RO',
       capabilities: ['ai.chat', 'site.read', 'content.manage', 'data.system.tables.read'],
-      tokenHash: await hashMcpSecret(readToken),
+      tokenHash: await hashOpaqueToken(readToken),
     })
     const req = (method: string, params: Record<string, unknown>) => {
       const modernParams = {

@@ -28,6 +28,8 @@ interface SiteImportFooterProps {
   onAnalyzeNext: () => void
   onCmsAnalyzeNext: () => void
   onConflictsImport: () => void
+  /** Class rename targets on the Conflicts step that must be fixed before importing. */
+  classNameProblemCount: number
   onRunCancel: () => void
   onToggleLog: () => void
   onOpenSite: () => void
@@ -49,6 +51,7 @@ export function SiteImportFooter({
   onAnalyzeNext,
   onCmsAnalyzeNext,
   onConflictsImport,
+  classNameProblemCount,
   onRunCancel,
   onToggleLog,
   onOpenSite,
@@ -122,7 +125,17 @@ export function SiteImportFooter({
         <Button variant="secondary" type="button" onClick={onBack}>
           ← Back
         </Button>
-        <Button variant="primary" type="button" onClick={onConflictsImport}>
+        {classNameProblemCount > 0 && (
+          <span className={styles.footNote}>
+            Fix {classNameProblemCount === 1 ? 'the class name' : `${classNameProblemCount} class names`} marked above to import
+          </span>
+        )}
+        <Button
+          variant="primary"
+          type="button"
+          onClick={onConflictsImport}
+          disabled={classNameProblemCount > 0}
+        >
           Import
         </Button>
       </>

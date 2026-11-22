@@ -24,6 +24,9 @@ export const permissions = {
   membersRead: 'members.read',
   membersWrite: 'members.write',
   membersTags: 'members.tags',
+  visitorsIp: 'visitors.ip',
+  mailSend: 'mail.send',
+  mailSendExternal: 'mail.send.external',
   // Unsandboxed admin-window code — required for `entrypoints.editor` and
   // app-kind admin pages. See `capabilities.ts` for the trust implications.
   editorCode: 'editor.code',
@@ -31,6 +34,7 @@ export const permissions = {
   editorCommands: 'editor.commands',
   editorStoreRead: 'editor.store.read',
   editorStoreWrite: 'editor.store.write',
+  editorFragments: 'editor.fragments',
   editorCanvas: 'editor.canvas',
   editorPanels: 'editor.panels',
   dashboardWidgetsRegister: 'dashboard.widgets.register',

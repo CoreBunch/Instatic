@@ -158,7 +158,7 @@ describe('applyConflictResolutions', () => {
       fonts: [],
       googleFonts: [],
       conditions: [],
-      conflicts: { pages: [], rules: [], tokens: [] },
+      conflicts: { pages: [], rules: [], tokens: [], crossSheetClasses: [], files: [], media: [] },
       warnings: [],
       colors: [],
       fontTokens: [],
@@ -434,7 +434,7 @@ function makeTokenPlan(
     fonts: [],
     googleFonts: [],
     conditions: [],
-    conflicts: { pages: [], rules: [], tokens: [] },
+    conflicts: { pages: [], rules: [], tokens: [], crossSheetClasses: [], files: [], media: [] },
     warnings: [],
     colors: overrides.colors ?? [],
     fontTokens: overrides.fontTokens ?? [],
@@ -551,6 +551,16 @@ describe('applyConflictResolutions — design tokens', () => {
     expect(result.styleRules[0].styles.backgroundColor).toBe('var(--bg-2)')
     // An unrelated var reference is left untouched.
     expect(result.styleRules[0].styles.color).toBe('var(--ink)')
+  })
+
+  it('renames ancestor and subject together in a bindable class selector', () => {
+    const rule = { ...makeClassRule('when-noplan'), selector: '.acct-plan[data-has-plan="true"] .when-noplan' }
+    const choices: RuleConflict[] = ['acct-plan', 'when-noplan'].map((desiredName) => ({
+      desiredName, source: 'account.css', existingRuleId: desiredName,
+      defaultResolution: { action: 'auto-rename', resolvedName: desiredName + '-2' },
+    }))
+    const result = applyConflictResolutions(makeTokenPlan({ styleRules: [rule] }), [], choices)
+    expect(result.styleRules[0].selector).toBe('.acct-plan-2[data-has-plan="true"] .when-noplan-2')
   })
 
   it('custom rename: renames a colour token to its emitted slug and rewrites refs to it', () => {

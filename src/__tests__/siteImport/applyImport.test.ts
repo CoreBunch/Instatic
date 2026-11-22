@@ -159,6 +159,10 @@ function makeMockAdapter(opts?: {
           ops.push({ type: 'addScripts', args: { scripts }, id: '' })
           return scripts.map((s) => ({ id: nextId(), path: s.path }))
         },
+        reuseSiteFiles(items) {
+          return { files: items.map((i) => ({ id: i.existingFileId, path: '' })), warnings: [] }
+        },
+        orderImportedFiles() {},
       }
       recipe(tx)
     },

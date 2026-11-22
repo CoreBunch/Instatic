@@ -11,20 +11,20 @@ import { useAdminUi } from '@admin/state/adminUi'
 import { SettingsCogSolidIcon } from 'pixel-art-icons/icons/settings-cog-solid'
 import { Button } from '@ui/components/Button'
 
-export function SettingsButton() {
+export function SettingsButton({ labeled = false }: { labeled?: boolean }) {
   const openSettings = useAdminUi((s) => s.openSettings)
 
   return (
     <Button
       variant="ghost"
       size="sm"
-      iconOnly
+      iconOnly={!labeled}
       aria-label="Open settings"
-      tooltip="Settings"
+      tooltip={labeled ? undefined : 'Settings'}
       onClick={() => openSettings('general')}
       data-testid="toolbar-settings-btn"
     >
-      <SettingsCogSolidIcon size={16} aria-hidden="true" />
+      {labeled ? 'Settings' : <SettingsCogSolidIcon size={16} aria-hidden="true" />}
     </Button>
   )
 }

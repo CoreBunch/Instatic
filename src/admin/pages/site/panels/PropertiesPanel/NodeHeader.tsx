@@ -5,6 +5,7 @@
  * Renaming a node mutates `node.label`, which is a structural change — the
  * pencil button is hidden for callers without `site.structure.edit`.
  */
+import { useMobileViewport } from '@admin/lib/mobileViewport'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
@@ -22,6 +23,7 @@ interface NodeHeaderProps {
 }
 
 export function NodeHeader({ nodeId, label, moduleName, onRename }: NodeHeaderProps) {
+  const phone = useMobileViewport()
   const [isEditing, setIsEditing] = useState(false)
   const [layerMenuOpen, setLayerMenuOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -86,7 +88,7 @@ export function NodeHeader({ nodeId, label, moduleName, onRename }: NodeHeaderPr
       <Button
         ref={layerMenuTriggerRef}
         variant="ghost"
-        size="xs"
+        size={phone ? 'md' : 'xs'}
         iconOnly
         aria-haspopup="menu"
         aria-expanded={layerMenuOpen}
@@ -100,7 +102,7 @@ export function NodeHeader({ nodeId, label, moduleName, onRename }: NodeHeaderPr
       {canRename && (
         <Button
           variant="ghost"
-          size="xs"
+          size={phone ? 'md' : 'xs'}
           iconOnly
           onClick={() => setIsEditing(true)}
           aria-label={`Rename ${displayName}`}

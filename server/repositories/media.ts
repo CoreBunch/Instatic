@@ -34,6 +34,13 @@ interface CreateMediaAssetInput {
    * other upload leaves it empty and the user writes it in the Media viewer.
    */
   altText?: string
+  /**
+   * SHA-256 (lowercase hex) of the bytes the client sent, before any server
+   * transform. Site Import matches it to reuse an asset instead of uploading a
+   * copy (`findMediaAssetsByContentHash`). Absent = no hash; the asset is
+   * never matched.
+   */
+  contentHash?: string
 }
 
 export interface UpdateMediaAssetMetadataInput {
@@ -130,6 +137,7 @@ export async function createMediaAsset(
     storage_adapter_id: input.storageAdapterId,
     externally_hosted: input.externallyHosted,
     alt_text: input.altText ?? '',
+    content_hash: input.contentHash ?? null,
   }
   const params = MEDIA_ASSET_INSERT_COLUMNS.map((column) => valuesByColumn[column])
   const placeholders = MEDIA_ASSET_INSERT_COLUMNS.map((_, i) => placeholder(db.dialect, i + 1)).join(', ')
@@ -383,6 +391,7 @@ export async function replaceMediaAssetBinary(
     publicPath: string
     storageAdapterId: string
     externallyHosted: boolean
+    contentHash: string | null
   },
 ): Promise<MediaAsset | null> {
   const nowIso = new Date().toISOString()
@@ -396,8 +405,9 @@ export async function replaceMediaAssetBinary(
        public_path = ${p(5)},
        storage_adapter_id = ${p(6)},
        externally_hosted = ${p(7)},
-       replaced_at = ${p(8)}
-     where id = ${p(9)}
+       replaced_at = ${p(8)},
+       content_hash = ${p(9)}
+     where id = ${p(10)}
      returning ${MEDIA_ASSET_COLUMNS}`,
     [
       input.filename,
@@ -408,12 +418,61 @@ export async function replaceMediaAssetBinary(
       input.storageAdapterId,
       input.externallyHosted,
       nowIso,
+      input.contentHash,
       id,
     ],
   )
   if (rows.length === 0) return null
   const assets = await hydrateAssets(db, rows)
   return assets[0] ?? null
+}
+
+/** One live asset whose stored content hash matched a lookup. */
+export interface MediaContentHashMatch {
+  contentHash: string
+  id: string
+  publicPath: string
+  filename: string
+}
+
+const CONTENT_HASH_LOOKUP_CHUNK = 500
+
+/**
+ * Live (not trashed) assets whose `content_hash` is one of `contentHashes`.
+ * Several assets can share a hash (uploads from before Site Import reused
+ * them); the oldest comes first so callers that keep one per hash keep it.
+ */
+export async function findMediaAssetsByContentHash(
+  db: DbClient,
+  contentHashes: string[],
+): Promise<MediaContentHashMatch[]> {
+  const unique = [...new Set(contentHashes)]
+  const matches: MediaContentHashMatch[] = []
+  for (let start = 0; start < unique.length; start += CONTENT_HASH_LOOKUP_CHUNK) {
+    const chunk = unique.slice(start, start + CONTENT_HASH_LOOKUP_CHUNK)
+    const placeholders = chunk.map((_, i) => placeholder(db.dialect, i + 1)).join(', ')
+    const { rows } = await db.unsafe<{
+      content_hash: string
+      id: string
+      public_path: string
+      filename: string
+    }>(
+      `select content_hash, id, public_path, filename
+       from media_assets
+       where content_hash in (${placeholders}) and deleted_at is null
+       order by created_at asc, id asc`,
+      chunk,
+    )
+    for (const row of rows) {
+      matches.push({
+        contentHash: row.content_hash,
+        id: row.id,
+        publicPath: row.public_path,
+        filename: row.filename,
+      })
+    }
+  }
+  return matches
 }
 
 /**
@@ -535,6 +594,12 @@ interface ImportMediaAssetInput {
   storageAdapterId?: string
   /** Optional; defaults to false when omitted. */
   externallyHosted?: boolean
+  /**
+   * SHA-256 hex of the bundle's bytes for this asset, before SVG sanitising
+   * (the same rule as an upload's `content_hash`). Written on insert and on
+   * update, so bytes overwritten at an existing id never keep a stale hash.
+   */
+  contentHash: string
 }
 
 /**
@@ -560,7 +625,7 @@ export async function importMediaAsset(
       id, filename, mime_type, size_bytes, storage_path, public_path,
       alt_text, caption, title, tags_json, width, height, duration_ms,
       dominant_color, blur_hash, poster_path,
-      storage_adapter_id, externally_hosted
+      storage_adapter_id, externally_hosted, content_hash
     )
     values (
       ${input.id}, ${input.filename}, ${input.mimeType}, ${input.sizeBytes},
@@ -568,7 +633,7 @@ export async function importMediaAsset(
       ${input.altText}, ${input.caption}, ${input.title}, ${tags},
       ${input.width}, ${input.height}, ${input.durationMs},
       ${input.dominantColor}, ${input.blurHash}, ${input.posterPath},
-      ${storageAdapterId}, ${externallyHosted}
+      ${storageAdapterId}, ${externallyHosted}, ${input.contentHash}
     )
     on conflict (id) do update
       set filename      = excluded.filename,
@@ -587,6 +652,7 @@ export async function importMediaAsset(
           blur_hash     = excluded.blur_hash,
           poster_path   = excluded.poster_path,
           storage_adapter_id = excluded.storage_adapter_id,
-          externally_hosted = excluded.externally_hosted
+          externally_hosted = excluded.externally_hosted,
+          content_hash  = excluded.content_hash
   `
 }

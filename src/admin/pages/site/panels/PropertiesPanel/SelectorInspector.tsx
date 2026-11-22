@@ -1,3 +1,5 @@
+import { selectStyleContextId, storedRuleStyles } from '@site/store/useActiveStyleTarget'
+import { useEditorStore } from '@site/store/store'
 /**
  * SelectorInspector — Properties panel body when a class is selected via the
  * global Selectors panel (no node context, just the rule + style sections).
@@ -20,7 +22,6 @@ import { useScrollSpy } from './useScrollSpy'
 import {
   CLASS_STYLE_SECTIONS,
   getClassStyleSectionSetCounts,
-  getActiveStyleTab,
 } from './cssControlTypes'
 import styles from './PropertiesPanel.module.css'
 
@@ -28,13 +29,13 @@ const FIRST_STYLE_SECTION_ID = CLASS_STYLE_SECTIONS[0].id
 
 interface SelectorInspectorProps {
   cls: StyleRule
-  activeBreakpointId: string | undefined
 }
 
-export function SelectorInspector({ cls, activeBreakpointId }: SelectorInspectorProps) {
+export function SelectorInspector({ cls }: SelectorInspectorProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [styleQuery, setStyleQuery] = useState('')
   const clearStyleQuery = () => setStyleQuery('')
+  const contextId = useEditorStore(selectStyleContextId)
   const selectorLabel = styleRuleSelector(cls)
 
   // Active section + click-to-scroll behaviour (shared with StyleSurface).
@@ -50,8 +51,7 @@ export function SelectorInspector({ cls, activeBreakpointId }: SelectorInspector
     )
   }
 
-  const activeTab = getActiveStyleTab(activeBreakpointId)
-  const storedStyles = activeTab !== 'base' ? (cls.contextStyles[activeTab] ?? {}) : cls.styles
+  const storedStyles = storedRuleStyles(cls, contextId)
   const sectionSetCounts = getClassStyleSectionSetCounts(storedStyles)
 
   return (
@@ -72,15 +72,6 @@ export function SelectorInspector({ cls, activeBreakpointId }: SelectorInspector
         />
       </div>
       <div className={styles.selectorSurfaceLayout}>
-        <div ref={scrollRef} className={styles.selectorScrollContainer}>
-          <StyleRuleComposer
-            key={cls.id}
-            classId={cls.id}
-            cls={cls}
-            styleQuery={styleQuery}
-            mode="global"
-          />
-        </div>
         <StyleCategoryRail
           activeAnchorId={activeAnchorId}
           sectionSetCounts={sectionSetCounts}
@@ -88,6 +79,13 @@ export function SelectorInspector({ cls, activeBreakpointId }: SelectorInspector
           definition={null}
           activeClass={cls}
         />
+        <div ref={scrollRef} className={styles.selectorScrollContainer}>
+          <StyleRuleComposer
+            key={cls.id}
+            cls={cls}
+            styleQuery={styleQuery}
+          />
+        </div>
       </div>
     </div>
   )

@@ -11,6 +11,8 @@
  *   cells.templateEnabled    → page.template.enabled
  *   cells.templateTarget     → page.template.target (stored as JSON object)
  *   cells.templatePriority   → page.template.priority
+ *   cells.access             → page.access (absent = public)
+ *   cells.seo                → page.seo (absent = no page-level head settings)
  *
  * Ownership is mapped between DataRow user-id columns and Page optional fields:
  *   row.authorUserId        → page.ownerUserId
@@ -19,7 +21,7 @@
  */
 
 import type { Page, PageNode, PageTemplateConfig } from '@core/page-tree'
-import { parsePageNode, parsePageTemplate } from '@core/page-tree'
+import { parsePageNode, parsePageSeo, parsePageTemplate } from '@core/page-tree'
 import type { DataRow, DataRowCells } from '@core/data/schemas'
 import { parseAccessRule } from '@core/members'
 
@@ -64,6 +66,7 @@ export function pageFromRow(row: DataRow): Page {
   // Template reconstruction
   const template = readTemplateFromCells(cells)
   const access = parseAccessRule(cells.access)
+  const seo = parsePageSeo(cells.seo)
 
   return {
     id: row.id,
@@ -73,6 +76,7 @@ export function pageFromRow(row: DataRow): Page {
     rootNodeId,
     ...(template !== null ? { template } : {}),
     ...(access.level !== 'public' ? { access } : {}),
+    ...(seo ? { seo } : {}),
     ownerUserId: row.authorUserId ?? null,
     createdByUserId: row.createdByUserId ?? null,
     updatedByUserId: row.updatedByUserId ?? null,
@@ -126,6 +130,10 @@ export function pageToCells(page: Page): DataRowCells {
     cells.templatePriority = page.template.priority
   }
   if (page.access && page.access.level !== 'public') cells.access = page.access
+  // Normalised on the way out too: the editor store and the agent tool are
+  // not the only writers of a Page, and the cell must only hold a valid value.
+  const seo = parsePageSeo(page.seo)
+  if (seo) cells.seo = seo
 
   return cells
 }

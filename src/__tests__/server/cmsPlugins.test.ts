@@ -204,6 +204,15 @@ function makeFakeDb() {
     if (normalized.includes('delete from plugin_schedule_runs')) {
       return { rows: [], rowCount: 0 }
     }
+    // removePluginMail — the uninstall sweep of a plugin's template edits,
+    // queued email and limit counters. No plugin in these tests declares or sends email.
+    if (
+      normalized.includes('from mail_templates') ||
+      normalized.includes('from mail_queue') ||
+      normalized.includes('delete from mail_counters')
+    ) {
+      return { rows: [], rowCount: 0 }
+    }
     // clearPluginCrashes — values[0]=pluginId
     if (normalized.includes('delete from plugin_crash_events')) {
       const before = crashEvents.length
@@ -212,7 +221,12 @@ function makeFakeDb() {
       crashEvents.push(...remaining)
       return { rows: [], rowCount: before - remaining.length }
     }
-    // createPluginRecord — values[0..3]=id, pluginId, resourceId, dataJson
+    // createPluginRecord — values[0..4]=id, pluginId, resourceId, dataJson, uniqueKey
+    // installPluginWithRecordKeys: clears stored record keys of the declared
+    // resources (none of these plugins declares a uniqueField).
+    if (normalized.includes('update plugin_records set unique_key = null')) {
+      return { rows: [], rowCount: 0 }
+    }
     if (normalized.includes('insert into plugin_records')) {
       const now = new Date('2026-05-01T10:10:00.000Z').toISOString()
       const row = {
@@ -220,6 +234,8 @@ function makeFakeDb() {
         plugin_id: values[1],
         resource_id: values[2],
         data_json: values[3],
+        unique_key: values[4] ?? null,
+        version: 0,
         created_at: now,
         updated_at: now,
       }
@@ -234,6 +250,11 @@ function makeFakeDb() {
     // Post-activation schedule ghost sweep (disableSchedulesNotReclaimedSince)
     // — these tests register no schedules, so the sweep matches nothing.
     if (normalized.includes('update plugin_schedules')) {
+      return { rows: [], rowCount: 0 }
+    }
+    // Uninstall withdraws the plugin's app scopes (withdrawPluginAppScopes).
+    // No app is registered and no member signed in here, so both lists are empty.
+    if (normalized.includes('from member_app_grants') || normalized.includes('from member_apps')) {
       return { rows: [], rowCount: 0 }
     }
     throw new Error(`Unhandled SQL: ${sql}`)
@@ -1629,6 +1650,76 @@ describe('CMS plugin handlers', () => {
     // Cleanup so this test doesn't leak counter state into siblings.
     clearPluginCrashCounter(id)
   })
+
+  // ─── Auto-respawn after a crash: a failed re-activation ───────────────────
+
+  it('a re-activation that fails after a crash unloads the plugin and sets error', async () => {
+    const uploadsDir = await mkdtemp(join(tmpdir(), 'instatic-respawn-'))
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+    const { handleWorkerCrash, clearPluginCrashCounter } = await import('../../../server/plugins/host/crashRecovery')
+    const { findPluginRouteAccess, unloadPluginInWorker } = await import('../../../server/plugins/host/rpc')
+    const { workers } = await import('../../../server/plugins/host/workerState')
+    const { writeFile } = await import('node:fs/promises')
+    const id = 'test.respawn'
+    const entry = join(uploadsDir, 'plugins', id, '1.0.0', 'server', 'index.js')
+    try {
+      const formData = new FormData()
+      formData.set('file', pluginZip({
+        'plugin.json': JSON.stringify({
+          id,
+          name: 'Respawn Demo',
+          version: '1.0.0',
+          apiVersion: 1,
+          permissions: ['cms.routes', 'cms.routes.public'],
+          entrypoints: { server: 'server/index.js' },
+          resources: [],
+          adminPages: [],
+        }),
+        'server/index.js': `
+          export async function activate(api) {
+            api.cms.routes.public.get('/ping', async () => ({ ok: true }))
+          }
+        `,
+      }))
+      formData.set('grantedPermissions', JSON.stringify(['cms.routes', 'cms.routes.public']))
+      const install = await handleCmsRequest(
+        cmsFormRequest('http://localhost/admin/api/cms/plugins/package', formData, { cookie }),
+        db,
+        { uploadsDir },
+      )
+      expect(install.status).toBe(201)
+      // What the server does at boot: load every installed plugin and
+      // register the recovery handler for this database.
+      const { activateInstalledServerPlugins } = await import('../../../server/plugins/runtime')
+      await activateInstalledServerPlugins(db, uploadsDir)
+      expect(findPluginRouteAccess(id, 'GET', '/ping')).not.toBeNull()
+
+      // The worker crashes; on the way back up, activate registers its route
+      // and then cannot finish.
+      await writeFile(entry, `
+        export async function activate(api) {
+          api.cms.routes.public.get('/ping', async () => ({ ok: true }))
+          await new Promise((r) => setTimeout(r, 20))
+          throw new Error('cannot start')
+        }
+      `)
+      handleWorkerCrash(id, 'boom')
+      const giveUpAt = Date.now() + 20_000
+      while (db.plugins[0].lifecycle_status !== 'error') {
+        if (Date.now() > giveUpAt) throw new Error('status never became error')
+        await new Promise((res) => setTimeout(res, 25))
+      }
+      expect(db.plugins[0].last_error).toContain('cannot start')
+      // Status and behaviour agree: the route it registered before failing is gone.
+      expect(findPluginRouteAccess(id, 'GET', '/ping')).toBeNull()
+      expect(workers.has(id)).toBe(false)
+      await unloadPluginInWorker(id)
+    } finally {
+      clearPluginCrashCounter(id)
+      await rm(uploadsDir, { recursive: true, force: true })
+    }
+  }, 60_000)
 
   // ─── Manual restart endpoint ──────────────────────────────────────────────
 

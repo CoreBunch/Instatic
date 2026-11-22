@@ -1,4 +1,5 @@
 .menu {
+    --context-menu-radius: var(--card-radius);
     position: fixed;
     left: var(--context-menu-x);
     top: var(--context-menu-y);
@@ -8,7 +9,7 @@
     overflow: hidden;
     padding: var(--space-3xs);
     border: 0;
-    border-radius: 16px;
+    border-radius: var(--context-menu-radius);
     background: var(--bg-surface-3);
     box-shadow: 0 12px 28px var(--scrim-50);
     /* Anchor the subtle scale to the menu's top edge — the menu drops down
@@ -103,7 +104,7 @@
     min-height: 28px;
     padding: 0 var(--space-m);
     gap: var(--space-m);
-    border-radius: 12px;
+    border-radius: calc(var(--context-menu-radius) - var(--space-3xs));
     font-size: var(--text-s);
     font-weight: 560;
     color: var(--text);

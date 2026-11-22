@@ -88,9 +88,10 @@ describe('agent-tool-surface gate', () => {
   it('template tools are present', () => {
     expect(toolNames).toContain('site_set_page_template')
     expect(toolNames).toContain('site_clear_page_template')
+    expect(toolNames).toContain('site_set_page_seo')
   })
 
-  it('total tool count is 29 (document, HTML, node, CSS, code asset, page, template, token, and snapshot tools)', () => {
-    expect(toolNames).toHaveLength(29)
+  it('total tool count is 30 (document, HTML, node, CSS, code asset, page, page head, template, token, and snapshot tools)', () => {
+    expect(toolNames).toHaveLength(30)
   })
 })

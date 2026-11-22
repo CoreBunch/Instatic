@@ -1,12 +1,11 @@
 import { Fragment, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { useDroppable } from '@dnd-kit/core'
-import type { IconComponent } from 'pixel-art-icons/types'
 import { FolderGlyphIcon } from 'pixel-art-icons/icons/folder-glyph'
+import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { Button } from '@ui/components/Button'
-import { EmptyState } from '@ui/components/EmptyState'
 import { cn } from '@ui/cn'
 import {
-  TreeContainer,
+  TreeContainer, TreeChevron,
   treeDropStyles,
 } from '@site/ui/Tree'
 import type { SiteExplorerSectionId } from '@core/page-tree'
@@ -36,7 +35,6 @@ interface SiteExplorerTreeSectionProps<TTarget> {
   title: string
   count: number
   actionLabel: string
-  actionIcon: IconComponent
   model: SiteExplorerTreeSectionModel<TTarget> | SiteExplorerStructuralSectionModel<TTarget>
   dropTarget: SiteExplorerDropTarget | null
   inlineRenameTarget: SiteExplorerInlineRenameTarget | null
@@ -52,14 +50,12 @@ interface SiteExplorerTreeSectionProps<TTarget> {
   onKeyDownItem: (item: SiteExplorerTreeItem<TTarget>, event: KeyboardEvent<HTMLButtonElement>) => void
   onContextMenuFolder: (folder: SiteExplorerTreeFolder, event: MouseEvent<HTMLButtonElement>) => void
   onKeyDownFolder: (folder: SiteExplorerTreeFolder, event: KeyboardEvent<HTMLButtonElement>) => void
-  emptyLabel?: string
 }
 
 export function SiteExplorerTreeSection<TTarget>({
   title,
   count,
   actionLabel,
-  actionIcon,
   model,
   dropTarget,
   inlineRenameTarget,
@@ -75,10 +71,9 @@ export function SiteExplorerTreeSection<TTarget>({
   onKeyDownItem,
   onContextMenuFolder,
   onKeyDownFolder,
-  emptyLabel = 'None yet',
 }: SiteExplorerTreeSectionProps<TTarget>) {
   const [expandedFolderIds, setExpandedFolderIds] = useState(() => new Set(initialExpandedFolderIds(model)))
-  const ActionIcon = actionIcon
+  const [expanded, setExpanded] = useState(true)
   const hasRows = model.pinnedItems.length > 0 || model.rootEntries.length > 0
   const rootDrop = useDroppable({
     id: `site-explorer-drop-root:${model.sectionId}`,
@@ -105,19 +100,24 @@ export function SiteExplorerTreeSection<TTarget>({
   }
 
   return (
-    <section className={styles.section} aria-labelledby={`site-section-${title.toLowerCase()}`}>
-      <div className={styles.sectionHeader}>
+    <section className={cn(styles.section, styles.explorerBranch)} aria-labelledby={`site-section-${title.toLowerCase()}`}>
+      <div className={cn(styles.sectionHeader, styles.branchHeader)}>
         <h2 id={`site-section-${title.toLowerCase()}`} className={styles.sectionTitle}>
-          {title}
+          <Button variant="ghost" size="sm" align="start" aria-expanded={expanded}
+            aria-controls={`site-branch-${model.sectionId}`} className={styles.branchToggle}
+            onClick={() => setExpanded(!expanded)}>
+            {title}
+            <span className={styles.branchCount} aria-hidden="true">{count}</span>
+            <TreeChevron expanded={expanded} className={styles.branchChevron} />
+          </Button>
         </h2>
-        <span className={styles.sectionCount}>{count}</span>
         <Button
           variant="ghost"
           size="xs"
           iconOnly
           aria-label={`New ${title.toLowerCase()} folder`}
           tooltip={`New ${title.toLowerCase()} folder`}
-          onClick={onCreateFolder}
+          onClick={() => { setExpanded(true); onCreateFolder() }}
         >
           <FolderGlyphIcon size={13} />
         </Button>
@@ -127,23 +127,20 @@ export function SiteExplorerTreeSection<TTarget>({
           iconOnly
           aria-label={actionLabel}
           tooltip={actionLabel}
-          onClick={onAction}
+          onClick={() => { setExpanded(true); onAction() }}
         >
-          <ActionIcon size={13} />
+          <PlusIcon size={13} />
         </Button>
       </div>
 
       <TreeContainer
+        id={`site-branch-${model.sectionId}`}
         ariaLabel={title}
-        className={cn(styles.treeRows, rootDropActive && treeDropStyles.dropRoot)}
+        className={cn(styles.treeRows, styles.branchRows, !expanded && styles.collapsedBranch, rootDropActive && treeDropStyles.dropRoot)}
         containerRef={rootDrop.setNodeRef}
       >
         {!hasRows ? (
-          <EmptyState
-            compact
-            title={emptyLabel}
-            className={styles.sectionEmpty}
-          />
+          <span className={styles.emptyBranch}>No {title.toLowerCase()} yet</span>
         ) : (
           <>
             {model.pinnedItems.map((item) => (

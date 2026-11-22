@@ -23,9 +23,9 @@ import { saveMailDefaults } from '../../../server/mail/defaults'
 import {
   MailNotConfiguredError,
   sendSiteMail,
-  sendTemplateMail,
   type MailCarrier,
 } from '../../../server/mail/send'
+import { queueTemplateMail } from '../../../server/mail/delivery'
 import { signAwsRequest, sendViaSes } from '../../../server/mail/sesDriver'
 import { formatFromHeader, MailDeliveryError, resolveSmtpAddress } from '../../../server/mail/smtpDriver'
 
@@ -130,7 +130,7 @@ describe('site mail', () => {
         status: 'sent', body: null, error: null, connectorLabel: 'Main relay', providerMessageId: '<provider-id-1>',
       })
       expect(entries[0].durationMs).toBeGreaterThanOrEqual(0)
-      expect(totals).toEqual({ sent: 1, failed: 0, captured: 0 })
+      expect(totals).toEqual({ queued: 0, sent: 1, failed: 0, captured: 0 })
     })
 
     it('logs a failed delivery on the connector and in the activity, without the body', async () => {
@@ -224,7 +224,7 @@ describe('site mail', () => {
 
     it('sends the built-in wording until an owner edits it, then the edit, then the built-in again', async () => {
       const env = { NODE_ENV: 'development' }
-      const send = () => sendTemplateMail(
+      const send = () => queueTemplateMail(
         h.db,
         { key: 'test.welcome', to: MESSAGE.to, variables: { 'member.name': 'Grace', link: 'https://example.com/c' } },
         { env },
@@ -576,7 +576,7 @@ describe('site mail', () => {
       const searched = await read('q=ADA')
       expect(searched.entries.map((entry) => entry.to)).toEqual(['ada@example.com'])
       expect(searched.matching).toBe(1)
-      expect(searched.totals).toEqual({ sent: 1, failed: 1, captured: 1 })
+      expect(searched.totals).toEqual({ queued: 0, sent: 1, failed: 1, captured: 1 })
       expect(searched.lastFailure?.error).toBe('Rejected')
 
       const welcome = await read('kind=test.welcome')
@@ -623,12 +623,12 @@ describe('site mail', () => {
       ])
       expect(week.buckets[5]).toMatchObject({ sent: 0, failed: 1 })
       expect(week.buckets[6]).toMatchObject({ sent: 1, failed: 0 })
-      expect(week.totals).toEqual({ sent: 1, failed: 1, captured: 0 })
+      expect(week.totals).toEqual({ queued: 0, sent: 1, failed: 1, captured: 0 })
       expect(week.matching).toBe(2)
 
       const day = await listMailActivity(h.db, { period: '24h', timeZone: 'not/a-zone' }, now)
       expect(day.buckets).toHaveLength(24)
-      expect(day.totals).toEqual({ sent: 1, failed: 1, captured: 0 })
+      expect(day.totals).toEqual({ queued: 0, sent: 1, failed: 1, captured: 0 })
     })
 
     it('filters the activity by status', async () => {

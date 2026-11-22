@@ -258,7 +258,7 @@ export function FieldTypeSettings({
                 />
                 <Button
                   variant="ghost"
-                  size="xs"
+                  size="sm"
                   iconOnly
                   type="button"
                   aria-label="Remove option"

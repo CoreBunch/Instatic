@@ -11,8 +11,13 @@
  *   POST   /admin/api/cms/members/:id/suspend         — block sign-in, end open sessions
  *   POST   /admin/api/cms/members/:id/unsuspend
  *   POST   /admin/api/cms/members/:id/sign-out        — end every session
+ *   GET    /admin/api/cms/members/:id/export          — everything held about the member, plugins included
  *   POST   /admin/api/cms/members/:id/tags            — grant a tag
  *   DELETE /admin/api/cms/members/:id/tags            — withdraw one source's grant of a tag
+ *   DELETE /admin/api/cms/members/:id/apps/:grantId   — sign the member out of one app
+ *   GET    /admin/api/cms/members/apps                — apps that may sign a member in
+ *   POST   /admin/api/cms/members/apps                — register one (step-up)
+ *   DELETE /admin/api/cms/members/apps/:id            — remove one, signing everyone out of it (step-up)
  *
  * Reading needs `members.read` or `members.manage`; every change needs
  * `members.manage`. All SQL for the member tables lives in `server/members`
@@ -21,11 +26,13 @@
  */
 import type { DbClient } from '../../db/client'
 import {
+  CreateMemberAppBodySchema,
   isGrantableMemberTag,
   MemberInviteInputSchema,
   MemberSettingsSchema,
   MemberTagInputSchema,
   MemberTagRemoveInputSchema,
+  memberDataFilename,
   type MemberAdminStatus,
   type MemberDetail,
   type MemberSettings,
@@ -36,6 +43,7 @@ import { badRequest, jsonResponse, readValidatedBody } from '../../http'
 import {
   ADMIN_TAG_SOURCE,
   deleteMemberAsAdmin,
+  disconnectMemberAppAsAdmin,
   getMemberForAdmin,
   inviteMember,
   listMembersForAdmin,
@@ -43,14 +51,21 @@ import {
   signOutMemberEverywhere,
 } from '../../members/admin'
 import { memberLinkOrigin, memberMailAvailable } from '../../members/mail'
+import { createMemberApp, deleteMemberApp, findMemberApp, listMemberApps } from '../../members/apps/store'
+import { isAvailableMemberAppScope, listAvailableMemberAppScopes } from '../../members/apps/scopes'
 import { listMemberPageOptions } from '../../members/pages'
 import {
+  findMemberById,
   getMemberSettings,
   grantMemberTag,
   recordMemberEvent,
   revokeMemberTag,
   saveMemberSettings,
 } from '../../members/repository'
+import { parseAllowedRedirectUri } from '../../oauth/protocol'
+import { exportMemberDataWithPlugins } from '../../plugins/host/memberExport'
+import { memberLimits } from '../../members/limits'
+import { isCrossSiteFetch } from '../../auth/security'
 import { createAuditEvent, type AuditAction } from '../../repositories/audit'
 import type { AuthUser } from '../../repositories/users'
 import { CMS_API_PREFIX, requestAuditContext } from './shared'
@@ -194,6 +209,43 @@ async function handleSignOut(req: Request, db: DbClient, params: RouteParams): P
   return jsonResponse({ detail })
 }
 
+/** Everything the site holds about one member, plugins' sections included, as a download. */
+async function handleExport(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
+  // A link on another site must not start an export (it asks every plugin).
+  if (isCrossSiteFetch(req)) return jsonResponse({ error: 'Forbidden' }, { status: 403 })
+  const user = await manager(req, db)
+  if (user instanceof Response) return user
+  const member = await findMemberById(db, params.id)
+  if (!member) return notFound()
+  const allowed = memberLimits.adminExportPerUser.consume(user.id)
+  if (!allowed.ok) {
+    return jsonResponse(
+      { error: 'Too many member data downloads. Try again later.' },
+      { status: 429, headers: { 'retry-after': String(Math.ceil(allowed.retryAfterMs / 1000)) } },
+    )
+  }
+  const data = await exportMemberDataWithPlugins(db, member)
+  await audit(db, req, user, 'member.export', member.id, { email: member.email })
+  return jsonResponse(data, {
+    headers: {
+      'cache-control': 'no-store',
+      'content-disposition': `attachment; filename="${memberDataFilename(member.id)}"`,
+    },
+  })
+}
+
+async function handleDisconnectApp(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
+  const user = await manager(req, db)
+  if (user instanceof Response) return user
+  const appName = await disconnectMemberAppAsAdmin(db, params.id, params.grantId)
+  if (appName === null) {
+    return jsonResponse({ error: 'That app is not signed in to this account' }, { status: 404 })
+  }
+  const detail = await getMemberForAdmin(db, params.id)
+  await audit(db, req, user, 'member.app.disconnect', params.id, { ...emailOf(detail), app: appName })
+  return jsonResponse({ detail })
+}
+
 async function handleDelete(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
   const user = await manager(req, db, true)
   if (user instanceof Response) return user
@@ -257,7 +309,7 @@ async function handleGetSettings(req: Request, db: DbClient): Promise<Response> 
 function settingsProblem(settings: MemberSettings): string | null {
   const ids = settings.profileFields.map((field) => field.id)
   if (new Set(ids).size !== ids.length) return 'Two profile fields share an id.'
-  const reserved = ['email', 'password', 'token', 'currentPassword', 'newPassword']
+  const reserved = ['email', 'password', 'token', 'request', 'decision', 'connection', 'currentPassword', 'newPassword']
   const clash = ids.find((id) => reserved.includes(id))
   return clash ? `"${clash}" is used by the member forms and cannot be a profile field id.` : null
 }
@@ -278,24 +330,86 @@ async function handleSaveSettings(req: Request, db: DbClient): Promise<Response>
   return settingsResponse(req, db, settings)
 }
 
+// ─── Sign-in for apps ──────────────────────────────────────────────────────
+
+async function auditApp(
+  db: DbClient,
+  req: Request,
+  user: AuthUser,
+  action: 'member.app.create' | 'member.app.delete',
+  app: { id: string; name: string },
+): Promise<void> {
+  await createAuditEvent(db, {
+    actorUserId: user.id,
+    action,
+    targetType: 'member_app',
+    targetId: app.id,
+    metadata: { name: app.name },
+    ...requestAuditContext(req),
+  })
+}
+
+async function handleListApps(req: Request, db: DbClient): Promise<Response> {
+  const user = await reader(req, db)
+  if (user instanceof Response) return user
+  return jsonResponse({ apps: await listMemberApps(db), availableScopes: listAvailableMemberAppScopes() })
+}
+
+async function handleCreateApp(req: Request, db: DbClient): Promise<Response> {
+  const user = await manager(req, db, true)
+  if (user instanceof Response) return user
+  const input = await readValidatedBody(req, CreateMemberAppBodySchema)
+  if (!input) return badRequest('An app needs a name, at least one redirect address and at least one thing it may ask for')
+  const name = input.name.trim()
+  if (!name) return badRequest('Give the app a name')
+  const redirectUris = [...new Set(input.redirectUris.map((uri) => uri.trim()))]
+  if (!redirectUris.every((uri) => parseAllowedRedirectUri(uri) !== null)) {
+    return badRequest('Redirect addresses must use https, or http on this machine (127.0.0.1).')
+  }
+  if (new Set(input.scopes).size !== input.scopes.length) return badRequest('Name each thing the app may ask for once')
+  if (!input.scopes.every(isAvailableMemberAppScope)) {
+    return badRequest('The app may only ask for what this site offers: the built-in access and that of active plugins.')
+  }
+  const app = await createMemberApp(db, { name, redirectUris, scopes: input.scopes, createdByUserId: user.id })
+  await auditApp(db, req, user, 'member.app.create', app)
+  return jsonResponse(app, { status: 201 })
+}
+
+async function handleDeleteApp(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
+  const user = await manager(req, db, true)
+  if (user instanceof Response) return user
+  const app = await findMemberApp(db, params.id)
+  if (!app || !(await deleteMemberApp(db, app.id))) return jsonResponse({ error: 'App not found' }, { status: 404 })
+  await auditApp(db, req, user, 'member.app.delete', app)
+  return jsonResponse({ ok: true })
+}
+
 // ─── Routes ────────────────────────────────────────────────────────────────
 
 const MEMBER = new RegExp(`^${MEMBERS_PREFIX}/(?<id>[^/]+)$`)
+const APP = new RegExp(`^${MEMBERS_PREFIX}/apps/(?<id>[^/]+)$`)
+/** Three segments deep, so it never meets the two-segment registry route `apps/:id` (`APP`). */
+const MEMBER_APP = new RegExp(`^${MEMBERS_PREFIX}/(?<id>[^/]+)/apps/(?<grantId>[^/]+)$`)
 const action = (name: string) => new RegExp(`^${MEMBERS_PREFIX}/(?<id>[^/]+)/${name}$`)
 
-// The fixed paths come first: `invite` and `settings` would otherwise match `:id`.
+// The fixed paths come first: `invite`, `settings` and `apps` would otherwise match `:id`.
 const ROUTES: Route<[]>[] = [
   { method: 'GET', pattern: MEMBERS_PREFIX, handler: handleList },
   { method: 'POST', pattern: `${MEMBERS_PREFIX}/invite`, handler: handleInvite },
   { method: 'GET', pattern: `${MEMBERS_PREFIX}/settings`, handler: handleGetSettings },
   { method: 'PUT', pattern: `${MEMBERS_PREFIX}/settings`, handler: handleSaveSettings },
+  { method: 'GET', pattern: `${MEMBERS_PREFIX}/apps`, handler: handleListApps },
+  { method: 'POST', pattern: `${MEMBERS_PREFIX}/apps`, handler: handleCreateApp },
+  { method: 'DELETE', pattern: APP, handler: handleDeleteApp },
   { method: 'GET', pattern: MEMBER, handler: handleDetail },
   { method: 'DELETE', pattern: MEMBER, handler: handleDelete },
   { method: 'POST', pattern: action('suspend'), handler: (req, db, params) => handleSuspend(req, db, params, true) },
   { method: 'POST', pattern: action('unsuspend'), handler: (req, db, params) => handleSuspend(req, db, params, false) },
   { method: 'POST', pattern: action('sign-out'), handler: handleSignOut },
+  { method: 'GET', pattern: action('export'), handler: handleExport },
   { method: 'POST', pattern: action('tags'), handler: handleGrantTag },
   { method: 'DELETE', pattern: action('tags'), handler: handleRevokeTag },
+  { method: 'DELETE', pattern: MEMBER_APP, handler: handleDisconnectApp },
 ]
 
 export function handleMembersRoutes(req: Request, db: DbClient): Promise<Response | null> {

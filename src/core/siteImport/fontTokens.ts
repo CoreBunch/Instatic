@@ -9,7 +9,7 @@ import {
   sanitizeFontFallbackStack,
 } from '@core/fonts'
 import type { NewStyleRule, ImportFontToken } from './types'
-import { isRootScopeSelector } from './rootScope'
+import { isRootScopeSelector } from '@core/page-tree'
 
 const GENERIC_FAMILIES = new Set([
   'serif',

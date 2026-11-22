@@ -223,7 +223,7 @@ function parseFontEntry(raw: unknown): FontEntry | null {
 // FontToken
 // ---------------------------------------------------------------------------
 
-const FontTokenSchema = Type.Object({
+export const FontTokenSchema = Type.Object({
   id: Type.String({ minLength: 1 }),
   name: Type.String({ minLength: 1 }),
   /**

@@ -60,7 +60,7 @@ export function ClassGeneratorRow<C extends GeneratorShape>({
       />
       <Button
         variant="ghost"
-        size="xs"
+        size="sm"
         iconOnly
         aria-label="Delete class"
         onClick={() => onDelete(generator.id)}

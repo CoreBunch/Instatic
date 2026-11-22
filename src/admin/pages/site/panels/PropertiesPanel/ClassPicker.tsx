@@ -12,6 +12,7 @@ import {
   type Ref,
 } from 'react'
 import { useEditorStore, selectActiveCanvasPage } from '@site/store/store'
+import { selectStyleContextId } from '@site/store/useActiveStyleTarget'
 import { useEditorPreference } from '@site/preferences/editorPreferences'
 import { classifySelectorCreateInput, styleRuleSelector } from '@core/page-tree'
 import { recordClassUsage } from '@site/preferences/classUsage'
@@ -82,6 +83,9 @@ export function ClassPicker({ nodeId, trailingAction, ref }: ClassPickerProps) {
   const site = useEditorStore((s) => s.site)
   const node = useEditorStore((s) => selectActiveCanvasPage(s)?.nodes[nodeId] ?? null)
   const activeClassId = useEditorStore((s) => s.activeClassId)
+  const styleContextId = useEditorStore(selectStyleContextId)
+  const contextLabel = site?.conditions?.find(condition => condition.id === styleContextId)?.label
+    ?? site?.breakpoints.find(bp => bp.id === styleContextId)?.label
   const setActiveClass = useEditorStore((s) => s.setActiveClass)
   const inlineStyleEditing = useEditorStore((s) => s.inlineStyleEditing)
   const setInlineStyleEditing = useEditorStore((s) => s.setInlineStyleEditing)
@@ -410,6 +414,7 @@ export function ClassPicker({ nodeId, trailingAction, ref }: ClassPickerProps) {
 
       <SelectorPillStack
         pills={selectorModel.pills}
+        scopeLabel={activeClassId ? contextLabel ?? 'Base styles' : null}
         showInlinePill={showInlinePill}
         inlineStyleEditing={inlineStyleEditing}
         onToggleRule={(ruleId, active) => setActiveClass(active ? null : ruleId)}
