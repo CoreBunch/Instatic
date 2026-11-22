@@ -74,7 +74,7 @@ test.describe('users and roles', () => {
       await row.getByRole('button').click()
       const drawer = page.getByRole('dialog', { name: 'User details' })
       await expect(drawer.getByText(email)).toBeInViewport()
-      await expect(drawer.getByRole('button', { name: `Actions for ${initialDisplayName}` })).toBeInViewport()
+      await expect(drawer.getByRole('button', { name: 'Delete user' })).toBeInViewport()
       await page.screenshot({ path: '.tmp/evidence/admin-user-drawer.png' })
       await page.keyboard.press('Escape')
       await expect(drawer).toBeHidden()
@@ -83,7 +83,7 @@ test.describe('users and roles', () => {
     })
 
     await test.step('edit identity fields', async () => {
-      await openUserAction(page, initialDisplayName, 'Edit')
+      await clickUserAction(page, initialDisplayName, 'Edit user')
       const dialog = page.getByRole('dialog', { name: 'Edit User' })
       await expect(dialog).toBeVisible()
       await dialog.locator('input[name="edited-user-email-address"]').fill(editedEmail)
@@ -99,7 +99,7 @@ test.describe('users and roles', () => {
     })
 
     await test.step('suspend blocks login', async () => {
-      await openUserAction(page, editedDisplayName, 'Suspend')
+      await clickUserAction(page, editedDisplayName, 'Suspend')
       await completeStepUp(page)
       row = userRow(page, editedEmail)
       await expect(row.getByText('Suspended')).toBeVisible()
@@ -114,12 +114,12 @@ test.describe('users and roles', () => {
     })
 
     await test.step('activate and reset password restores login', async () => {
-      await openUserAction(page, editedDisplayName, 'Activate')
+      await clickUserAction(page, editedDisplayName, 'Activate')
       await completeStepUp(page)
       row = userRow(page, editedEmail)
       await expect(row.getByText('Active')).toBeVisible()
 
-      await openUserAction(page, editedDisplayName, 'Reset password')
+      await clickUserAction(page, editedDisplayName, 'Reset password')
       const dialog = page.getByRole('dialog', { name: 'Reset Password' })
       await expect(dialog).toBeVisible()
       await dialog.locator('input[name="edited-user-new-password"]').fill(resetPassword)
@@ -134,7 +134,12 @@ test.describe('users and roles', () => {
       await loginAs(activeAdmin, editedEmail, resetPassword)
 
       await test.step('delete removes the user and invalidates fresh access', async () => {
-        await openUserAction(page, editedDisplayName, 'Delete')
+        await clickUserAction(page, editedDisplayName, 'Delete user')
+        const confirm = page.getByRole('alertdialog', { name: `Delete ${editedDisplayName}?` })
+        await confirm.getByRole('button', { name: 'Cancel' }).click()
+        await expect(userRow(page, editedEmail)).toBeVisible()
+        await clickUserAction(page, editedDisplayName, 'Delete user')
+        await confirm.getByRole('button', { name: 'Delete user' }).click()
         await completeStepUp(page)
         await expect(userRow(page, editedEmail)).toHaveCount(0)
 
@@ -570,13 +575,9 @@ function userRow(page: Page, email: string): Locator {
   return page.getByRole('row', { name: new RegExp(`User ${escapeRegExp(email)}`) })
 }
 
-async function openUserAction(page: Page, displayName: string, action: string): Promise<void> {
+async function clickUserAction(page: Page, displayName: string, action: string): Promise<void> {
   await page.getByRole('table', { name: 'Users' }).getByRole('button').filter({ hasText: displayName }).click()
-  await page.getByRole('button', { name: `Actions for ${displayName}` }).click()
-  await page
-    .getByRole('menu', { name: `User actions for ${displayName}` })
-    .getByRole('menuitem', { name: action })
-    .click()
+  await page.getByRole('group', { name: 'User actions' }).getByRole('button', { name: action, exact: true }).click()
 }
 
 async function expectLoginRejected(

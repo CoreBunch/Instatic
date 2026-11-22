@@ -197,6 +197,18 @@
     grid-column: 1 / -1;
 }
 
+.actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 128px), 1fr));
+    gap: var(--space-l) var(--space-s);
+}
+
+.actions button {
+    height: auto;
+    min-height: 32px;
+    white-space: normal;
+}
+
 .section { gap: var(--space-m); }
 .section h4 {
     margin: 0;

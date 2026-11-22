@@ -2,7 +2,7 @@
  * Users → Users tab.
  *
  * Lists every CMS user with their role, status and last-login time. The
- * action menu in the inspector exposes Edit / Reset password / Suspend (or
+ * inspector exposes Edit / Reset password / Suspend (or
  * Activate) / Delete. The owner row has no actions — owner accounts are
  * permanent and immutable from the admin UI.
  *
@@ -20,9 +20,6 @@ import directory from '../components/AccountDirectory.module.css'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
-import { PowerIcon } from 'pixel-art-icons/icons/power'
-import { PowerOffIcon } from 'pixel-art-icons/icons/power-off'
-import { SaveSolidIcon } from 'pixel-art-icons/icons/save-solid'
 import {
   createCmsUser,
   deleteCmsUser,
@@ -32,7 +29,7 @@ import {
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { UserAvatar } from '@admin/shared/UserAvatar'
 import { Badge } from '../components/Badge'
-import { RowActionMenu } from '../components/RowActionMenu'
+import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { UserDialog } from '../components/UserDialog'
 import { userDisplayLabel } from '@core/users/displayName'
 import { formatDateTime, isOwnerUser } from '../utils/format'
@@ -153,6 +150,7 @@ async function deleteUser(
 export function UsersTab({ data, canManageUsers }: UsersTabProps) {
   const { users, roles, defaultAssignableRoleId, setUsers, setError, refresh, error } = data
   const { runStepUp } = useStepUp()
+  const confirmDelete = useConfirmDelete()
   const [busy, setBusy] = useState(false)
   const [userForm, setUserForm] = useState<UserFormState>(() => ({
     ...emptyUserForm,
@@ -259,12 +257,15 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
     await toggleUserStatus(user.id, user.status, runStepUp, setUsers, refresh, setBusy, setError)
   }
 
-  async function remove(user: CmsCurrentUser) {
+  function remove(user: CmsCurrentUser) {
     if (!canManageUsers || isOwnerUser(user)) return
-    // Step-up gated server-side; the runner re-prompts for password
-    // when the session has no fresh window. Cancelling the dialog
-    // resolves silently without surfacing an error.
-    await deleteUser(user.id, runStepUp, setUsers, refresh, setBusy, setError)
+    confirmDelete({
+      title: `Delete ${userDisplayLabel(user)}?`,
+      description: 'This user will lose access to the CMS and their current sessions will end.',
+      confirmLabel: 'Delete user',
+      alwaysConfirm: true,
+      commit: () => void deleteUser(user.id, runStepUp, setUsers, refresh, setBusy, setError),
+    })
   }
 
   return (
@@ -304,20 +305,20 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
               </dl>
             </section>
             {isOwnerUser(selected) ? <p className={styles.secondaryText}>Owner account</p> : canManageUsers && (
-              <RowActionMenu
-                text="More actions"
-                triggerLabel={`Actions for ${userDisplayLabel(selected)}`}
-                menuLabel={`User actions for ${userDisplayLabel(selected)}`}
-                disabled={busy}
-                items={[
-                  { label: 'Edit', icon: <EditSolidIcon size={12} />, onSelect: () => openEdit(selected) },
-                  { label: 'Reset password', icon: <SaveSolidIcon size={12} />, onSelect: () => openResetPassword(selected) },
-                  { label: selected.status === 'active' ? 'Suspend' : 'Activate',
-                    icon: selected.status === 'active' ? <PowerOffIcon size={12} /> : <PowerIcon size={12} />,
-                    onSelect: () => void toggleStatus(selected) },
-                  { label: 'Delete', danger: true, icon: <TrashSolidIcon size={12} />, onSelect: () => void remove(selected) },
-                ]}
-              />
+              <div className={directory.actions} role="group" aria-label="User actions">
+                <Button variant="secondary" size="md" disabled={busy} onClick={() => openEdit(selected)}>
+                  <EditSolidIcon size={14} aria-hidden="true" /> Edit user
+                </Button>
+                <Button variant="secondary" size="md" disabled={busy} onClick={() => openResetPassword(selected)}>
+                  Reset password
+                </Button>
+                <Button variant="ghost" size="md" disabled={busy} onClick={() => void toggleStatus(selected)}>
+                  {selected.status === 'active' ? 'Suspend' : 'Activate'}
+                </Button>
+                <Button variant="ghost" size="md" tone="danger" disabled={busy} onClick={() => remove(selected)}>
+                  <TrashSolidIcon size={14} aria-hidden="true" /> Delete user
+                </Button>
+              </div>
             )}
           </>
         )}

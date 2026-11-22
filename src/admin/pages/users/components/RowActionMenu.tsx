@@ -13,13 +13,12 @@ import type { RowActionMenuItem } from '../types'
 
 interface RowActionMenuProps {
   triggerLabel: string
-  text?: string
   menuLabel: string
   disabled: boolean
   items: RowActionMenuItem[]
 }
 
-export function RowActionMenu({ triggerLabel, text, menuLabel, disabled, items }: RowActionMenuProps) {
+export function RowActionMenu({ triggerLabel, menuLabel, disabled, items }: RowActionMenuProps) {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   if (items.length === 0) return null
@@ -30,8 +29,8 @@ export function RowActionMenu({ triggerLabel, text, menuLabel, disabled, items }
         ref={triggerRef}
         type="button"
         variant="secondary"
-        size={text ? 'md' : 'xs'}
-        iconOnly={!text}
+        size="xs"
+        iconOnly
         disabled={disabled}
         active={open}
         aria-label={triggerLabel}
@@ -39,7 +38,6 @@ export function RowActionMenu({ triggerLabel, text, menuLabel, disabled, items }
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
-        {text}
         <ChevronDownIcon size={14} aria-hidden="true" />
       </Button>
       {open && (
@@ -61,8 +59,6 @@ export function RowActionMenu({ triggerLabel, text, menuLabel, disabled, items }
             <ContextMenuItem
               key={item.label}
               danger={item.danger}
-              disabled={item.disabled}
-              tooltip={item.tooltip}
               onClick={() => {
                 setOpen(false)
                 item.onSelect()

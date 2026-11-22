@@ -5,7 +5,7 @@
 import { useId, useState, type ReactNode, type FormEvent } from 'react'
 import { ChevronDownIcon } from 'pixel-art-icons/icons/chevron-down'
 import { ChevronRightIcon } from 'pixel-art-icons/icons/chevron-right'
-import { RowActionMenu } from '../components/RowActionMenu'
+import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import directory from '../components/AccountDirectory.module.css'
 import ld from '@admin/shared/ListDetail/ListDetail.module.css'
 import { isGrantableMemberTag, type MemberConnectedApp, type MemberDetail, type MemberTagGrant } from '@core/members'
@@ -213,21 +213,25 @@ export function MemberDetailPanel({
           )}
         </DetailSection>
       </div>
-      {canManage && <RowActionMenu
-        text="More actions"
-        triggerLabel="More actions"
-        menuLabel="Member actions"
-        disabled={busy}
-        items={[
-          member.status === 'suspended'
-            ? { label: 'Restore access', onSelect: actions.restore }
-            : { label: 'Suspend', onSelect: actions.suspend },
-          { label: 'Sign out everywhere', onSelect: actions.signOut, disabled: detail.sessions.length === 0,
-            tooltip: detail.sessions.length === 0 ? 'Not signed in anywhere' : undefined },
-          { label: 'Download data', onSelect: actions.downloadData },
-          { label: 'Delete', danger: true, onSelect: actions.remove },
-        ]}
-      />}
+      {canManage && (
+        <div className={directory.actions} role="group" aria-label="Member actions">
+          <Button variant="secondary" size="md" disabled={busy} onClick={actions.downloadData}>
+            Download data
+          </Button>
+          <Button variant="secondary" size="md" disabled={busy || detail.sessions.length === 0}
+            tooltip={detail.sessions.length === 0 ? 'Not signed in anywhere' : undefined} onClick={actions.signOut}>
+            Sign out everywhere
+          </Button>
+          {member.status === 'suspended' ? (
+            <Button variant="ghost" size="md" disabled={busy} onClick={actions.restore}>Restore access</Button>
+          ) : (
+            <Button variant="ghost" size="md" disabled={busy} onClick={actions.suspend}>Suspend</Button>
+          )}
+          <Button variant="ghost" size="md" tone="danger" disabled={busy} onClick={actions.remove}>
+            <TrashSolidIcon size={14} aria-hidden="true" /> Delete member
+          </Button>
+        </div>
+      )}
     </>
   )
 }
