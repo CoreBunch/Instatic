@@ -483,6 +483,7 @@ export async function activateInstalledServerPlugins(
     // which plugin code may consult synchronously during `activate()`.
     await primePluginSettingsCache(db, plugin)
 
+    let bootSucceeded = true
     // Phase: module-pack-load — registers canvas modules in the host registry
     // so server-rendered (publisher) and editor-rendered (canvas) pages can
     // use them immediately.  Failure is isolated: the server entrypoint can
@@ -494,7 +495,9 @@ export async function activateInstalledServerPlugins(
       try {
         const pack = await loadPluginModulePack(manifest, uploadsDir)
         if (pack) activateSandboxedPluginModulePack(manifest, pack)
+        else bootSucceeded = false
       } catch (err) {
+        bootSucceeded = false
         const message = err instanceof Error ? err.message : 'Module pack load failed'
         console.error(`[plugin:${manifest.id}] boot module-pack-load failed: ${message}`)
         try {
@@ -510,7 +513,9 @@ export async function activateInstalledServerPlugins(
       try {
         const loaded = await loadPluginServerEntrypoint(manifest, uploadsDir)
         if (loaded) await runPluginLifecycle(db, manifest.id, 'activate')
+        else bootSucceeded = false
       } catch (err) {
+        bootSucceeded = false
         const message = err instanceof Error ? err.message : 'Server entrypoint activation failed'
         console.error(`[plugin:${manifest.id}] boot server-entrypoint failed: ${message}`)
         try {
@@ -519,6 +524,9 @@ export async function activateInstalledServerPlugins(
           console.error(`[plugin:${manifest.id}] failed to persist boot entrypoint error:`, dbErr)
         }
       }
+    }
+    if (bootSucceeded && plugin.lifecycleStatus === 'error') {
+      await setPluginLifecycleStatus(db, manifest.id, 'active')
     }
   }
   await syncPluginMailTemplates(db)
