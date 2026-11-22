@@ -86,15 +86,14 @@
 
 .addTag {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto auto;
     align-items: end;
     gap: var(--space-s);
 }
 
-.addTag > button { justify-self: start; }
-
 .addTag label {
     display: grid;
+    min-width: 0;
     gap: var(--space-3xs);
     color: var(--text-subtle);
     font-size: var(--text-xs);
@@ -139,10 +138,14 @@
 
 @media (max-width: 760px) {
     .fieldRow,
-    .pageGrid,
-    .addTag {
+    .pageGrid {
         grid-template-columns: minmax(0, 1fr);
     }
+}
+
+@media (max-width: 320px) {
+    .addTag { grid-template-columns: minmax(0, 1fr) auto; }
+    .addTag label:first-child { grid-column: 1 / -1; }
 }
 
 /* An invitation link beside its Copy button. */
