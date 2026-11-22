@@ -66,7 +66,7 @@ describe('editor bridge idle lease', () => {
   it('keeps an active stream alive past the lease while tools flow, then recycles it when idle', async () => {
     const controller = new AbortController()
     const userId = `lease-user-${Date.now()}`
-    const stream = createEditorBridgeStream(userId, 'site', controller.signal, { idleLeaseMs: 80 })
+    const stream = createEditorBridgeStream(userId, 'site', controller.signal, { idleLeaseMs: 80 })!
     playEditor(stream, 5)
     await sleep(10)
     expect(hasEditorBridge(userId, 'site')).toBe(true)
@@ -91,7 +91,7 @@ describe('editor bridge idle lease', () => {
   it('recycles a stream that never sees tool traffic after one idle lease', async () => {
     const controller = new AbortController()
     const userId = `lease-idle-${Date.now()}`
-    const stream = createEditorBridgeStream(userId, 'site', controller.signal, { idleLeaseMs: 60 })
+    const stream = createEditorBridgeStream(userId, 'site', controller.signal, { idleLeaseMs: 60 })!
     drain(stream)
     await sleep(10)
     expect(hasEditorBridge(userId, 'site')).toBe(true)
@@ -107,7 +107,7 @@ describe('editor bridge batch delivery', () => {
   it('survives a batch whose serial execution outlasts the idle lease', async () => {
     const controller = new AbortController()
     const userId = `lease-batch-${Date.now()}`
-    const stream = createEditorBridgeStream(userId, 'site', controller.signal, { idleLeaseMs: 80 })
+    const stream = createEditorBridgeStream(userId, 'site', controller.signal, { idleLeaseMs: 80 })!
 
     playEditor(stream, 50)
     await sleep(10)
@@ -127,7 +127,7 @@ describe('editor bridge batch delivery', () => {
   it('does not recycle the stream while a call is still pending', async () => {
     const controller = new AbortController()
     const userId = `lease-pending-${Date.now()}`
-    const stream = createEditorBridgeStream(userId, 'site', controller.signal, { idleLeaseMs: 40 })
+    const stream = createEditorBridgeStream(userId, 'site', controller.signal, { idleLeaseMs: 40 })!
     drain(stream)
     await sleep(10)
 

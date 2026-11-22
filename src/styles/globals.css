@@ -211,9 +211,15 @@
         #c9c9c9 0% 50%
     );
 
-    /* Property inspector row geometry */
+    /* Shared control heights (xs, sm, md) */
+    --control-height-xs: 24px;
     --control-height: 28px;
+    --control-height-md: 32px;
+
+    /* Property inspector row geometry */
     --control-label-column: 100px;
+
+    --button-size-lg: 44px;
 
     /* Radius */
     --radius-sm: 3px;
@@ -221,8 +227,8 @@
     --card-radius: 16px;
     --panel-radius: 12px;
     --input-radius: 1em;
-    --segment-track-radius: 12px;
-    --segment-radius: 8px;
+    --segment-track-radius: var(--panel-radius);
+    --segment-radius: calc(var(--segment-track-radius) - var(--space-4xs));
     --radius-pill: 999px;
     --tooltip-radius: 6px;
 

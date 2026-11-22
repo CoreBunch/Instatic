@@ -15,6 +15,12 @@
     pointer-events: none;
 }
 
+/* When even the compact controls cannot share the top edge, give the mode
+   switch its own row below the insert notch. Keep the live peek handle on top. */
+[data-toolbar-layout="two-rows"] .shell:not(.shellPeek) {
+    top: 40px;
+}
+
 /* Wrapper that rolls up out of view in peek mode; the pill rides inside it. */
 .roller {
     display: inline-flex;
@@ -25,7 +31,7 @@
     align-items: center;
     gap: var(--space-4xs);
     padding: var(--space-4xs);
-    border-radius: 12px;
+    border-radius: var(--segment-track-radius);
     background: var(--bg-body);
     box-shadow: 0 6px 18px var(--scrim-30);
     pointer-events: auto;
@@ -106,7 +112,7 @@
     height: 22px;
     padding: 0;
     border: 0;
-    border-radius: 9px;
+    border-radius: var(--segment-radius);
     background: transparent;
     color: var(--text-muted);
     line-height: 1;
@@ -167,4 +173,10 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-4xs);
+}
+
+@media (max-width: 760px) {
+    .roller, .pill { max-width: 100%; }
+    .pill { overflow-x: auto; }
+    .pill > * { flex-shrink: 0; }
 }

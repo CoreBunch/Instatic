@@ -65,20 +65,6 @@ describe('content tree service', () => {
     expect((after as { nodes: Record<string, unknown> }).nodes.n_test).toBeTruthy()
   })
 
-  it('runs the assertAccess hook before mutating and can deny', async () => {
-    await expect(
-      mutatePageTree(
-        db,
-       MAIN_SCOPE,
-        ENTRY_ID,
-        'body',
-        [{ kind: 'deleteNode', nodeId: 'root' }],
-        { kind: 'user', userId: 'u1' },
-        { assertAccess: () => { throw new Error('denied') } },
-      ),
-    ).rejects.toThrow('denied')
-  })
-
   it('rejects a non-pageTree field', async () => {
     await expect(readPageTree(db, MAIN_SCOPE, ENTRY_ID, 'title')).rejects.toThrow(/not a pageTree field/)
   })

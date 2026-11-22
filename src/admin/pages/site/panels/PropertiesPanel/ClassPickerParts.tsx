@@ -108,13 +108,13 @@ function InlineStylePill({
 
   return (
     <TagPill
-      label="Inline"
+      label={isActive ? 'Inline · all sizes' : 'Inline'}
       active={isActive}
       muted
       onClick={onToggle}
       onMainKeyDown={handleKeyDown}
       onRemove={onRemove}
-      mainAriaLabel={`${isActive ? 'Stop editing' : 'Edit'} inline styles`}
+      mainAriaLabel={`${isActive ? 'Stop editing' : 'Edit'} inline styles for all sizes`}
       removeAriaLabel="Clear inline styles"
       removeTooltip="Clear inline styles"
       mainTestId="inline-style-pill"
@@ -124,6 +124,7 @@ function InlineStylePill({
 }
 
 interface SelectorPillStackProps {
+  scopeLabel: string | null
   pills: readonly SelectorPillItem[]
   showInlinePill: boolean
   inlineStyleEditing: boolean
@@ -136,6 +137,7 @@ interface SelectorPillStackProps {
 }
 
 export function SelectorPillStack({
+  scopeLabel,
   pills,
   showInlinePill,
   inlineStyleEditing,
@@ -178,6 +180,7 @@ export function SelectorPillStack({
           onRemove={onClearInline}
         />
       )}
+      {scopeLabel && <span className={styles.scopeLabel} title={scopeLabel}>{scopeLabel}</span>}
     </div>
   )
 }

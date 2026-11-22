@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { isMobileViewport } from '@admin/lib/mobileViewport'
 import {
   readWorkspaceLayout,
   workspaceFromPathname,
@@ -29,10 +30,6 @@ interface WorkspaceLayoutState {
   ) => void
 }
 
-function boolOrCurrent(value: unknown, current: boolean): boolean {
-  return typeof value === 'boolean' ? value : current
-}
-
 function finiteNumberOrCurrent(value: unknown, current: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : current
 }
@@ -52,6 +49,10 @@ function rightPanelWidth(layout: StoredWorkspaceLayout, currentWidth: number): n
   return finiteNumberOrCurrent(layout.rightWidth, currentWidth || RIGHT_SIDEBAR_DEFAULT_WIDTH)
 }
 
+function rightPanelCollapsed(layout: StoredWorkspaceLayout): boolean {
+  return layout.rightOpen === undefined ? isMobileViewport() : !layout.rightOpen
+}
+
 function initialNonSiteLayout(): Pick<
   WorkspaceLayoutState,
   'leftSidebarWidth' | 'rightPanel' | 'dataSidebarCollapsed'
@@ -62,7 +63,6 @@ function initialNonSiteLayout(): Pick<
   const layout = workspace && workspace !== 'site'
     ? readWorkspaceLayout(workspace)
     : {}
-  const rightOpen = boolOrCurrent(layout.rightOpen, true)
   const dataSidebarCollapsed = workspace === 'data' && typeof layout.leftOpen === 'boolean'
     ? !layout.leftOpen
     : false
@@ -70,7 +70,7 @@ function initialNonSiteLayout(): Pick<
   return {
     leftSidebarWidth: leftSidebarWidth(layout, LEFT_SIDEBAR_DEFAULT_WIDTH),
     rightPanel: {
-      collapsed: !rightOpen,
+      collapsed: rightPanelCollapsed(layout),
       width: rightPanelWidth(layout, RIGHT_SIDEBAR_DEFAULT_WIDTH),
     },
     dataSidebarCollapsed,
@@ -113,7 +113,7 @@ export const useWorkspaceLayout = create<WorkspaceLayoutState>((set, get) => ({
     const current = get()
     const nextLeftWidth = leftSidebarWidth(layout, current.leftSidebarWidth)
     const nextRightPanel: WorkspacePanelState = {
-      collapsed: !boolOrCurrent(layout.rightOpen, !current.rightPanel.collapsed),
+      collapsed: rightPanelCollapsed(layout),
       width: rightPanelWidth(layout, current.rightPanel.width),
     }
     const nextDataSidebarCollapsed = workspace === 'data' && typeof layout.leftOpen === 'boolean'

@@ -1,0 +1,30 @@
+/* The grid track animates to the intrinsic width of any number of shortcuts. */
+.fold {
+    display: inline-grid;
+    grid-template-columns: 1fr;
+    transition: grid-template-columns 180ms ease;
+}
+
+.clip {
+    display: flex;
+    justify-content: flex-end;
+    min-width: 0;
+    overflow: clip;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    flex: none;
+    width: max-content;
+    transition: opacity 160ms ease, transform 180ms ease;
+}
+
+.fold[data-compact="true"] {
+    grid-template-columns: 0fr;
+}
+
+.fold[data-compact="true"] .row {
+    opacity: 0;
+    transform: translateX(35%);
+}

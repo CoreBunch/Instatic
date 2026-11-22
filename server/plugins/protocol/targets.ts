@@ -34,7 +34,7 @@
  *   - `cms.routes.register` with `access.kind === 'public'` additionally
  *     requires `cms.routes.public` (surfaced in the install consent dialog).
  *   - `cms.content.*` handlers additionally enforce the manifest's
- *     `contentAccess[]` allowlist via `assertContentTableAccess`.
+ *     `contentAccess[]` allowlist via `pluginHasContentTableAccess`.
  *
  * NOTE: this module is bundled into the QuickJS VM via `buildApi.ts`. Keep its
  * runtime surface a PURE DATA literal — only `import type` is allowed, so the
@@ -83,7 +83,6 @@ export const TARGET_PERMISSIONS = {
   'cms.content.entries.update': 'cms.content.write',
   'cms.content.entries.delete': 'cms.content.delete',
   'cms.content.entries.publish': 'cms.content.publish',
-  'cms.content.entries.moveTable': 'cms.content.write',
   'cms.content.entries.createMany': 'cms.content.write',
   'cms.content.entries.updateMany': 'cms.content.write',
   'cms.content.entries.deleteMany': 'cms.content.delete',

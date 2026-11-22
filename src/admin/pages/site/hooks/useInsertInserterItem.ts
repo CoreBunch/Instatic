@@ -1,3 +1,6 @@
+import { isMobileViewport } from '@admin/lib/mobileViewport'
+import { revealSelectedCanvasNode } from '@site/canvas/revealSelectedCanvasNode'
+import type { SelectNodeOptions } from '@site/store/slices/selectionSlice'
 import { useEditorStore, selectActiveCanvasPage } from '@site/store/store'
 import { resolveInsertLocation, type InsertLocation } from '@site/store/insertLocation'
 import { pushToast } from '@ui/components/Toast'
@@ -21,21 +24,20 @@ export function useInsertInserterItem() {
   const canvasPage = useEditorStore(selectActiveCanvasPage)
   const insertComponentRef = useEditorStore((s) => s.insertComponentRef)
   const selectedNodeId = useEditorStore((s) => s.selectedNodeId)
+  const selectNode = useEditorStore((s) => s.selectNode)
   const insertModule = useInsertModule()
 
   const insertLayoutAction = useEditorStore((s) => s.insertLayout)
 
-  const insertVC = (vcId: string, explicitTarget?: InsertLocation): boolean => {
-    if (!canvasPage) return false
+  const insertVC = (vcId: string, explicitTarget?: InsertLocation) => {
+    if (!canvasPage) return null
     // Same target → location resolution as every other insert flow: explicit
     // selection acts as the target, no selection drops at root, leaf targets
     // become a sibling-after under their parent (see resolveInsertLocation).
     const location =
       explicitTarget ??
       resolveInsertLocation(canvasPage, selectedNodeId ?? canvasPage.rootNodeId)
-    if (!location) return false
-    insertComponentRef(location.parentId, vcId, location.index)
-    return true
+    return location ? insertComponentRef(location.parentId, vcId, location.index) : null
   }
 
   return (
@@ -43,16 +45,19 @@ export function useInsertInserterItem() {
     target: InsertLocation | undefined,
     mode: 'click' | 'drop',
   ): boolean => {
-    const inserted =
-      item.kind === 'module'
-        ? Boolean(insertModule(item.module, target))
-        : item.kind === 'savedLayout'
-          ? Boolean(insertLayoutAction(item.id, target))
-          : item.kind === 'component'
-            ? insertVC(item.id, target)
-            : false
+    const phone = isMobileViewport()
+    const options: SelectNodeOptions = { propertiesPanel: phone ? 'close' : 'open' }
+    const nodeId = item.kind === 'module'
+      ? insertModule(item.module, target, options)
+      : item.kind === 'savedLayout'
+        ? insertLayoutAction(item.id, target, options)
+        : insertVC(item.id, target)
+    if (!nodeId) return false
 
-    if (!inserted) return false
+    if (phone) {
+      if (item.kind === 'component') selectNode(nodeId, undefined, options)
+      requestAnimationFrame(() => revealSelectedCanvasNode(nodeId))
+    }
 
     pushToast({
       kind: 'success',

@@ -139,7 +139,7 @@
 
 .optionRow {
     display: grid;
-    grid-template-columns: 1fr 1fr 26px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
     gap: var(--space-xs);
     align-items: center;
 }

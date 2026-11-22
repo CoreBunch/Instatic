@@ -11,7 +11,8 @@
  * synthetic `LoopItem` from the request's draft cells (or the active
  * version's cells when no overrides are passed). The HTML is post-
  * processed by the same `applyPublishedHtmlPipeline` as a public-route
- * response so plugin asset injection + filter hooks behave identically.
+ * response so plugin asset injection behaves identically. It is marked as
+ * a preview: plugin `publish.html` filters are not handed unpublished work.
  *
  * Security: requires data-read access on the row's table. The endpoint
  * does NOT mutate the database — it's a render-only pipeline.
@@ -150,6 +151,7 @@ export async function handleRowPreview(
       moduleScripts: resolveModuleScripts(published.jsModuleIds, moduleJsMap),
     },
     db,
+    'preview',
   )
 
   return new Response(finalHtml, {

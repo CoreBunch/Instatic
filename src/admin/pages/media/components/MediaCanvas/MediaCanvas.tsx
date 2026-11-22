@@ -6,12 +6,15 @@
  * navigation land in M3/M4 — this component is the first interactive surface.
  */
 import {
+  useId,
   useState,
   type ChangeEvent,
   type DragEvent,
   type KeyboardEvent,
   type MouseEvent,
 } from 'react'
+import { useMobileViewport } from '@admin/lib/mobileViewport'
+import { SlidersHorizontalIcon } from 'pixel-art-icons/icons/sliders-horizontal'
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
 import { FileUpload } from '@ui/components/FileUpload'
@@ -19,6 +22,7 @@ import { FilterBar, type FilterBarItem } from '@ui/components/FilterBar'
 import { Select } from '@ui/components/Select'
 import { Skeleton } from '@ui/components/Skeleton'
 import { canDeleteMedia, canWriteMedia } from '@admin/access'
+import { useConfirmMediaPurge } from '../../hooks/useConfirmMediaPurge'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import {
   ExplorerItemContextMenu,
@@ -68,6 +72,7 @@ interface MediaCanvasProps {
   workspace: UseMediaWorkspaceResult
   /** Picker mode: plain click toggles assets instead of replacing selection. */
   selectionMode?: 'standard' | 'multiple'
+  mediaKind?: 'image' | 'svg' | 'video' | 'any'
 }
 
 const TYPE_FILTERS: FilterBarItem<MediaType>[] = [
@@ -120,8 +125,12 @@ function folderMatchesQuery(folder: CmsMediaFolder, query: string): boolean {
   return folder.name.toLowerCase().includes(normalized)
 }
 
-export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanvasProps) {
+export function MediaCanvas({ workspace, selectionMode = 'standard', mediaKind = 'any' }: MediaCanvasProps) {
   const currentUser = useCurrentAdminUser()
+  const confirmPurge = useConfirmMediaPurge(workspace.purgeAsset)
+  const mobile = useMobileViewport()
+  const [viewOptionsOpen, setViewOptionsOpen] = useState(false)
+  const viewOptionsId = useId()
   const [viewMode, setViewModeState] = useState<MediaViewMode>(readStoredMediaViewMode)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const [renameTarget, setRenameTarget] = useState<CmsMediaAsset | null>(null)
@@ -307,6 +316,37 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
     ? { Parent: ParentFolderTile, Folder: FolderTile, Asset: AssetTile }
     : { Parent: ParentFolderRow, Folder: FolderRow, Asset: AssetRow }
 
+  const viewControls = (
+    <div role="group" aria-label="Media view" className={styles.viewGroup}>
+      <SortMenu
+        value={workspace.filters.sort}
+        onChange={workspace.setSort}
+      />
+      <Button
+        variant={viewMode === 'list' ? 'secondary' : 'ghost'}
+        size="xs"
+        iconOnly
+        pressed={viewMode === 'list'}
+        tooltip="List view"
+        aria-label="List view"
+        onClick={() => setViewMode('list')}
+      >
+        <BulletlistSolidIcon size={13} />
+      </Button>
+      <Button
+        variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
+        size="xs"
+        iconOnly
+        pressed={viewMode === 'grid'}
+        tooltip="Grid view"
+        aria-label="Grid view"
+        onClick={() => setViewMode('grid')}
+      >
+        <Grid2x22SolidIcon size={13} />
+      </Button>
+    </div>
+  )
+
   return (
     <section
       className={cn(canvasStyles.canvas, styles.canvas, dragActive && styles.canvasDropping)}
@@ -319,7 +359,9 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
     >
       <header className={styles.toolbar}>
         <FilterBar<MediaType>
-          items={TYPE_FILTERS}
+          items={mediaKind === 'any' ? TYPE_FILTERS : TYPE_FILTERS.filter(({ value }) =>
+            value === mediaKind || (mediaKind === 'image' && value === 'svg'),
+          )}
           value={workspace.filters.type}
           onValueChange={workspace.setFilterType}
           search={{
@@ -344,37 +386,27 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
             </FileUpload>
           )}
           groupLabel="Filter media type"
-          trailing={(
-            <div role="group" aria-label="Media view" className={styles.viewGroup}>
-              <SortMenu
-                value={workspace.filters.sort}
-                onChange={workspace.setSort}
-              />
-              <Button
-                variant={viewMode === 'list' ? 'secondary' : 'ghost'}
-                size="xs"
-                iconOnly
-                pressed={viewMode === 'list'}
-                tooltip="List view"
-                aria-label="List view"
-                onClick={() => setViewMode('list')}
-              >
-                <BulletlistSolidIcon size={13} />
-              </Button>
-              <Button
-                variant={viewMode === 'grid' ? 'secondary' : 'ghost'}
-                size="xs"
-                iconOnly
-                pressed={viewMode === 'grid'}
-                tooltip="Grid view"
-                aria-label="Grid view"
-                onClick={() => setViewMode('grid')}
-              >
-                <Grid2x22SolidIcon size={13} />
-              </Button>
-            </div>
+          searchTrailing={mobile && (
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              aria-label="View options"
+              aria-expanded={viewOptionsOpen}
+              aria-controls={viewOptionsId}
+              active={viewOptionsOpen}
+              onClick={() => setViewOptionsOpen(!viewOptionsOpen)}
+            >
+              <SlidersHorizontalIcon size={14} />
+            </Button>
           )}
+          trailing={mobile ? undefined : viewControls}
         />
+        {mobile && (
+          <div id={viewOptionsId} className={styles.phoneViewOptions} hidden={!viewOptionsOpen}>
+            {viewControls}
+          </div>
+        )}
       </header>
 
       {headerLabel !== null && (
@@ -530,7 +562,7 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
           onDelete={() => {
             const target = contextMenu.asset
             setContextMenu(null)
-            if (trashView) void workspace.purgeAsset(target.id)
+            if (trashView) confirmPurge(target)
             else void workspace.trashAsset(target.id)
           }}
           showRename={canWrite}

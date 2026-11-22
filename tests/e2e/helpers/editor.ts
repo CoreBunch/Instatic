@@ -54,7 +54,12 @@ export async function insertNotchModule(
   page: Page,
   module: 'container' | 'text' | 'image',
 ): Promise<void> {
-  await page.getByTestId(`canvas-notch-${module}-btn`).click()
+  const notch = page.getByTestId('canvas-notch')
+  if (await notch.getAttribute('data-compact') === 'true') {
+    await insertModuleViaPicker(page, `base.${module}`)
+    return
+  }
+  await notch.getByTestId(`canvas-notch-${module}-btn`).click()
 }
 
 /**

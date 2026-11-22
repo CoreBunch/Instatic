@@ -85,6 +85,34 @@ export async function loadPluginPackFile(
   }
 }
 
+/**
+ * A pack's pages, Visual Components and layouts are written as rows under the
+ * ids the pack names, and a re-sync replaces them. So the id has to be the
+ * plugin's own by construction: namespaced under its id. A row the site owner
+ * made (generated id), or another plugin's, can then never be named by a pack,
+ * at install, upgrade or re-sync. `definePlugin` checks the same at build time;
+ * this is the host's check, on what was actually uploaded.
+ */
+function assertPackRowId(pluginId: string, what: string, id: string): void {
+  if (isPackIdInPluginNamespace(pluginId, id)) return
+  throw new PluginPackError(
+    `Plugin "${pluginId}" pack ${what} "${id}" must be namespaced under the plugin id (e.g. "${pluginId}/${id}").`,
+  )
+}
+
+/**
+ * The shape every pack id (page, Visual Component, layout, class) must have.
+ * The slash form names its plugin exactly: what comes before the first `/`
+ * IS the plugin id (a plugin id holds no slash). The dot form only says the
+ * id starts with the plugin's; whose it is when plugin ids nest is decided
+ * against the installed plugins where the pack is written.
+ */
+export function isPackIdInPluginNamespace(pluginId: string, id: string): boolean {
+  const slash = id.indexOf('/')
+  if (slash >= 0) return id.slice(0, slash) === pluginId && id.length > slash + 1
+  return id.startsWith(`${pluginId}.`) && id.length > pluginId.length + 1
+}
+
 export function parsePluginPack(pluginId: string, raw: unknown): PluginPackContents {
   const parsed = safeParseValue(PluginPackFileSchema, raw)
   if (!parsed.ok) {
@@ -97,6 +125,7 @@ export function parsePluginPack(pluginId: string, raw: unknown): PluginPackConte
     if (!vc) {
       throw new PluginPackError(`Plugin "${pluginId}" pack contains an invalid Visual Component entry`)
     }
+    assertPackRowId(pluginId, 'Visual Component', vc.id)
     visualComponents.push(vc)
   }
 
@@ -105,7 +134,9 @@ export function parsePluginPack(pluginId: string, raw: unknown): PluginPackConte
     if (!compiledCheck(PageSchema, rawPage)) {
       throw new PluginPackError(`Plugin "${pluginId}" pack contains an invalid Page entry`)
     }
-    pages.push(parseValue(PageSchema, rawPage) as Page)
+    const page = parseValue(PageSchema, rawPage) as Page
+    assertPackRowId(pluginId, 'page', page.id)
+    pages.push(page)
   }
 
   const classes: StyleRule[] = []
@@ -119,11 +150,7 @@ export function parsePluginPack(pluginId: string, raw: unknown): PluginPackConte
     if (!cls) {
       throw new PluginPackError(`Plugin "${pluginId}" pack contains an invalid CSS class entry`)
     }
-    if (!cls.id.startsWith(`${pluginId}/`) && !cls.id.startsWith(`${pluginId}.`)) {
-      throw new PluginPackError(
-        `Plugin "${pluginId}" pack class "${cls.id}" must be namespaced under the plugin id (e.g. "${pluginId}/${cls.id}").`,
-      )
-    }
+    assertPackRowId(pluginId, 'class', cls.id)
     // The CSS class `name` doubles as the rendered HTML classname (see
     // `classNamesForClassIds` in `@core/page-tree`). Whitespace
     // would split it into multiple classes, none of which would have rules.
