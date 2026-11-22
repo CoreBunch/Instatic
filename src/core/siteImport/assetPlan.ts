@@ -449,8 +449,11 @@ function normalizeRules(
     bucket.push(ref)
   }
 
-  const normalized = rules.map((rule, ruleIdx) => {
-    const refs = refsByRule.get(ruleIdx)
+  // A ref's `ruleIndex` is its rule's position at parse time, which the parser
+  // also stamps as `rule.order`. Token extraction can drop an emptied root rule
+  // afterwards, shifting every later rule in the array, so match on `order`.
+  const normalized = rules.map((rule) => {
+    const refs = refsByRule.get(rule.order)
     if (!refs || refs.length === 0) return rule
 
     const newStyles = { ...rule.styles } as Record<string, unknown>
@@ -500,8 +503,9 @@ function normalizeRules(
   // want the underlying file in `plan.assets` so the user gets the binary in
   // their media library; the @font-face declaration itself is lost, but the
   // file is recoverable.
+  const emittedOrders = new Set(rules.map((rule) => rule.order))
   for (const [ruleIdx, refs] of refsByRule) {
-    if (ruleIdx < normalized.length) continue
+    if (emittedOrders.has(ruleIdx)) continue
     for (const ref of refs) {
       resolveAndRecord(ref.rawUrl, cssFilePath, resolver)
     }
