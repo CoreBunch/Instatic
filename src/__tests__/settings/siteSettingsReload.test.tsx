@@ -197,14 +197,16 @@ describe('Settings outside the Site editor after a branch switch', () => {
     expect(saved[0]).toEqual({ branch: 'feature', name: 'Branch site+' })
   })
 
-  it('drops an edit queued behind a save when the branch switches', async () => {
+  it('saves both queued edits to their original branch after a switch', async () => {
     render(<SiteNameProbe />)
     expect(await shownName()).toBe('Main site')
     let release: (() => void) | undefined
     const gate = new Promise<void>((r) => { release = r })
     const saved: Array<{ branch: string; name: string }> = []
-    cmsAdapter.saveSite = async (doc) => {
-      saved.push({ branch: currentBranchId(), name: doc.name })
+    const bases: Array<number | undefined> = []
+    cmsAdapter.saveSite = async (doc, opts) => {
+      bases.push(opts?.shellBaseSeq)
+      saved.push({ branch: opts?.branchId ?? currentBranchId(), name: doc.name })
       if (saved.length === 1) await gate
       return { seq: 100 }
     }
@@ -214,6 +216,10 @@ describe('Settings outside the Site editor after a branch switch', () => {
     useBranchStore.getState().setActiveBranch('feature')
     release?.()
     await waitFor(async () => expect(await shownName()).toBe('Branch site'))
-    expect(saved).toEqual([{ branch: 'main', name: 'Main site+' }])
+    expect(bases[1]).toBe(100)
+    expect(saved).toEqual([
+      { branch: 'main', name: 'Main site+' },
+      { branch: 'main', name: 'Main site++' },
+    ])
   })
 })

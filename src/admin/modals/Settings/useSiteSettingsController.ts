@@ -128,23 +128,16 @@ export const useSettingsDraftStore = create<SettingsDraftState>((set, get) => {
     saveGeneration += 1
     set({ doc: next })
     saveChain = saveChain
-      .then(() => {
-        // Switched while an earlier save was still in flight.
-        if (branchId !== currentBranchId()) return null
-        return cmsAdapter.saveSite(next, {
-          dirty: SHELL_ONLY_DIRTY,
-          baseSeqs: {},
-          shellBaseSeq: get().shellBaseSeq,
-        })
-      })
-      .then((result) => {
-        if (!result) {
-          void get().ensureLoaded()
-          return
-        }
-        const { seq } = result
-        // This save's seq is the new shell base for the next one.
+      .then(() => cmsAdapter.saveSite(next, {
+        branchId,
+        dirty: SHELL_ONLY_DIRTY,
+        baseSeqs: {},
+        shellBaseSeq: get().shellBaseSeq,
+      }))
+      .then(({ seq }) => {
+        // Loads wait for this queue, so the next save still uses its predecessor's seq.
         set({ shellBaseSeq: seq })
+        if (branchId !== currentBranchId()) return
         // Refresh the toolbar brand + any other site-summary readers, and let
         // the editor store re-hydrate from disk next time it loads.
         useAdminUi.getState().setSiteSummary({

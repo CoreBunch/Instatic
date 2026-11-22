@@ -9,13 +9,11 @@
  * branches; a `?branch=` query param on any admin URL overrides the stored
  * value so links into a branch are shareable. Main needs no header.
  */
-import { MAIN_BRANCH_ID, isValidBranchId } from '@core/branches'
+import { BRANCH_HEADER, MAIN_BRANCH_ID, isValidBranchId } from '@core/branches'
 import { registerRequestHeaderProvider } from '@core/http'
 
 export const ACTIVE_BRANCH_STORAGE_KEY = 'instatic-active-branch'
 export const BRANCH_QUERY_PARAM = 'branch'
-/** The request header carrying the branch; the server reads it case-insensitively. */
-export const BRANCH_HEADER = 'X-Instatic-Branch'
 
 function readStoredBranch(): string {
   if (typeof window === 'undefined') return MAIN_BRANCH_ID
