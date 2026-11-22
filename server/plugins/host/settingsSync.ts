@@ -30,14 +30,20 @@ import { updateSettingsInWorker } from './rpc'
  * a new value rotates it, an empty string clears it); a `PluginSecretError`
  * from that split propagates to the caller. The refreshed cache record —
  * non-secret values merged with the decrypted secrets — is the RUNTIME
- * view: it feeds the worker push and the `settings.changed` payload, and
- * must never be serialised onto a browser-bound payload.
+ * view: it feeds the worker push, and nothing else. It must never be
+ * serialised onto a browser-bound payload or handed to another plugin.
+ *
+ * `settings.changed` goes to the plugin that owns the settings and to no
+ * other (`hookBus.emitTo`), and its payload names the plugin without
+ * carrying a single value: the owner reads them with
+ * `api.cms.settings.get(...)`.
  *
  * Ordering matters: the new record is pushed into the running VM BEFORE
  * `settings.changed` is emitted — hook listeners execute inside the worker
  * and read `api.cms.settings.get(...)` from the VM mirror, so the push has
  * to land first for a listener to observe the new values. A push failure is
- * logged rather than thrown: the DB rows are already the source of truth
+ * logged rather than thrown, and the event is then NOT sent (a listener
+ * would read the old values): the DB rows are already the source of truth
  * and the next worker (re)load re-seeds the mirror from them.
  *
  * Returns the runtime record — the same shape `load-plugin` seeds at worker
@@ -54,8 +60,12 @@ export async function persistAndSyncPluginSettings(
   try {
     await updateSettingsInWorker(pluginId, runtimeSettings)
   } catch (err) {
-    console.error(`[plugin:${pluginId}] failed to push settings into worker:`, err)
+    // The running VM still holds the old values, so a listener told "your
+    // settings changed" would read stale ones. Say nothing; the next worker
+    // load seeds the mirror from the saved rows.
+    console.error(`[plugin:${pluginId}] failed to push settings into worker; settings.changed not sent:`, err)
+    return runtimeSettings
   }
-  await hookBus.emit('settings.changed', { pluginId, settings: runtimeSettings })
+  await hookBus.emitTo(pluginId, 'settings.changed', { pluginId })
   return runtimeSettings
 }

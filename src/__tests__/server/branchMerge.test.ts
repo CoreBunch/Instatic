@@ -141,6 +141,32 @@ describe('branch merge', () => {
     expect(await getDataRow(harness.db, branch, 'main-post')).toBeNull()
   })
 
+  // The create's label sorting before, equal to, or after the delete's must not matter.
+  for (const title of ['A new home', null, 'Zz new home']) {
+    it(`replaces a page with a new one on the same slug (${title ?? 'same title'})`, async () => {
+      harness = await createCapabilityTestHarness()
+      const owner = await harness.setupOwner()
+      const branchId = await forkViaApi(harness, owner, 'Replace home')
+      const branch = { branchId }
+      const [home] = await listDataRows(harness.db, branch, 'pages')
+
+      await softDeleteDataRow(harness.db, branch, home!.id)
+      await upsertDataRowDraft(harness.db, branch, {
+        id: 'new-home',
+        tableId: 'pages',
+        cells: { ...home!.cells, title: title ?? home!.cells.title },
+        slug: home!.slug,
+      })
+      const { plan } = await planBranchMerge(harness.db, branchId, 'merge')
+      expect(plan.conflictCount).toBe(0)
+      expect(plan.changes.map((change) => change.action)).toEqual(['delete', 'create'])
+
+      await applyBranchMerge(harness.db, { branchId, direction: 'merge', resolutions: {}, actorUserId: null })
+      const pages = await listDataRows(harness.db, MAIN_SCOPE, 'pages')
+      expect(pages.filter((row) => row.slug === home!.slug).map((row) => row.id)).toEqual(['new-home'])
+    })
+  }
+
   it('exposes plan and apply over HTTP, step-up gated, and can delete the branch afterwards', async () => {
     harness = await createCapabilityTestHarness()
     const owner = await harness.setupOwner()

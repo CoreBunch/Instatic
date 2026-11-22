@@ -178,7 +178,6 @@ describe('plugin sandbox invariants', () => {
       'cms.content.entries.get',
       'cms.content.entries.getBySlug',
       'cms.content.entries.list',
-      'cms.content.entries.moveTable',
       'cms.content.entries.publish',
       'cms.content.entries.update',
       'cms.content.entries.updateMany',

@@ -22,7 +22,28 @@ export type ContentEntryActor =
   | { kind: 'plugin'; pluginId: string }
   | { kind: 'system' }
 
+/**
+ * Host events and their payloads.
+ *
+ * `cms.hooks` lets a plugin use the hook bus; an event that carries guarded
+ * data needs that data's permission as well, and a registration the plugin
+ * could never be served throws (`server/plugins/protocol/hookRules.ts`):
+ *
+ *   - `content.entry.*` — `cms.content.read` and a `contentAccess` entry with
+ *     `read`. The plugin hears about entries of the tables it may read, and
+ *     no others.
+ *   - `member.*` — `members.read`.
+ *   - `mail.*` — only the plugin that queued the email.
+ *
+ * A name the host does not emit is refused, unless it is another plugin's
+ * event (`plugin.<its-id>.<name>`).
+ */
 export interface CmsServerEvents {
+  // This plugin's own settings were saved, from the admin form or by its own
+  // `api.cms.settings.replace`. Only the plugin that owns the settings hears
+  // it. The payload carries no values: read them with
+  // `api.cms.settings.get(...)`, which already returns the new ones.
+  'settings.changed': { pluginId: string }
   'publish.before': { siteId: string; pageId?: string }
   'publish.after': { siteId: string; pageId?: string }
   'content.entry.created': {
@@ -69,24 +90,30 @@ export interface CmsServerEvents {
   [key: string]: Record<string, unknown>
 }
 
+/**
+ * The filters the host applies. There are no plugin-defined filters: a name
+ * not listed here is refused at registration.
+ */
 export interface CmsServerFilters {
-  'publish.html': string
-  'publish.headers': Record<string, string>
   /**
-   * Cell-bag run through every registered handler before persistence.
-   * Plugins can validate, normalize, or auto-fill — e.g. extract a meta
-   * description from a body field. The context carries the table slug,
-   * entry id (or `'new'` for create), and the actor.
+   * A public page as it is sent. A members-only page rendered for a member
+   * reaches the filter only if the plugin holds `members.read`. A preview of
+   * unpublished work (a draft entry, a branch) is never passed to it.
+   */
+  'publish.html': string
+  /**
+   * An entry's cells, run through each handler before they are saved; what
+   * the handler returns is persisted. Needs `cms.content.read` and
+   * `cms.content.write` with a `contentAccess` entry granting both on the
+   * entry's table: the handler runs for those tables only. The context
+   * carries the table slug, entry id (or `'new'` for create), and the actor.
    */
   'content.entry.cells': Record<string, unknown>
-  // Plugin-defined filters fall through.
-  [key: string]: unknown
 }
 
 /**
  * Extra context fields passed to filter handlers alongside `{ pluginId }`.
- * Keyed by filter name; only named filters carry structured context — the
- * generic fallthrough gets `Record<string, unknown>`.
+ * Keyed by filter name.
  *
  * Filter handlers destructure what they need:
  * ```ts
@@ -97,11 +124,16 @@ export interface CmsServerFilters {
  */
 export interface CmsServerFilterContexts {
   'publish.html': { siteId: string; pageId: string; slug: string }
-  'publish.headers': { siteId: string; pageId: string; slug: string }
   'content.entry.cells': {
     tableSlug: string
     entryId: string
     actor: ContentEntryActor
+    /**
+     * True when the row is being saved on a branch, not on the live site.
+     * `entryId` then names the branch's copy: `api.cms.content.*` reads and
+     * writes `main`, so do not write back by that id.
+     */
+    branch: boolean
   }
 }
 
@@ -112,16 +144,12 @@ export interface ServerPluginHooksApi {
       payload: K extends keyof CmsServerEvents ? CmsServerEvents[K] : Record<string, unknown>,
     ) => void | Promise<void>,
   ) => void
-  filter: <K extends keyof CmsServerFilters | string>(
+  filter: <K extends keyof CmsServerFilters>(
     name: K,
     handler: (
-      value: K extends keyof CmsServerFilters ? CmsServerFilters[K] : unknown,
-      context: { pluginId: string } & (
-        K extends keyof CmsServerFilterContexts ? CmsServerFilterContexts[K] : Record<string, unknown>
-      ),
-    ) =>
-      | (K extends keyof CmsServerFilters ? CmsServerFilters[K] : unknown)
-      | Promise<K extends keyof CmsServerFilters ? CmsServerFilters[K] : unknown>,
+      value: CmsServerFilters[K],
+      context: { pluginId: string } & CmsServerFilterContexts[K],
+    ) => CmsServerFilters[K] | Promise<CmsServerFilters[K]>,
   ) => void
   /**
    * Emit a custom event on the hook bus. The host force-namespaces the name

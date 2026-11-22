@@ -26,7 +26,7 @@ async function read(relative: string): Promise<string> {
 }
 
 const TREE_SERVICE = 'server/ai/content/treeService.ts'
-const PLUGIN_HANDLER = 'server/plugins/host/handlers/content.ts'
+const PLUGIN_HANDLER = 'server/plugins/host/handlers/contentTree.ts'
 
 describe('page-tree mutation — via engine', () => {
   it('treeService.ts imports applyTreeOperation from the @core/page-tree barrel', async () => {

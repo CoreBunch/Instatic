@@ -329,7 +329,7 @@ type ContentEntryActor =
   | { kind: 'system' }  // public forms, schedulers, scheduled-publish tick
 ```
 
-There's also one filter — `content.entry.cells` — that runs over the cell bag BEFORE persistence. Admin HTTP handlers (`rows.ts`, `tables.ts`) and the plugin `api.cms.content.*` surface apply it via `applyContentEntryCellsFilter` from `server/publish/contentEvents.ts`. Plugins use it to validate, normalize, or auto-fill cells:
+There's also one filter — `content.entry.cells` — that runs over the cell bag BEFORE persistence. It runs for saves on a branch as well as on `main` (context `branch: true`). A plugin's handler runs only for tables its granted permissions and `contentAccess` let it both read and write, and `content.entry.*` events reach only plugins that may read the table (rules: `server/plugins/protocol/hookRules.ts`). Admin HTTP handlers (`rows.ts`, `tables.ts`) and the plugin `api.cms.content.*` surface apply it via `applyContentEntryCellsFilter` from `server/publish/contentEvents.ts`. Plugins use it to validate, normalize, or auto-fill cells:
 
 ```ts
 api.cms.hooks.filter('content.entry.cells', (cells, { tableSlug, entryId, actor }) => {
