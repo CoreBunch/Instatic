@@ -71,14 +71,20 @@ test.describe('users and roles', () => {
       await expect(ownerRow).not.toHaveAttribute('aria-current', 'true')
       await expect(row).toHaveAttribute('aria-current', 'true')
       const selectedCell = row.getByRole('cell').first()
+      const panelStyle = await panel.evaluate((element) => {
+        const { backgroundColor, borderTopLeftRadius } = getComputedStyle(element)
+        return { backgroundColor, radius: borderTopLeftRadius }
+      })
       await row.hover()
-      await expect(selectedCell).not.toHaveCSS('box-shadow', 'none')
+      await expect(selectedCell).toHaveCSS('background-color', panelStyle.backgroundColor)
+      await expect(selectedCell).toHaveCSS('box-shadow', 'none')
+      await expect(selectedCell).toHaveCSS('border-top-left-radius', panelStyle.radius)
+      await expect(row.getByRole('cell').last()).toHaveCSS('border-top-right-radius', panelStyle.radius)
       await panel.hover()
-      await expect(selectedCell).not.toHaveCSS('box-shadow', 'none')
+      await expect(selectedCell).toHaveCSS('background-color', panelStyle.backgroundColor)
       await page.screenshot({ path: '.tmp/evidence/admin-user-inspector.png' })
       await panel.getByRole('button', { name: 'Close details' }).click()
       await expect(row).not.toHaveAttribute('aria-current', 'true')
-      await expect(selectedCell).toHaveCSS('box-shadow', 'none')
       await expect(row.getByRole('button')).toBeFocused()
 
       const viewport = page.viewportSize()!
