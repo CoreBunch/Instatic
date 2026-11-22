@@ -412,7 +412,7 @@ Every interactive control in the admin and editor goes through a primitive from 
 | `Alert`              | Inline non-blocking status/error message.                                   |
 | `Dialog`             | Modal dialog with a title and content.                                      |
 | `Tooltip`            | Hover and cursor-anchored tooltips. Replaces the native `title` attribute (gated). |
-| `Toast`              | Borderless notification cards use `--bg-surface-2`, `--card-radius`, and `--shadow-panel-drop`. Only the status icon carries semantic color.                               |
+| `Toast`              | Borderless notification cards use `--bg-surface-2`, `--card-radius`, and `--shadow-panel-drop`. Only the status icon carries semantic color. The stack sits at the bottom right by default and at the top center while a modal is open to keep footer actions reachable. |
 | `DataTable`          | Token-backed table shell; callers own row state, sorting, and selection.    |
 | `Widget`, `WidgetSkeleton`, `WidgetList` | Borderless tile card and dashboard/widget list helpers. Accepts a `tint`. |
 | `Heading`, `Text`, `Code` | Typography primitives for host/admin and plugin UI.                   |
