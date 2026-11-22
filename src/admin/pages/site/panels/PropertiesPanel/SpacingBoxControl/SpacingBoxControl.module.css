@@ -209,8 +209,6 @@
     .phoneSide .phoneInput::placeholder { color: var(--text-muted); }
 
     .phoneSide .phoneInput {
-        min-height: 44px;
-        font-size: max(1rem, var(--text-l));
         text-align: center;
     }
 }

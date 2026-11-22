@@ -81,7 +81,7 @@ export function PanelHeader({ title, titleContent, panelId, closeLabel, onClose,
       {/* Close button — closes the panel completely (toolbar button reopens) */}
       <Button
         variant={closeLabel ? 'secondary' : 'ghost'}
-        size={closeLabel ? 'lg' : 'xs'}
+        size={closeLabel ? 'md' : 'xs'}
         iconOnly={!closeLabel}
         onClick={onClose}
         aria-label={closeLabel ?? `Close ${title} panel`}

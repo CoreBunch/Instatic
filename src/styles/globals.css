@@ -213,6 +213,7 @@
 
     /* Property inspector row geometry */
     --control-height: 28px;
+    --control-height-md: 32px;
     --control-label-column: 100px;
 
     --button-size-lg: 44px;

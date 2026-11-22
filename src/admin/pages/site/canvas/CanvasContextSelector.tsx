@@ -29,11 +29,12 @@ const EMPTY_CONDITIONS: ReadonlyArray<ConditionDef> = []
 const CanvasContextDialog = lazy(() => import('./CanvasContextDialog'))
 
 interface ContextSelectorProps {
+  phone: boolean
   compact: boolean
   onPickBreakpoint: (id: string) => void
 }
 
-export function CanvasContextSelector({ compact, onPickBreakpoint }: ContextSelectorProps) {
+export function CanvasContextSelector({ compact, phone, onPickBreakpoint }: ContextSelectorProps) {
   const breakpoints = useEditorStore((s) => s.site?.breakpoints ?? EMPTY_BREAKPOINTS)
   const conditions = useEditorStore((s) => s.site?.conditions ?? EMPTY_CONDITIONS)
   const activeBreakpointId = useEditorStore((s) => s.activeBreakpointId)
@@ -105,7 +106,8 @@ export function CanvasContextSelector({ compact, onPickBreakpoint }: ContextSele
         <Button
           ref={triggerRef}
           variant="ghost"
-          size="micro"
+          size={phone ? 'md' : 'xs'}
+          iconOnly={phone && compact}
           className={styles.triggerPill}
           aria-haspopup="menu"
           aria-expanded={menu !== null}

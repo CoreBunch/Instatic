@@ -44,7 +44,7 @@ export function ModulePickerDropdown({
       <Button
         ref={triggerRef}
         variant="primary"
-        size={phone ? 'lg' : 'sm'}
+        size={phone ? 'md' : 'sm'}
         iconOnly={!phone}
         accentFill
         className={triggerClassName}

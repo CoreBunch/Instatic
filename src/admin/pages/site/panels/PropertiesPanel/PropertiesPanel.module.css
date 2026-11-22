@@ -198,6 +198,19 @@
 }
 
 @media (max-width: 760px) {
+    .panel {
+        --control-height: var(--control-height-md);
+        --input-radius: var(--panel-radius);
+        --text-xs: var(--text-m);
+        --text-s: var(--text-m);
+    }
+
+    /* Keep editable values legible without zooming the phone on focus. */
+    .panel input:where(:not([type]), [type="text"], [type="number"], [type="search"]),
+    .panel textarea {
+        font-size: max(1rem, var(--text-l));
+    }
+
     .panel > [role="toolbar"] {
         height: auto;
         min-height: 44px;

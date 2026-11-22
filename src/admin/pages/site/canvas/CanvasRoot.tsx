@@ -601,6 +601,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
               pure Viewers get the same plain frames without this affordance. */}
           {showContext && (
             <CanvasContextSelector
+              phone={phone}
               compact={compactChrome}
               onPickBreakpoint={(id) => {
                 setActiveBreakpoint(id)

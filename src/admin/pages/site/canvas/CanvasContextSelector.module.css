@@ -88,7 +88,6 @@
     display: inline-flex;
     align-items: center;
     gap: 0;
-    height: 22px;
     padding: 0 var(--space-xs);
     border-radius: calc(var(--breakpoint-notch-radius) - var(--space-xs));
     border: 0;
@@ -171,14 +170,8 @@
 }
 
 @media (pointer: coarse) {
-    .triggerPill.triggerPill {
-        min-width: 44px;
-        min-height: 44px;
-        justify-content: center;
-    }
-
     .menuRowMain.menuRowMain,
     .remove.remove {
-        min-height: 44px;
+        min-height: var(--button-size-lg);
     }
 }

@@ -71,7 +71,7 @@
 }
 
 .size-md {
-    height: 32px;
+    height: var(--control-height-md);
     padding: var(--space-xs) var(--space-xl);
     gap: var(--space-2xs);
     font-size: var(--text-s);
@@ -98,7 +98,7 @@
     width: 28px;
 }
 .size-md.iconOnly {
-    width: 32px;
+    width: var(--control-height-md);
 }
 .size-lg.iconOnly {
     width: var(--button-size-lg);
