@@ -24,7 +24,8 @@ import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
 import { CanvasModulePlaceholder } from '@ui/components/CanvasModulePlaceholder'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
-import { htmlAttributesForReact, resolveHtmlTag } from '@core/htmlAttributes'
+import { resolveHtmlTag } from '@core/htmlAttributes'
+import { useCanvasHtmlAttributes } from '@modules/base/shared/useCanvasHtmlAttributes'
 import { LoopPreviewRetry } from '@site/canvas/LoopPreviewNotice'
 import { useLoopPreviewNotice } from '@site/canvas/useLoopPreviewItems'
 
@@ -35,6 +36,7 @@ export const LoopEditor: React.FC<ModuleComponentProps> = ({ props, children, mc
   // that its source is unavailable or its plugin's preview failed.
   const notice = useLoopPreviewNotice(props)
 
+  const htmlAttrs = useCanvasHtmlAttributes(props.htmlAttributes)
   if (!hasChildren) {
     return (
       <CanvasModulePlaceholder
@@ -61,7 +63,7 @@ export const LoopEditor: React.FC<ModuleComponentProps> = ({ props, children, mc
     Tag,
     {
       ...nodeWrapperProps,
-      ...htmlAttributesForReact(props.htmlAttributes),
+      ...htmlAttrs,
       className: mcClassName,
       'data-instatic-loop': nodeId,
       'data-instatic-loop-page': '1',

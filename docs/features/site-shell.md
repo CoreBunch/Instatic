@@ -662,6 +662,12 @@ exponential backoff, and each (re)connect re-runs syncStep1 so Yjs state
 vectors pull exactly the missed delta. `usePersistence` HTTP-loads the
 document once for first paint, then connects the provider — edits gate on
 each doc's first sync so an unseeded doc can never receive local ops.
+
+Initial sync projections collect socket tasks over a 16 ms frame and commit
+rows plus their roster to the store together. Write gates open after that
+projection, so tools never edit a stale HTTP snapshot. Live remote updates
+retain microtask projection; undo/redo project synchronously.
+
 The socket is authenticated by the session cookie it was opened with, and
 the server refuses it once that session is rotated. Password re-confirmation
 rotates the session token, so `StepUpProvider` raises

@@ -23,9 +23,10 @@
 import { describe, it, expect, beforeEach } from 'bun:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { cleanup, render } from '@testing-library/react'
+import { cleanup, fireEvent, render } from '@testing-library/react'
 import { ZoomControls } from '@site/toolbar/ZoomControls'
 import { useEditorStore } from '@site/store/store'
+import { CANVAS_RESET_ZOOM_EVENT } from '@site/canvas/canvasEvents'
 
 // ─── Guideline #224 constants ─────────────────────────────────────────────────
 
@@ -100,6 +101,27 @@ describe('ZoomControls — live mode', () => {
     for (const button of container.querySelectorAll('button')) {
       expect(button.getAttribute('aria-disabled')).toBeNull()
       expect(button.hasAttribute('disabled')).toBe(false)
+    }
+  })
+})
+
+describe('ZoomControls — reset dispatch', () => {
+  it('routes the percentage reset through the canvas event', () => {
+    useEditorStore.setState({ canvasView: 'design', zoom: 2 })
+    let resetCount = 0
+    const onReset = () => {
+      resetCount += 1
+    }
+    document.addEventListener(CANVAS_RESET_ZOOM_EVENT, onReset)
+
+    try {
+      const { container } = render(React.createElement(ZoomControls))
+      fireEvent.click(container.querySelectorAll('button')[1])
+
+      expect(resetCount).toBe(1)
+    } finally {
+      document.removeEventListener(CANVAS_RESET_ZOOM_EVENT, onReset)
+      cleanup()
     }
   })
 })
