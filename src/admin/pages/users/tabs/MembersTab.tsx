@@ -8,7 +8,8 @@
  */
 import { useEffect, useState } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
-import ld from '@admin/shared/ListDetail/ListDetail.module.css'
+import { AccountDirectory } from '../components/AccountDirectory'
+import directory from '../components/AccountDirectory.module.css'
 import { useConfirmAction, useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { memberDataFilename, memberPageIsLive } from '@core/members'
@@ -37,7 +38,6 @@ import {
   type CmsMemberListQuery,
 } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { formatRelativeTimeAgo } from '@core/utils/relativeTime'
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
 import { RangeTabs } from '@ui/components/RangeTabs'
@@ -54,7 +54,6 @@ import { InviteMemberDialog } from '../members/InviteMemberDialog'
 import { MemberAppsDialog } from '../members/MemberAppsDialog'
 import { MemberDetailPanel, type MemberActions } from '../members/MemberDetailPanel'
 import { MemberSettingsDialog } from '../members/MemberSettingsDialog'
-import { STATUS_LABEL, STATUS_TONE } from '../members/memberText'
 import memberStyles from '../members/Members.module.css'
 import styles from '../UsersPage.module.css'
 import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
@@ -123,7 +122,7 @@ export function MembersTab({
   const extra = more?.key === queryKey ? more : null
   const members = list.data ? [...list.data.members, ...(extra?.members ?? [])] : []
   const nextOffset = extra ? extra.nextOffset : (list.data?.nextOffset ?? null)
-  const selected = members.find((member) => member.id === selectedId) ?? members[0] ?? null
+  const selected = members.find((member) => member.id === selectedId) ?? null
   const filtered = status !== 'all' || tag !== ALL_TAGS || search.trim() !== ''
 
   const detailResource = useAsyncResource(
@@ -274,8 +273,8 @@ export function MembersTab({
     <section className={styles.section} aria-labelledby="members-title">
       <div className={styles.sectionHeader}>
         <div>
-          <h2 id="members-title">Site members</h2>
-          <p>People with an account on your published site. Tags decide which protected pages they can open.</p>
+          <h1 id="members-title">Site members</h1>
+          <p>People who can sign in to your published site.</p>
         </div>
         <div className={memberStyles.headerActions}>
           <Button
@@ -301,7 +300,7 @@ export function MembersTab({
           <Button
             type="button"
             variant="primary"
-            size="sm"
+            size="md"
             onClick={() => setDialog('invite')}
             disabled={inviteBlocked !== undefined}
             tooltip={inviteBlocked}
@@ -325,146 +324,92 @@ export function MembersTab({
         </p>
       )}
 
-      {list.loading && !list.data && <p className={styles.emptyState}>Loading members…</p>}
-
-      {list.data && counts && (
-        <>
-          <div className={memberStyles.filters}>
-            <SearchBar
-              className={memberStyles.search}
-              value={searchInput}
-              onValueChange={setSearchInput}
-              onClear={() => setSearchInput('')}
-              placeholder="Search name or email"
-              aria-label="Search name or email"
-            />
-            <RangeTabs<StatusFilter>
-              value={status}
-              options={[
-                { value: 'all', label: `All ${counts.all.toLocaleString()}` },
-                { value: 'active', label: `Active ${counts.active.toLocaleString()}` },
-                { value: 'pending', label: `Pending ${counts.pending.toLocaleString()}` },
-                { value: 'suspended', label: `Suspended ${counts.suspended.toLocaleString()}` },
-              ]}
-              onChange={setStatus}
-              ariaLabel="Filter by status"
-            />
-            {list.data.tags.length > 0 && (
-              <div className={memberStyles.filterSelect}>
-                <Select
-                  aria-label="Filter by tag"
-                  fieldSize="sm"
-                  value={tag}
-                  options={[
-                    { value: ALL_TAGS, label: 'All tags' },
-                    ...list.data.tags.map((entry) => ({
-                      value: entry.tag,
-                      label: `${entry.tag} (${entry.count})`,
-                      textValue: entry.tag,
-                    })),
-                  ]}
-                  onChange={(event) => setTag(event.currentTarget.value)}
-                />
-              </div>
-            )}
-          </div>
-
-          {members.length === 0 ? (
-            <EmptyState
-              variant="centered"
-              icon={<UsersSolidIcon size={28} />}
-              title={filtered ? 'No member matches these filters' : 'No members yet'}
-              description={
-                filtered
-                  ? 'Try another search, or clear the filters to see everyone.'
-                  : 'Members appear here when someone signs up on the site or accepts an invitation.'
-              }
-              action={
-                filtered ? (
-                  <Button type="button" variant="secondary" size="sm" onClick={clearFilters}>Clear filters</Button>
-                ) : undefined
-              }
-            />
-          ) : (
-            <div className={ld.split}>
-              <div className={ld.list}>
-                <div className={ld.listHeader}>
-                  <span>
-                    {list.data.matching.toLocaleString()} {list.data.matching === 1 ? 'member' : 'members'}
-                    {filtered ? ' match' : ''}
-                  </span>
-                  {filtered && <Button type="button" variant="ghost" size="xs" onClick={clearFilters}>Clear filters</Button>}
-                </div>
-                <ul className={ld.rows} aria-label="Site members">
-                  {members.map((member) => {
-                    const active = selected?.id === member.id
-                    return (
-                      <li key={member.id}>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="md"
-                          fullWidth
-                          align="start"
-                          active={active}
-                          aria-current={active ? 'true' : undefined}
-                          className={ld.row}
-                          onClick={() => {
-                            setSelectedId(member.id)
-                            setChanged(null)
-                          }}
-                        >
-                          <span className={ld.dot} data-tone={STATUS_TONE[member.status]} aria-hidden="true" />
-                          <span className={ld.rowMain}>
-                            <span className={ld.rowSubject}>{member.name || member.email}</span>
-                            <span className={ld.rowMeta}>
-                              {member.name ? `${member.email} · ` : ''}
-                              {STATUS_LABEL[member.status]}
-                              {member.lastLoginAt
-                                ? ` · signed in ${formatRelativeTimeAgo(Date.parse(member.lastLoginAt))}`
-                                : ''}
-                            </span>
-                          </span>
-                          <span className={memberStyles.rowTags}>
-                            {member.tags.slice(0, 3).map((name) => (
-                              <TagPill key={name} label={name} size="xs" monospace muted />
-                            ))}
-                            {member.tags.length > 3 && <TagPill label={`+${member.tags.length - 3}`} size="xs" muted />}
-                          </span>
-                        </Button>
-                      </li>
-                    )
-                  })}
-                </ul>
-                <div className={ld.listFooter}>
-                  {nextOffset !== null ? (
-                    <Button type="button" variant="secondary" size="sm" onClick={() => void showMore()} busy={loadingMore}>
-                      Show more
-                    </Button>
-                  ) : (
-                    <span>End of the list.</span>
-                  )}
-                </div>
-              </div>
-
-              {selected && detail ? (
-                <MemberDetailPanel
-                  detail={detail}
-                  canManage={canManage}
-                  mailAvailable={mailAvailable}
-                  inviteBlocked={inviteBlocked}
-                  busy={busy}
-                  actions={actionsFor(selected)}
-                />
-              ) : (
-                <div className={ld.detail}>
-                  <p className={memberStyles.plain}>{detailResource.error ?? 'Loading…'}</p>
-                </div>
-              )}
+      <AccountDirectory
+        kind="Member"
+        accounts={members.map((member) => ({
+          ...member,
+          access: member.tags.length ? <>
+            {member.tags.slice(0, 2).map((name) => <TagPill key={name} label={name} size="xs" muted />)}
+            {member.tags.length > 2 && <span>+{member.tags.length - 2}</span>}
+          </> : '—',
+        }))}
+        selectedId={selectedId}
+        onSelect={(id) => { setSelectedId(id); setChanged(null) }}
+        loading={list.loading && !list.data}
+        toolbar={<>
+          <SearchBar
+            className={directory.search}
+            value={searchInput}
+            onValueChange={setSearchInput}
+            onClear={() => setSearchInput('')}
+            placeholder="Search name or email"
+            aria-label="Search name or email"
+          />
+          {counts && <RangeTabs<StatusFilter>
+            value={status}
+            options={[
+              { value: 'all', label: `All ${counts.all.toLocaleString()}` },
+              { value: 'active', label: `Active ${counts.active.toLocaleString()}` },
+              { value: 'pending', label: `Pending ${counts.pending.toLocaleString()}` },
+              { value: 'suspended', label: `Suspended ${counts.suspended.toLocaleString()}` },
+            ]}
+            onChange={setStatus}
+            ariaLabel="Filter by status"
+          />}
+          {list.data && list.data.tags.length > 0 && (
+            <div className={memberStyles.filterSelect}>
+              <Select
+                aria-label="Filter by tag"
+                fieldSize="sm"
+                value={tag}
+                options={[
+                  { value: ALL_TAGS, label: 'All tags' },
+                  ...list.data.tags.map((entry) => ({
+                    value: entry.tag,
+                    label: `${entry.tag} (${entry.count})`,
+                    textValue: entry.tag,
+                  })),
+                ]}
+                onChange={(event) => setTag(event.currentTarget.value)}
+              />
             </div>
           )}
-        </>
-      )}
+        </>}
+        empty={list.data && (
+          <EmptyState
+            variant="centered"
+            icon={<UsersSolidIcon size={28} />}
+            title={filtered ? 'No member matches these filters' : 'No members yet'}
+            description={
+              filtered
+                ? 'Try another search, or clear the filters to see everyone.'
+                : 'Members appear here when someone signs up on the site or accepts an invitation.'
+            }
+            action={
+              filtered ? (
+                <Button type="button" variant="secondary" size="sm" onClick={clearFilters}>Clear filters</Button>
+              ) : undefined
+            }
+          />
+        )}
+        footer={list.data && members.length > 0 && (
+          <div className={memberStyles.listFooter}>
+            <span>{members.length < list.data.matching && `${members.length} of `}{list.data.matching.toLocaleString()} {list.data.matching === 1 ? 'member' : 'members'}</span>
+            {filtered && <Button variant="ghost" size="xs" onClick={clearFilters}>Clear filters</Button>}
+            {nextOffset !== null && <Button variant="secondary" size="sm" onClick={() => void showMore()} busy={loadingMore}>Show more</Button>}
+          </div>
+        )}
+      >
+        {selected && detail ? <MemberDetailPanel
+          key={selected.id}
+          detail={detail}
+          canManage={canManage}
+          mailAvailable={mailAvailable}
+          inviteBlocked={inviteBlocked}
+          busy={busy}
+          actions={actionsFor(selected)}
+        /> : <p className={memberStyles.plain} role="status">{detailResource.error ?? 'Loading member details…'}</p>}
+      </AccountDirectory>
 
       {dialog === 'invite' && (
         <InviteMemberDialog

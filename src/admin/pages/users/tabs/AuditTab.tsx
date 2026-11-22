@@ -37,7 +37,7 @@ export function AuditTab({ data }: { data: UsersPageData }) {
     <section className={styles.section} aria-labelledby="audit-events-title">
       <div className={styles.sectionHeader}>
         <div>
-          <h2 id="audit-events-title">Audit Events</h2>
+          <h1 id="audit-events-title">Audit Events</h1>
           <p>Security and access changes across the admin area.</p>
         </div>
       </div>

@@ -2,7 +2,7 @@
  * Users → Users tab.
  *
  * Lists every CMS user with their role, status and last-login time. The
- * action menu on each row exposes Edit / Reset password / Suspend (or
+ * action menu in the inspector exposes Edit / Reset password / Suspend (or
  * Activate) / Delete. The owner row has no actions — owner accounts are
  * permanent and immutable from the admin UI.
  *
@@ -14,15 +14,9 @@
 import { useEffect, useEffectEvent, useState, type FormEvent } from 'react'
 import { consumePendingAction } from '@admin/spotlight/pendingAction'
 import { Button } from '@ui/components/Button'
-import {
-  DataTable,
-  DataTableBody,
-  DataTableCell,
-  DataTableHead,
-  DataTableHeader,
-  DataTableRow,
-} from '@ui/components/DataTable'
-import { Skeleton, SkeletonCircle } from '@ui/components/Skeleton'
+import { SearchBar } from '@ui/components/SearchBar'
+import { AccountDirectory } from '../components/AccountDirectory'
+import directory from '../components/AccountDirectory.module.css'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
@@ -41,7 +35,7 @@ import { Badge } from '../components/Badge'
 import { RowActionMenu } from '../components/RowActionMenu'
 import { UserDialog } from '../components/UserDialog'
 import { userDisplayLabel } from '@core/users/displayName'
-import { formatDateTime, isOwnerUser, statusLabel } from '../utils/format'
+import { formatDateTime, isOwnerUser } from '../utils/format'
 import {
   emptyUserForm,
   type UserDialogMode,
@@ -167,6 +161,21 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
   const [dialogMode, setDialogMode] = useState<UserDialogMode | null>(null)
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
 
+  const [search, setSearch] = useState('')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const query = search.trim().toLowerCase()
+  const visible = users.filter((user) => [user.displayName, user.email].some((value) => value.toLowerCase().includes(query)))
+  const selected = visible.find((user) => user.id === selectedId)
+  const accounts = visible.map((user) => ({
+    id: user.id,
+    name: userDisplayLabel(user),
+    email: user.email,
+    avatar: <UserAvatar className={directory.avatar} user={user} size={32} alt={null} />,
+    access: <Badge label={user.role.name} muted />,
+    status: user.status,
+    lastLogin: user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString(undefined, { dateStyle: 'medium' }) : 'Never',
+  }))
+
   const assignableRoleOptions = roles
     .filter((role) => role.id !== 'owner')
     .map((role) => ({ value: role.id, label: role.name, textValue: role.name }))
@@ -262,146 +271,57 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
     <section className={styles.section} aria-labelledby="all-users-title">
       <div className={styles.sectionHeader}>
         <div>
-          <h2 id="all-users-title">All Users</h2>
-          {/* Suppress "0 accounts" while loading — looks like an empty
-              install. The skeleton table below carries the loading signal. */}
-          <p>
-            {data.loading
-              ? ' '
-              : `${users.length} account${users.length === 1 ? '' : 's'} with admin access.`}
-          </p>
+          <h1 id="all-users-title">Admin users</h1>
+          <p>People who can sign in to the CMS.</p>
         </div>
         {canManageUsers && (
-          <Button type="button" variant="primary" size="sm" onClick={openCreate}>
+          <Button type="button" variant="primary" size="md" onClick={openCreate}>
             <PlusIcon size={14} aria-hidden="true" />
             <span>Create User</span>
           </Button>
         )}
       </div>
-      {data.loading ? (
-        // Skeleton table — matches the real users table 1:1 (same
-        // header row, same 4-column layout, same identity cluster
-        // shape). Avoids the "no users yet" empty-state flash and
-        // keeps the column widths stable when real rows swap in.
-        <DataTable aria-label="Loading users" density="compact" aria-busy="true">
-          <DataTableHead>
-            <DataTableRow>
-              <DataTableHeader scope="col">User</DataTableHeader>
-              <DataTableHeader scope="col">Access</DataTableHeader>
-              <DataTableHeader scope="col">Last login</DataTableHeader>
-              <DataTableHeader scope="col" className={styles.actionsHeader}>Actions</DataTableHeader>
-            </DataTableRow>
-          </DataTableHead>
-          <DataTableBody>
-            {Array.from({ length: 3 }, (_, i) => (
-              <DataTableRow key={`skeleton-${i}`}>
-                <DataTableCell>
-                  <div className={styles.identityRow}>
-                    <SkeletonCircle size={32} />
-                    <div className={styles.identity}>
-                      <Skeleton width={140} height={13} />
-                      <Skeleton width={180} height={11} />
-                    </div>
-                  </div>
-                </DataTableCell>
-                <DataTableCell>
-                  <div className={styles.badges}>
-                    <Skeleton width={56} height={18} radius={999} />
-                    <Skeleton width={64} height={18} radius={999} />
-                  </div>
-                </DataTableCell>
-                <DataTableCell>
-                  <Skeleton width={100} height={12} />
-                </DataTableCell>
-                <DataTableCell className={styles.actionsCell}>
-                  <Skeleton width={24} height={24} radius={6} />
-                </DataTableCell>
-              </DataTableRow>
-            ))}
-          </DataTableBody>
-        </DataTable>
-      ) : users.length > 0 ? (
-        <DataTable aria-label="Users" density="compact">
-          <DataTableHead>
-            <DataTableRow>
-              <DataTableHeader scope="col">User</DataTableHeader>
-              <DataTableHeader scope="col">Access</DataTableHeader>
-              <DataTableHeader scope="col">Last login</DataTableHeader>
-              <DataTableHeader scope="col" className={styles.actionsHeader}>Actions</DataTableHeader>
-            </DataTableRow>
-          </DataTableHead>
-          <DataTableBody>
-            {users.map((user) => {
-              const owner = isOwnerUser(user)
-              const label = userDisplayLabel(user)
-              return (
-                <DataTableRow key={user.id} aria-label={`User ${user.email}`}>
-                  <DataTableCell>
-                    <div className={styles.identityRow}>
-                      <UserAvatar user={user} size={32} alt={null} />
-                      <div className={styles.identity}>
-                        <strong>{label}</strong>
-                        <span>{user.email}</span>
-                      </div>
-                    </div>
-                  </DataTableCell>
-                  <DataTableCell>
-                    <div className={styles.badges}>
-                      <Badge label={statusLabel(user.status)} />
-                      <Badge label={user.role.name} />
-                      {owner && <Badge label="Owner account" muted />}
-                    </div>
-                  </DataTableCell>
-                  <DataTableCell>
-                    <span className={styles.secondaryText}>{formatDateTime(user.lastLoginAt)}</span>
-                  </DataTableCell>
-                  <DataTableCell className={styles.actionsCell}>
-                    {canManageUsers && !owner && (
-                      <RowActionMenu
-                        triggerLabel={`Actions for ${label}`}
-                        menuLabel={`User actions for ${label}`}
-                        disabled={busy}
-                        items={[
-                          {
-                            label: 'Edit',
-                            icon: <EditSolidIcon size={12} aria-hidden="true" />,
-                            onSelect: () => openEdit(user),
-                          },
-                          {
-                            label: 'Reset password',
-                            icon: <SaveSolidIcon size={12} aria-hidden="true" />,
-                            onSelect: () => openResetPassword(user),
-                          },
-                          {
-                            label: user.status === 'active' ? 'Suspend' : 'Activate',
-                            icon: user.status === 'active'
-                              ? <PowerOffIcon size={12} aria-hidden="true" />
-                              : <PowerIcon size={12} aria-hidden="true" />,
-                            onSelect: () => void toggleStatus(user),
-                          },
-                          {
-                            label: 'Delete',
-                            icon: <TrashSolidIcon size={12} aria-hidden="true" />,
-                            danger: true,
-                            onSelect: () => void remove(user),
-                          },
-                        ]}
-                      />
-                    )}
-                  </DataTableCell>
-                </DataTableRow>
-              )
-            })}
-          </DataTableBody>
-        </DataTable>
-      ) : (
-        <EmptyState
-          variant="centered"
-          icon={<UsersSolidIcon size={28} />}
-          title="No users yet"
-          description="People you add get their own sign-in to this admin."
-        />
-      )}
+      <AccountDirectory
+        kind="User"
+        accounts={accounts}
+        selectedId={selectedId}
+        onSelect={setSelectedId}
+        loading={data.loading}
+        toolbar={<SearchBar className={directory.search} value={search} onValueChange={setSearch} onClear={() => setSearch('')}
+          placeholder="Search name or email" aria-label="Search name or email" />}
+        empty={<EmptyState variant="centered" icon={<UsersSolidIcon size={28} />}
+          title={query ? 'No matching users' : 'No users yet'}
+          description={query ? 'Try another name or email address.' : 'People you add get their own sign-in to this admin.'}
+          action={query && <Button variant="secondary" onClick={() => setSearch('')}>Clear search</Button>} />}
+      >
+        {selected && (
+          <>
+            <section className={directory.section}>
+              <h4>CMS access</h4>
+              <dl className={directory.facts}>
+                <div><dt>Role</dt><dd>{selected.role.name}</dd></div>
+                <div><dt>Last login</dt><dd>{formatDateTime(selected.lastLoginAt)}</dd></div>
+              </dl>
+            </section>
+            {isOwnerUser(selected) ? <p className={styles.secondaryText}>Owner account</p> : canManageUsers && (
+              <RowActionMenu
+                text="More actions"
+                triggerLabel={`Actions for ${userDisplayLabel(selected)}`}
+                menuLabel={`User actions for ${userDisplayLabel(selected)}`}
+                disabled={busy}
+                items={[
+                  { label: 'Edit', icon: <EditSolidIcon size={12} />, onSelect: () => openEdit(selected) },
+                  { label: 'Reset password', icon: <SaveSolidIcon size={12} />, onSelect: () => openResetPassword(selected) },
+                  { label: selected.status === 'active' ? 'Suspend' : 'Activate',
+                    icon: selected.status === 'active' ? <PowerOffIcon size={12} /> : <PowerIcon size={12} />,
+                    onSelect: () => void toggleStatus(selected) },
+                  { label: 'Delete', danger: true, icon: <TrashSolidIcon size={12} />, onSelect: () => void remove(selected) },
+                ]}
+              />
+            )}
+          </>
+        )}
+      </AccountDirectory>
 
       {canManageUsers && dialogMode && (
         <UserDialog

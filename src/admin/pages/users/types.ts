@@ -35,7 +35,9 @@ export interface CapabilityGroup {
 
 export interface RowActionMenuItem {
   label: string
-  icon: ReactNode
+  icon?: ReactNode
+  disabled?: boolean
+  tooltip?: string
   danger?: boolean
   onSelect: () => void
 }

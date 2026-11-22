@@ -13,12 +13,13 @@ import type { RowActionMenuItem } from '../types'
 
 interface RowActionMenuProps {
   triggerLabel: string
+  text?: string
   menuLabel: string
   disabled: boolean
   items: RowActionMenuItem[]
 }
 
-export function RowActionMenu({ triggerLabel, menuLabel, disabled, items }: RowActionMenuProps) {
+export function RowActionMenu({ triggerLabel, text, menuLabel, disabled, items }: RowActionMenuProps) {
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   if (items.length === 0) return null
@@ -29,8 +30,8 @@ export function RowActionMenu({ triggerLabel, menuLabel, disabled, items }: RowA
         ref={triggerRef}
         type="button"
         variant="secondary"
-        size="xs"
-        iconOnly
+        size={text ? 'md' : 'xs'}
+        iconOnly={!text}
         disabled={disabled}
         active={open}
         aria-label={triggerLabel}
@@ -38,12 +39,19 @@ export function RowActionMenu({ triggerLabel, menuLabel, disabled, items }: RowA
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
+        {text}
         <ChevronDownIcon size={14} aria-hidden="true" />
       </Button>
       {open && (
         <ContextMenu
           ariaLabel={menuLabel}
           onClose={() => setOpen(false)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') {
+              event.stopPropagation()
+              triggerRef.current?.focus()
+            }
+          }}
           anchorRef={triggerRef}
           side="bottom"
           align="end"
@@ -53,6 +61,8 @@ export function RowActionMenu({ triggerLabel, menuLabel, disabled, items }: RowA
             <ContextMenuItem
               key={item.label}
               danger={item.danger}
+              disabled={item.disabled}
+              tooltip={item.tooltip}
               onClick={() => {
                 setOpen(false)
                 item.onSelect()

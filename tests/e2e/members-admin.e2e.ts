@@ -80,7 +80,7 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
 
   await test.step('find them, and give them a tag that ends', async () => {
     await tab.getByLabel('Search name or email').fill(`member-${suffix}`)
-    const rows = tab.getByRole('list', { name: 'Site members' })
+    const rows = tab.getByRole('table', { name: 'Site members' })
     await expect(rows.getByRole('button')).toHaveCount(1)
     await expect(details.getByRole('heading', { name: email })).toBeVisible()
     await expect(details.getByText('Pending', { exact: true })).toBeVisible()
@@ -88,6 +88,7 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
     await expect(details.getByRole('region', { name: 'Tags' }).getByText('student', { exact: true })).toBeVisible()
 
     const tomorrow = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10)
+    await details.getByRole('button', { name: 'Add tag', exact: true }).click()
     await details.getByLabel('Add a tag').fill('trial')
     await details.getByLabel('Until (optional)').fill(tomorrow)
     await details.getByRole('button', { name: 'Add', exact: true }).click()
@@ -96,13 +97,15 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
   })
 
   await test.step('suspend and restore', async () => {
-    await details.getByRole('button', { name: 'Suspend', exact: true }).click()
+    await details.getByRole('button', { name: 'More actions' }).click()
+    await page.getByRole('menuitem', { name: 'Suspend', exact: true }).click()
     await page.getByRole('dialog').getByRole('button', { name: 'Suspend', exact: true }).click()
     await expect(details.getByText('Suspended: this member cannot sign in')).toBeVisible()
     await tab.getByLabel('Search name or email').fill('')
     await tab.getByRole('tablist', { name: 'Filter by status' }).getByRole('tab', { name: /^Suspended 1/ }).click()
-    await expect(tab.getByRole('list', { name: 'Site members' }).getByRole('button')).toHaveCount(1)
-    await details.getByRole('button', { name: 'Restore access' }).click()
+    await expect(tab.getByRole('table', { name: 'Site members' }).getByRole('button')).toHaveCount(1)
+    await details.getByRole('button', { name: 'More actions' }).click()
+    await page.getByRole('menuitem', { name: 'Restore access', exact: true }).click()
     await expect(tab.getByText('No member matches these filters')).toBeVisible()
     await tab.getByRole('button', { name: 'Clear filters' }).click()
   })
@@ -124,7 +127,9 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
     await page.goto('/admin/users')
     await page.getByRole('tab', { name: 'Site members', exact: true }).click()
     await tab.getByLabel('Search name or email').fill(`member-${suffix}`)
-    await details.getByRole('button', { name: 'Delete', exact: true }).click()
+    await tab.getByRole('table', { name: 'Site members' }).getByRole('button').filter({ hasText: email }).click()
+    await details.getByRole('button', { name: 'More actions' }).click()
+    await page.getByRole('menuitem', { name: 'Delete', exact: true }).click()
     await page.getByRole('alertdialog').getByRole('button', { name: 'Delete member' }).click()
     await completeStepUp(page)
     await expect(tab.getByText('No member matches these filters')).toBeVisible()

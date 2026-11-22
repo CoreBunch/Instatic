@@ -61,6 +61,27 @@ test.describe('users and roles', () => {
     await expect(row.getByText('Active')).toBeVisible()
     await expect(row.getByText('Admin')).toBeVisible()
 
+    await test.step('inspect the account on desktop and in a narrow drawer', async () => {
+      await row.getByRole('button').click()
+      const panel = page.getByRole('article', { name: 'User details' })
+      await expect(panel.getByRole('heading', { name: initialDisplayName })).toBeVisible()
+      await page.screenshot({ path: '.tmp/evidence/admin-user-inspector.png' })
+      await panel.getByRole('button', { name: 'Close details' }).click()
+      await expect(row.getByRole('button')).toBeFocused()
+
+      const viewport = page.viewportSize()!
+      await page.setViewportSize({ width: 390, height: 844 })
+      await row.getByRole('button').click()
+      const drawer = page.getByRole('dialog', { name: 'User details' })
+      await expect(drawer.getByText(email)).toBeInViewport()
+      await expect(drawer.getByRole('button', { name: `Actions for ${initialDisplayName}` })).toBeInViewport()
+      await page.screenshot({ path: '.tmp/evidence/admin-user-drawer.png' })
+      await page.keyboard.press('Escape')
+      await expect(drawer).toBeHidden()
+      await expect(row.getByRole('button')).toBeFocused()
+      await page.setViewportSize(viewport)
+    })
+
     await test.step('edit identity fields', async () => {
       await openUserAction(page, initialDisplayName, 'Edit')
       const dialog = page.getByRole('dialog', { name: 'Edit User' })
@@ -265,7 +286,7 @@ test.describe('users and roles', () => {
         await limited.goto('/admin/users')
         await expect(limited).not.toHaveURL(/\/admin\/users/)
         await expect(
-          limited.getByRole('heading', { name: 'All Users' }),
+          limited.getByRole('heading', { name: 'Admin users' }),
         ).toHaveCount(0)
       } finally {
         await context.close()
@@ -550,6 +571,7 @@ function userRow(page: Page, email: string): Locator {
 }
 
 async function openUserAction(page: Page, displayName: string, action: string): Promise<void> {
+  await page.getByRole('table', { name: 'Users' }).getByRole('button').filter({ hasText: displayName }).click()
   await page.getByRole('button', { name: `Actions for ${displayName}` }).click()
   await page
     .getByRole('menu', { name: `User actions for ${displayName}` })
