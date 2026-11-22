@@ -6,6 +6,7 @@
 
 /* ── Base ─────────────────────────────────────────────────────────────────── */
 .btn {
+    height: var(--button-size);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -48,7 +49,7 @@
 
 /* ── Sizes ────────────────────────────────────────────────────────────────── */
 .size-micro {
-    height: 18px;
+    --button-size: 18px;
     padding: 0 var(--space-3xs);
     gap: var(--space-4xs);
     font-size: var(--text-2xs);
@@ -56,7 +57,7 @@
 }
 
 .size-xs {
-    height: 22px;
+    --button-size: var(--control-height-xs);
     padding: 0 var(--space-xs);
     border-radius: 8px;
     gap: var(--space-3xs);
@@ -64,21 +65,21 @@
 }
 
 .size-sm {
-    height: 26px;
+    --button-size: var(--control-height);
     padding: 0 var(--space-s);
     gap: var(--space-3xs);
     font-size: var(--text-xs);
 }
 
 .size-md {
-    height: 32px;
+    --button-size: var(--control-height-md);
     padding: var(--space-xs) var(--space-xl);
     gap: var(--space-2xs);
     font-size: var(--text-s);
 }
 
 .size-lg {
-    height: 44px;
+    --button-size: 44px;
     padding: 0 var(--space-2xl);
     gap: var(--space-xs);
     font-size: var(--text-m);
@@ -86,22 +87,8 @@
 
 /* ── Icon-only (square) ───────────────────────────────────────────────────── */
 .iconOnly {
+    width: var(--button-size);
     padding: 0;
-}
-.size-micro.iconOnly {
-    width: 18px;
-}
-.size-xs.iconOnly {
-    width: 26px;
-}
-.size-sm.iconOnly {
-    width: 28px;
-}
-.size-md.iconOnly {
-    width: 32px;
-}
-.size-lg.iconOnly {
-    width: 44px;
 }
 
 .fullWidth {

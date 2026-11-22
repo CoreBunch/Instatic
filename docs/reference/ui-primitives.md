@@ -185,12 +185,14 @@ import { Button } from '@ui/components/Button'
 
 ### Sizes
 
+Use the same size on adjacent controls. Button's `size` and Input and Select's `fieldSize` share the `xs`, `sm`, and `md` height tokens and default to `md`.
+
 | Size    | Height | Use for                                                            |
 |---------|--------|--------------------------------------------------------------------|
 | `micro` | 18px   | Inline chips                                                       |
-| `xs`    | 22px   | Property panel rows                                                |
-| `sm`    | 26px   | **Default** — toolbar, dialogs                                     |
-| `md`    | 32px   | Primary CTAs in modals                                             |
+| `xs`    | 24px   | Property panel rows                                                |
+| `sm`    | 28px   | Compact forms and toolbars                                         |
+| `md`    | 32px   | **Default** for buttons and form fields                            |
 | `lg`    | 44px   | Touch targets, mobile                                              |
 
 ### Flags

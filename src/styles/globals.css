@@ -211,8 +211,12 @@
         #c9c9c9 0% 50%
     );
 
-    /* Property inspector row geometry */
+    /* Shared control heights (xs, sm, md) */
+    --control-height-xs: 24px;
     --control-height: 28px;
+    --control-height-md: 32px;
+
+    /* Property inspector row geometry */
     --control-label-column: 100px;
 
     /* Radius */

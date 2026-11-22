@@ -13,7 +13,7 @@
  *   §8.1 Settings nav buttons — full-width left-sidebar navigation (SettingsModal)
  *   §8.2 Full-width disclosure toggles — Section, PropertyControlRenderer
  *   §8.3 Pill micro-remove buttons — ClassPicker (< 20×20px fixed,
- *         Button's 26px min-height would distort pill layout)
+ *         a standard action button would distort pill layout)
  *   §8.4 Toggle switch hit areas — ToggleControl, PreferencesSection
  *         (role="switch", custom 44×44 WCAG 2.5.5 hit area not achievable via
  *         Button's fixed size tokens)
@@ -132,8 +132,8 @@ const ALLOWLIST = new Set([
   // the widget's natural `defaultSize × default rows` footprint (set inline
   // by the parent tile). The whole surface is the widget renderer; dnd-kit
   // drag listeners attach to this element so the user can drag the preview
-  // up to the dashboard grid. Button's inline-flex size tokens (sm = 26px,
-  // lg = 44px) cannot represent this custom-sized canvas — same pattern
+  // up to the dashboard grid. Button's fixed sizes cannot represent
+  // this custom-sized canvas — same pattern
   // class as §8.5 (full-surface media tiles) but with dnd-kit listeners
   // attached.
   'admin/pages/dashboard/components/BlockLibrary.tsx',
@@ -162,7 +162,7 @@ const ALLOWLIST = new Set([
   // thin edge bars (6px wide/tall) inside a 72×72 box, and the radius corner
   // picker renders four 14×14 corner dots. Each is a clickable hit area whose
   // geometry IS the affordance (which edge / corner you're editing). Button's
-  // token-driven size system (micro = 18px, sm = 26px) cannot represent a 6px
+  // token-driven size system (starting at 18px) cannot represent a 6px
   // edge bar or a corner-anchored dot — same pattern class as §8.10's
   // grid-cell day buttons (bespoke positioned hit area, custom selected
   // state). These are the only bare <button>s in the file.
