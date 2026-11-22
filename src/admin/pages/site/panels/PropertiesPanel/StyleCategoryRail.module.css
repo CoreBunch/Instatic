@@ -37,3 +37,14 @@
     background: var(--success);
     box-shadow: 0 0 0 2px var(--bg-body);
 }
+
+.sectionPicker {
+    display: flex;
+    align-items: center;
+    gap: var(--space-l);
+    padding: var(--space-s) var(--space-xl);
+    background: var(--bg-body);
+    color: var(--text-muted);
+    font-size: var(--text-m);
+    font-weight: 600;
+}

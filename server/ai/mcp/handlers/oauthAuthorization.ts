@@ -11,14 +11,13 @@ import { createAuditEvent } from '../../../repositories/audit'
 import { createOAuthAuthorizationGrant, findOAuthClient } from '../oauth/store'
 import { OAUTH_GRANT_TTL_DAYS } from '../connectors/store'
 import {
-  isValidPkceChallenge,
   mcpIssuerUnavailableResponse,
   mcpResource,
   normalizeMcpScope,
-  oauthRedirect,
 } from '../oauth/protocol'
 import { parseOAuthAuthorizationRequest } from '../oauth/schemas'
 import { MCP_OAUTH_AUTHORIZATION_API_PATH } from '../paths'
+import { isValidPkceChallenge, oauthRedirect, redirectUriRegistered } from '../../../oauth/protocol'
 
 export function tryHandleMcpOAuthAuthorization(
   req: Request,
@@ -126,7 +125,7 @@ async function resolveAuthorizationRequest(
   const client = await findOAuthClient(db, request.clientId)
   const scope = normalizeMcpScope(request.scope)
   if (
-    !client || !scope || !client.redirectUris.includes(request.redirectUri) ||
+    !client || !scope || !redirectUriRegistered(client.redirectUris, request.redirectUri) ||
     !isValidPkceChallenge(request.codeChallenge) ||
     request.resource !== resource
   ) {

@@ -163,6 +163,10 @@ async function doInstall(): Promise<void> {
       SkeletonBlock: hostUiMod.SkeletonBlock,
       SkeletonCards: hostUiMod.SkeletonCards,
       SkeletonRows: hostUiMod.SkeletonRows,
+      SegmentedControl: hostUiMod.SegmentedControl,
+      TagPill: hostUiMod.TagPill,
+      Kbd: hostUiMod.Kbd,
+      ShortcutKeys: hostUiMod.ShortcutKeys,
     }),
     hostHooks: Object.freeze({
       PluginContext: hostHooksMod.PluginContext,

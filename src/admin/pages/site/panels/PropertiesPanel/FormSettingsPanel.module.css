@@ -68,12 +68,8 @@
 .targetTableControl {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    align-items: stretch;
+    align-items: center;
     gap: var(--space-xs);
-}
-
-.targetTableControl .createTableButton.createTableButton {
-    height: 100%;
 }
 
 .sectionLabel {

@@ -1,0 +1,29 @@
+.body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    gap: var(--space-m);
+}
+
+.source {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text);
+    font-size: var(--text-xl);
+    font-weight: 600;
+}
+
+.search input { font-size: max(1rem, var(--text-l)); }
+.body .search { min-height: var(--button-size-lg); flex-shrink: 0; }
+.destinations {
+    display: grid;
+    align-content: start;
+    gap: var(--space-2xs);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+.destinations > button { min-width: 0; }
+.destinations p { color: var(--text-muted); }
+.label { overflow: hidden; text-overflow: ellipsis; }

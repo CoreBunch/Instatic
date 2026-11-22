@@ -347,9 +347,8 @@ describe('FormSettingsPanelView', () => {
       'utf-8',
     )
 
-    expect(source).toContain('className={styles.createTableButton}')
-    expect(source).toContain('iconOnly')
-    expect(source).toContain('tooltip="Create table"')
+    expect(source).toMatch(/<Select\s+id="form-target-table"[^>]*fieldSize="sm"/)
+    expect(source).toMatch(/<Button[^>]*size="sm"[^>]*iconOnly[^>]*tooltip="Create table"/)
     expect(css).toMatch(/\.targetTableControl\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto;/)
   })
 

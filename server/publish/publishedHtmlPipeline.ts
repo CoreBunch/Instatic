@@ -30,6 +30,7 @@
 
 import type { DbClient } from '../db/client'
 import { hookBus } from '@core/plugins/hookBus'
+import { hostPluginHasPermission } from '../plugins/host/registry'
 import {
   collectFrontendInjections,
   injectFrontendAssets,
@@ -44,6 +45,14 @@ export type PublishedHtmlPipelineInput = Omit<RendererOutput, 'cssBundle'>
 export async function applyPublishedHtmlPipeline(
   rendered: PublishedHtmlPipelineInput,
   db: DbClient,
+  options: {
+    /**
+     * The page was rendered for one member on a protected route, so its HTML
+     * may hold that member's data. Only plugins granted `members.read` get to
+     * filter it; the rest are passed over, like a plugin that never asked.
+     */
+    forMember?: boolean
+  } = {},
 ): Promise<string> {
   await hookBus.emit('publish.before', {
     siteId: rendered.siteId,
@@ -56,16 +65,12 @@ export async function applyPublishedHtmlPipeline(
   const withFormTokens = stampFormPageTokens(withInjections, rendered.pageId)
   // Module-JS channel: one external <script defer> per moduleId the page
   // needs; relaxes CSP script-src to 'self' iff at least one tag landed.
-  const withModuleScripts = injectModuleScripts(
-    withFormTokens,
-    rendered.jsModuleIds,
-    rendered.publishVersion,
-  )
+  const withModuleScripts = injectModuleScripts(withFormTokens, rendered.moduleScripts)
   const filtered = await hookBus.applyFilter('publish.html', withModuleScripts, {
     siteId: rendered.siteId,
     pageId: rendered.pageId,
     slug: rendered.slug,
-  })
+  }, options.forMember ? (pluginId) => hostPluginHasPermission(pluginId, 'members.read') : undefined)
   await hookBus.emit('publish.after', {
     siteId: rendered.siteId,
     pageId: rendered.pageId,

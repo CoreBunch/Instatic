@@ -14,13 +14,13 @@ describe('makePageRef / parsePageRef', () => {
   it('round-trips a plain page id', () => {
     const ref = makePageRef('club1')
     expect(ref).toBe('cms:page:club1')
-    expect(parsePageRef(ref)).toEqual({ pageId: 'club1', fragment: '' })
+    expect(parsePageRef(ref)).toEqual({ pageId: 'club1', suffix: '' })
   })
 
   it('round-trips with a fragment', () => {
     expect(makePageRef('club1', '#join')).toBe('cms:page:club1#join')
     expect(makePageRef('club1', 'join')).toBe('cms:page:club1#join')
-    expect(parsePageRef('cms:page:club1#join')).toEqual({ pageId: 'club1', fragment: '#join' })
+    expect(parsePageRef('cms:page:club1#join')).toEqual({ pageId: 'club1', suffix: '#join' })
   })
 
   it('isPageRef distinguishes refs from URLs', () => {

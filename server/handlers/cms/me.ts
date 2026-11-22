@@ -54,7 +54,7 @@ import {
   acceptUploadedMedia,
   readUploadForm,
 } from './mediaUpload'
-import { setMediaUsageRef } from '../../repositories/media'
+import { setMediaUsageRef } from '../../repositories/mediaUsageRefs'
 import { Type } from '@core/utils/typeboxHelpers'
 import { isValidEmail } from '@core/utils/email'
 import { MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT_MESSAGE } from '@core/utils/passwordPolicy'

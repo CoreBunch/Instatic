@@ -36,6 +36,7 @@ import {
   buildImportPlan,
   commitImportPlan,
   detectPluginPackage,
+  withPageSlugs,
   type FileMap,
   type ImportPlan,
   type ImportResult,
@@ -77,14 +78,18 @@ import {
 } from './shared/cmsBundleFlow'
 import {
   type ImportSelection,
-  tokenConflictKey,
-  crossSheetConflictKey,
+  type ConflictResolutionMaps,
+  defaultConflictResolutions,
+  emptyConflictResolutionMaps,
+  classRenameProblems,
+  siteClassNameSet,
   makeDefaultSelection,
   filterPlanBySelection,
   buildResolvedPlan,
   describeIngestError,
   ensureCurrentSiteForStaticImport,
   saveImportedDraftSite,
+  withMediaAlreadyInLibrary,
 } from './shared/importPlanning'
 import styles from './SiteImportModal.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -111,10 +116,7 @@ interface SiteImportModalProps {
 
 export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalProps = {}) {
   const navigate = useAdminNavigate()
-  const closeAdminSiteImportModal = useAdminUi((s) => s.closeSiteImport)
-  function closeModal() {
-    closeAdminSiteImportModal()
-  }
+  const closeModal = useAdminUi((s) => s.closeSiteImport)
 
   const {
     cmsBundleState,
@@ -136,12 +138,13 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   const [fileMap, setFileMap] = useState<FileMap | null>(null)
   const [plan, setPlan] = useState<ImportPlan | null>(null)
   const [selection, setSelection] = useState<ImportSelection | null>(null)
-  const [pageResolutions, setPageResolutions] = useState<Map<string, ConflictResolution>>(new Map())
-  const [ruleResolutions, setRuleResolutions] = useState<Map<string, ConflictResolution>>(new Map())
-  const [tokenResolutions, setTokenResolutions] = useState<Map<string, ConflictResolution>>(new Map())
-  const [crossSheetResolutions, setCrossSheetResolutions] = useState<Map<string, ConflictResolution>>(new Map())
+  // The user's choice per static-import conflict, one map per category.
+  const [resolutions, setResolutions] = useState<ConflictResolutionMaps>(emptyConflictResolutionMaps)
+  const [siteClassNames, setSiteClassNames] = useState<ReadonlySet<string>>(new Set())
   const [cmsRowResolutions, setCmsRowResolutions] = useState<Map<string, ConflictResolution>>(new Map())
-  const [stylesheetModes, setStylesheetModes] = useState<Record<string, StylesheetImportMode>>({})
+  // Per-sheet import modes. Only plan builds read them, and a build must use
+  // the latest modes whenever it starts, so they live in a ref, not state.
+  const stylesheetModesRef = useRef<Record<string, StylesheetImportMode>>({})
   const [pageSlugOverrides, setPageSlugOverrides] = useState<Map<string, string>>(new Map())
   const [runProgress, setRunProgress] = useState<RunProgress>(makeInitialRunProgress)
   const [result, setResult] = useState<ImportResult | null>(null)
@@ -153,6 +156,15 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   // Cancellation handle for the active static run. Aborting stops queued and
   // in-flight uploads and prevents the store commit and draft save.
   const runAbortRef = useRef<AbortController | null>(null)
+  // The plan build in flight. Files dropped onto Review rebuild the plan while
+  // an earlier build may still wait on its media lookup; only the latest one
+  // may land, so a newer build aborts the older one.
+  const planBuildRef = useRef<AbortController | null>(null)
+  // The file map the newest plan build is for. `fileMap` state only changes
+  // once a build lands, so files dropped while a build runs merge into this.
+  const latestFileMapRef = useRef<FileMap | null>(null)
+  // The file map of the plan on screen, for when a newer build fails.
+  const shownFileMapRef = useRef<FileMap | null>(null)
 
   const siteName = useEditorStore((s) => s.site?.name) ?? 'this site'
   const currentUser = useCurrentAdminUser()
@@ -176,19 +188,26 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
 
   // ── Ingest + plan-build (triggered from DropStep callbacks) ───────────────
 
+  function reviewCmsBundle() {
+    planBuildRef.current?.abort()
+    latestFileMapRef.current = null
+    shownFileMapRef.current = null
+    setFileMap(null)
+    setPlan(null)
+    setSelection(null)
+    setCmsRowResolutions(new Map())
+    setCmsResult(null)
+    setBusy(false)
+    setStep('analyze')
+  }
+
   async function handleFilesReady(files: File[]) {
     setBusy(true)
     setErrorMsg(null)
     setPluginPackage(null)
     try {
       if (files.length === 1 && await loadCmsBundleFile(files[0])) {
-        setFileMap(null)
-        setPlan(null)
-        setSelection(null)
-        setCmsRowResolutions(new Map())
-        setCmsResult(null)
-        setBusy(false)
-        setStep('analyze')
+        reviewCmsBundle()
         return
       }
 
@@ -209,13 +228,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     setPluginPackage(null)
     try {
       if (await loadCmsBundleArchiveFile(file)) {
-        setFileMap(null)
-        setPlan(null)
-        setSelection(null)
-        setCmsRowResolutions(new Map())
-        setCmsResult(null)
-        setBusy(false)
-        setStep('analyze')
+        reviewCmsBundle()
         return
       }
 
@@ -243,9 +256,11 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     setBusy(true)
     try {
       const added = await ingestInput(files)
+      // Read after the await: another drop may have started a newer build.
+      const base = latestFileMapRef.current ?? shownFileMapRef.current ?? fileMap
       const merged: FileMap = {
-        ...fileMap,
-        files: { ...fileMap.files, ...added.files },
+        ...base,
+        files: { ...base.files, ...added.files },
       }
       await finalizePlan(merged)
     } catch (err) {
@@ -255,28 +270,35 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
     }
   }
 
-  async function finalizePlan(map: FileMap, modes: Record<string, StylesheetImportMode> = stylesheetModes) {
-    const currentSite = await ensureCurrentSiteForStaticImport()
-    const importPlan = buildImportPlan({
-      fileMap: map,
-      currentSite,
-      options: { mediaTolerance: 10, stylesheetModes: modes },
-    })
+  async function finalizePlan(map: FileMap) {
+    planBuildRef.current?.abort()
+    latestFileMapRef.current = map
+    const build = new AbortController()
+    planBuildRef.current = build
+    let importPlan: ImportPlan
+    try {
+      const currentSite = await ensureCurrentSiteForStaticImport()
+      if (build.signal.aborted) return
+      importPlan = await withMediaAlreadyInLibrary(buildImportPlan({
+        fileMap: map,
+        currentSite,
+        options: { mediaTolerance: 10, stylesheetModes: stylesheetModesRef.current },
+      }), build.signal)
+      if (!build.signal.aborted) setSiteClassNames(siteClassNameSet(currentSite))
+    } catch (err) {
+      // A failed build must not leave its files as the base for the next drop.
+      if (build.signal.aborted) return
+      latestFileMapRef.current = shownFileMapRef.current
+      planBuildRef.current = null
+      throw err
+    }
+    if (build.signal.aborted) return
+    planBuildRef.current = null
+    shownFileMapRef.current = map
     setFileMap(map)
     setPlan(importPlan)
     setSelection(makeDefaultSelection(importPlan))
-    setPageResolutions(
-      new Map(importPlan.conflicts.pages.map((c) => [c.source, c.defaultResolution])),
-    )
-    setRuleResolutions(
-      new Map(importPlan.conflicts.rules.map((c) => [c.desiredName, c.defaultResolution])),
-    )
-    setTokenResolutions(
-      new Map(importPlan.conflicts.tokens.map((c) => [tokenConflictKey(c), c.defaultResolution])),
-    )
-    setCrossSheetResolutions(
-      new Map(importPlan.conflicts.crossSheetClasses.map((c) => [crossSheetConflictKey(c), c.defaultResolution])),
-    )
+    setResolutions(defaultConflictResolutions(importPlan))
     setPageSlugOverrides(new Map())
     setBusy(false)
     setStep('analyze')
@@ -286,40 +308,50 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   // synchronous and pure, so flipping a sheet between "editable rules" and
   // "keep as stylesheet" instantly refreshes rules, conflicts, and selection.
   function handleStylesheetModeChange(path: string, mode: StylesheetImportMode) {
-    if (!fileMap) return
-    const modes = { ...stylesheetModes, [path]: mode }
-    setStylesheetModes(modes)
+    const map = latestFileMapRef.current ?? fileMap
+    if (!map) return
+    stylesheetModesRef.current = { ...stylesheetModesRef.current, [path]: mode }
     setBusy(true)
-    void finalizePlan(fileMap, modes)
+    finalizePlan(map).catch((err: unknown) => {
+      console.error('[SiteImportModal] stylesheet mode change failed:', err)
+      setBusy(false)
+      pushToast({ kind: 'error', title: 'Could not re-analyse the import', body: getErrorMessage(err, 'Unknown import error') })
+    })
   }
 
   // ── Step navigation ───────────────────────────────────────────────────────
 
   function handleAnalyzeNext() {
-    if (!plan || !selection) return
+    // The plan was built against this site (`finalizePlan` loaded it).
+    const currentSite = useEditorStore.getState().site
+    if (!plan || !selection || !currentSite) return
 
-    // Apply user slug overrides to the plan's pages
-    const planWithSlugs: ImportPlan = {
-      ...plan,
-      pages: plan.pages.map((p) => ({
-        ...p,
-        slug: pageSlugOverrides.get(p.source) ?? p.slug,
-      })),
-    }
-
-    const filtered = filterPlanBySelection(planWithSlugs, selection)
+    // Page conflicts are checked again against the final slugs: the selected
+    // pages only, with the slugs typed in the Review step.
+    const filtered = withPageSlugs(filterPlanBySelection(plan, selection), currentSite, pageSlugOverrides)
+    // A page whose conflict is unchanged keeps the choice already made for it.
+    const nextPageResolutions = new Map(
+      filtered.conflicts.pages.map((c) => {
+        const previous = plan.conflicts.pages.find((p) => p.source === c.source && p.desiredSlug === c.desiredSlug)
+        const chosen = previous ? resolutions.pages.get(c.source) : undefined
+        return [c.source, chosen ?? c.defaultResolution]
+      }),
+    )
+    const nextResolutions = { ...resolutions, pages: nextPageResolutions }
+    setResolutions(nextResolutions)
     const hasConflicts =
       filtered.conflicts.pages.length > 0 ||
       filtered.conflicts.rules.length > 0 ||
       filtered.conflicts.tokens.length > 0 ||
-      filtered.conflicts.crossSheetClasses.length > 0
+      filtered.conflicts.crossSheetClasses.length > 0 ||
+      filtered.conflicts.files.length > 0 ||
+      filtered.conflicts.media.length > 0
 
+    setPlan(filtered)
     if (hasConflicts) {
-      setPlan(filtered)
       setStep('conflicts')
     } else {
-      setPlan(filtered)
-      void kickOffRun(filtered, pageResolutions, ruleResolutions, tokenResolutions)
+      void kickOffRun(filtered, nextResolutions)
     }
   }
 
@@ -354,7 +386,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
       return
     }
     if (!plan) return
-    void kickOffRun(plan, pageResolutions, ruleResolutions, tokenResolutions)
+    void kickOffRun(plan, resolutions)
   }
 
   function handleCmsChooseDifferentFile() {
@@ -374,13 +406,8 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
 
   // ── Run ───────────────────────────────────────────────────────────────────
 
-  async function kickOffRun(
-    planToRun: ImportPlan,
-    pageResMap: Map<string, ConflictResolution>,
-    ruleResMap: Map<string, ConflictResolution>,
-    tokenResMap: Map<string, ConflictResolution>,
-  ) {
-    const resolvedPlan = buildResolvedPlan(planToRun, pageResMap, ruleResMap, tokenResMap, crossSheetResolutions)
+  async function kickOffRun(planToRun: ImportPlan, resolutionMaps: ConflictResolutionMaps) {
+    const resolvedPlan = buildResolvedPlan(planToRun, resolutionMaps)
 
     setLogOpen(false)
     setResult(null)
@@ -546,6 +573,8 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
   const isCmsImporting = step === 'analyze' && cmsBundleState?.importing === true
 
   // ── Render ────────────────────────────────────────────────────────────────
+  const classNameProblems = step === 'conflicts' && plan && !cmsBundleState
+    ? classRenameProblems(plan, siteClassNames, resolutions.rules, resolutions.crossSheetClasses) : new Map<string, string>()
 
   return (
     <Dialog
@@ -572,6 +601,7 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
           onAnalyzeNext={handleAnalyzeNext}
           onCmsAnalyzeNext={handleCmsAnalyzeNext}
           onConflictsImport={handleConflictsImport}
+          classNameProblemCount={classNameProblems.size}
           onRunCancel={handleRunCancel}
           onToggleLog={() => setLogOpen((o) => !o)}
           onOpenSite={handleOpenSite}
@@ -645,38 +675,11 @@ export function SiteImportModal({ onCmsBundleImportComplete }: SiteImportModalPr
         {step === 'conflicts' && !cmsBundleState && plan && (
           <ConflictsStep
             plan={plan}
-            pageResolutions={pageResolutions}
-            ruleResolutions={ruleResolutions}
-            tokenResolutions={tokenResolutions}
-            onPageResolutionChange={(source, resolution) => {
-              setPageResolutions((prev) => {
-                const next = new Map(prev)
-                next.set(source, resolution)
-                return next
-              })
+            resolutions={resolutions}
+            onResolutionChange={(category, key, resolution) => {
+              setResolutions((prev) => ({ ...prev, [category]: new Map(prev[category]).set(key, resolution) }))
             }}
-            onRuleResolutionChange={(desiredName, resolution) => {
-              setRuleResolutions((prev) => {
-                const next = new Map(prev)
-                next.set(desiredName, resolution)
-                return next
-              })
-            }}
-            onTokenResolutionChange={(key, resolution) => {
-              setTokenResolutions((prev) => {
-                const next = new Map(prev)
-                next.set(key, resolution)
-                return next
-              })
-            }}
-            crossSheetResolutions={crossSheetResolutions}
-            onCrossSheetResolutionChange={(key, resolution) => {
-              setCrossSheetResolutions((prev) => {
-                const next = new Map(prev)
-                next.set(key, resolution)
-                return next
-              })
-            }}
+            classNameProblems={classNameProblems}
           />
         )}
 

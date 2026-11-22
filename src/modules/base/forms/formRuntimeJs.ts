@@ -33,7 +33,7 @@ export const FORM_RUNTIME_JS = `(() => {
     if (!form || form.tagName !== 'FORM' || !form.matches(FORM_SELECTOR)) return;
     event.preventDefault();
     attachForm(form);
-    if (isMemberForm(form)) submitMemberForm(form);
+    if (isMemberForm(form)) submitMemberForm(form, event.submitter);
     else submitForm(form);
   });
 
@@ -75,16 +75,25 @@ export const FORM_RUNTIME_JS = `(() => {
 
   // ── Member forms ─────────────────────────────────────────────────────────
 
-  // Emailed links land on a page with ?token=…; the form posts it back.
+  // Some member pages are opened with a value in their address: ?token=… from
+  // an emailed link, ?request=… from an app that wants to sign the member in.
+  // The form posts it back.
   function fillMemberToken(form) {
-    const input = form.querySelector('input[data-instatic-member-token]');
-    if (input) input.value = new URLSearchParams(window.location.search).get('token') || '';
+    const input = form.querySelector('input[data-instatic-member-link-param]');
+    if (!input) return;
+    const name = input.getAttribute('data-instatic-member-link-param') || '';
+    input.value = new URLSearchParams(window.location.search).get(name) || '';
   }
 
-  async function submitMemberForm(form) {
-    const tokenInput = form.querySelector('input[data-instatic-member-token]');
+  // submitter is the button that was pressed. A button with a name sends its
+  // value with the form, which is how a two-button form (Allow, Cancel)
+  // says which one it was.
+  async function submitMemberForm(form, submitter) {
+    const tokenInput = form.querySelector('input[data-instatic-member-link-param]');
     if (tokenInput && !tokenInput.value) {
-      setState(form, 'error', 'This link is incomplete. Open the link from your email again.');
+      setState(form, 'error', tokenInput.name === 'request'
+        ? 'This page was opened without a sign-in request. Start again from the app.'
+        : 'This link is incomplete. Open the link from your email again.');
       return;
     }
     setBusy(form, true);
@@ -94,7 +103,7 @@ export const FORM_RUNTIME_JS = `(() => {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'accept': 'application/json', 'content-type': 'application/json' },
-        body: JSON.stringify(memberValues(form)),
+        body: JSON.stringify(memberValues(form, submitter)),
       });
       const body = await readJson(response);
       if (!response.ok || !body.ok) {
@@ -103,7 +112,13 @@ export const FORM_RUNTIME_JS = `(() => {
         setState(form, 'error', typeof error.message === 'string' && error.message ? error.message : 'Something went wrong. Try again.', field);
         return;
       }
-      const next = memberDestination(form, body.code);
+      // An approved or refused app: the answer goes to the app's own address,
+      // which the server checked against the ones registered for it.
+      if (typeof body.appRedirect === 'string' && body.appRedirect) {
+        window.location.assign(body.appRedirect);
+        return;
+      }
+      const next = memberDestination(form, body.code, body.landing);
       if (next) {
         window.location.assign(next);
         return;
@@ -137,8 +152,9 @@ export const FORM_RUNTIME_JS = `(() => {
 
   // Flat text values, as the member endpoints read them. An unticked checkbox
   // sends nothing, so each checkbox also says it was on the form.
-  function memberValues(form) {
+  function memberValues(form, submitter) {
     const values = {};
+    if (submitter && submitter.name) values[submitter.name] = submitter.value;
     for (const [name, value] of new FormData(form).entries()) {
       if (typeof value !== 'string' || name === '_success' || name === '_error') continue;
       if (values[name] === undefined) values[name] = value;
@@ -150,10 +166,11 @@ export const FORM_RUNTIME_JS = `(() => {
   }
 
   // Where to go after a member action. Signing in honours ?next= (set when a
-  // protected page sent the visitor here), then the form's own redirect. A
-  // change of who is signed in with no redirect reloads the page, so
-  // everything on it reflects the new state.
-  function memberDestination(form, code) {
+  // protected page sent the visitor here), then the form's own redirect, then
+  // the site's "after signing in" page (landing). A change of who is signed in
+  // with none of those reloads the page, so everything on it reflects the new
+  // state.
+  function memberDestination(form, code, landing) {
     const changesVisitor = code === 'signed_in' || code === 'signed_out' || code === 'deleted';
     if (code === 'signed_in') {
       const next = sameSitePath(new URLSearchParams(window.location.search).get('next') || '');
@@ -161,6 +178,10 @@ export const FORM_RUNTIME_JS = `(() => {
     }
     const redirectUrl = form.getAttribute('data-instatic-success-redirect') || '';
     if (redirectUrl) return redirectUrl;
+    if (code === 'signed_in') {
+      const home = sameSitePath(typeof landing === 'string' ? landing : '');
+      if (home) return home;
+    }
     return changesVisitor ? window.location.pathname : '';
   }
 
@@ -431,8 +452,19 @@ export const FORM_RUNTIME_JS = `(() => {
 
   function formMessages(form) {
     const formId = form.getAttribute('data-instatic-form-id') || '';
+    const inside = Array.from(form.querySelectorAll('[data-instatic-form-message]'));
+    if (!formId) return inside;
+    // A form repeated in a list shares its id with every other row, so a
+    // row that holds messages uses only those. Any other form also gets the
+    // messages placed elsewhere on the page and matched by form id.
+    if (inside.length > 0) {
+      const sameId = Array.from(document.querySelectorAll(FORM_SELECTOR)).filter((other) => {
+        return other.getAttribute('data-instatic-form-id') === formId;
+      });
+      if (sameId.length > 1) return inside;
+    }
     return Array.from(document.querySelectorAll('[data-instatic-form-message]')).filter((message) => {
-      return form.contains(message) || (formId && message.getAttribute('data-instatic-form-id') === formId);
+      return form.contains(message) || message.getAttribute('data-instatic-form-id') === formId;
     });
   }
 })();`

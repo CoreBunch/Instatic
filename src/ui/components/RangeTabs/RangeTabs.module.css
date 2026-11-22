@@ -1,19 +1,20 @@
 .seg {
+    --range-track-radius: 8px;
     display: inline-flex;
     background: var(--overlay-5);
-    border: 1px solid var(--overlay-20);
-    border-radius: 8px;
+    border: var(--space-px) solid var(--overlay-20);
+    border-radius: var(--range-track-radius);
     padding: var(--space-4xs);
     gap: 0;
 }
 
-.tab {
+.seg .tab {
     /* Override Button's defaults to render as a compact pill-style tab. */
     color: var(--text-subtle);
     font-size: var(--text-xs);
     font-weight: 500;
     padding: var(--space-3xs) var(--space-m);
-    border-radius: 6px;
+    border-radius: calc(var(--range-track-radius) - var(--space-4xs) - var(--space-px));
     font-family: var(--font-mono);
     background: transparent;
     height: auto;

@@ -1,13 +1,17 @@
 /** Transactional site-bundle application shared by JSON and ZIP imports. */
 import type { DbClient } from '../../db/client'
 import type { ImportStrategy, SiteBundle } from '@core/data/bundleSchema'
+import type { DataRow } from '@core/data/schemas'
+import type { BundlePublication } from '@core/data/bundlePublication'
+import { normalizeRouteBase } from '@core/templates'
+import { listPublishedPageAccess } from '../../repositories/publish'
 import { MAIN_BRANCH_ID } from '@core/branches'
 import { isMainScope, type BranchScope } from '../../branches/scope'
 import { restoreBundlePublication, validateBundlePublication, BundlePublicationError } from '../../repositories/bundlePublication'
 import { withPublishLock, bumpPublishVersion } from '../../publish/publishState'
 import { prepareInactiveSlot, swapSlot } from '../../publish/staticArtefact'
 import { ensureRuntimeDependencyCache } from '../../publish/runtime/dependencyCache'
-import { saveDraftSite } from '../../repositories/site'
+import { getDraftSite, saveDraftSite } from '../../repositories/site'
 import { listDataTables, createDataTable, updateDataTable, insertDataTableIfAbsent } from '../../repositories/data/tables'
 import { listDataRows, upsertDataRow, insertDataRowIfAbsent, replaceDataRow, type DataRowImportInput } from '../../repositories/data/rows'
 import { deleteSiteMediaAssets, type DeletedMediaAsset } from '../../repositories/media'
@@ -15,10 +19,14 @@ import { listBranches } from '../../repositories/branches'
 import { removeMediaAssetFiles } from './mediaVariants'
 import { deleteAllDataRowRedirects, importDataRowRedirect } from '../../repositories/data/publish'
 import { deleteAllMediaFolders, importMediaFolder } from '../../repositories/mediaFolders'
+import { listProtectedTables, writeTableAccess } from '../../repositories/data/tableAccess'
+import { keepPageStructuralCells, newPageStructuralCells } from '../../writePolicy/pageStructuralCells'
+import { parsePageSeo, type SiteSettings } from '@core/page-tree'
+import type { AccessRule } from '@core/members'
 import { notifyRowWrite, notifyShellWrite, serializeCollabAwareWrite, type RowWriteKind } from '../../repositories/rowWriteEvents'
 
 // The four system table ids that are always seeded and never deleted.
-const SYSTEM_TABLE_IDS = new Set(['posts', 'pages', 'components', 'layouts'])
+export const SYSTEM_TABLE_IDS = new Set(['posts', 'pages', 'components', 'layouts'])
 
 /**
  * Order folders so every parent precedes its children — `media_folders.parent_id`
@@ -57,6 +65,12 @@ export interface ApplySiteBundleInput {
    * bytes itself, so it states this separately.
    */
   carriesMedia: boolean
+  /**
+   * The importer may change a page's structural settings: who can open it
+   * and its head settings (`site.structure.edit`). Without it, a page the
+   * import overwrites keeps its stored access rule and `seo` cell.
+   */
+  mayChangePageStructure: boolean
 }
 
 export interface AppliedSiteBundle {
@@ -64,8 +78,16 @@ export interface AppliedSiteBundle {
   rowsInserted: number
   rowsReplaced: number
   rowsSkipped: number
+  /**
+   * Rows the bundle marks `published` that landed as drafts, because the
+   * import restored no published version for them (`landingPublication`):
+   * new rows, and rows whose pending schedule the import cancelled.
+   */
+  rowsImportedAsDraft: number
   mediaFoldersImported: number
   redirectsImported: number
+  /** Tables the import gave an access rule they did not have, for the audit log. */
+  tableAccessAdded: Array<{ tableId: string; slug: string }>
   /**
    * Folder ids that actually landed — asset memberships are restored only for
    * these, so an asset's `folderIds` pointing at a folder we didn't import is
@@ -100,6 +122,70 @@ async function replacesMediaLibrary(
   if (!isMainScope(scope)) return false
   const branches = await listBranches(db)
   return branches.every((branch) => branch.id === MAIN_BRANCH_ID)
+}
+
+type RowPublication = Pick<DataRowImportInput, 'status' | 'publishedAt' | 'scheduledPublishAt'>
+
+/**
+ * Rows this import leaves with a live published version. Publication only
+ * exists on main, and only a bundle that carries it can restore one.
+ */
+function rowsRestoredLive(scope: BranchScope, bundle: SiteBundle): ReadonlySet<string> {
+  if (!isMainScope(scope) || !bundle.publication) return new Set()
+  return new Set(bundle.publication.rows.filter((row) => row.activeVersionId !== null).map((row) => row.rowId))
+}
+
+/**
+ * The publication state a bundle row lands with.
+ *
+ * On main a row is public through its published version, and `status` is the
+ * switch that serves it. A bundle row's `published` status is therefore only
+ * a claim: a bundle exported before publication travelled with it brings no
+ * version to serve. Written as it stands, the claim leaves a new row reading
+ * Published with nothing public (and no way to publish it), and puts a row
+ * that was taken offline back up on its old version.
+ *
+ * So the claim holds only when this import restores a live version for the
+ * row. Without one it is dropped: a row already on main keeps the publication
+ * state it has, and a new row lands as a draft. The one state a row does not
+ * keep is a pending schedule: the scheduler would publish the content this
+ * import just put in its place, so the schedule is cancelled and the row
+ * lands as a draft too. A `scheduled` status can then only come from the
+ * bundle itself, which `authorizeImportedPublication` treats as a publish.
+ *
+ * A branch serves nothing, so its rows keep the status the bundle gives them.
+ */
+function landingPublication(
+  scope: BranchScope,
+  row: DataRow,
+  restoredLive: ReadonlySet<string>,
+  existing: DataRow | undefined,
+): { publication: RowPublication; importedAsDraft: boolean } {
+  if (!isMainScope(scope) || row.status !== 'published' || restoredLive.has(row.id)) {
+    return {
+      publication: { status: row.status, publishedAt: row.publishedAt, scheduledPublishAt: row.scheduledPublishAt },
+      importedAsDraft: false,
+    }
+  }
+  if (existing && existing.status !== 'scheduled') {
+    return {
+      publication: { status: existing.status, publishedAt: existing.publishedAt, scheduledPublishAt: existing.scheduledPublishAt },
+      importedAsDraft: false,
+    }
+  }
+  return { publication: { status: 'draft', publishedAt: null, scheduledPublishAt: null }, importedAsDraft: true }
+}
+
+function rowImportInput(row: DataRow, cells: DataRow['cells'], publication: RowPublication): DataRowImportInput {
+  return {
+    id: row.id,
+    tableId: row.tableId,
+    cells,
+    slug: row.slug,
+    ...publication,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
 }
 
 /**
@@ -161,15 +247,19 @@ async function applySiteBundleLocked(
   let rowsInserted = 0
   let rowsReplaced = 0
   let rowsSkipped = 0
+  let rowsImportedAsDraft = 0
   let mediaFoldersImported = 0
   let redirectsImported = 0
   let deletedMedia: DeletedMediaAsset[] = []
   const importedFolderIds = new Set<string>()
   const importedRowIds = new Set<string>()
+  const restoredLive = rowsRestoredLive(scope, bundle)
+  let tableAccessAdded: AppliedSiteBundle['tableAccessAdded'] = []
+  let guardPublication = (publication: BundlePublication): BundlePublication => publication
   const transaction = (operation: (tx: DbClient) => Promise<void>) => db.transaction(async (tx) => {
     await operation(tx)
     if (isMainScope(scope) && bundle.publication) {
-      await restoreBundlePublication(tx, bundle.publication, importedRowIds, input.runtimeFiles ?? new Map())
+      await restoreBundlePublication(tx, guardPublication(bundle.publication), importedRowIds, input.runtimeFiles ?? new Map())
     }
   })
 
@@ -184,6 +274,117 @@ async function applySiteBundleLocked(
       ['pages', 'components', 'layouts'].map((tableId) => [tableId, new Set<string>()]),
     )
     let shellWasWritten = false
+
+    // ── Access rules must survive the import ────────────────────────────────
+    // A table's rule is a column the bundle's table writes never set, and a
+    // `replace` deletes and recreates custom tables. A page's rule is a cell
+    // the bundle's row replaces. Both are read here, before anything changes.
+    const tablesBefore = new Set((await listDataTables(db, scope)).map((table) => table.id))
+    const protectedTables = isMainScope(scope) ? await listProtectedTables(db) : []
+    const storedTableRules = new Map<string, AccessRule>(protectedTables.map((entry) => [entry.id, entry.rule]))
+    const storedGlobalSeo = input.mayChangePageStructure || (!bundle.site && !bundle.publication)
+      ? undefined : (await getDraftSite(db, scope))?.settings.seo
+    function guardedSettings(settings: SiteSettings): SiteSettings {
+      const { seo, ...rest } = settings
+      const allowed = input.mayChangePageStructure ? parsePageSeo(seo) : storedGlobalSeo
+      return allowed ? { ...rest, seo: allowed } : rest
+    }
+    const storedPages = new Map(
+      input.mayChangePageStructure || strategy === 'merge-add'
+        ? []
+        : (await listDataRows(db, scope, 'pages')).map((row) => [row.id, row] as const),
+    )
+    // Protection is matched on the address as well as the id: a different
+    // page or table that ends up at a protected address takes its rule.
+    const storedPageRuleBySlug = new Map(
+      [...storedPages.values()].flatMap((row) => (row.cells.access === undefined ? [] : [[row.slug, row.cells.access] as const])),
+    )
+    const publishedPageRuleBySlug = new Map(
+      storedPages.size > 0 && isMainScope(scope)
+        ? (await listPublishedPageAccess(db)).map((entry) => [entry.slug, entry.access] as const)
+        : [],
+    )
+    const storedTableRuleByRoute = new Map(
+      [...protectedTables].flatMap((entry) => (entry.routeBase === null ? [] : [[entry.routeBase, entry.rule] as const])),
+    )
+    const guardedCells = (row: { id: string; tableId: string; slug: string; cells: Record<string, unknown> }) => {
+      if (row.tableId !== 'pages') return row.cells
+      const sameRow = storedPages.get(row.id)
+      const cells = sameRow
+        ? keepPageStructuralCells(sameRow, row.cells)
+        : newPageStructuralCells(row.tableId, row.cells, input.mayChangePageStructure)
+      const atAddress = storedPageRuleBySlug.get(row.slug)
+      return cells.access === undefined && atAddress !== undefined ? { ...cells, access: atAddress } : cells
+    }
+    /**
+     * Published versions are what the public site serves, so they get the
+     * same treatment: the rule the address was published with (or the draft's
+     * rule) is put back into every restored version of a page.
+     *
+     * Head settings follow the same structural policy, on both places a
+     * publication carries them: each version's `seo` cell and each page of the
+     * restored site snapshots (what the public renderer reads). Without
+     * `site.structure.edit` a page keeps the head settings its draft has now
+     * (a new page gets none); with it they are normalised.
+     */
+    const storedPageSeo = new Map<string, unknown>(
+      input.mayChangePageStructure
+        ? []
+        : (storedPages.size > 0 ? [...storedPages.values()] : await listDataRows(db, scope, 'pages'))
+          .map((row) => [row.id, row.cells.seo] as const),
+    )
+    const pageSeoFor = (pageId: string, bundleSeo: unknown) =>
+      parsePageSeo(input.mayChangePageStructure ? bundleSeo : storedPageSeo.get(pageId))
+    const bundlePageIds = new Set(bundle.rows.filter((row) => row.tableId === 'pages').map((row) => row.id))
+    guardPublication = (publication) => ({
+      ...publication,
+      rows: publication.rows.map((row) => !bundlePageIds.has(row.rowId) ? row : {
+        ...row,
+        versions: row.versions.map((version) => {
+          const rule = storedPages.size === 0 ? undefined : publishedPageRuleBySlug.get(version.slug)
+            ?? storedPages.get(row.rowId)?.cells.access
+            ?? storedPageRuleBySlug.get(version.slug)
+          const { seo: bundleSeo, ...cells } = version.cells
+          const seo = pageSeoFor(row.rowId, bundleSeo)
+          return {
+            ...version,
+            cells: { ...cells, ...(seo ? { seo } : {}), ...(rule === undefined ? {} : { access: rule }) },
+          }
+        }),
+      }),
+      snapshots: publication.snapshots.map((snapshot) => ({
+        ...snapshot,
+        site: {
+          ...snapshot.site,
+          settings: guardedSettings(snapshot.site.settings),
+          pages: snapshot.site.pages.map((page) => {
+            if (!bundlePageIds.has(page.id)) return page
+            const { seo: bundleSeo, ...rest } = page
+            const seo = pageSeoFor(page.id, bundleSeo)
+            return seo ? { ...rest, seo } : rest
+          }),
+        },
+      })),
+    })
+    /** A stored rule always stays. The bundle's rule is only added where there is none. */
+    const applyTableAccess = async (tx: DbClient): Promise<void> => {
+      if (!isMainScope(scope)) return
+      const added: AppliedSiteBundle['tableAccessAdded'] = []
+      for (const table of bundle.tables) {
+        const stored = storedTableRules.get(table.id)
+        if (stored) {
+          if (strategy === 'replace') await writeTableAccess(tx, table.id, stored)
+          continue
+        }
+        if (strategy === 'merge-add' && tablesBefore.has(table.id)) continue
+        const atAddress = table.routeBase.trim() === '' ? undefined : storedTableRuleByRoute.get(normalizeRouteBase(table.routeBase))
+        const carried = bundle.tableAccess?.[table.id]
+        const rule = atAddress ?? (carried && carried.level !== 'public' ? carried : undefined)
+        if (rule && (await writeTableAccess(tx, table.id, rule))) added.push({ tableId: table.id, slug: table.slug })
+      }
+      tableAccessAdded = added
+    }
+
     if (strategy === 'replace') {
       for (const tableId of affectedCollabRows.keys()) {
         for (const row of await listDataRows(db, scope, tableId)) {
@@ -251,26 +452,19 @@ async function applySiteBundleLocked(
 
         // 5. Insert all rows (plain insert — table was just wiped)
         for (const row of bundle.rows) {
-          const input: DataRowImportInput = {
-            id: row.id,
-            tableId: row.tableId,
-            cells: row.cells,
-            slug: row.slug,
-            status: row.status,
-            publishedAt: row.publishedAt,
-            scheduledPublishAt: row.scheduledPublishAt,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-          }
-          await replaceDataRow(tx, scope, input)
+          const landing = landingPublication(scope, row, restoredLive, undefined)
+          await replaceDataRow(tx, scope, rowImportInput(row, guardedCells(row), landing.publication))
           importedRowIds.add(row.id)
           affectedCollabRows.get(row.tableId)?.add(row.id)
           rowsInserted++
+          if (landing.importedAsDraft) rowsImportedAsDraft++
         }
+
+        await applyTableAccess(tx)
 
         // 6. Replace the site shell (only when the bundle carries one)
         if (bundle.site) {
-          await saveDraftSite(tx, scope, bundle.site, null, { collabInternal: true })
+          await saveDraftSite(tx, scope, { ...bundle.site, settings: guardedSettings(bundle.site.settings) }, null, { collabInternal: true })
           shellWasWritten = true
         }
 
@@ -327,26 +521,19 @@ async function applySiteBundleLocked(
 
         // Rows: insert if absent, skip if the id already exists
         for (const row of bundle.rows) {
-          const input: DataRowImportInput = {
-            id: row.id,
-            tableId: row.tableId,
-            cells: row.cells,
-            slug: row.slug,
-            status: row.status,
-            publishedAt: row.publishedAt,
-            scheduledPublishAt: row.scheduledPublishAt,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-          }
-          const inserted = await insertDataRowIfAbsent(tx, scope, input)
+          const landing = landingPublication(scope, row, restoredLive, undefined)
+          const inserted = await insertDataRowIfAbsent(tx, scope, rowImportInput(row, guardedCells(row), landing.publication))
           if (inserted) {
             importedRowIds.add(row.id)
             affectedCollabRows.get(row.tableId)?.add(row.id)
             rowsInserted++
+            if (landing.importedAsDraft) rowsImportedAsDraft++
           } else {
             rowsSkipped++
           }
         }
+
+        await applyTableAccess(tx)
 
         // Site shell: merge-add never overwrites the site shell — the local site
         // has existing content that must not be destroyed by an additive import.
@@ -356,11 +543,11 @@ async function applySiteBundleLocked(
       await transaction(async (tx) => {
         // Pre-fetch all existing rows. An upsert can move an id from a table the
         // bundle does not mention, and both its old and new collab docs/rosters
-        // must be invalidated after commit.
-        const existingRowTables = new Map<string, string>()
+        // must be invalidated after commit. A row the import cannot publish
+        // also keeps the publication state it has here (`landingPublication`).
+        const existingRows = new Map<string, DataRow>()
         for (const table of await listDataTables(tx, scope)) {
-          const existing = await listDataRows(tx, scope, table.id)
-          for (const row of existing) existingRowTables.set(row.id, row.tableId)
+          for (const row of await listDataRows(tx, scope, table.id)) existingRows.set(row.id, row)
         }
 
         // Tables: insert if absent, update if already present
@@ -393,20 +580,11 @@ async function applySiteBundleLocked(
 
         // Rows: upsert all; track inserted vs replaced via the pre-fetched set
         for (const row of bundle.rows) {
-          const input: DataRowImportInput = {
-            id: row.id,
-            tableId: row.tableId,
-            cells: row.cells,
-            slug: row.slug,
-            status: row.status,
-            publishedAt: row.publishedAt,
-            scheduledPublishAt: row.scheduledPublishAt,
-            createdAt: row.createdAt,
-            updatedAt: row.updatedAt,
-          }
-          await upsertDataRow(tx, scope, input)
+          const landing = landingPublication(scope, row, restoredLive, existingRows.get(row.id))
+          await upsertDataRow(tx, scope, rowImportInput(row, guardedCells(row), landing.publication))
           importedRowIds.add(row.id)
-          const previousTableId = existingRowTables.get(row.id)
+          if (landing.importedAsDraft) rowsImportedAsDraft++
+          const previousTableId = existingRows.get(row.id)?.tableId
           if (previousTableId === undefined) {
             createdCollabRows.get(row.tableId)?.add(row.id)
           } else if (previousTableId !== row.tableId) {
@@ -422,9 +600,11 @@ async function applySiteBundleLocked(
           }
         }
 
+        await applyTableAccess(tx)
+
         // Site shell: overwrite if the bundle carries one
         if (bundle.site) {
-          await saveDraftSite(tx, scope, bundle.site, null, { collabInternal: true })
+          await saveDraftSite(tx, scope, { ...bundle.site, settings: guardedSettings(bundle.site.settings) }, null, { collabInternal: true })
           shellWasWritten = true
         }
       })
@@ -455,6 +635,8 @@ async function applySiteBundleLocked(
     rowsInserted,
     rowsReplaced,
     rowsSkipped,
+    rowsImportedAsDraft,
+    tableAccessAdded,
     mediaFoldersImported,
     redirectsImported,
     importedFolderIds,

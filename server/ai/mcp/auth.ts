@@ -7,9 +7,9 @@ import type { DbClient } from '../../db/client'
 import type { CoreCapability } from '@core/capabilities'
 import { findUserById } from '../../repositories/users'
 import { findConnectionByTokenHash, touchConnectorLastUsed } from './connectors/store'
-import { hashMcpSecret } from './connectors/token'
 import { findOAuthAccessGrant } from './oauth/store'
 import { mcpProtectedResourceMetadataUrl, mcpResource, MCP_OAUTH_SCOPE } from './oauth/protocol'
+import { hashOpaqueToken } from '../../oauth/secrets'
 
 export type McpAuthResult =
   | { ok: true; connectorId: string; userId: string; capabilities: readonly CoreCapability[] }
@@ -26,7 +26,7 @@ export async function resolveMcpAuth(req: Request, db: DbClient): Promise<McpAut
   // personal access tokens (the local-development path) can authenticate.
   const resource = token.startsWith('imcp_at_') ? mcpResource(req) : null
   const oauthGrant = resource ? await findOAuthAccessGrant(db, token, resource) : null
-  const connector = oauthGrant ? null : await findConnectionByTokenHash(db, await hashMcpSecret(token))
+  const connector = oauthGrant ? null : await findConnectionByTokenHash(db, await hashOpaqueToken(token))
   const grant = oauthGrant ?? (connector?.tokenHash ? {
     connectorId: connector.id,
     userId: connector.userId,

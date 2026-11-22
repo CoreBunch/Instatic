@@ -196,10 +196,11 @@ describe('validateNodeProps — (g) per-prop repair', () => {
     const result = validateNodeProps(link, {
       href: '/contact/',
       text: 'Contact us',
-      target: '',
+      target: '_top',
       htmlAttributes: {},
     })
-    expect(result.target).toBe('_self')
+    // Repaired to the module default: no target attribute.
+    expect(result.target).toBe('')
     expect(result.href).toBe('/contact/')
     expect(result.text).toBe('Contact us')
   })

@@ -36,6 +36,7 @@ import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { BRANCH_ID_PATTERN } from '@core/branches'
 import { DataTableSchema, DataRowSchema, DataTableKindSchema } from './schemas'
 import { SiteShellSchema } from '@core/page-tree'
+import { AccessRuleSchema } from '@core/members'
 
 // ---------------------------------------------------------------------------
 // MediaAssetExport
@@ -348,6 +349,12 @@ export const ImportResultSchema = Type.Object({
   rowsInserted: Type.Number(),
   rowsReplaced: Type.Number(),
   rowsSkipped: Type.Number(),
+  /**
+   * Rows the bundle marks `published` that landed as drafts on main: the
+   * import restored no published version for them, so nothing would serve.
+   * New rows, and rows whose pending schedule the import cancelled.
+   */
+  rowsImportedAsDraft: Type.Number(),
   mediaImported: Type.Number(),
   mediaFoldersImported: Type.Number(),
   redirectsImported: Type.Number(),
@@ -374,6 +381,12 @@ export const SiteBundleSchema = Type.Object({
   site: Type.Optional(SiteShellSchema),
   /** All (or selected) data tables including system tables. */
   tables: Type.Array(DataTableSchema),
+  /**
+   * Who may open each table's entries on the published site, by table id.
+   * Only tables that are not open to anyone are listed. An import uses it to
+   * add a rule to a table that has none; it never loosens a stored rule.
+   */
+  tableAccess: Type.Optional(Type.Record(Type.String(), AccessRuleSchema)),
   /** All (or selected) non-deleted data rows. */
   rows: Type.Array(DataRowSchema),
   publication: Type.Optional(BundlePublicationSchema),

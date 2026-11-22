@@ -249,7 +249,7 @@ export function canUseAiChat(user: CmsCurrentUser | null): boolean {
 // ---------------------------------------------------------------------------
 
 function canAccessUsersWorkspace(user: CmsCurrentUser | null): boolean {
-  return hasAnyCapability(user, ['users.manage', 'roles.manage', 'audit.read'])
+  return hasAnyCapability(user, ['users.manage', 'members.read', 'members.manage', 'roles.manage', 'audit.read'])
 }
 
 function canAccessAiWorkspace(user: CmsCurrentUser | null): boolean {

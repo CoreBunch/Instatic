@@ -160,7 +160,7 @@ describe('canvas tree ladder model', () => {
     expect(cssRule(ladderCss, '.treeLadder')).toContain('padding: var(--space-3xs)')
     expect(cssRule(ladderCss, '.treeLadder')).toContain('border-radius: var(--panel-radius)')
     expect(cssRule(ladderCss, '.treeLadderRow.treeLadderRow')).toContain(
-      'border-radius: calc(var(--panel-radius) - 4px)',
+      'border-radius: calc(var(--panel-radius) - var(--space-3xs))',
     )
     expect(cssRule(ladderCss, '.treeLadderRelation')).not.toContain('text-transform')
   })

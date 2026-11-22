@@ -36,21 +36,28 @@
  *                                  radius operation in the CMS)
  *   bundles carrying a `site`:     ALSO `site.structure.edit` (the site
  *                                  shell replace is a structural edit)
+ *   bundles that publish:          ALSO `pages.publish`, `content.publish.any`
+ *                                  AND step-up (published versions, or a
+ *                                  `scheduled` row on main)
  */
 import { validateBundlePublication, BundlePublicationError } from '../../repositories/bundlePublication'
-import { applySiteBundle, removeDeletedMediaFiles } from './importApply'
+import { applySiteBundle, removeDeletedMediaFiles, SYSTEM_TABLE_IDS } from './importApply'
+import { canManageTable } from '../../auth/dataAccess'
+import { isGrantableMemberTag } from '@core/members'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { DbClient } from '../../db/client'
 import { validateAndSanitizeMediaBytes, resolveMediaWriteTarget } from './importMediaValidation'
+import { mediaContentHash } from './mediaUpload'
 import { requireCapability, requireStepUp, userHasCapability } from '../../auth/authz'
 import type { AuthUser } from '../../repositories/users'
 import { importMediaAsset, assignAssetToFolders } from '../../repositories/media'
 import { jsonResponse, readValidatedBody } from '../../http'
 import { parseValue } from '@core/utils/typeboxHelpers'
 import { SiteBundleSchema, ImportStrategySchema, ImportResultSchema, type ImportStrategy, type SiteBundle } from '@core/data/bundleSchema'
-import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
-import type { BranchScope } from '../../branches/scope'
+import { CMS_API_PREFIX, requestAuditContext, type CmsHandlerOptions } from './shared'
+import { createAuditEvent } from '../../repositories/audit'
+import { isMainScope, type BranchScope } from '../../branches/scope'
 
 /** ZIP local-file-header magic (`PK\x03\x04`) — enough to tell an archive from JSON. */
 function looksLikeZipArchive(body: ArrayBuffer): boolean {
@@ -112,21 +119,26 @@ export async function handleImportRoute(
   const shellDenied = authorizeImportedShell(user, bundle.site !== undefined)
   if (shellDenied) return shellDenied
 
+  const tableAccessDenied = await authorizeImportedTableAccess(req, db, user, bundle)
+  if (tableAccessDenied) return tableAccessDenied
+
   const publicationInvalid = validateImportedPublication(bundle)
   if (publicationInvalid) return publicationInvalid
-  const publicationDenied = await authorizeImportedPublication(req, db, user, bundle)
+  const publicationDenied = await authorizeImportedPublication(req, db, user, scope, bundle)
   if (publicationDenied) return publicationDenied
 
   const applied = await applySiteBundle(db, scope, {
     bundle,
     strategy,
     carriesMedia: bundle.media !== undefined,
+    mayChangePageStructure: userHasCapability(user, 'site.structure.edit'),
     uploadsDir: options.uploadsDir,
   }).catch((err: unknown) => {
     if (err instanceof BundlePublicationError) return jsonResponse({ error: err.message }, { status: 400 })
     throw err
   })
   if (applied instanceof Response) return applied
+  await recordImportedTableAccess(req, db, user, applied.tableAccessAdded)
   // After commit, before the bundle's media lands: a bundle file at a deleted
   // asset's storage path must be written after the old bytes are removed.
   await removeDeletedMediaFiles(applied.deletedMedia)
@@ -150,10 +162,8 @@ export async function handleImportRoute(
         // Without this, a `data.import` caller could write arbitrary HTML/JS
         // (e.g. `published/current/index.html`) served same-origin as /admin.
         const target = resolveMediaWriteTarget(uploadsDir, asset.storagePath)
-        const safeBytes = validateAndSanitizeMediaBytes(
-          Buffer.from(asset.bytesBase64, 'base64'),
-          asset,
-        )
+        const bundleBytes = Buffer.from(asset.bytesBase64, 'base64')
+        const safeBytes = validateAndSanitizeMediaBytes(bundleBytes, asset)
         await mkdir(dirname(target), { recursive: true })
         await writeFile(target, safeBytes)
 
@@ -163,6 +173,7 @@ export async function handleImportRoute(
           filename: asset.filename,
           mimeType: asset.mimeType,
           sizeBytes: safeBytes.length,
+          contentHash: mediaContentHash(bundleBytes),
           storagePath: asset.storagePath,
           publicPath: `/uploads/${asset.storagePath}`,
           altText: asset.altText,
@@ -200,6 +211,7 @@ export async function handleImportRoute(
     rowsInserted: applied.rowsInserted,
     rowsReplaced: applied.rowsReplaced,
     rowsSkipped: applied.rowsSkipped,
+    rowsImportedAsDraft: applied.rowsImportedAsDraft,
     mediaImported,
     mediaFoldersImported: applied.mediaFoldersImported,
     redirectsImported: applied.redirectsImported,
@@ -248,6 +260,51 @@ export function authorizeImportedShell(user: AuthUser, carriesSite: boolean): Re
   return null
 }
 
+/**
+ * A bundle that limits a table to members sets who may open it, which is what
+ * the table access endpoint does. It asks for the same: the right to manage
+ * each such table, tags a member can be granted, and step-up.
+ */
+export async function authorizeImportedTableAccess(
+  req: Request,
+  db: DbClient,
+  user: AuthUser,
+  bundle: Pick<SiteBundle, 'tables' | 'tableAccess'>,
+): Promise<Response | null> {
+  const limited = bundle.tables.flatMap((table) => {
+    const rule = bundle.tableAccess?.[table.id]
+    return rule && rule.level !== 'public' ? [{ table, rule }] : []
+  })
+  if (limited.length === 0) return null
+  if (limited.some(({ rule }) => rule.level === 'tags' && !rule.tags.every(isGrantableMemberTag))) {
+    return jsonResponse({ error: 'A tag in a table access rule cannot be granted to a member' }, { status: 400 })
+  }
+  const mayManage = limited.every(({ table }) => canManageTable(user, { system: table.system || SYSTEM_TABLE_IDS.has(table.id) }))
+  if (!mayManage) {
+    return jsonResponse({ error: 'Importing table access rules requires permission to manage those tables' }, { status: 403 })
+  }
+  return requireStepUp(req, db, user)
+}
+
+/** An import that limited a table changed who may open it; the audit log says so. */
+export async function recordImportedTableAccess(
+  req: Request,
+  db: DbClient,
+  user: AuthUser,
+  added: ReadonlyArray<{ tableId: string; slug: string }>,
+): Promise<void> {
+  for (const table of added) {
+    await createAuditEvent(db, {
+      actorUserId: user.id,
+      action: 'data.table.access',
+      targetType: 'data_table',
+      targetId: table.tableId,
+      metadata: { slug: table.slug, source: 'import' },
+      ...requestAuditContext(req),
+    })
+  }
+}
+
 export function validateImportedPublication(bundle: SiteBundle): Response | null {
   try {
     if (bundle.publication) validateBundlePublication(bundle.publication, bundle.rows)
@@ -258,11 +315,25 @@ export function validateImportedPublication(bundle: SiteBundle): Response | null
   }
 }
 
-/** Restoring public content is a publish operation, including scripts and shared resources. */
-export async function authorizeImportedPublication(req: Request, db: DbClient, user: AuthUser, bundle: SiteBundle): Promise<Response | null> {
-  if (!bundle.publication?.rows.some((row) => row.versions.length > 0)) return null
+/**
+ * Making imported content public is a publish operation. A bundle does that
+ * in two ways: it restores published versions (with their scripts and shared
+ * resources), or it carries a `scheduled` row, which on main the scheduler
+ * publishes when it falls due. A branch has no scheduler, so a schedule
+ * imported into one publishes nothing.
+ */
+export async function authorizeImportedPublication(
+  req: Request,
+  db: DbClient,
+  user: AuthUser,
+  scope: BranchScope,
+  bundle: SiteBundle,
+): Promise<Response | null> {
+  const restoresVersions = bundle.publication?.rows.some((row) => row.versions.length > 0) ?? false
+  const schedulesPublish = isMainScope(scope) && bundle.rows.some((row) => row.status === 'scheduled')
+  if (!restoresVersions && !schedulesPublish) return null
   if (!userHasCapability(user, 'pages.publish') || !userHasCapability(user, 'content.publish.any')) {
-    return jsonResponse({ error: 'Restoring published content requires page and content publishing permissions' }, { status: 403 })
+    return jsonResponse({ error: 'Importing published or scheduled content requires page and content publishing permissions' }, { status: 403 })
   }
   return requireStepUp(req, db, user)
 }

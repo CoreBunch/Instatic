@@ -14,7 +14,7 @@ import { Button } from '@ui/components/Button'
 import { Select } from '@ui/components/Select'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
-import styles from './CanvasContextSelector.module.css'
+import styles from './CanvasContextDialog.module.css'
 
 export type ConditionKind = 'media' | 'container' | 'supports'
 

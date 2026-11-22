@@ -15,6 +15,7 @@ const link = (path: string): MailTemplateVariable => ({
   name: 'link',
   label: 'The link this email delivers',
   sample: `https://example.com/${path}?token=sample`,
+  kind: 'link',
 })
 
 const PASTE = 'If the link does not open, paste this address into your browser:\n\n{link}'
@@ -29,6 +30,7 @@ export const MEMBER_MAIL_KEYS = {
   email_change: 'member.email_change',
   email_change_notice: 'member.email_change_notice',
   password_changed: 'member.password_changed',
+  app_connected: 'member.app_connected',
 } as const
 
 export type MemberMailKind = keyof typeof MEMBER_MAIL_KEYS
@@ -133,4 +135,17 @@ registerMailTemplate({
   defaultBody:
     'The password for your account at **{site.name}** was just changed.\n\n' +
     'If that was not you, reset your password now.',
+})
+
+registerMailTemplate({
+  key: MEMBER_MAIL_KEYS.app_connected,
+  label: 'App signed in',
+  description: 'Sent after a member allows an app to sign in with their account.',
+  group: GROUP,
+  variables: [{ name: 'app.name', label: 'The app that was signed in', sample: 'Desktop app' }, EMAIL],
+  defaultSubject: '{app.name} was signed in to your {site.name} account',
+  defaultBody:
+    '**{app.name}** was just signed in to your account at **{site.name}**.\n\n' +
+    'If that was you, there is nothing to do.\n\n' +
+    'If it was not, change your password now. That signs every app out of your account.',
 })

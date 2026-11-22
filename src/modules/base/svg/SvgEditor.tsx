@@ -10,6 +10,7 @@
  */
 import React from 'react'
 import type { ModuleComponentProps } from '@core/module-engine'
+import { useCanvasHiddenAttribute } from '@modules/base/shared/useCanvasHtmlAttributes'
 import { sanitizeSvg } from '@core/sanitize'
 import { CanvasModulePlaceholder } from '@ui/components/CanvasModulePlaceholder'
 import { cn } from '@ui/cn'
@@ -24,6 +25,8 @@ export const SvgEditor: React.FC<ModuleComponentProps<SvgStoredProps>> = ({
 }) => {
   const markup = sanitizeSvg(props.svg)
   const svgRoot = markup ? parseSvgCanvasRoot(markup) : null
+
+  const hidden = useCanvasHiddenAttribute(svgRoot?.attributes.hidden)
 
   if (!svgRoot) {
     return (
@@ -44,6 +47,7 @@ export const SvgEditor: React.FC<ModuleComponentProps<SvgStoredProps>> = ({
 
   return React.createElement('svg', {
     ...svgRoot.attributes,
+    ...hidden,
     ...editorRootProps,
     className: cn(mcClassName, svgRoot.className) || undefined,
     style: mergedStyle,

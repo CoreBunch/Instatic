@@ -25,6 +25,7 @@ const RecentRefSchema = Type.Object({
 
 const ModuleInserterPrefsSchema = Type.Object({
   view: InserterViewSchema,
+  phoneView: Type.Optional(InserterViewSchema),
   recent: Type.Array(RecentRefSchema, { maxItems: 32 }),
 }, { additionalProperties: false })
 
@@ -49,8 +50,10 @@ export function readModuleInserterPrefs(): ModuleInserterPrefs {
   }
 }
 
-export function writeModuleInserterView(view: ModuleInserterView): void {
-  writeModuleInserterPrefs({ ...readModuleInserterPrefs(), view })
+export function writeModuleInserterView(view: ModuleInserterView, phone = false): ModuleInserterPrefs {
+  const prefs = { ...readModuleInserterPrefs(), [phone ? 'phoneView' : 'view']: view }
+  writeModuleInserterPrefs(prefs)
+  return prefs
 }
 
 export function trackModuleInserterRecent(ref: ModuleInserterRecentRef): void {

@@ -73,6 +73,25 @@ export {
 } from './cmsUsers'
 export type { CmsAuditEvent, CmsRole } from './cmsUsers'
 export {
+  createCmsMemberApp,
+  deleteCmsMember,
+  deleteCmsMemberApp,
+  disconnectCmsMemberApp,
+  downloadCmsMemberData,
+  getCmsMember,
+  getCmsMemberSettings,
+  grantCmsMemberTag,
+  inviteCmsMember,
+  listCmsMemberApps,
+  listCmsMembers,
+  revokeCmsMemberTag,
+  saveCmsMemberSettings,
+  signOutCmsMember,
+  suspendCmsMember,
+  unsuspendCmsMember,
+  type CmsMemberListQuery,
+} from './cmsMembers'
+export {
   changeCurrentUserPassword,
   deleteCurrentUserAvatar,
   disableCurrentUserTotp,

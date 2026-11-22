@@ -63,7 +63,7 @@
     width: 44px;
     height: 44px;
     overflow: hidden;
-    border-radius: calc(var(--input-radius) - 4px);
+    border-radius: calc(var(--input-radius) - var(--space-s));
     background: var(--bg-surface-2);
     color: var(--text-subtle);
 }

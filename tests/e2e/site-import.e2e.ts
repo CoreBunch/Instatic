@@ -72,3 +72,53 @@ test('recognises a plugin package and sends the owner to Plugins (ADMIN-015)', a
   await expect(page).toHaveURL(/\/admin\/plugins(?:\?|$)/)
   await expect(dialog).toHaveCount(0)
 })
+
+// ADMIN-017: importing the same bundle twice reuses its script and image.
+test('reuses the script and image already in the site on a re-import (ADMIN-017)', async ({ page }) => {
+  const id = `reimport-${Date.now().toString(36)}`
+  const png = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+    'base64',
+  )
+  const bundle = Buffer.from(zipSync({
+    [`${id}.html`]: strToU8(
+      `<html><head><title>${id}</title><script src="${id}.js"></script></head>`
+      + `<body><h1>${id}</h1><img src="${id}.png" alt="Pixel"></body></html>`,
+    ),
+    [`${id}.js`]: strToU8('document.documentElement.dataset.reimport = "1"\n'),
+    [`${id}.png`]: new Uint8Array(png),
+  }))
+
+  async function importBundle() {
+    await page.goto('/admin/data')
+    await page.getByRole('button', { name: 'Import site', exact: true }).click()
+    await page.locator('input[type="file"]').first().setInputFiles({
+      name: `${id}.zip`,
+      mimeType: 'application/zip',
+      buffer: bundle,
+    })
+    await expect(page.getByRole('dialog', { name: 'Review import' })).toBeVisible()
+    await page.getByRole('button', { name: 'Continue →', exact: true }).click()
+  }
+
+  await importBundle()
+  await expect(page.getByRole('button', { name: 'Open site →', exact: true })).toBeVisible({ timeout: 30_000 })
+
+  await importBundle()
+  const conflicts = page.getByRole('dialog', { name: 'Resolve conflicts' })
+  await expect(conflicts.getByText('Files already in this site (1)')).toBeVisible()
+  await expect(conflicts.getByText('Media already in the library (1)')).toBeVisible()
+  await page.screenshot({ path: '.tmp/evidence/after-reimport-conflicts.png' })
+  await conflicts.getByRole('button', { name: 'Overwrite all page slug conflicts' }).click()
+  await page.getByRole('button', { name: 'Import', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Open site →', exact: true })).toBeVisible({ timeout: 30_000 })
+
+  const media = await page.request.get(`/admin/api/cms/media?query=${id}`)
+  expect(media.ok()).toBe(true)
+  const { assets } = await media.json() as { assets: { filename: string }[] }
+  expect(assets.map((asset) => asset.filename)).toEqual([`${id}.png`])
+
+  const site = await page.request.get('/admin/api/cms/site')
+  const { site: shell } = await site.json() as { site: { files: { path: string }[] } }
+  expect(shell.files.map((file) => file.path).filter((path) => path.startsWith(id))).toEqual([`${id}.js`])
+})

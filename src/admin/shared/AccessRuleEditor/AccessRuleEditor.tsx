@@ -90,6 +90,12 @@ export function AccessRuleEditor({
               onChange({ ...value, onDeny: event.currentTarget.value === 'hide' ? 'hide' : 'login' })
             }
           />
+          {value.onDeny === 'login' && (
+            <p className={styles.hint}>
+              Uses the sign-in page set under Users, Site members, Member settings. With none set, the answer
+              is "not found". A signed-in member who may not open it always gets "not found".
+            </p>
+          )}
         </div>
       )}
     </div>

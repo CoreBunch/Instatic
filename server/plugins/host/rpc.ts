@@ -15,11 +15,13 @@ import { hookBus } from '@core/plugins/hookBus'
 import { mediaStorageRegistry } from '@core/plugins/mediaStorageRegistry'
 import { mediaVariantDelegateRegistry } from '@core/plugins/mediaVariantDelegateRegistry'
 import type { LoopFetchResult, LoopItem } from '@core/loops/types'
-import type { SerializedUser } from '../protocol/messages'
+import type { SerializedApp, SerializedMember, SerializedUser } from '../protocol/messages'
 import type { LoadPluginResult } from '../protocol/messages'
 import { normalizeRoutePath } from '../protocol/parser'
+import { canonicalIp, clientIp, visitorIpKey } from '../../auth/security'
 import { materializeRouteResponse, serializeRouteRequest } from './routeIo'
-import { hostPlugins } from './registry'
+import { PluginRateLimitStore } from './pluginRateLimit'
+import { hostPluginHasPermission, hostPlugins } from './registry'
 import { requestFromWorker } from './workerPool'
 import { describeWorkerError, workerCallError } from './workerErrors'
 import { workers } from './workerState'
@@ -39,6 +41,8 @@ export async function loadPluginInWorker(args: {
   entryFileUrl: string
   assetRootPath: string
   settings: PluginSettingsValues
+  /** Wall-clock budget per call, when not the default. Tests shorten it. */
+  callBudgetMs?: number
 }): Promise<LoadPluginResult> {
   // Clear any prior host-side state for this plugin id — hook listeners,
   // loop sources, route entries — so a re-load (e.g. install → activate
@@ -60,10 +64,12 @@ export async function loadPluginInWorker(args: {
     routes: new Map(),
     hookListeners: [],
     hookFilters: [],
+    memberExportFilterId: null,
     loopSources: [],
     mediaAdapters: [],
     mediaUrlTransformers: [],
     inflightFetches: new Map(),
+    rateLimits: new PluginRateLimitStore(),
   })
 
   const correlationId = nanoid()
@@ -76,6 +82,7 @@ export async function loadPluginInWorker(args: {
       manifest: args.manifest,
       entryFileUrl: args.entryFileUrl,
       settings: args.settings,
+      ...(args.callBudgetMs !== undefined ? { callBudgetMs: args.callBudgetMs } : {}),
     },
     'load-plugin-result',
   )
@@ -187,6 +194,8 @@ export async function runRouteInWorker(args: {
   path: string
   request: Request
   user: SerializedUser | null
+  member: SerializedMember | null
+  app: SerializedApp | null
 }): Promise<Response> {
   const entry = hostPlugins.get(args.pluginId)
   const routeKey = `${args.method.toUpperCase()}:${normalizeRoutePath(args.path)}`
@@ -197,6 +206,15 @@ export async function runRouteInWorker(args: {
   // read once as raw bytes, pre-parsed conveniences (JSON / form fields /
   // multipart files) are derived from those exact bytes, and binary
   // payloads cross the worker boundary base64-encoded.
+  // Exactly core's answer to where the caller is, proxy trust applied, in
+  // one spelling per address so a plugin keying on it sees one visitor as
+  // one key. The serialized headers below leave out the peer address.
+  // An IP address is personal data: only a plugin the owner granted
+  // `visitors.ip` is told it, and one without the grant never has it in the
+  // message to its worker at all.
+  const peer = hostPluginHasPermission(args.pluginId, 'visitors.ip') ? clientIp(args.request) : null
+  const ip = peer === null ? null : canonicalIp(peer)
+  const ipKey = peer === null ? null : visitorIpKey(peer)
   const { request: serializedReq, body: parsedBody } = await serializeRouteRequest(args.request)
 
   const result = await requestFromWorker(
@@ -208,6 +226,10 @@ export async function runRouteInWorker(args: {
       routeKey,
       request: serializedReq,
       user: args.user,
+      member: args.member,
+      app: args.app,
+      ip,
+      ipKey,
       body: parsedBody,
     },
     'route-result',
@@ -218,7 +240,10 @@ export async function runRouteInWorker(args: {
       `[plugin:${args.pluginId}] route "${routeKey}" handler failed:`,
       describeWorkerError(result.error, result.stack, 'Plugin route failed'),
     )
-    return Response.json({ error: result.error ?? 'Plugin route failed' }, { status: 500 })
+    // A handler that ran out of its call budget is a gateway timeout, not a
+    // server fault: the worker is healthy and its other calls carried on.
+    // The outcome is unknown (the handler may still finish).
+    return Response.json({ error: result.error ?? 'Plugin route failed' }, { status: result.timedOut ? 504 : 500 })
   }
   return materializeRouteResponse(result.response)
 }
@@ -285,6 +310,33 @@ export async function runScheduleInWorker(args: {
     error: result.error,
     durationMs: result.durationMs,
   }
+}
+
+/**
+ * Run a plugin source's `preview()` in its worker. Unlike a fetch, a failure
+ * is the caller's to show: the editor tells the author the preview failed
+ * instead of drawing an empty list. What the plugin threw is logged here and
+ * goes no further: a plugin's error text is for the server log, not for
+ * whoever has the page open.
+ */
+export async function runLoopPreviewInWorker(
+  pluginId: string,
+  sourceId: string,
+  ctx: unknown,
+): Promise<{ ok: true; items: unknown[] } | { ok: false }> {
+  const result = await requestFromWorker(
+    pluginId,
+    { kind: 'run-loop-preview', correlationId: nanoid(), pluginId, sourceId, ctx },
+    'loop-preview-result',
+  )
+  if (!result.ok || !Array.isArray(result.value)) {
+    console.error(
+      `[plugin:${pluginId}] loop source "${sourceId}" preview failed:`,
+      describeWorkerError(result.error, result.stack, 'preview() did not return an array'),
+    )
+    return { ok: false }
+  }
+  return { ok: true, items: result.value }
 }
 
 // ---------------------------------------------------------------------------

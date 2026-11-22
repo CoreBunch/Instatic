@@ -152,9 +152,9 @@ export function DataPage() {
     if (publishState === 'publishing' || activeDraftRef.current?.isSaving) return
     setPublishState('publishing')
     try {
-      const flushedRow = await handleSaveActiveDraft()
-      const currentDraft = activeDraftRef.current
-      if (currentDraft && !currentDraft.isSaving && !flushedRow) {
+      const draft = activeDraftRef.current
+      const flushedRow = draft?.isDirty ? await draft.flush() : null
+      if (draft?.isDirty && !flushedRow) {
         throw new Error('The active row draft could not be saved')
       }
 
@@ -325,6 +325,7 @@ export function DataPage() {
       canEdit={canEditRows}
       canManageSchema={canManageSchema}
       canDelete={canDeleteTable}
+      activeDraft={activeDraft}
       onDraftStateChange={handleDraftStateChange}
     />
   ) : undefined

@@ -22,11 +22,12 @@ import { dirname, join } from 'node:path'
 import { once } from 'node:events'
 import { tmpdir } from 'node:os'
 import type { DbClient } from '../../db/client'
-import { requireCapability } from '../../auth/authz'
+import { requireCapability, userHasCapability } from '../../auth/authz'
 import { jsonResponse, badRequest } from '../../http'
 import { importMediaAsset, assignAssetToFolders } from '../../repositories/media'
 import { parseValue, formatValueErrors, compiled } from '@core/utils/typeboxHelpers'
 import { validateAndSanitizeMediaBytes, resolveMediaWriteTarget } from './importMediaValidation'
+import { mediaContentHash } from './mediaUpload'
 import {
   ImportResultSchema,
   ImportStrategySchema,
@@ -48,6 +49,8 @@ import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
 import type { BranchScope } from '../../branches/scope'
 import {
   authorizeImportedShell,
+  authorizeImportedTableAccess,
+  recordImportedTableAccess,
   authorizeImportedPublication,
   validateImportedPublication,
   authorizeImportStrategy,
@@ -110,9 +113,12 @@ export async function handleImportArchiveRoute(
   const shellDenied = authorizeImportedShell(user, selectedManifest.site !== undefined)
   if (shellDenied) return shellDenied
 
+  const tableAccessDenied = await authorizeImportedTableAccess(req, db, user, selectedManifest)
+  if (tableAccessDenied) return tableAccessDenied
+
   const publicationInvalid = validateImportedPublication(siteBundleWithoutMediaBytes(selectedManifest))
   if (publicationInvalid) return publicationInvalid
-  const publicationDenied = await authorizeImportedPublication(req, db, user, siteBundleWithoutMediaBytes(selectedManifest))
+  const publicationDenied = await authorizeImportedPublication(req, db, user, scope, siteBundleWithoutMediaBytes(selectedManifest))
   if (publicationDenied) return publicationDenied
 
   let stagedMedia: StagedArchiveFiles | null = null
@@ -133,11 +139,13 @@ export async function handleImportArchiveRoute(
       bundle: siteBundleWithoutMediaBytes(selectedManifest),
       strategy,
       carriesMedia: selectedManifest.media !== undefined,
+      mayChangePageStructure: userHasCapability(user, 'site.structure.edit'),
       runtimeFiles: stagedMedia?.runtimeFiles,
       uploadsDir: options.uploadsDir,
     })
     // After commit, before staged media moves in: a bundle file at a deleted
     // asset's storage path must land after the old bytes are removed.
+    await recordImportedTableAccess(req, db, user, applied.tableAccessAdded)
     await removeDeletedMediaFiles(applied.deletedMedia)
 
     let mediaImported = 0
@@ -161,6 +169,7 @@ export async function handleImportArchiveRoute(
       rowsInserted: applied.rowsInserted,
       rowsReplaced: applied.rowsReplaced,
       rowsSkipped: applied.rowsSkipped,
+    rowsImportedAsDraft: applied.rowsImportedAsDraft,
       mediaImported,
       mediaFoldersImported: applied.mediaFoldersImported,
       redirectsImported: applied.redirectsImported,
@@ -210,10 +219,8 @@ export async function importStagedArchiveMediaEntries(input: {
     // upload pipeline so there is exactly one place to update if the detection
     // or sanitisation logic changes. The staged file is fully buffered here to
     // sniff its magic bytes (unavoidable — MIME detection needs the head).
-    const safeBytes = validateAndSanitizeMediaBytes(
-      new Uint8Array(await Bun.file(stagedPath).arrayBuffer()),
-      asset,
-    )
+    const stagedBytes = new Uint8Array(await Bun.file(stagedPath).arrayBuffer())
+    const safeBytes = validateAndSanitizeMediaBytes(stagedBytes, asset)
 
     // SVG entries are written from the sanitized in-memory bytes; all other
     // types are moved from staging (zero-copy fast path).
@@ -229,6 +236,7 @@ export async function importStagedArchiveMediaEntries(input: {
       mimeType: asset.mimeType,
       // Use the sanitized byte length — SVG shrinks after script removal.
       sizeBytes: safeBytes.length,
+      contentHash: mediaContentHash(stagedBytes),
       storagePath: asset.storagePath,
       publicPath: `/uploads/${asset.storagePath}`,
       altText: asset.altText,

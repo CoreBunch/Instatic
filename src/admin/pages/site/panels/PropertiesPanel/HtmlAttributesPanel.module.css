@@ -38,7 +38,7 @@
 
 .rowGrid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 26px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--space-xs);
 }

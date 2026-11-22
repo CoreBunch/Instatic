@@ -1,6 +1,7 @@
 /**
  * Mail connectors — the accounts the server can send through
- * (`mail_connectors`). Each has a kind (SMTP, Amazon SES), a public config
+ * (`mail_connectors`). Each has a kind (SMTP, Amazon SES, or a provider's
+ * API reached with one key), a public config
  * and one secret, encrypted at rest under the master key.
  *
  * `toView` is the only projection that leaves the server and never carries
@@ -10,10 +11,13 @@
 import { nanoid } from 'nanoid'
 import type { DbClient } from '../db/client'
 import {
-  SesConnectorConfigSchema,
-  SmtpConnectorConfigSchema,
+  MAIL_CONNECTOR_CONFIG_SCHEMAS,
+  MAIL_CONNECTOR_KINDS,
+  type KeyOnlyConnectorConfig,
   type MailConnector,
   type MailConnectorInput,
+  type MailConnectorKind,
+  type MailgunConnectorConfig,
   type SesConnectorConfig,
   type SmtpConnectorConfig,
 } from '@core/mail'
@@ -32,16 +36,15 @@ interface ConnectorRow {
   key_fingerprint: string | null
   last_used_at: Date | string | null
   last_error: string | null
+  delivery_paused_at: Date | string | null
   created_at: Date | string
 }
 
 const COLUMNS = `id, kind, label, config_json, secret_ciphertext, secret_iv, key_fingerprint,
-  last_used_at, last_error, created_at`
+  last_used_at, last_error, delivery_paused_at, created_at`
 
 /** A connector with its secret decrypted, for one send. */
-export type ResolvedConnector =
-  | { id: string; label: string; kind: 'smtp'; config: SmtpConnectorConfig; secret: string }
-  | { id: string; label: string; kind: 'ses'; config: SesConnectorConfig; secret: string }
+export type ResolvedConnector = TypedConfig & { id: string; label: string; secret: string }
 
 /** The stored secret cannot be read with the current server secret key. */
 export class MailSecretUnreadableError extends Error {
@@ -54,18 +57,19 @@ export class MailSecretUnreadableError extends Error {
 type TypedConfig =
   | { kind: 'smtp'; config: SmtpConnectorConfig }
   | { kind: 'ses'; config: SesConnectorConfig }
+  | { kind: 'resend' | 'postmark' | 'brevo'; config: KeyOnlyConnectorConfig }
+  | { kind: 'mailgun'; config: MailgunConnectorConfig }
+
+function isConnectorKind(kind: string): kind is MailConnectorKind {
+  return (MAIL_CONNECTOR_KINDS as readonly string[]).includes(kind)
+}
 
 /** Validate a stored config against its kind. A row that fails is skipped, not trusted. */
 function readConfig(row: ConnectorRow): TypedConfig | null {
-  if (row.kind === 'smtp') {
-    const parsed = safeParseValue(SmtpConnectorConfigSchema, row.config_json)
-    return parsed.ok ? { kind: 'smtp', config: parsed.value } : null
-  }
-  if (row.kind === 'ses') {
-    const parsed = safeParseValue(SesConnectorConfigSchema, row.config_json)
-    return parsed.ok ? { kind: 'ses', config: parsed.value } : null
-  }
-  return null
+  if (!isConnectorKind(row.kind)) return null
+  const parsed = safeParseValue(MAIL_CONNECTOR_CONFIG_SCHEMAS[row.kind], row.config_json)
+  // The schema was picked by the kind, so the pair is one of the union's members.
+  return parsed.ok ? ({ kind: row.kind, config: parsed.value } as TypedConfig) : null
 }
 
 async function toView(row: ConnectorRow, fingerprint: string): Promise<MailConnector | null> {
@@ -80,6 +84,7 @@ async function toView(row: ConnectorRow, fingerprint: string): Promise<MailConne
     secretNeedsReentry: hasSecret && row.key_fingerprint !== fingerprint,
     lastUsedAt: isoDateOrNull(row.last_used_at),
     lastError: row.last_error,
+    deliveryPaused: row.delivery_paused_at !== null,
     createdAt: isoDate(row.created_at),
   }
 }
@@ -128,7 +133,11 @@ export async function createMailConnector(
   const id = nanoid()
   const now = nowIso()
   const secret = await encryptedSecret(input.secret)
-  const config = input.kind === 'smtp' ? { ...input.config, host: input.config.host.toLowerCase() } : input.config
+  const config = input.kind === 'smtp'
+    ? { ...input.config, host: input.config.host.toLowerCase() }
+    : input.kind === 'mailgun'
+      ? { ...input.config, domain: input.config.domain.toLowerCase() }
+      : input.config
   await db`
     insert into mail_connectors (
       id, kind, label, config_json, secret_ciphertext, secret_iv, key_fingerprint,
@@ -149,7 +158,8 @@ export async function setMailConnectorSecret(db: DbClient, id: string, secret: s
   const { rows } = await db<{ id: string }>`
     update mail_connectors
        set secret_ciphertext = ${encrypted.ciphertext}, secret_iv = ${encrypted.iv},
-           key_fingerprint = ${encrypted.fingerprint}, last_error = null, updated_at = ${nowIso()}
+           key_fingerprint = ${encrypted.fingerprint}, last_error = null, delivery_paused_at = null,
+           updated_at = ${nowIso()}
      where id = ${id}
     returning id
   `
@@ -178,11 +188,65 @@ export async function resolveConnector(db: DbClient, id: string): Promise<Resolv
   return { ...typed, id: row.id, label: row.label, secret }
 }
 
-/** Record how the last use of a connector went. */
+/**
+ * Record how the last use of a connector went. A use that worked also lifts
+ * a pause: the account is evidently accepted again.
+ */
 export async function noteConnectorUse(db: DbClient, id: string, error: string | null): Promise<void> {
   const now = nowIso()
+  if (error === null) {
+    await db`
+      update mail_connectors
+         set last_used_at = ${now}, last_error = null, delivery_paused_at = null, updated_at = ${now}
+       where id = ${id}
+    `
+    return
+  }
   await db`
     update mail_connectors set last_used_at = ${now}, last_error = ${error}, updated_at = ${now}
      where id = ${id}
   `
+}
+
+/**
+ * Stop sending queued email through a connector that refuses the account
+ * itself (a wrong key or password, a secret that cannot be read). A stream
+ * of failed logins can get an account locked, so the queue is held. It is a
+ * circuit breaker, not a switch someone has to remember to flip back:
+ * `delivery_paused_at` is the time of the last refusal, and every
+ * `CONNECTOR_PROBE_INTERVAL_MS` one email is let through as a probe
+ * (`takeConnectorProbe`). A send that works, the probe's or the connector
+ * test's, lifts the pause (`noteConnectorUse`); so does a new secret.
+ */
+export async function pauseConnectorDelivery(db: DbClient, id: string, now: number = Date.now()): Promise<void> {
+  await db`update mail_connectors set delivery_paused_at = ${new Date(now).toISOString()} where id = ${id}`
+}
+
+/** How often a paused connector is tried with one email. */
+export const CONNECTOR_PROBE_INTERVAL_MS = 2 * 60 * 1000
+
+/** Why queued email is held, when the connector is paused. */
+export async function connectorPauseReason(db: DbClient, id: string): Promise<string | null> {
+  const { rows } = await db<{ delivery_paused_at: Date | string | null; last_error: string | null }>`
+    select delivery_paused_at, last_error from mail_connectors where id = ${id}
+  `
+  const row = rows[0]
+  if (!row || row.delivery_paused_at === null) return null
+  return row.last_error ?? 'The connector refused the account.'
+}
+
+/**
+ * Whether queued email may go through this connector now: `open` when it is
+ * not paused, `probe` when it is paused and this caller has just taken the
+ * one probe that is due, `held` otherwise. Taking the probe is one
+ * conditional update, so of several workers exactly one gets it.
+ */
+export async function takeConnectorProbe(db: DbClient, id: string, now: number): Promise<'open' | 'probe' | 'held'> {
+  if ((await connectorPauseReason(db, id)) === null) return 'open'
+  const taken = await db`
+    update mail_connectors set delivery_paused_at = ${new Date(now).toISOString()}
+     where id = ${id} and delivery_paused_at is not null
+       and delivery_paused_at <= ${new Date(now - CONNECTOR_PROBE_INTERVAL_MS).toISOString()}
+  `
+  return taken.rowCount > 0 ? 'probe' : 'held'
 }

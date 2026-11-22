@@ -18,3 +18,10 @@
     font-weight: 700;
     line-height: 1.2;
 }
+
+.hint {
+    margin: 0;
+    color: var(--text-subtle);
+    font-size: var(--text-xs);
+    line-height: 1.45;
+}

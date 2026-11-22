@@ -68,6 +68,23 @@ export interface MemberFrame {
   profile: Record<string, string>
   tags: readonly string[]
   tagList: string
+  /**
+   * The app waiting for this member's answer, on a page opened with an app's
+   * sign-in request in its address. Null everywhere else. The values come
+   * from the stored request, never from the address itself.
+   */
+  appRequest: MemberAppRequestFrame | null
+}
+
+export interface MemberAppRequestFrame {
+  /** The app's name, as the site owner registered it. */
+  name: string
+  /** What the app asks to see, as a sentence fragment. */
+  access: string
+  /** The host the answer is sent back to. */
+  returnsTo: string
+  /** What the app calls the device it runs on. The app's own word; empty when it gave none. */
+  device: string
 }
 
 // ---------------------------------------------------------------------------
@@ -137,7 +154,10 @@ export function buildRouteFrame(urlOrPath: string): RouteFrame {
 }
 
 /** A checkbox profile field reads as "yes" or blank, so a binding prints something sensible. */
-export function buildMemberFrame(member: CurrentMember): MemberFrame {
+export function buildMemberFrame(
+  member: CurrentMember,
+  appRequest: MemberAppRequestFrame | null = null,
+): MemberFrame {
   return {
     id: member.id,
     email: member.email,
@@ -146,6 +166,7 @@ export function buildMemberFrame(member: CurrentMember): MemberFrame {
     ),
     tags: member.tags,
     tagList: member.tags.join(', '),
+    appRequest,
   }
 }
 
@@ -159,4 +180,5 @@ export const PREVIEW_MEMBER_FRAME: MemberFrame = {
   profile: { name: 'Member name' },
   tags: [],
   tagList: 'tag',
+  appRequest: { name: 'App name', access: 'what the app asks to see', returnsTo: 'this device', device: 'Device name' },
 }
