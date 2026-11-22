@@ -1,7 +1,7 @@
 {
   "name": "instatic",
   "private": true,
-  "version": "0.0.22",
+  "version": "0.0.23",
   "engines": {
     "bun": ">=1.4.0 <1.5.0"
   },
