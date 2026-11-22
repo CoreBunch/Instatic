@@ -7,7 +7,8 @@
  * to keep the editor store out of the other workspaces.
  */
 
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { useMobileViewport } from '@admin/lib/mobileViewport'
 import { pluginRuntime } from '@core/plugins/runtime'
 import type { RegisteredPluginToolbarButton } from '@core/plugin-sdk'
 import { AccountMenuButton } from '@admin/shared/AccountMenuButton'
@@ -22,18 +23,6 @@ import { cn } from '@ui/cn'
 import type { AdminWorkspace } from '@admin/workspace'
 import styles from './Toolbar.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
-
-const mobileToolbarQuery = '(max-width: 760px)'
-
-function isMobileToolbar(): boolean {
-  return window.matchMedia?.(mobileToolbarQuery).matches ?? false
-}
-
-function subscribeMobileToolbar(update: () => void) {
-  const media = window.matchMedia?.(mobileToolbarQuery)
-  media?.addEventListener('change', update)
-  return () => media?.removeEventListener('change', update)
-}
 
 interface ToolbarProps {
   /** Site name shown in the brand position. Null renders the loading skeleton. */
@@ -72,7 +61,7 @@ export function Toolbar({
   overlay,
   rightSlot,
 }: ToolbarProps) {
-  const mobile = useSyncExternalStore(subscribeMobileToolbar, isMobileToolbar)
+  const mobile = useMobileViewport()
   const [pluginButtons, setPluginButtons] = useState<RegisteredPluginToolbarButton[]>(() =>
     pluginRuntime.getToolbarButtons(),
   )

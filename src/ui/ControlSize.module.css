@@ -15,5 +15,5 @@
 }
 
 .lg {
-    --control-size: 44px;
+    --control-size: var(--button-size-lg);
 }

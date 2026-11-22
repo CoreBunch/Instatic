@@ -137,7 +137,7 @@
     width: 30px;
     height: 30px;
     min-width: 30px;
-    border-radius: calc(var(--panel-radius) - 4px);
+    border-radius: calc(var(--panel-radius) - var(--space-3xs));
     color: var(--moduleInserterAccent);
     background: color-mix(
         in srgb,
@@ -377,7 +377,7 @@
         var(--moduleInserterItemRadius) - var(--moduleInserterTilePadding)
     );
     --moduleInserterTileControlRadius: calc(
-        var(--moduleInserterTileInnerRadius) - var(--radius-sm)
+        var(--moduleInserterItemRadius) - var(--moduleInserterTileControlInset)
     );
 
     position: relative;
@@ -733,77 +733,110 @@
     background: var(--bg-surface);
 }
 
-@media (max-width: 720px) {
+@media (max-width: 760px) {
     .backdrop {
-        padding: var(--space-xl);
+        --picker-height: 100dvh;
+        --picker-top: 0px;
+        top: var(--picker-top);
+        bottom: auto;
+        height: var(--picker-height);
+        padding: 0;
     }
 
     .panel {
-        width: calc(100vw - 28px);
-        height: calc(100vh - 28px);
-        grid-template-columns: 1fr;
+        box-sizing: border-box;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        grid-template-columns: minmax(0, 1fr);
         grid-template-rows: auto minmax(0, 1fr);
+        border: 0;
+        border-radius: 0;
+        padding-block: env(safe-area-inset-top) env(safe-area-inset-bottom);
     }
 
     .rail {
-        border-right: 0;
-        border-bottom: 1px solid var(--overlay-10);
+        padding: var(--space-s) var(--space-l);
+        gap: var(--space-s);
+        background: var(--bg-surface);
     }
+
+    .brand {
+        padding: 0;
+        font-size: var(--text-2xl);
+    }
+
+    .brand > button { margin-left: auto; }
 
     .sectionList {
-        grid-template-columns: repeat(5, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(0, 1.3fr) minmax(0, 1fr);
+        gap: var(--space-px);
+        padding: var(--space-4xs);
+        background: var(--bg-body);
+        border-radius: var(--panel-radius);
     }
 
-    .sectionButton {
-        min-width: 0;
-    }
-
-    .sectionLabel {
+    .sectionButton.sectionButton {
+        border-radius: calc(var(--panel-radius) - var(--space-4xs));
         justify-content: center;
+        padding: 0;
+        min-width: 0;
+        min-height: 44px;
     }
 
-    .sectionName {
+    .sectionIcon, .sectionCount, .detail, .railSpring, .shortcutFooter, .dragGrip, .rowGrip {
         display: none;
     }
 
-    .detail,
-    .shortcutFooter {
-        display: none;
-    }
-
-    .grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-}
-
-@media (max-width: 560px) {
     .searchRow {
         grid-template-columns: minmax(0, 1fr);
-        padding: var(--space-l);
+        padding: var(--space-s) var(--space-l);
     }
 
-    .sectionHeader {
-        padding: 0 var(--space-l) var(--space-l);
+    .searchField.searchField {
+        min-height: 44px;
+        padding-inline: var(--space-l);
+        border-radius: var(--input-radius);
+        background: var(--bg-surface-2);
     }
 
-    .scroller {
-        padding: 0 var(--space-l) var(--space-l);
+    .searchField.searchField:focus-within { box-shadow: inset 0 0 0 1px var(--overlay-50); }
+    .searchField input { font-size: max(1rem, var(--text-l)); }
+
+    .sectionHeader { padding: var(--space-s) var(--space-l); }
+    .scroller { overscroll-behavior: contain; padding: var(--space-2xs) var(--space-l) var(--space-l); }
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+    .grid .itemShell {
+        --moduleInserterTileStageHeight: 58px;
     }
 
-    .grid {
-        grid-template-columns: minmax(0, 1fr);
+    .phoneFavorite {
+        position: absolute;
+        right: var(--space-xs);
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-subtle);
     }
 
+    .phoneFavorite[aria-pressed="true"] { color: var(--text-bright); }
+    .grid .phoneFavorite {
+        top: var(--space-xs);
+        border-radius: calc(var(--moduleInserterItemRadius) - var(--space-xs));
+        transform: none;
+    }
+    .grid .tileAdd { display: none; }
+    .itemTitle { font-size: var(--text-xl); }
+    .itemDescription { font-size: var(--text-m); font-weight: 500; }
+    .tileItem { min-height: 116px; }
+    .tileMeta { gap: var(--space-2xs); }
+    .grid .tileItem .itemDescription { white-space: normal; }
+    .rowThumb { width: 52px; height: auto; align-self: stretch; }
     .rowItem {
-        gap: var(--space-m);
+        min-height: 64px;
+        padding-left: var(--moduleInserterTilePadding);
+        padding-right: calc(var(--button-size-lg) + var(--space-l));
     }
-
-    .rowGrip {
-        display: none;
-    }
-
-    .rowThumb {
-        width: 92px;
-        margin-left: 0;
-    }
+    .rowItem .itemDescription { white-space: normal; color: var(--text-muted); }
+    .empty { min-height: 0; }
 }

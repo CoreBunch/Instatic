@@ -31,6 +31,8 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
+  TouchSensor,
+  MouseSensor,
   useSensor,
   useSensors,
   type DragEndEvent,
@@ -55,6 +57,11 @@ import { TreeContainer, TreeIconSlot, TreeLabel, TreeRow } from '@site/ui/Tree'
 import { TagPill } from '@ui/components/TagPill'
 import { useEditorPreference } from '@site/preferences/editorPreferences'
 import { isNarrowEditorChromeViewport } from '@site/layout/responsiveChrome'
+import { useMobileViewport } from '@admin/lib/mobileViewport'
+import { useEditorPermissions } from '@site/editorPermissionsContext'
+import { PhoneLayerMove } from './PhoneLayerMove'
+import { LayerLabel } from './LayerTreeNodeContent'
+import { layerTextPreview } from './layerTextPreview'
 import { SearchBar } from '@ui/components/SearchBar'
 import { SkeletonTree } from '@ui/components/Skeleton'
 import { Button } from '@ui/components/Button'
@@ -79,6 +86,7 @@ interface SearchRow {
   displayName: string
   moduleId: string
   htmlTag: string | null
+  preview: string
   classChip: string | null
 }
 
@@ -99,7 +107,7 @@ function SearchResults({ rows, showTag, showClasses, onSelect }: SearchResultsPr
   }
   return (
     <>
-      {rows.map(({ nodeId, displayName, moduleId, htmlTag, classChip }) => (
+      {rows.map(({ nodeId, displayName, moduleId, htmlTag, classChip, preview }) => (
         <TreeRow
           key={nodeId}
           depth={0}
@@ -124,7 +132,7 @@ function SearchResults({ rows, showTag, showClasses, onSelect }: SearchResultsPr
               className={styles.searchTagPill}
             />
           )}
-          <TreeLabel>{displayName}</TreeLabel>
+          <LayerLabel name={displayName} preview={preview} />
           {showClasses && classChip && (
             <TagPill
               label={classChip}
@@ -143,6 +151,9 @@ function SearchResults({ rows, showTag, showClasses, onSelect }: SearchResultsPr
 // ─── Inner panel (needs context from DomTreeProvider) ─────────────────────────
 
 function DomPanelInner({ editable = true }: { editable?: boolean }) {
+  const phone = useMobileViewport()
+  const { canEditStructure } = useEditorPermissions()
+  const singleSelection = useEditorStore((s) => s.selectedNodeIds.length === 1)
   const page = useEditorStore(selectActiveCanvasPage)
   const activeDocument = useEditorStore((s) => s.activeDocument)
   const setFocusedPanel = useEditorStore((s) => s.setFocusedPanel)
@@ -200,11 +211,10 @@ function DomPanelInner({ editable = true }: { editable?: boolean }) {
   const panelRef = useRef<HTMLDivElement>(null)
 
   // ─── DnD sensors ──────────────────────────────────────────────────────────
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },  // small threshold prevents accidental drags
-    }),
-  )
+  const pointer = useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  const mouse = useSensor(MouseSensor, { activationConstraint: { distance: 5 } })
+  const touch = useSensor(TouchSensor, { activationConstraint: { delay: 350, tolerance: 8 } })
+  const sensors = useSensors(phone ? mouse : pointer, phone ? touch : undefined)
 
   const treeAreaRef = useRef<HTMLDivElement>(null)
   const dnd = useDomPanelDnd({ page, treeAreaRef, expandNode: store.expand, isExpanded: store.isExpanded })
@@ -235,7 +245,7 @@ function DomPanelInner({ editable = true }: { editable?: boolean }) {
     // `layersSmoothScroll` preference (some users find smooth scrolling
     // distracting when bouncing between many nodes quickly).
     requestAnimationFrame(() => {
-      const row = treeRef.current?.querySelector(`[data-node-id="${selectedNodeId}"]`)
+      const row = treeRef.current?.querySelector(`[data-instatic-node-id="${selectedNodeId}"]`)
       if (row) {
         row.scrollIntoView({
           behavior: smoothScroll ? 'smooth' : 'auto',
@@ -350,6 +360,8 @@ function DomPanelInner({ editable = true }: { editable?: boolean }) {
         // Joined with spaces so substring matching works across fields without
         // accidentally matching across boundaries (e.g. "headerfooter").
         const haystackParts: string[] = [displayName.toLowerCase()]
+        const preview = phone ? layerTextPreview(node) : ''
+        if (preview) haystackParts.push(preview.toLowerCase())
         if (htmlTag) haystackParts.push(htmlTag)
         for (const name of classNames) haystackParts.push(name.toLowerCase())
         const haystack = haystackParts.join(' ')
@@ -362,6 +374,7 @@ function DomPanelInner({ editable = true }: { editable?: boolean }) {
           moduleId: node.moduleId,
           htmlTag,
           classChip,
+          preview,
         } satisfies SearchRow]
       })
   })()
@@ -411,6 +424,9 @@ function DomPanelInner({ editable = true }: { editable?: boolean }) {
             aria-label="Search layers"
             className={styles.searchFill}
           />
+          {phone && editable && canEditStructure && singleSelection && page && selectedNodeId && (
+            <PhoneLayerMove key={selectedNodeId} page={page} nodeId={selectedNodeId} />
+          )}
           {editable && (
             <Button
               ref={insertTriggerRef}
@@ -451,10 +467,15 @@ function DomPanelInner({ editable = true }: { editable?: boolean }) {
                 rows={searchRows}
                 showTag={showTag}
                 showClasses={showClasses}
-                onSelect={(nodeId) =>
+                onSelect={(nodeId) => {
                   useEditorStore.getState().selectNode(nodeId, undefined, {
-                    preservePropertiesPanelCollapse: isNarrowEditorChromeViewport(),
-                  })}
+                    propertiesPanel: isNarrowEditorChromeViewport() ? 'preserve' : 'open',
+                  })
+                  if (phone) {
+                    searchInputRef.current?.blur()
+                    setSearchQuery('')
+                  }
+                }}
               />
             </TreeContainer>
           ) : (
@@ -483,7 +504,7 @@ function DomPanelInner({ editable = true }: { editable?: boolean }) {
                     root through TreeBackgroundContextMenu.
                   */}
                   {visibleRootNodeIds.map((nodeId) => (
-                    <TreeNode key={nodeId} nodeId={nodeId} depth={0} editable={editable} />
+                    <TreeNode key={nodeId} nodeId={nodeId} depth={0} editable={editable} phone={phone} />
                   ))}
                 </TreeContainer>
               </DomPanelDndContext.Provider>
@@ -512,10 +533,8 @@ function DomPanelInner({ editable = true }: { editable?: boolean }) {
           canvas "+" and toolbar "+ Add". */}
       {editable && insertOpen && (
         <ModuleInserterDialog
-          onClose={() => {
-            setInsertOpen(false)
-            insertTriggerRef.current?.focus()
-          }}
+          triggerRef={insertTriggerRef}
+          onClose={() => setInsertOpen(false)}
           onInsertItem={handleInsertItem}
         />
       )}

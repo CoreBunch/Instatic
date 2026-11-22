@@ -14,6 +14,7 @@
  * Properties-panel typing burst for the same prop (or vice versa) — Escape
  * must revert exactly the inline session, nothing more.
  */
+import type { PageNode } from '@core/page-tree'
 import { registry } from '@core/module-engine'
 import type { EditorStoreSliceCreator } from '@site/store/types'
 import { collabBreakCoalescing } from './site/collabBinding'
@@ -55,6 +56,15 @@ declare module '@site/store/types' {
   interface EditorStore extends InlineEditSlice {}
 }
 
+/** Only literal text rendered by the trusted module itself has an editable surface. */
+export function inlineTextEditSpec(node: PageNode | undefined) {
+  if (!node || node.children.length) return null
+  const def = registry.get(node.moduleId)
+  const spec = def?.inlineTextEdit
+  if (!spec || (def.editorRuntime?.sandbox && !def.trusted) || node.dynamicBindings?.[spec.prop]) return null
+  return spec
+}
+
 export const createInlineEditSlice: EditorStoreSliceCreator<InlineEditSlice> = (set, get) => ({
   activeInlineEdit: null,
 
@@ -62,19 +72,8 @@ export const createInlineEditSlice: EditorStoreSliceCreator<InlineEditSlice> = (
     const state = get()
     const node = getActiveTree(state)?.nodes[nodeId]
     if (!node) return
-    const def = registry.get(node.moduleId)
-    const spec = def?.inlineTextEdit
+    const spec = inlineTextEditSpec(node)
     if (!spec) return
-    // Sandboxed (untrusted plugin) modules render in a ModuleSandboxFrame, which
-    // never receives the inlineEdit binding — so there'd be no contentEditable
-    // element to focus/commit and the session would be stuck. Mirror
-    // NodeRenderer's `shouldRenderSandbox` check and never start for them.
-    if (def?.editorRuntime?.sandbox && !def.trusted) return
-    // A node rendering children doesn't render its text prop (base.link).
-    if (node.children.length > 0) return
-    // A dynamically-bound prop isn't literal-editable — the binding would
-    // overwrite every keystroke in the canvas preview.
-    if (node.dynamicBindings?.[spec.prop]) return
     const value = node.props[spec.prop]
     if (typeof value !== 'string') {
       console.warn(

@@ -640,7 +640,9 @@ test.describe('visual builder', () => {
         await dialog.getByLabel('Layout name').fill(layoutName)
         await dialog.getByRole('button', { name: 'Save layout' }).click()
         await expect(dialog).toBeHidden()
-        await expect(page.getByText(`Saved layout "${layoutName}"`)).toBeVisible()
+        const savedNotice = page.getByRole('status').filter({ hasText: `Saved layout "${layoutName}"` })
+        await expect(savedNotice).toBeVisible()
+        await savedNotice.getByRole('button', { name: 'Dismiss notification' }).click()
 
         await containerRow.click({ button: 'right' })
         await page
@@ -1373,7 +1375,7 @@ async function switchEditingContext(page: Page, label: 'Desktop' | 'Mobile'): Pr
     .getByTestId('canvas-context-selector')
     .getByRole('button', { name: /Editing context:/ })
     .click()
-  await page.getByRole('menuitem', { name: new RegExp(label) }).click()
+  await page.getByRole('menuitemradio', { name: new RegExp(label) }).click()
   await expect(
     page.getByRole('button', { name: new RegExp(`Switch to ${label} breakpoint`), pressed: true }),
   ).toBeVisible()

@@ -132,7 +132,7 @@
   width: 30px;
   height: 30px;
   min-width: 30px;
-  border-radius: calc(var(--panel-radius) - 4px);
+  border-radius: calc(var(--panel-radius) - var(--space-3xs));
   color: var(--settingsAccent);
   background: color-mix(in srgb, var(--settingsAccent) 13%, transparent);
 }

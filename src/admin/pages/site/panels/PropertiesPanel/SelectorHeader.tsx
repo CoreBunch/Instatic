@@ -7,6 +7,7 @@
  * hidden for callers without `site.style.edit`. Generated utility classes are
  * locked and cannot be renamed or deleted, so the actions are hidden for them.
  */
+import { useMobileViewport } from '@admin/lib/mobileViewport'
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
@@ -26,6 +27,7 @@ interface SelectorHeaderProps {
 }
 
 export function SelectorHeader({ cls, usage, onRename, onDelete }: SelectorHeaderProps) {
+  const phone = useMobileViewport()
   const [isEditing, setIsEditing] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -102,7 +104,7 @@ export function SelectorHeader({ cls, usage, onRename, onDelete }: SelectorHeade
           <>
             <Button
               variant="ghost"
-              size="xs"
+              size={phone ? 'md' : 'xs'}
               iconOnly
               onClick={() => setIsEditing(true)}
               aria-label={`Rename selector ${selectorLabel}`}
@@ -112,7 +114,7 @@ export function SelectorHeader({ cls, usage, onRename, onDelete }: SelectorHeade
             </Button>
             <Button
               variant="ghost"
-              size="xs"
+              size={phone ? 'md' : 'xs'}
               iconOnly
               dangerHover
               onClick={() => setConfirmingDelete(true)}

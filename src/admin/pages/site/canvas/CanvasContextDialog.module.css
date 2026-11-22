@@ -1,0 +1,76 @@
+/* Add-condition dialog */
+
+.form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-m);
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3xs);
+}
+
+.toggleRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-m);
+}
+
+.label {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    font-weight: 620;
+}
+
+.error {
+    margin: 0;
+    color: var(--danger-light);
+    font-size: var(--text-xs);
+}
+
+/* Guided builder */
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+}
+
+.rangeRow {
+    display: grid;
+    grid-template-columns: 1fr 1fr auto;
+    gap: var(--space-xs);
+    align-items: center;
+}
+
+.pairRow {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-xs);
+    align-items: center;
+}
+
+.hint {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+}
+
+.supportBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-3xs);
+    font-size: var(--text-xs);
+    font-weight: 620;
+}
+
+.supportYes {
+    color: var(--success-text);
+}
+
+.supportNo {
+    color: var(--danger-light);
+}

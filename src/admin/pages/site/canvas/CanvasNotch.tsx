@@ -32,6 +32,7 @@ import {
 } from "@ui/components/ContextMenu";
 import { UndoRedoButtons } from "./UndoRedoButtons";
 import { cn } from "@ui/cn";
+import { NotchFold } from "./NotchFold";
 import styles from "./CanvasNotch.module.css";
 
 const ADD_TRIGGER_TEST_ID = "canvas-notch-add-btn";
@@ -62,6 +63,7 @@ export type CanvasNotchAction = {
 
 interface CanvasNotchProps {
   actions?: CanvasNotchAction[];
+  compact?: boolean;
   /**
    * Replaces the default Site-editor module picker. Leave undefined to show
    * it; pass null when reusing the notch for a non-site canvas.
@@ -87,6 +89,7 @@ interface CanvasNotchProps {
 
 export function CanvasNotch({
   actions,
+  compact = false,
   addControl,
   floatingControl,
   showHistoryControls = true,
@@ -95,23 +98,26 @@ export function CanvasNotch({
   return (
     <div
       className={cn(styles.shell, peek && styles.shellPeek)}
+      data-compact={compact}
       aria-label="Insert modules"
       data-testid="canvas-notch"
       onClick={stopCanvasInteraction}
     >
       {peek && <div aria-hidden="true" className={styles.peekHandle} />}
       <div className={styles.roller}>
-        <div className={styles.notch}>
-          {showHistoryControls && (
+        <div className={styles.notch} data-canvas-insert-notch="">
+          {showHistoryControls && <UndoRedoButtons />}
+          {actions ? (
             <>
-              <UndoRedoButtons />
-              <div aria-hidden="true" className={styles.divider} />
+              {showHistoryControls && <div aria-hidden="true" className={styles.divider} />}
+              {actions.map((action) => renderActionButton(action))}
             </>
+          ) : (
+            <NotchFold compact={compact} className={styles.favorites}>
+              {showHistoryControls && <span aria-hidden="true" className={styles.divider} />}
+              <FavoriteNotchActions />
+            </NotchFold>
           )}
-
-          {actions
-            ? actions.map((action) => renderActionButton(action))
-            : <FavoriteNotchActions />}
 
           {addControl === undefined ? (
             <ModulePickerDropdown

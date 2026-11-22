@@ -11,6 +11,8 @@
  *   MODULE_CATEGORY_ID — 'module' (module settings tab)
  */
 
+import { useMobileViewport } from '@admin/lib/mobileViewport'
+import { Select } from '@ui/components/Select'
 import { Button } from '@ui/components/Button'
 import type { AnyModuleDefinition } from '@core/module-engine'
 import type { StyleRule } from '@core/page-tree'
@@ -98,6 +100,28 @@ export function StyleCategoryRail({
 }: StyleCategoryRailProps) {
   const stylesLocked = activeClass === null && !editingInline
   const disabledTooltip = 'Add a class to unlock styles'
+  const sections = orderedStyleSections(definition?.inlineTextEdit != null)
+  const phone = useMobileViewport()
+  if (phone) {
+    return (
+      <div className={styles.sectionPicker}>
+        <span>Section</span>
+        <Select
+          aria-label="Style section"
+          value={activeAnchorId}
+          searchable={false}
+          onChange={(event) => onSectionClick(event.target.value)}
+        >
+          {definition && <option value={MODULE_CATEGORY_ID}>{definition.name}</option>}
+          {sections.map((section) => (
+            <option key={section.id} value={section.id} disabled={stylesLocked}>
+              {section.title}
+            </option>
+          ))}
+        </Select>
+      </div>
+    )
+  }
 
   return (
     <div
@@ -117,7 +141,7 @@ export function StyleCategoryRail({
       )}
 
       {/* ── CSS category buttons ──────────────────────────────────────── */}
-      {orderedStyleSections(definition?.inlineTextEdit != null).map((section) => {
+      {sections.map((section) => {
         const SectionIcon = section.icon
         const setCount = sectionSetCounts.get(section.id) ?? 0
         const hasSetStyles = setCount > 0

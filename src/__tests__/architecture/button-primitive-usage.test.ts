@@ -250,10 +250,12 @@ describe('BTN-3 — Button primitive usage gate', () => {
     const source = readFileSync(join(SRC_ROOT, 'ui/components/Button/Button.tsx'), 'utf-8')
     const css = readFileSync(join(SRC_ROOT, 'ui/components/Button/Button.module.css'), 'utf-8')
 
+    const tokens = readFileSync(join(SRC_ROOT, 'styles/globals.css'), 'utf-8')
+    expect(tokens).toMatch(/--button-size-lg:\s*44px;/)
     expect(source).toMatch(/["']lg["']/)
     const sizes = readFileSync(join(SRC_ROOT, 'ui/ControlSize.module.css'), 'utf-8')
     expect(source).toContain('controlSize[size]')
-    expect(sizes).toMatch(/\.lg\s*\{[^}]*--control-size:\s*44px;/)
+    expect(sizes).toMatch(/\.lg\s*\{[^}]*--control-size:\s*var\(--button-size-lg\);/)
     expect(css).toMatch(/\.btn\s*\{[^}]*height:\s*var\(--control-size\);/)
     expect(css).toMatch(/\.iconOnly\s*\{[^}]*width:\s*var\(--control-size\);/)
   })
