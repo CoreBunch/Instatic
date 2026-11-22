@@ -16,10 +16,14 @@
  */
 
 import { Type, type Static, type TSchema } from '@sinclair/typebox'
-import { StorageListOptionsSchema } from '@core/plugin-sdk/storageSchemas'
+import {
+  STORAGE_UNIQUE_KEY_MAX_LENGTH,
+  StorageListOptionsSchema,
+  StorageWriteOptionsSchema,
+} from '@core/plugin-sdk/storageSchemas'
 import { RouteRegistrationArgSchema } from './schemas/routes'
 import { HookListenerArgSchema, HookFilterArgSchema, HookEmitArgSchema } from './schemas/hooks'
-import { LoopSourceDescriptorSchema } from './schemas/loops'
+import { LoopSourceDescriptorSchema } from '@core/loops'
 import { JsonRecordSchema } from './schemas/storage'
 import { NetworkFetchInitSchema, NetworkAbortArgSchema } from './schemas/network'
 import { ScheduleRegisterArgSchema, ScheduleCancelArgSchema } from './schemas/schedule'
@@ -30,6 +34,7 @@ import {
   MediaUpsertArgSchema,
 } from './schemas/media'
 import { CryptoDigestArgSchema, CryptoSignHmacArgSchema } from './schemas/crypto'
+import { RateLimitTakeArgsSchema } from './schemas/rateLimit'
 import {
   ContentEntriesCreateArgsSchema,
   ContentEntriesCreateManyArgsSchema,
@@ -52,7 +57,12 @@ import {
   ContentTreeReadArgsSchema,
   ContentTreeReplaceArgsSchema,
 } from './schemas/content'
+import { MailSendArgsSchema, MailSendExternalArgsSchema } from './schemas/mail'
 import {
+  MembersEmailStatusArgsSchema,
+  MembersDeletedSinceArgsSchema,
+  MembersEnsureArgsSchema,
+  MembersExportProviderArgsSchema,
   MembersGetArgsSchema,
   MembersInviteArgsSchema,
   MembersTagsGrantArgsSchema,
@@ -98,10 +108,24 @@ export const ApiCallSchemas = {
     Type.String({ minLength: 1 }),
     Type.String({ minLength: 1 }),
     JsonRecordSchema,
+    StorageWriteOptionsSchema,
   ])),
   'cms.storage.delete': apiCallSchema('cms.storage.delete', Type.Tuple([
     Type.String({ minLength: 1 }),
     Type.String({ minLength: 1 }),
+    StorageWriteOptionsSchema,
+  ])),
+  'cms.storage.get': apiCallSchema('cms.storage.get', Type.Tuple([
+    Type.String({ minLength: 1 }),
+    Type.String({ minLength: 1 }),
+  ])),
+  'cms.storage.getByKey': apiCallSchema('cms.storage.getByKey', Type.Tuple([
+    Type.String({ minLength: 1 }),
+    Type.String({ minLength: 1, maxLength: STORAGE_UNIQUE_KEY_MAX_LENGTH }),
+  ])),
+  'cms.storage.createIfAbsent': apiCallSchema('cms.storage.createIfAbsent', Type.Tuple([
+    Type.String({ minLength: 1 }),
+    JsonRecordSchema,
   ])),
   'cms.settings.replace': apiCallSchema('cms.settings.replace', Type.Tuple([JsonRecordSchema])),
   'network.fetch': apiCallSchema('network.fetch', Type.Tuple([
@@ -153,8 +177,16 @@ export const ApiCallSchemas = {
   'cms.content.republishAll': apiCallSchema('cms.content.republishAll', ContentRepublishAllArgsSchema),
   'cms.members.get': apiCallSchema('cms.members.get', MembersGetArgsSchema),
   'cms.members.invite': apiCallSchema('cms.members.invite', MembersInviteArgsSchema),
+  'cms.members.ensure': apiCallSchema('cms.members.ensure', MembersEnsureArgsSchema),
+  'cms.members.emailStatus': apiCallSchema('cms.members.emailStatus', MembersEmailStatusArgsSchema),
+  'cms.members.exportProvider': apiCallSchema('cms.members.exportProvider', MembersExportProviderArgsSchema),
+  'cms.members.deletedSince': apiCallSchema('cms.members.deletedSince', MembersDeletedSinceArgsSchema),
   'cms.members.tags.grant': apiCallSchema('cms.members.tags.grant', MembersTagsGrantArgsSchema),
   'cms.members.tags.revoke': apiCallSchema('cms.members.tags.revoke', MembersTagsRevokeArgsSchema),
+  'cms.mail.send': apiCallSchema('cms.mail.send', MailSendArgsSchema),
+  'cms.mail.sendExternal': apiCallSchema('cms.mail.sendExternal', MailSendExternalArgsSchema),
+  'cms.site.publicUrl': apiCallSchema('cms.site.publicUrl', Type.Tuple([])),
+  'cms.rateLimit.take': apiCallSchema('cms.rateLimit.take', RateLimitTakeArgsSchema),
   'crypto.digest': apiCallSchema('crypto.digest', Type.Tuple([CryptoDigestArgSchema])),
   'crypto.signHmac': apiCallSchema('crypto.signHmac', Type.Tuple([CryptoSignHmacArgSchema])),
 } satisfies Record<string, TSchema>

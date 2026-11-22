@@ -3,13 +3,18 @@
  * are the people with an account on the published site.
  */
 import { Type } from '@sinclair/typebox'
-import { apiRequest } from '@core/http'
+import { apiBlobRequest, apiRequest } from '@core/http'
 import {
+  MemberAppListResponseSchema,
+  MemberAppSchema,
   MemberDetailResponseSchema,
   MemberInviteResponseSchema,
   MemberListResponseSchema,
   MemberSettingsResponseSchema,
+  type CreateMemberAppBody,
   type MemberAdminStatus,
+  type MemberApp,
+  type MemberAppListResponse,
   type MemberDetail,
   type MemberListItem,
   type MemberListResponse,
@@ -96,6 +101,16 @@ export function signOutCmsMember(id: string): Promise<MemberDetail> {
   return changeMember(id, '/sign-out', 'POST', undefined, 'The member could not be signed out')
 }
 
+/** Everything the site holds about the member, plugins' sections included, as a JSON file. */
+export function downloadCmsMemberData(id: string): Promise<Blob> {
+  return apiBlobRequest(memberPath(id, '/export'), { fallbackMessage: "The member's data could not be downloaded" })
+}
+
+/** Signs the member out of one app; `grantId` is the connected app's `id`. */
+export function disconnectCmsMemberApp(id: string, grantId: string): Promise<MemberDetail> {
+  return changeMember(id, `/apps/${encodeURIComponent(grantId)}`, 'DELETE', undefined, 'The app could not be disconnected')
+}
+
 export function grantCmsMemberTag(id: string, tag: string, expiresAt: string | null): Promise<MemberDetail> {
   return changeMember(id, '/tags', 'POST', { tag, expiresAt }, 'The tag could not be added')
 }
@@ -122,5 +137,36 @@ export async function saveCmsMemberSettings(settings: MemberSettings): Promise<M
     body: settings,
     schema: MemberSettingsResponseSchema,
     fallbackMessage: 'The member settings could not be saved',
+  })
+}
+
+// ─── Sign-in for apps ──────────────────────────────────────────────────────
+
+const APPS_PATH = `${MEMBERS_PATH}/apps`
+
+/** The registered apps, and what an app can be given on this site right now. */
+export async function listCmsMemberApps(signal?: AbortSignal): Promise<MemberAppListResponse> {
+  return apiRequest(APPS_PATH, {
+    schema: MemberAppListResponseSchema,
+    signal,
+    fallbackMessage: 'Could not load the apps',
+  })
+}
+
+export async function createCmsMemberApp(body: CreateMemberAppBody): Promise<MemberApp> {
+  return apiRequest(APPS_PATH, {
+    method: 'POST',
+    body,
+    schema: MemberAppSchema,
+    fallbackMessage: 'The app could not be added',
+  })
+}
+
+/** Removes the app and signs out everyone who signed in through it. */
+export async function deleteCmsMemberApp(id: string): Promise<void> {
+  await apiRequest(`${APPS_PATH}/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    schema: OkSchema,
+    fallbackMessage: 'The app could not be removed',
   })
 }

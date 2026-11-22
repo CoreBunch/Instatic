@@ -7,6 +7,7 @@
     flex-direction: column;
     min-height: 0;
     color: var(--text);
+    touch-action: auto;
 }
 
 .canvasDropping::after {
@@ -40,6 +41,14 @@
     gap: var(--space-3xs);
 }
 
+.phoneViewOptions {
+    margin-top: var(--space-xs);
+}
+
+.phoneViewOptions .viewGroup {
+    display: flex;
+}
+
 /* ── Grid view ─────────────────────────────────────────────────────────── */
 .grid {
     display: grid;
@@ -48,6 +57,12 @@
     list-style: none;
     padding: 0;
     margin: 0;
+}
+
+@media (max-width: 760px) {
+    .grid {
+        grid-template-columns: repeat(auto-fill, minmax(min(120px, 100%), 1fr));
+    }
 }
 
 .tileItem {

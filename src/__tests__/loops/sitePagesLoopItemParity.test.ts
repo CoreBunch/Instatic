@@ -6,7 +6,7 @@
  *
  * Both now CONSUME the shared `pageToLoopItem` + `filterPagesForLoop`
  * helpers exported from the `@core/loops` barrel. This test asserts that the
- * engine source (`SitePagesSource.preview`) and the shared helpers the admin
+ * engine source (`SitePagesSource.fetch`) and the shared helpers the admin
  * canvas hook calls agree, so a future change to the exposed loop-item shape
  * can never silently diverge the canvas preview from the published output.
  */
@@ -59,25 +59,26 @@ function canvasPath(pages: Page[], filters: Record<string, unknown>, limit: numb
     .map(pageToLoopItem)
 }
 
+/** What the engine source lists for the same pages, in definition order. */
+async function enginePath(filters: Record<string, unknown>, limit: number) {
+  const fetched = await SitePagesSource.fetch({
+    site: site(PAGES),
+    filters,
+    orderBy: 'definition',
+    direction: 'asc',
+    offset: 0,
+    limit,
+  } as never)
+  return fetched.items
+}
+
 describe('site.pages loop-item parity (canvas preview ↔ engine source)', () => {
-  it('produces identical loop items with no filters', () => {
-    const filters = {}
-    const limit = 10
-    const enginePreview = SitePagesSource.preview({ site: site(PAGES), filters, limit })
-    expect(canvasPath(PAGES, filters, limit)).toEqual(enginePreview)
+  it('produces identical loop items with no filters', async () => {
+    expect(canvasPath(PAGES, {}, 10)).toEqual(await enginePath({}, 10))
   })
 
-  it('matches the engine fetch() projection (definition order)', async () => {
-    const filters = {}
-    const engineFetch = await SitePagesSource.fetch({
-      site: site(PAGES),
-      filters,
-      orderBy: 'definition',
-      direction: 'asc',
-      offset: 0,
-      limit: 10,
-    })
-    expect(canvasPath(PAGES, filters, 10)).toEqual(engineFetch.items)
+  it('agrees when the limit cuts the list', async () => {
+    expect(canvasPath(PAGES, {}, 2)).toEqual(await enginePath({}, 2))
   })
 
   it('agrees on permalink normalization (index → /, bare slug → /slug)', () => {
@@ -88,19 +89,17 @@ describe('site.pages loop-item parity (canvas preview ↔ engine source)', () =>
     expect(byId.c).toBe('/contact')
   })
 
-  it('agrees on templateOnly filtering', () => {
+  it('agrees on templateOnly filtering', async () => {
     const filters = { templateOnly: true }
-    const enginePreview = SitePagesSource.preview({ site: site(PAGES), filters, limit: 10 })
     const canvas = canvasPath(PAGES, filters, 10)
-    expect(canvas).toEqual(enginePreview)
+    expect(canvas).toEqual(await enginePath(filters, 10))
     expect(canvas.map((i) => i.id)).toEqual(['d', 'e'])
   })
 
-  it('agrees on excludeTemplates filtering', () => {
+  it('agrees on excludeTemplates filtering', async () => {
     const filters = { excludeTemplates: true }
-    const enginePreview = SitePagesSource.preview({ site: site(PAGES), filters, limit: 10 })
     const canvas = canvasPath(PAGES, filters, 10)
-    expect(canvas).toEqual(enginePreview)
+    expect(canvas).toEqual(await enginePath(filters, 10))
     expect(canvas.map((i) => i.id)).toEqual(['a', 'b', 'c'])
   })
 

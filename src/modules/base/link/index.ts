@@ -9,14 +9,14 @@ import { registry } from '@core/module-engine'
 import { LinkIcon } from 'pixel-art-icons/icons/link'
 import { escapeHtml, safeUrl } from '@modules/base/utils/escape'
 import { Value } from '@core/utils/typeboxHelpers'
-import { ANCHOR_TARGET_OPTIONS, anchorHtmlAttributes } from '@modules/base/shared/anchorTarget'
+import { ANCHOR_TARGET_OPTIONS, anchorHtmlAttributes, anchorTargetAttr } from '@modules/base/shared/anchorTarget'
 import {
   htmlAttributesControl,
 } from '@modules/base/shared/htmlAttributes'
 import { htmlAttributesAttr } from '@core/publisher'
 import { linkUsesChildren } from './content'
 import { LinkEditor } from './LinkEditor'
-import { LinkPropsSchema, linkHref, type LinkStoredProps } from './props'
+import { LinkPropsSchema, type LinkStoredProps } from './props'
 
 export const LinkModule: ModuleDefinition<LinkStoredProps> = {
   id: 'base.link',
@@ -32,16 +32,7 @@ export const LinkModule: ModuleDefinition<LinkStoredProps> = {
   inlineTextEdit: { prop: 'text' },
 
   schema: {
-    action: {
-      type: 'select',
-      label: 'On click',
-      options: [
-        { label: 'Open a URL', value: 'url' },
-        { label: 'Sign the member out', value: 'memberSignOut' },
-      ],
-    },
-    href: { type: 'url', label: 'URL', condition: { field: 'action', notEq: 'memberSignOut' } },
-    signOutRedirect: { type: 'url', label: 'Then open', condition: { field: 'action', eq: 'memberSignOut' } },
+    href: { type: 'url', label: 'URL' },
     text: { type: 'text', label: 'Link text', placeholder: 'Displayed when no children' },
     target: {
       type: 'select',
@@ -60,11 +51,11 @@ export const LinkModule: ModuleDefinition<LinkStoredProps> = {
   htmlTag: 'a',
 
   render: (props, renderedChildren) => {
-    const href = safeUrl(linkHref(props))
+    const href = safeUrl(props.href)
     const { attributes, rel } = anchorHtmlAttributes(props.htmlAttributes, props.target)
     const attrs = htmlAttributesAttr(attributes)
     const relAttr = rel ? ` rel="${escapeHtml(rel)}"` : ''
-    const targetAttr = ` target="${String(props.target)}"`
+    const targetAttr = anchorTargetAttr(props.target)
     const content = linkUsesChildren(renderedChildren.length)
       ? renderedChildren.join('')
       : String(props.text ?? '')

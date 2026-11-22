@@ -2,7 +2,7 @@
  * Matches TemplateModeControl: borderless, text-first, minimal. */
 
 .control {
-    --vc-control-radius: 16px;
+    --vc-control-radius: var(--card-radius);
     display: flex;
     align-items: center;
     gap: var(--space-s);
@@ -20,7 +20,7 @@
 .control .backButton {
     min-height: 0;
     padding: var(--space-4xs) var(--space-xs) var(--space-4xs) var(--space-4xs);
-    border-radius: calc(var(--vc-control-radius) - 6px);
+    border-radius: calc(var(--vc-control-radius) - var(--space-xl)) / calc(var(--vc-control-radius) - var(--space-xs));
     color: var(--text-muted);
     font-size: var(--text-s);
 }

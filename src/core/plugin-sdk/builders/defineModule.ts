@@ -54,6 +54,12 @@ interface DefineModuleConfig<TDefaults extends Record<string, unknown>> {
   canHaveChildren?: boolean
   /** Optional concrete root tag for layer/DOM tree display. */
   htmlTag?: string
+  /**
+   * Class names `render()` writes into its own HTML (or a frontend script
+   * toggles), as exact names or a `prefix*`. Site CSS for them survives the
+   * publisher's class tree-shaking; undeclared, it is pruned.
+   */
+  emittedClassNames?: string[]
   /** Optional semver-like version string. Defaults to `'1.0.0'`. */
   version?: string
   /**
@@ -101,6 +107,7 @@ export function defineModule<const TDefaults extends Record<string, unknown>>(
     schema: config.schema as Record<string, PluginPropertyControl>,
     canHaveChildren: config.canHaveChildren,
     htmlTag: config.htmlTag,
+    ...(config.emittedClassNames ? { emittedClassNames: config.emittedClassNames } : {}),
     ...(config.dependencies ? { dependencies: config.dependencies } : {}),
     ...(config.editorRuntime ? { editorRuntime: config.editorRuntime } : {}),
     render: (props, children) =>

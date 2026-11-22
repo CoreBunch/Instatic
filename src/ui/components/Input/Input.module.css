@@ -41,19 +41,22 @@
 }
 
 .size-xs {
-    min-height: 24px;
+    --field-height: var(--control-height-xs);
+    min-height: var(--field-height);
     padding: var(--space-4xs) var(--space-xs);
     font-size: var(--text-xs);
 }
 
 .size-sm {
-    min-height: 28px;
+    --field-height: var(--control-height);
+    min-height: var(--field-height);
     padding: var(--space-2xs) var(--space-s);
     font-size: var(--text-xs);
 }
 
 .size-md {
-    min-height: 32px;
+    --field-height: var(--control-height-md);
+    min-height: var(--field-height);
     padding: var(--space-xs) var(--space-m);
     font-size: var(--text-s);
 }
@@ -193,6 +196,41 @@
     flex: 0 0 auto;
     padding: 0 var(--space-3xs) 0 0;
     color: var(--text-subtle);
+}
+
+/* The centered chevrons have their own inset inside each button. */
+.trailingSlot:has(> .stepper) {
+    padding-inline-end: var(--space-px);
+}
+
+.input[data-scrubbable] {
+    touch-action: pan-y;
+}
+
+.input[data-scrubbable]:not(:focus) {
+    cursor: ew-resize;
+}
+
+.stepper {
+    display: grid;
+    opacity: 0;
+}
+
+.inputWrapper:hover .stepper,
+.inputWrapper:focus-within .stepper {
+    opacity: 1;
+}
+
+.stepper[hidden] {
+    visibility: hidden;
+}
+
+/* Keep the glyph inset proportional to the field height, including compact fields. */
+.trailingSlot .stepper > .stepButton {
+    width: calc(var(--field-height) - 12px);
+    height: 10px;
+    min-height: 0;
+    padding: 0;
 }
 
 /* Custom number-input spinner — replaces the browser-default ugly arrows

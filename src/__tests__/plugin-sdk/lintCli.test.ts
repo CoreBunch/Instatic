@@ -106,6 +106,42 @@ describe('instatic-plugin lint', () => {
     expect(warnings[0].message).toContain('"delete"')
   })
 
+  it('errors when appScopes are declared without the members.read permission', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, {
+        permissions: ['cms.routes'],
+        appScopes: [{ name: 'read', description: 'See your purchases' }],
+      })
+    })
+    const errors = result.findings.filter((f) => f.severity === 'error')
+    expect(errors).toHaveLength(1)
+    expect(errors[0].scope).toBe('manifest')
+    expect(errors[0].message).toContain('members.read')
+  })
+
+  it('errors when a route opens itself to apps under a scope appScopes does not declare', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, {
+        permissions: ['cms.routes', 'members.read'],
+        appScopes: [{ name: 'read', description: 'See your purchases' }],
+      })
+      await mkdir(join(dir, 'server'), { recursive: true })
+      await writeFile(
+        join(dir, 'server', 'index.ts'),
+        `export function activate(api) {
+          api.cms.routes.member.get('/orders', { app: { scope: 'read' } }, () => ({}))
+          api.cms.routes.member.post('/licenses', { tag: 'pro', app: { scope: "manage" } }, () => ({}))
+        }\n`,
+        'utf-8',
+      )
+    })
+    const errors = result.findings.filter((f) => f.severity === 'error')
+    expect(errors).toHaveLength(1)
+    expect(errors[0].scope).toBe('source:server')
+    expect(errors[0].file).toBe('server/index.ts')
+    expect(errors[0].message).toContain('"manage"')
+  })
+
   it('does not warn when every cms.content.* permission is covered by a contentAccess mode', async () => {
     const result = await withTempPlugin(async (dir) => {
       await writeConfig(dir, {
@@ -226,5 +262,124 @@ describe('instatic-plugin lint', () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+
+  it('carries frontend.origins through definePlugin and does not look for an external script on disk', async () => {
+    let origins: unknown
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, {
+        permissions: ['frontend.assets'],
+        frontend: {
+          assets: [{ kind: 'script', src: 'https://js.example.com/v3' }],
+          origins: { scripts: ['js.example.com'], frames: ['pay.example.com'] },
+        },
+      })
+      origins = (await readPluginDefinition(dir)).manifest.frontend?.origins
+    })
+    expect(result.findings).toEqual([])
+    expect(origins).toEqual({ scripts: ['js.example.com'], frames: ['pay.example.com'] })
+  })
+
+  it('accepts the frontend.assets permission when only origins are declared', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, {
+        permissions: ['frontend.assets'],
+        frontend: { assets: [], origins: { frames: ['pay.example.com'] } },
+      })
+    })
+    expect(result.findings).toEqual([])
+  })
+
+  it('reports an external script on an undeclared host', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, {
+        permissions: ['frontend.assets'],
+        frontend: {
+          assets: [{ kind: 'script', src: 'https://evil.example.net/x.js' }],
+          origins: { scripts: ['js.example.com'] },
+        },
+      })
+    })
+    const errors = result.findings.filter((f) => f.severity === 'error')
+    expect(errors).toHaveLength(1)
+    expect(errors[0].message).toContain('frontend.origins.scripts')
+  })
+
+  const WELCOME = {
+    key: 'welcome',
+    label: 'Welcome',
+    description: 'Sent after sign-up.',
+    variables: [{ name: 'link', label: 'Link', sample: 'https://example.com/start', kind: 'link' }],
+    subject: 'Welcome to {site.name}',
+    body: '[Start]({link})',
+  }
+
+  it('carries mail.templates through definePlugin and lints a complete declaration clean', async () => {
+    const result = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: ['mail.send'], mail: { templates: [WELCOME] } })
+      const definition = await readPluginDefinition(dir)
+      expect(definition.manifest.mail?.templates[0]).toMatchObject({ key: 'welcome', subject: 'Welcome to {site.name}' })
+    })
+    expect(result.findings).toEqual([])
+  })
+
+  it('refuses a mail template that uses a variable it does not declare, or glues a link into text', async () => {
+    const lint = (template: Record<string, unknown>) =>
+      withTempPlugin(async (dir) => {
+        await writeConfig(dir, { permissions: ['mail.send'], mail: { templates: [{ ...WELCOME, ...template }] } })
+      })
+    const undeclared = await lint({ body: 'Hello {memebr.name}, [start]({link})' })
+    expect(undeclared.findings).toHaveLength(1)
+    expect(undeclared.findings[0]).toMatchObject({ severity: 'error' })
+    expect(undeclared.findings[0].message).toContain('{memebr.name}')
+
+    // Rendered here exactly as the server will render it: the link would be sent unfilled.
+    for (const body of ['Start here:{link}', 'See example.com/go?to={link}', '<{link}>']) {
+      const glued = await lint({ body })
+      expect(glued.findings.map((finding) => finding.severity)).toEqual(['error'])
+      expect(glued.findings[0].message).toContain('{link} must stand alone')
+    }
+    // A link's sample must be a link, and a text sample must not be one.
+    const badSample = await lint({ variables: [{ name: 'link', label: 'Link', sample: 'https://example.com/start' }] })
+    expect(badSample.findings[0].message).toContain('contains a web address')
+  })
+
+  it('warns about a mail permission with nothing to send, and refuses templates without one', async () => {
+    const unused = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: ['mail.send.external'] })
+    })
+    expect(unused.findings.map((f) => f.severity)).toEqual(['warning'])
+    expect(unused.findings[0].message).toContain('mail.templates[]')
+
+    const unpermitted = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: [], mail: { templates: [WELCOME] } })
+    })
+    expect(unpermitted.findings.some((f) => f.severity === 'error' && f.message.includes('mail.send'))).toBe(true)
+  })
+
+  it('carries a resource uniqueField through definePlugin and refuses one that is not a declared text field', async () => {
+    const resource = (uniqueField: string) => ({
+      id: 'events',
+      title: 'Events',
+      uniqueField,
+      fields: [
+        { id: 'eventId', label: 'Event id', type: 'text' },
+        { id: 'amount', label: 'Amount', type: 'number' },
+      ],
+    })
+    const clean = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: ['cms.storage'], resources: [resource('eventId')] })
+    })
+    expect(clean.findings).toEqual([])
+
+    const missing = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: ['cms.storage'], resources: [resource('nope')] })
+    })
+    expect(missing.findings.some((f) => f.severity === 'error' && f.message.includes('declares no field with that id'))).toBe(true)
+
+    const wrongType = await withTempPlugin(async (dir) => {
+      await writeConfig(dir, { permissions: ['cms.storage'], resources: [resource('amount')] })
+    })
+    expect(wrongType.findings.some((f) => f.severity === 'error' && f.message.includes('must be a "text" field'))).toBe(true)
   })
 })

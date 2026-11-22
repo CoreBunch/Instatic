@@ -246,9 +246,20 @@ interface AcceptUploadInput {
   unsupportedMessage: string
 }
 
+/**
+ * `media_assets.content_hash`: SHA-256 hex of the bytes a client or bundle
+ * delivered, before SVG sanitising. Site Import hashes the file it is about
+ * to send the same way and reuses a matching asset.
+ */
+export function mediaContentHash(bytes: Uint8Array): string {
+  return new Bun.CryptoHasher('sha256').update(bytes).digest('hex')
+}
+
 interface ValidatedUpload {
   bytes: Uint8Array
   detectedMime: AcceptedMediaMime
+  /** SHA-256 hex of the bytes as received, before SVG sanitising (`media_assets.content_hash`). */
+  contentHash: string
 }
 
 /**
@@ -269,6 +280,9 @@ async function validateUploadedMedia(input: AcceptUploadInput): Promise<Response
   if (!detectedMime || !input.allowedMimes.includes(detectedMime)) {
     return badRequest(input.unsupportedMessage)
   }
+  // Hash what the client sent, not what we store: Site Import hashes the file
+  // it is about to upload and must find this asset again by that value.
+  const contentHash = mediaContentHash(bytes)
 
   // SVG passes the (lenient) text-based detector but still needs the script
   // surface removed before persistence — see svgSanitize.ts for the threat
@@ -285,7 +299,7 @@ async function validateUploadedMedia(input: AcceptUploadInput): Promise<Response
     bytes = new Uint8Array(sanitized)
   }
 
-  return { bytes, detectedMime }
+  return { bytes, detectedMime, contentHash }
 }
 
 /**
@@ -339,6 +353,7 @@ export async function acceptUploadedMedia(
     storageAdapterId: dispatched.storageAdapterId,
     externallyHosted: dispatched.externallyHosted,
     ...(input.altText !== undefined ? { altText: input.altText } : {}),
+    contentHash: validated.contentHash,
   })
 
   // Responsive pipeline (docs/features/media.md). Raster-only for v1:
@@ -429,6 +444,7 @@ export async function acceptReplacementMedia(
     publicPath: dispatched.publicUrl,
     storageAdapterId: dispatched.storageAdapterId,
     externallyHosted: dispatched.externallyHosted,
+    contentHash: validated.contentHash,
   })
   if (!updated) {
     // The asset disappeared between the lookup and the update (race against

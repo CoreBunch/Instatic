@@ -8,9 +8,9 @@
  * without downloading the instatic graph on first paint.
  */
 
-import { lazy, Suspense, useRef, type CSSProperties, type ReactNode, type SyntheticEvent } from 'react'
+import { LazySettingsModal as SettingsModal } from '@admin/modals/Settings/LazySettingsModal'
+import { Suspense, useRef, type CSSProperties, type ReactNode, type SyntheticEvent } from 'react'
 import { Toolbar } from '@site/toolbar/Toolbar'
-import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
 import { SidebarResizeHandle } from '@admin/shared/SidebarResizeHandle'
 import { useEditorAppearancePreferences } from '@site/preferences/editorPreferences'
 import { useInstalledEditorPlugins } from '@admin/pages/plugins/hooks/useInstalledEditorPlugins'
@@ -28,10 +28,6 @@ import type { AdminWorkspace } from '@admin/workspace'
 import styles from '../AdminCanvasLayout/AdminCanvasLayout.module.css'
 import workspaceStyles from './AdminWorkspaceCanvasLayout.module.css'
 import rightSidebarStyles from '@site/sidebars/RightSidebar/RightSidebar.module.css'
-
-const SettingsModal = lazy(() =>
-  import('@admin/modals/Settings/SettingsModal').then((m) => ({ default: m.SettingsModal })),
-)
 
 type WorkspaceCanvasSection = Extract<AdminWorkspace, 'content' | 'data' | 'media' | 'branchReview'>
 
@@ -80,16 +76,10 @@ export function AdminWorkspaceCanvasLayout({
         siteName={adminUiSiteName}
         faviconUrl={adminUiFaviconUrl}
         section={workspace}
-        adminNavigationSlot={(
-          <AdminSectionNavigation
-            section={workspace}
-            currentUser={currentUser}
-          />
-        )}
         rightSlot={toolbarRightSlot}
       />
 
-      <div className={styles.editorBody}>
+      <div className={cn(styles.editorBody, workspace === 'data' && hasRightSidebar && workspaceStyles.dataInspectorOpen)}>
         {contentSidebar ?? null}
         <div
           className={cn(styles.canvasStage, hasRightSidebar && styles.canvasStageRightSidebarOpen)}

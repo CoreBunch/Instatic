@@ -13,6 +13,7 @@
  */
 import { useEffect, useState } from 'react'
 import type { Awareness } from 'y-protocols/awareness'
+import { useCurrentAdminUser } from '@admin/sessionContext'
 import { encodeCollabDocId } from '@core/collab'
 import { safeParseValue, Type, type Static } from '@core/utils/typeboxHelpers'
 import { useEditorStore } from '@site/store/store'
@@ -154,18 +155,18 @@ export function publishLocalPointer(
   awareness.setLocalStateField('pointer', pointer)
 }
 
-function readPeerPresences(docId: string | null): PeerPresence[] {
-  const awareness = collabAwareness()
-  if (!awareness || !docId) return []
-  const peers: PeerPresence[] = []
+function* readOtherUserPresences(
+  awareness: Awareness | null,
+  localUserId: string | undefined,
+): Iterable<PeerPresence> {
+  if (!awareness || !localUserId) return
   for (const [clientId, raw] of awareness.getStates()) {
     if (clientId === awareness.clientID) continue
     // Peer states are wire data from other clients — validate, don't trust.
     const result = safeParseValue(EditorPresenceSchema, raw)
-    if (!result.ok || result.value.docId !== docId) continue
-    peers.push({ clientId, ...result.value })
+    if (!result.ok || result.value.user.id === localUserId) continue
+    yield { clientId, ...result.value }
   }
-  return peers
 }
 
 /** One entry per USER (an admin with two tabs is one person). */
@@ -175,20 +176,15 @@ export interface SitePeer {
   onSameDoc: boolean
 }
 
-function readSitePeers(localDocId: string | null): SitePeer[] {
-  const awareness = collabAwareness()
-  if (!awareness) return []
+function readSitePeers(presences: Iterable<PeerPresence>, localDocId: string | null): SitePeer[] {
   const byUser = new Map<string, SitePeer>()
-  for (const [clientId, raw] of awareness.getStates()) {
-    if (clientId === awareness.clientID) continue
-    const result = safeParseValue(EditorPresenceSchema, raw)
-    if (!result.ok) continue
-    const onSameDoc = localDocId !== null && result.value.docId === localDocId
-    const existing = byUser.get(result.value.user.id)
+  for (const { user, docId } of presences) {
+    const onSameDoc = localDocId !== null && docId === localDocId
+    const existing = byUser.get(user.id)
     if (existing) {
       existing.onSameDoc = existing.onSameDoc || onSameDoc
     } else {
-      byUser.set(result.value.user.id, { user: result.value.user, onSameDoc })
+      byUser.set(user.id, { user, onSameDoc })
     }
   }
   return [...byUser.values()]
@@ -208,12 +204,13 @@ function sitePeersKey(peers: SitePeer[]): string {
  * when the roster itself changes — pointer moves don't churn it.
  */
 export function useSitePeers(localDocId: string | null): SitePeer[] {
+  const localUserId = useCurrentAdminUser()?.id
   const [peers, setPeers] = useState<SitePeer[]>([])
 
   useEffect(() => {
     let awareness: Awareness | null = null
     const recompute = (): void => {
-      const next = readSitePeers(localDocId)
+      const next = readSitePeers(readOtherUserPresences(awareness, localUserId), localDocId)
       setPeers((current) => (sitePeersKey(current) === sitePeersKey(next) ? current : next))
     }
     const attach = (): void => {
@@ -228,13 +225,13 @@ export function useSitePeers(localDocId: string | null): SitePeer[] {
       offProvider()
       awareness?.off('change', recompute)
     }
-  }, [localDocId])
+  }, [localDocId, localUserId])
 
   return peers
 }
 
 /**
- * Live peer presences on `docId` (everyone except the local client).
+ * Live presence from other accounts on `docId`.
  *
  * A y-protocols awareness 'change' fires for EVERY peer on EVERY doc — so a
  * peer moving their pointer on another page would otherwise re-render every
@@ -243,12 +240,15 @@ export function useSitePeers(localDocId: string | null): SitePeer[] {
  * re-render — the canvas RAF reads pointer positions from the returned array.
  */
 export function usePeerPresences(docId: string | null): PeerPresence[] {
+  const localUserId = useCurrentAdminUser()?.id
   const [peers, setPeers] = useState<PeerPresence[]>([])
 
   useEffect(() => {
     let awareness: Awareness | null = null
     const recompute = (): void => {
-      const next = readPeerPresences(docId)
+      const next = docId
+        ? Array.from(readOtherUserPresences(awareness, localUserId)).filter((peer) => peer.docId === docId)
+        : []
       setPeers((current) =>
         peerPresencesKey(current) === peerPresencesKey(next) ? current : next,
       )
@@ -265,7 +265,7 @@ export function usePeerPresences(docId: string | null): PeerPresence[] {
       offProvider()
       awareness?.off('change', recompute)
     }
-  }, [docId])
+  }, [docId, localUserId])
 
   return peers
 }

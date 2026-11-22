@@ -16,9 +16,9 @@
 export interface CssSelectorClassToken {
   /** Class-attribute value after decoding CSS identifier escapes. */
   name: string
-  /** Offset of the leading `.` in the selector string. */
+  /** Offset of the class selector or equivalent class-word attribute selector. */
   start: number
-  /** Exclusive end offset of the escaped identifier. */
+  /** Exclusive end offset of the selector token. */
   end: number
   /** Functional-pseudo nesting depth at the leading `.`. */
   functionalDepth: number
@@ -89,6 +89,39 @@ function readClassToken(
 }
 
 /**
+ * In a case-sensitive class-word comparison, [class~="button"] names the
+ * same token, with the same specificity, as .button. Other attribute
+ * operators and case-insensitive comparisons have different semantics.
+ */
+function classWordAttribute(selector: string, start: number): { name: string; end: number } | null {
+  const prefix = /\[\s*class\s*~=\s*/y
+  prefix.lastIndex = start
+  if (!prefix.test(selector)) return null
+  let i = prefix.lastIndex
+  const quote = selector[i] === '"' || selector[i] === "'" ? selector[i++] : null
+  let name = ''
+  while (i < selector.length) {
+    const char = selector[i]
+    if (char === '\\') {
+      const escape = consumeCssEscape(selector, i)
+      if (!escape) return null
+      name += escape.decoded
+      i = escape.end
+    } else if (quote ? char !== quote : isIdentifierChar(char)) {
+      name += char
+      i++
+    } else {
+      break
+    }
+  }
+  if (!name || /[\t\n\f\r ]/.test(name)) return null
+  if (quote && selector[i++] !== quote) return null
+  const suffix = /\s*(?:s\s*)?\]/iy
+  suffix.lastIndex = i
+  return suffix.test(selector) ? { name, end: suffix.lastIndex } : null
+}
+
+/**
  * Extract class selectors while ignoring dots inside quoted strings and
  * attribute selectors. Functional pseudos remain searchable, so
  * `:not(.disabled)` correctly contributes `disabled`.
@@ -111,6 +144,12 @@ export function extractCssSelectorClasses(selector: string): CssSelectorClassTok
       continue
     }
     if (char === '[') {
+      const word = attributeDepth === 0 ? classWordAttribute(selector, index) : null
+      if (word) {
+        tokens.push({ ...word, start: index, functionalDepth })
+        index = word.end - 1
+        continue
+      }
       attributeDepth += 1
       continue
     }
@@ -218,7 +257,7 @@ export function replaceCssSelectorClassName(
   let result = selector
   for (let index = matches.length - 1; index >= 0; index -= 1) {
     const token = matches[index]
-    result = `${result.slice(0, token.start + 1)}${toEscapedName}${result.slice(token.end)}`
+    result = `${result.slice(0, token.start)}.${toEscapedName}${result.slice(token.end)}`
   }
   return result
 }

@@ -15,3 +15,11 @@
 .stackItem[data-elsewhere='true'] {
   opacity: 0.45;
 }
+
+@media (max-width: 760px) {
+    .stack {
+        max-width: 44px;
+        overflow-x: auto;
+        scrollbar-width: none;
+    }
+}

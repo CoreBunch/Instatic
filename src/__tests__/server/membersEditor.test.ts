@@ -15,7 +15,7 @@ import { join } from 'node:path'
 import { registry } from '@core/module-engine'
 import { hookBus } from '@core/plugins/hookBus'
 import { hostPlugins } from '../../../server/plugins/host/registry'
-import { memberFormActionPath, readShowWhen, showWhenAllows, type AccessRule } from '@core/members'
+import { memberFormAction, memberFormActionPath, readShowWhen, showWhenAllows, type AccessRule } from '@core/members'
 import { duplicatePage, type Page, type SiteDocument, type SiteShell } from '@core/page-tree'
 import {
   publishPage,
@@ -28,6 +28,7 @@ import { findDynamicNodeIds } from '../../core/publisher/dynamicDetection'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { pageToCells } from '../../core/data/pageFromRow'
 import { FORM_RUNTIME_JS } from '../../modules/base/forms/formRuntimeJs'
+import { memberFormFragment, missingMemberFormParts } from '../../admin/pages/site/panels/PropertiesPanel/memberFormParts'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 import { mergeDerivedCells } from '../../../server/collab/relayPersistence'
 import { createMember, grantMemberTag } from '../../../server/members/repository'
@@ -110,13 +111,20 @@ function gatedPage(): Page {
     rootNodeId: 'root',
     nodes: Object.fromEntries(
       [
-        node('root', 'base.body', {}, ['gate', 'members_loop']),
+        node('root', 'base.body', {}, ['gate', 'members_loop', 'apps_loop', 'apps_box']),
         node('gate', 'base.container', { showWhen: { visitor: 'tags', tags: ['pro'] } }, ['gate_line', 'gate_loop']),
         node('gate_line', 'base.text', { text: 'PRO-BOX-LINE', tag: 'p' }),
         node('gate_loop', 'base.loop', loop, ['gate_loop_item']),
         node('gate_loop_item', 'base.text', { text: 'PRO-BOX-ITEM {currentEntry.title}', tag: 'p' }),
         node('members_loop', 'base.loop', { ...loop, showWhen: { visitor: 'signedIn' } }, ['members_loop_item']),
         node('members_loop_item', 'base.text', { text: 'MEMBERS-LIST-ITEM {currentEntry.title}', tag: 'p' }),
+        // A member's own list with no rule on it, on an open page.
+        node('apps_loop', 'base.loop', { ...loop, sourceId: 'members.apps', orderBy: 'connectedAt' }, ['apps_loop_item']),
+        node('apps_loop_item', 'base.text', { text: 'APP-ROW {currentEntry.name}', tag: 'p' }),
+        // The same kind of list inside a box for signed-in members: the box is the fragment.
+        node('apps_box', 'base.container', { showWhen: { visitor: 'signedIn' } }, ['apps_boxed']),
+        node('apps_boxed', 'base.loop', { ...loop, sourceId: 'members.apps', orderBy: 'connectedAt', pagination: 'none' }, ['apps_boxed_item']),
+        node('apps_boxed_item', 'base.text', { text: 'BOXED-APP {currentEntry.name}', tag: 'p' }),
       ].map((entry) => [entry.id, entry]),
     ),
   } as Page
@@ -125,6 +133,9 @@ function gatedPage(): Page {
 function siteWith(pages: Page[]): SiteDocument {
   return { ...makeShell(), pages } as unknown as SiteDocument
 }
+
+/** A signed-in member holding these tags, with no app asking to sign them in. */
+const member = (tags: string[]) => ({ tags, appAsking: false })
 
 describe('member bindings and show-when rules', () => {
   describe('in the publisher', () => {
@@ -156,8 +167,8 @@ describe('member bindings and show-when rules', () => {
         expect(paths).toEqual([[pro]])
         expect(showWhenPathsAreGated(paths)).toBe(true)
         expect(showWhenPathsAllow(paths, null)).toBe(false)
-        expect(showWhenPathsAllow(paths, [])).toBe(false)
-        expect(showWhenPathsAllow(paths, ['pro'])).toBe(true)
+        expect(showWhenPathsAllow(paths, member([]))).toBe(false)
+        expect(showWhenPathsAllow(paths, member(['pro']))).toBe(true)
       })
 
       it('puts a list inside a component under the component\'s own limited elements', () => {
@@ -170,7 +181,7 @@ describe('member bindings and show-when rules', () => {
         )
         const paths = showWhenPathsTo(refPage, site, 'vc_loop', { includeSelf: true })
         expect(showWhenPathsAllow(paths, null)).toBe(false)
-        expect(showWhenPathsAllow(paths, [])).toBe(true)
+        expect(showWhenPathsAllow(paths, member([]))).toBe(true)
       })
 
       it('puts slot content under the outlet it fills, and gives unplaced content to nobody', () => {
@@ -189,10 +200,10 @@ describe('member bindings and show-when rules', () => {
           ],
         )
         const filled = showWhenPathsTo(refPage, site, 'ref__fill_text', { includeSelf: false })
-        expect(showWhenPathsAllow(filled, [])).toBe(false)
-        expect(showWhenPathsAllow(filled, ['pro'])).toBe(true)
+        expect(showWhenPathsAllow(filled, member([]))).toBe(false)
+        expect(showWhenPathsAllow(filled, member(['pro']))).toBe(true)
         const lost = showWhenPathsTo(refPage, site, 'ref__lost_text', { includeSelf: false })
-        expect(showWhenPathsAllow(lost, ['pro'])).toBe(false)
+        expect(showWhenPathsAllow(lost, member(['pro']))).toBe(false)
       })
 
       it('treats a node on no render path as limited, and open to nobody', () => {
@@ -200,7 +211,7 @@ describe('member bindings and show-when rules', () => {
         const paths = showWhenPathsTo(refPage, site, 'vc_root', { includeSelf: true })
         expect(paths).toEqual([])
         expect(showWhenPathsAreGated(paths)).toBe(true)
-        expect(showWhenPathsAllow(paths, ['pro'])).toBe(false)
+        expect(showWhenPathsAllow(paths, member(['pro']))).toBe(false)
         expect(showWhenPathsAreGated(showWhenPathsTo(refPage, site, 'plain', { includeSelf: true }))).toBe(false)
       })
 
@@ -209,7 +220,7 @@ describe('member bindings and show-when rules', () => {
         const { refPage, site } = siteOf([node('ref', 'base.visual-component-ref', { componentId: 'vc' })], [bound])
         const paths = showWhenPathsTo(refPage, site, 'vc_root', { includeSelf: true })
         expect(showWhenPathsAreGated(paths)).toBe(true)
-        expect(showWhenPathsAllow(paths, ['pro'])).toBe(false)
+        expect(showWhenPathsAllow(paths, member(['pro']))).toBe(false)
       })
 
       it('lets a visitor in through any one placement of a component used twice', () => {
@@ -259,8 +270,19 @@ describe('member bindings and show-when rules', () => {
     it('shows nobody an element whose rule cannot be read', () => {
       expect(readShowWhen({ showWhen: { visitor: 'admins' } })).toBe('nobody')
       expect(readShowWhen({ showWhen: { visitor: 'tags', tags: [] } })).toBe('nobody')
-      expect(showWhenAllows('nobody', ['pro'])).toBe(false)
+      expect(showWhenAllows('nobody', member(['pro']))).toBe(false)
       expect(showWhenAllows(null, null)).toBe(true)
+    })
+
+    it('tells a member an app is asking about from one it is not', () => {
+      const asking = { tags: [], appAsking: true }
+      expect(showWhenAllows({ visitor: 'appAsking' }, asking)).toBe(true)
+      expect(showWhenAllows({ visitor: 'appAsking' }, member([]))).toBe(false)
+      expect(showWhenAllows({ visitor: 'noAppAsking' }, member([]))).toBe(true)
+      expect(showWhenAllows({ visitor: 'noAppAsking' }, asking)).toBe(false)
+      // Both are about a signed-in member; a signed-out visitor gets neither.
+      expect(showWhenAllows({ visitor: 'appAsking' }, null)).toBe(false)
+      expect(showWhenAllows({ visitor: 'noAppAsking' }, null)).toBe(false)
     })
   })
 
@@ -394,6 +416,37 @@ describe('member bindings and show-when rules', () => {
       expect(await signedOutList.text()).not.toContain('MEMBERS-LIST-ITEM')
       expect(signedOutList.headers.get('cache-control')).toBe('private, no-store')
       expect(await (await list('members_loop', plain)).text()).toContain('MEMBERS-LIST-ITEM')
+
+      // A list of the member's own things is theirs alone, even with no rule
+      // on it and nothing about the member in its items.
+      for (const cookie of [undefined, plain]) {
+        expect((await list('apps_loop', cookie)).headers.get('cache-control')).toBe('private, no-store')
+      }
+    })
+
+    it('fills a member\'s own list that sits inside another per-visitor element', async () => {
+      const ada = await signedIn('ada@example.com', 'Ada')
+      const bob = await signedIn('bob@example.com', 'Bob')
+      const { rows } = await t.db<{ id: string }>`select id from members where email = 'ada@example.com'`
+      const now = Date.now()
+      await t.db`
+        insert into member_apps (id, name, redirect_uris_json, scopes_json, created_at)
+        values ('app_boxed', 'Boxed Desktop', '[]', '[]', ${new Date(now).toISOString()})
+      `
+      await t.db`
+        insert into member_app_grants (id, member_id, app_id, scope, created_at, expires_at)
+        values ('grant_boxed', ${rows[0].id}, 'app_boxed', 'profile', ${new Date(now).toISOString()}, ${new Date(now + 86_400_000).toISOString()})
+      `
+      const index = await getPublishedNodeIndexForVersion(t.db, getPublishVersion())
+      const box = (cookie?: string) =>
+        get(`/_instatic/hole/apps_box?v=${index!.snapshotHash}&u=${encodeURIComponent('/gated')}`, cookie)
+
+      const forAda = await box(ada)
+      expect(await forAda.text()).toContain('BOXED-APP Boxed Desktop')
+      expect(forAda.headers.get('cache-control')).toBe('private, no-store')
+      // Bob is signed in too, so he gets the box, and none of her apps in it.
+      expect(await (await box(bob)).text()).not.toContain('Boxed Desktop')
+      expect(await (await box()).text()).not.toContain('Boxed Desktop')
     })
 
     it('renders a protected page in one piece for its member', async () => {
@@ -494,9 +547,90 @@ describe('member forms', () => {
     expect(jsModuleIds).toContain('base.form')
   })
 
+  it('gives the approve form two buttons that each carry their answer', () => {
+    const action = memberFormAction('apps/approve')!
+    const fragment = memberFormFragment(action, 'approve', { fields: [], submit: true, messages: true, secondary: true })
+    const buttons = fragment.rootIds.map((id) => fragment.nodes[id]!).filter((entry) => entry.moduleId === 'base.submit')
+    expect(buttons.map((button) => [button.props.label, button.props.name, button.props.value])).toEqual([
+      ['Allow', 'decision', 'allow'],
+      ['Cancel', 'decision', 'deny'],
+    ])
+
+    const page = makePage('a', 'a', [
+      node('a_form', 'base.form', { mode: 'member', formId: 'approve', memberAction: 'apps/approve' }, [
+        'a__allow', 'a__cancel', 'a__plain',
+      ]),
+      node('a__allow', 'base.submit', { label: 'Allow', name: 'decision', value: 'allow' }),
+      node('a__cancel', 'base.submit', { label: 'Cancel', name: 'decision', value: 'deny' }),
+      node('a__plain', 'base.submit', { label: 'Plain', value: 'ignored without a name' }),
+    ])
+    const { html } = publishPage(page, siteWith([page]), registry)
+    expect(html).toContain('action="/_instatic/members/apps/approve" method="post"')
+    expect(html).toContain('<button type="submit" name="decision" value="allow">Allow</button>')
+    expect(html).toContain('<button type="submit" name="decision" value="deny">Cancel</button>')
+    expect(html).toContain('<button type="submit">Plain</button>')
+    // Refusing is an answer inside the approve form, not a form of its own.
+    expect(memberFormAction('apps/deny')).toBeUndefined()
+  })
+
+  it('gives the disconnect form a hidden field that names the app of its row', () => {
+    const action = memberFormAction('apps/disconnect')!
+    const empty = makePage('d', 'd', [
+      node('d_form', 'base.form', { mode: 'member', formId: 'disconnect', memberAction: 'apps/disconnect' }, []),
+    ])
+    const missing = missingMemberFormParts(empty, 'd_form', action)
+    expect(missing.fields.map((field) => field.name)).toEqual(['connection'])
+
+    const fragment = memberFormFragment(action, 'disconnect', missing)
+    const added = fragment.rootIds.map((id) => fragment.nodes[id]!)
+    // No label and no wrapper: the member is not asked anything.
+    expect(added[0]).toMatchObject({
+      moduleId: 'base.input',
+      props: { name: 'connection', inputType: 'hidden', value: '{currentEntry.id}' },
+    })
+    expect(added.filter((entry) => entry.moduleId === 'base.label')).toEqual([])
+    expect(added.filter((entry) => entry.moduleId === 'base.submit').map((button) => button.props.label)).toEqual(['Disconnect'])
+
+    const complete = makePage('e', 'e', [
+      node('e_form', 'base.form', { mode: 'member', formId: 'disconnect', memberAction: 'apps/disconnect' }, ['e__which', 'e__go', 'e__msg']),
+      node('e__which', 'base.input', { fieldId: 'connection', name: 'connection', inputType: 'hidden', value: '{currentEntry.id}' }),
+      node('e__go', 'base.submit', { label: 'Disconnect' }),
+      node('e__msg', 'base.form-message', { formId: 'disconnect', kind: 'error', text: '' }),
+    ])
+    expect(missingMemberFormParts(complete, 'e_form', action)).toEqual({ fields: [], submit: false, messages: false, secondary: false })
+  })
+
+  it('counts a button without the answer as missing on a yes-or-no form', () => {
+    const action = memberFormAction('apps/approve')!
+    const plain = makePage('b', 'b', [
+      node('b_form', 'base.form', { mode: 'member', formId: 'approve', memberAction: 'apps/approve' }, ['b__go']),
+      node('b__go', 'base.submit', { label: 'Go' }),
+    ])
+    expect(missingMemberFormParts(plain, 'b_form', action)).toMatchObject({ submit: true, secondary: true })
+    const complete = makePage('c', 'c', [
+      node('c_form', 'base.form', { mode: 'member', formId: 'approve', memberAction: 'apps/approve' }, ['c__yes', 'c__no']),
+      node('c__yes', 'base.submit', { label: 'Yes', name: 'decision', value: 'allow' }),
+      node('c__no', 'base.submit', { label: 'No', name: 'decision', value: 'deny' }),
+    ])
+    expect(missingMemberFormParts(complete, 'c_form', action)).toMatchObject({ submit: false, secondary: false })
+  })
+
   it('carries the emailed token only on forms that are opened from a link', () => {
-    expect(render({ memberAction: 'password/reset' }).html).toContain('name="token" data-instatic-member-token')
-    expect(render({ memberAction: 'login' }).html).not.toContain('data-instatic-member-token')
+    expect(render({ memberAction: 'password/reset' }).html).toContain('name="token" data-instatic-member-link-param="token"')
+    expect(render({ memberAction: 'login' }).html).not.toContain('data-instatic-member-link-param')
+    expect(render({ memberAction: 'apps/approve' }).html).toContain('name="request" data-instatic-member-link-param="request"')
+  })
+
+  it('signs out with a form post, and the editor completes that form with an error message and a button', () => {
+    const { html } = render({ memberAction: 'logout', successBehavior: 'redirect', redirectUrl: '/' })
+    expect(html).toContain('action="/_instatic/members/logout" method="post"')
+    expect(html).toContain('<input type="hidden" name="_success" value="/">')
+
+    const fragment = memberFormFragment(memberFormAction('logout')!, 'sign-out', { fields: [], submit: true, messages: true })
+    const added = fragment.rootIds.map((id) => fragment.nodes[id]!)
+    expect(added.map((part) => part.moduleId)).toEqual(['base.form-message', 'base.submit'])
+    expect(added[0]!.props.kind).toBe('error')
+    expect(added[1]!.props.label).toBe('Sign out')
   })
 
   it('never posts to a path the catalogue does not know', () => {

@@ -38,6 +38,24 @@
 }
 
 @media (max-width: 760px) {
+    /* The inspector covers the canvas. Release it immediately when returning
+       so the next tap reaches the selected block at its original position. */
+    .sidebar[data-mode="docked"] {
+        transition: none;
+    }
+
+    .sidebar[data-mode="docked"][data-expanded="true"] {
+        width: 100%;
+    }
+
+    .sidebar[data-mode="docked"] > .panelSlot {
+        width: 100%;
+    }
+
+    .sidebar[data-mode="docked"] > [role="separator"] {
+        display: none;
+    }
+
     .sidebar {
         position: absolute;
         top: 0;

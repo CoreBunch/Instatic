@@ -7,7 +7,7 @@
  * loads; detached-mode tests run on main.
  */
 import { MAIN_BRANCH_ID } from '@core/branches'
-import { encodeCollabDocId, siteDocId } from '@core/collab'
+import { encodeCollabDocId, parseCollabDocId, siteDocId } from '@core/collab'
 import type { SiteDocument } from '@core/page-tree'
 
 let activeBranchId: string = MAIN_BRANCH_ID
@@ -44,4 +44,16 @@ export function allDocIdsForSite(site: SiteDocument): string[] {
     ...site.visualComponents.map((vc) => encodeCollabDocId({ kind: 'component', branchId, rowId: vc.id })),
     ...site.layouts.map((l) => encodeCollabDocId({ kind: 'layout', branchId, rowId: l.id })),
   ]
+}
+
+/**
+ * A new peer row needs roster assembly; an existing row projects independently.
+ * Revalidating the whole shell for every sync scales with rows × shell size.
+ */
+export function needsSiteRosterAssembly(site: SiteDocument | null | undefined, docId: string): boolean {
+  const parsed = parseCollabDocId(docId)
+  if (!parsed || parsed.kind === 'site' || !site) return false
+  const rows = parsed.kind === 'page' ? site.pages
+    : parsed.kind === 'component' ? site.visualComponents : site.layouts
+  return !rows.some((row) => row.id === parsed.rowId)
 }

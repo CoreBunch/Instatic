@@ -3,12 +3,17 @@
  *
  * Extracted from `SiteImportModal.tsx` to keep the component focused on render +
  * wizard state. Everything here is headless-ish glue: selection defaults, plan
- * filtering by selection, conflict-resolution merging, ingest-error formatting,
- * and the two site load/save bookends. No React, no JSX.
+ * filtering by selection, conflict-resolution merging, the media library
+ * lookup, ingest-error formatting, and the two site load/save bookends.
+ * No React, no JSX.
  */
 
 import {
   applyConflictResolutions,
+  importClassNames,
+  pageClassUsage,
+  detectMediaConflicts,
+  hashImportAssets,
   type ImportGoogleFont,
   type ImportPlan,
   type ImportStylesheet,
@@ -17,17 +22,21 @@ import {
   type RuleConflict,
   type TokenConflict,
   type CrossSheetClassConflict,
+  type FileConflict,
   EmptyImportError,
   OversizeImportError,
   ZipBombError,
   TooManyFilesError,
   PathTraversalError,
 } from '@core/siteImport'
-import type { SiteDocument } from '@core/page-tree'
+import { validateCssClassName, type SiteDocument } from '@core/page-tree'
 import { cmsAdapter } from '@core/persistence/cms'
 import { requestCmsSiteReload } from '@admin/state/adminEvents'
 import { useEditorStore } from '@site/store/store'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { findCmsMediaByContentHash } from '@core/persistence/cmsMedia'
+import { isAbortError } from '@core/http'
+import { pushToast } from '@ui/components/Toast'
 
 /** Stable map key for a token conflict — the colour/font namespaces are joined. */
 export function tokenConflictKey(conflict: Pick<TokenConflict, 'kind' | 'desiredVariable'>): string {
@@ -39,6 +48,69 @@ export function crossSheetConflictKey(
   conflict: Pick<CrossSheetClassConflict, 'desiredName' | 'definitionId'>,
 ): string {
   return `${conflict.desiredName}:${conflict.definitionId}`
+}
+
+/** Stable key for a class-name row (site-vs-import or cross-sheet) in rename validation. */
+export function classRowKey(kind: 'rule' | 'cross-sheet', key: string): string {
+  return `${kind}:${key}`
+}
+
+/** The site's class names, which rename targets must keep clear of. */
+export function siteClassNameSet(site: Pick<SiteDocument, 'styleRules'>): ReadonlySet<string> {
+  return new Set(Object.values(site.styleRules).filter((rule) => rule.kind === 'class').map((rule) => rule.name))
+}
+
+/**
+ * Field-local problems with the class names the Conflicts step would rename
+ * to, keyed by `classRowKey`. Every rename target (site-vs-import class rows
+ * and cross-sheet rows alike) must be a valid class name that no other row
+ * targets, that is not already a class in the site, and that the import does
+ * not bring in under that name itself. The one allowed reuse is a cross-sheet
+ * row's own default: it names the class an earlier import of the same sheet
+ * created, which the commit reconciles in place.
+ */
+export function classRenameProblems(
+  plan: ImportPlan,
+  siteClassNames: ReadonlySet<string>,
+  ruleResMap: Map<string, ConflictResolution>,
+  crossSheetResMap: Map<string, ConflictResolution>,
+): Map<string, string> {
+  const targets: Array<{ key: string; name: string; reusesSite: boolean }> = []
+  const renameTarget = (res: ConflictResolution) =>
+    (res.action === 'auto-rename' || res.action === 'custom-rename') ? res.resolvedName ?? null : null
+  for (const conflict of plan.conflicts.rules) {
+    const name = renameTarget(ruleResMap.get(conflict.desiredName) ?? conflict.defaultResolution)
+    if (name !== null) targets.push({ key: classRowKey('rule', conflict.desiredName), name, reusesSite: false })
+  }
+  for (const conflict of plan.conflicts.crossSheetClasses) {
+    const res = crossSheetResMap.get(crossSheetConflictKey(conflict)) ?? conflict.defaultResolution
+    const name = renameTarget(res)
+    if (name === null) continue
+    const reusesSite = conflict.defaultResolution.resolvedName === name && siteClassNames.has(name)
+    targets.push({ key: classRowKey('cross-sheet', crossSheetConflictKey(conflict)), name, reusesSite })
+  }
+
+  const importedNames = importClassNames(pageClassUsage(plan.pages, plan.scripts), plan.styleRules)
+  const counts = new Map<string, number>()
+  for (const { name } of targets) counts.set(name, (counts.get(name) ?? 0) + 1)
+  const problems = new Map<string, string>()
+  for (const target of targets) {
+    if (validateCssClassName(target.name)) {
+      problems.set(target.key, `"${target.name}" is not a valid class name`)
+    } else if ((counts.get(target.name) ?? 0) > 1) {
+      problems.set(target.key, `Another conflict also renames to "${target.name}"`)
+    } else if (siteClassNames.has(target.name) && !target.reusesSite) {
+      problems.set(target.key, `"${target.name}" is already a class in this site`)
+    } else if (importedNames.has(target.name)) {
+      problems.set(target.key, `The import already brings a "${target.name}" class`)
+    }
+  }
+  return problems
+}
+
+/** Stable map key for a file conflict — a script and a stylesheet may share a path. */
+export function fileConflictKey(conflict: Pick<FileConflict, 'kind' | 'path'>): string {
+  return `${conflict.kind}:${conflict.path}`
 }
 
 /** Which import categories the user has selected to commit, keyed per kind. */
@@ -142,6 +214,18 @@ export function selectedGoogleFonts(plan: ImportPlan, selection: ImportSelection
 
 /** Narrow a plan to only the categories the user kept selected. */
 export function filterPlanBySelection(plan: ImportPlan, selection: ImportSelection): ImportPlan {
+  const scripts = plan.scripts
+    .filter((s) => selection.scriptsIncluded.has(s.path))
+    .map((script) => ({
+      ...script,
+      pageSources: script.pageSources.filter((source) => selection.pagesIncluded.has(source)),
+    }))
+    .filter((script) => script.pageSources.length > 0)
+  const stylesheets = selectedStylesheets(plan, selection)
+  const importedFiles = new Set([
+    ...scripts.map((s) => fileConflictKey({ kind: 'script', path: s.path })),
+    ...stylesheets.map((s) => fileConflictKey({ kind: 'style', path: s.path })),
+  ])
   const fontTokens = plan.fontTokens.filter((t) => !t.family || selection.fontsIncluded.has(t.family))
   // A font-token conflict is only relevant when its token survived selection
   // filtering (a deselected font drops its token, so its conflict row is moot).
@@ -157,14 +241,8 @@ export function filterPlanBySelection(plan: ImportPlan, selection: ImportSelecti
     fonts: plan.fonts.filter((f) => selection.fontsIncluded.has(f.family)),
     googleFonts: selectedGoogleFonts(plan, selection),
     fontTokens,
-    scripts: plan.scripts
-      .filter((s) => selection.scriptsIncluded.has(s.path))
-      .map((script) => ({
-        ...script,
-        pageSources: script.pageSources.filter((source) => selection.pagesIncluded.has(source)),
-      }))
-      .filter((script) => script.pageSources.length > 0),
-    stylesheets: selectedStylesheets(plan, selection),
+    scripts,
+    stylesheets,
     conflicts: {
       ...plan.conflicts,
       tokens: plan.conflicts.tokens.filter(
@@ -174,52 +252,89 @@ export function filterPlanBySelection(plan: ImportPlan, selection: ImportSelecti
       crossSheetClasses: plan.conflicts.crossSheetClasses.filter((c) =>
         c.pageSources.some((source) => selection.pagesIncluded.has(source)),
       ),
+      // A file or media conflict only matters while that file still imports.
+      files: plan.conflicts.files.filter((c) => importedFiles.has(fileConflictKey(c))),
+      media: plan.conflicts.media.filter((c) => selection.assetsIncluded.has(c.sourcePath)),
     },
+  }
+}
+
+/**
+ * The wizard's per-conflict choices, one map per conflict category, keyed the
+ * way each category's rows are keyed.
+ */
+export interface ConflictResolutionMaps {
+  /** Keyed by the page's source path. */
+  pages: Map<string, ConflictResolution>
+  /** Keyed by the class name. */
+  rules: Map<string, ConflictResolution>
+  /** Keyed by `tokenConflictKey`. */
+  tokens: Map<string, ConflictResolution>
+  /** Keyed by `crossSheetConflictKey`. */
+  crossSheetClasses: Map<string, ConflictResolution>
+  /** Keyed by `fileConflictKey`. */
+  files: Map<string, ConflictResolution>
+  /** Keyed by the imported file's source path. */
+  media: Map<string, ConflictResolution>
+}
+
+export type ConflictCategory = keyof ConflictResolutionMaps
+
+export function emptyConflictResolutionMaps(): ConflictResolutionMaps {
+  return {
+    pages: new Map(),
+    rules: new Map(),
+    tokens: new Map(),
+    crossSheetClasses: new Map(),
+    files: new Map(),
+    media: new Map(),
+  }
+}
+
+/** Every conflict in the plan at its default resolution. */
+export function defaultConflictResolutions(plan: ImportPlan): ConflictResolutionMaps {
+  const { conflicts } = plan
+  return {
+    pages: new Map(conflicts.pages.map((c) => [c.source, c.defaultResolution])),
+    rules: new Map(conflicts.rules.map((c) => [c.desiredName, c.defaultResolution])),
+    tokens: new Map(conflicts.tokens.map((c) => [tokenConflictKey(c), c.defaultResolution])),
+    crossSheetClasses: new Map(conflicts.crossSheetClasses.map((c) => [crossSheetConflictKey(c), c.defaultResolution])),
+    files: new Map(conflicts.files.map((c) => [fileConflictKey(c), c.defaultResolution])),
+    media: new Map(conflicts.media.map((c) => [c.sourcePath, c.defaultResolution])),
   }
 }
 
 /**
  * Merge the wizard's per-conflict resolution maps onto the plan's conflict
  * descriptors and run `applyConflictResolutions`, returning a plan ready for
- * `commitImportPlan`.
+ * `commitImportPlan`. File and media choices ride on the plan's conflicts;
+ * the commit reads them there.
  */
-export function buildResolvedPlan(
-  plan: ImportPlan,
-  pageResMap: Map<string, ConflictResolution>,
-  ruleResMap: Map<string, ConflictResolution>,
-  tokenResMap: Map<string, ConflictResolution>,
-  crossSheetResMap: Map<string, ConflictResolution> = new Map(),
-): ImportPlan {
-  const updatedPageConflicts: PageConflict[] = plan.conflicts.pages.map((c) => ({
-    ...c,
-    defaultResolution: pageResMap.get(c.source) ?? c.defaultResolution,
-  }))
-  const updatedRuleConflicts: RuleConflict[] = plan.conflicts.rules.map((c) => ({
-    ...c,
-    defaultResolution: ruleResMap.get(c.desiredName) ?? c.defaultResolution,
-  }))
-  const updatedTokenConflicts: TokenConflict[] = plan.conflicts.tokens.map((c) => ({
-    ...c,
-    defaultResolution: tokenResMap.get(tokenConflictKey(c)) ?? c.defaultResolution,
-  }))
-  const updatedCrossSheetConflicts: CrossSheetClassConflict[] = plan.conflicts.crossSheetClasses.map((c) => ({
-    ...c,
-    defaultResolution: crossSheetResMap.get(crossSheetConflictKey(c)) ?? c.defaultResolution,
-  }))
+export function buildResolvedPlan(plan: ImportPlan, choices: ConflictResolutionMaps): ImportPlan {
+  const withChoice = <T extends { defaultResolution: ConflictResolution }>(
+    conflicts: T[],
+    map: Map<string, ConflictResolution>,
+    key: (conflict: T) => string,
+  ): T[] => conflicts.map((c) => ({ ...c, defaultResolution: map.get(key(c)) ?? c.defaultResolution }))
+
+  const conflicts: ImportPlan['conflicts'] = {
+    pages: withChoice<PageConflict>(plan.conflicts.pages, choices.pages, (c) => c.source),
+    rules: withChoice<RuleConflict>(plan.conflicts.rules, choices.rules, (c) => c.desiredName),
+    tokens: withChoice<TokenConflict>(plan.conflicts.tokens, choices.tokens, tokenConflictKey),
+    crossSheetClasses: withChoice<CrossSheetClassConflict>(
+      plan.conflicts.crossSheetClasses,
+      choices.crossSheetClasses,
+      crossSheetConflictKey,
+    ),
+    files: withChoice(plan.conflicts.files, choices.files, fileConflictKey),
+    media: withChoice(plan.conflicts.media, choices.media, (c) => c.sourcePath),
+  }
   return applyConflictResolutions(
-    {
-      ...plan,
-      conflicts: {
-        pages: updatedPageConflicts,
-        rules: updatedRuleConflicts,
-        tokens: updatedTokenConflicts,
-        crossSheetClasses: updatedCrossSheetConflicts,
-      },
-    },
-    updatedPageConflicts,
-    updatedRuleConflicts,
-    updatedTokenConflicts,
-    updatedCrossSheetConflicts,
+    { ...plan, conflicts },
+    conflicts.pages,
+    conflicts.rules,
+    conflicts.tokens,
+    conflicts.crossSheetClasses,
   )
 }
 
@@ -237,6 +352,31 @@ export function describeIngestError(err: unknown): string {
   if (err instanceof TooManyFilesError) return `Too many files (${err.count}). Maximum is ${err.limit}.`
   if (err instanceof PathTraversalError) return `Unsafe path detected: "${err.path}".`
   return getErrorMessage(err, 'Unknown import error')
+}
+
+/**
+ * Mark the planned media the library already holds, so a re-import reuses
+ * those files instead of uploading copies. Best effort: when the lookup
+ * fails the import still works, it just uploads every file, and a warning
+ * toast says so. `signal` aborts the lookup when a newer plan build
+ * supersedes this one.
+ */
+export async function withMediaAlreadyInLibrary(plan: ImportPlan, signal?: AbortSignal): Promise<ImportPlan> {
+  try {
+    const hashBySource = await hashImportAssets(plan.assets)
+    const matches = await findCmsMediaByContentHash([...new Set(hashBySource.values())], { signal })
+    return detectMediaConflicts(plan, hashBySource, matches)
+  } catch (err) {
+    // A superseded build was aborted on purpose; its caller drops the plan.
+    if (isAbortError(err)) return plan
+    console.error('[SiteImportModal] media lookup failed:', err)
+    pushToast({
+      kind: 'warning',
+      title: 'Could not check the Media Library',
+      body: `Every file will be uploaded, including any already there. ${getErrorMessage(err, 'Unknown error')}`,
+    })
+    return plan
+  }
 }
 
 /** Load (or lazily create) the draft site a static import will write into. */

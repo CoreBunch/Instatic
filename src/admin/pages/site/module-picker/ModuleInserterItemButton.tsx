@@ -30,6 +30,7 @@ export interface SectionDefinition {
 }
 
 interface InserterItemButtonProps {
+  phone: boolean
   item: ModuleInserterItem
   view: InserterView
   selected: boolean
@@ -57,6 +58,7 @@ function stopFavoritePointer(event: ReactPointerEvent<HTMLButtonElement>) {
 }
 
 export function ModuleInserterItemButton({
+  phone,
   item,
   view,
   selected,
@@ -106,9 +108,9 @@ export function ModuleInserterItemButton({
       </Button>
       <Button
         variant="ghost"
-        size="sm"
+        size={phone ? 'lg' : 'sm'}
         iconOnly
-        className={styles.favoriteButton}
+        className={phone ? styles.phoneFavorite : styles.favoriteButton}
         onClick={handleFavoriteClick}
         onPointerDown={stopFavoritePointer}
         aria-label={favoriteLabel}

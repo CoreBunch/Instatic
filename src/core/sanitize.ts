@@ -230,6 +230,19 @@ export const PLAIN_TEXT_CONFIG: SanitizerConfig = {
 // ---------------------------------------------------------------------------
 
 /**
+ * Sanitize HTML and hand back the parsed tree instead of a string, for a
+ * caller that has rules of its own to apply to elements and attributes.
+ * Working on the tree the sanitizer itself parsed means there is no second
+ * reading of the markup that could disagree with the first. Null when no
+ * DOM-backed sanitizer is available.
+ */
+export function sanitizeToFragment(value: string, config: SanitizerConfig): DocumentFragment | null {
+  const purifier = getDOMPurify()
+  if (!purifier || typeof purifier.sanitize !== 'function') return null
+  return purifier.sanitize(value, { ...config, RETURN_DOM_FRAGMENT: true }) as DocumentFragment
+}
+
+/**
  * Sanitize a richtext prop value using DOMPurify.
  *
  * Call this at EVERY write path before storing a richtext prop value in the store.

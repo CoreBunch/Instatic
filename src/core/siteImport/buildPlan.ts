@@ -23,7 +23,7 @@ import { classifyFiles } from './classifyFiles'
 import { makeHtmlPagePlan } from './htmlPagePlan'
 import { buildAssetPlan, type CssFileResult } from './assetPlan'
 import { collectUnlinkedStylesheets, partitionLinkedStylesheets } from './stylesheetPlan'
-import { detectCrossSheetClassConflicts } from './classCascades'
+import { crossSheetRenameTargets, detectCrossSheetClassConflicts } from './classCascades'
 import { detectConflicts, rewriteImportVarRefs } from './conflicts'
 import { declaredCustomProperties } from './varRefs'
 import { normalizeImportedTokens } from './tokenNames'
@@ -34,12 +34,12 @@ import type {
   ClassifiedFile,
   FileMap,
   ImportPlan,
-  ImportWarning,
   ImportGoogleFont,
   ImportScript,
   PagePlan,
   StylesheetImportMode,
 } from './types'
+import type { ImportWarning } from './warnings'
 
 interface BuildImportPlanInput {
   fileMap: FileMap
@@ -156,19 +156,19 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
   warnings.push(...cssPlan.warnings)
   droppedAtRules.push(...cssPlan.droppedAtRules)
 
-  // 4b. Detect divergent cross-sheet class definitions among the CONVERTED
-  //     stylesheets. Converted sheets merge CSS-natively into the one global
-  //     cascade; when two page cascades define the same class differently,
-  //     that becomes an explicit conflict (default: rename with a suffix) for
-  //     the wizard's Conflicts step — applied by
+  // 4b. Detect cross-sheet class conflicts among the CONVERTED stylesheets.
+  //     Converted sheets merge CSS-natively into the one global cascade; when
+  //     two page cascades define the same class differently (unrelated
+  //     definitions, or a page sheet restyling a shared one that another page
+  //     does not load) that becomes an explicit conflict (default: rename,
+  //     lossless) for the wizard's Conflicts step — applied by
   //     `applyCrossSheetClassResolutions`, never silently here.
-  const existingClassNames = Object.values(currentSite.styleRules)
-    .filter((rule) => rule.kind === 'class')
-    .map((rule) => rule.name)
+  const existingClassRules = Object.values(currentSite.styleRules).filter((rule) => rule.kind === 'class')
   const crossSheetClasses = detectCrossSheetClassConflicts(
     rawPagePlans,
     cssPlan.cssFileResults,
-    existingClassNames,
+    existingClassRules,
+    scripts,
   )
   const publishableCssFileResults = addSelectorDependencyClasses(
     cssPlan.cssFileResults,
@@ -194,13 +194,19 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
   const { pages, styleRules } = rewriteImportVarRefs(normalizedPagePlans, normalizedStyleRules, renames)
 
   // 6. Detect conflicts against the current site — pages, class rules, and
-  //    design tokens (colour + font) all flow through one resolution model.
+  //    design tokens (colour + font), and site files (scripts + kept
+  //    stylesheets) all flow through one resolution model. Media conflicts
+  //    need the server's library and are added by the wizard
+  //    (`detectMediaConflicts`).
   const conflicts = detectConflicts(
     currentSite,
     pages,
     styleRules,
     colors,
     fontTokens,
+    scripts,
+    stylesheets,
+    crossSheetRenameTargets(crossSheetClasses),
   )
 
   return {
@@ -216,7 +222,7 @@ export function buildImportPlan({ fileMap, currentSite, options }: BuildImportPl
     scripts,
     linkedStylesheets,
     stylesheets,
-    conflicts: { ...conflicts, crossSheetClasses },
+    conflicts: { ...conflicts, crossSheetClasses, media: [] },
     warnings,
     droppedAtRules,
   }
@@ -261,6 +267,8 @@ function collectHtmlPagePlans(classified: ClassifiedFile[], fileMap: FileMap): H
       const existing = scriptsByPath.get(scriptPath)
       if (existing) {
         existing.pageSources.add(pagePlan.source)
+        // A script one page loads late cannot run in the head for every page.
+        if (pageScript.placement === 'body-end') existing.placement = 'body-end'
         if (!sequence.includes(scriptPath)) sequence.push(scriptPath)
         continue
       }
@@ -275,6 +283,7 @@ function collectHtmlPagePlans(classified: ClassifiedFile[], fileMap: FileMap): H
         path: scriptPath,
         content: script.content,
         format: pageScript.format,
+        placement: pageScript.placement,
         dependencies: script.dependencies,
         pageSources: new Set([pagePlan.source]),
       })

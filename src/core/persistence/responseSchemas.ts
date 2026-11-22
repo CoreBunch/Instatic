@@ -161,12 +161,61 @@ export const CmsMediaFolderEnvelopeSchema = Type.Object({
   folder: CmsMediaFolderSchema,
 })
 
+/**
+ * Most content hashes one `POST /media/lookup` takes: Site Import's own file
+ * limit. The server refuses more; the client splits larger lookups.
+ */
+export const MEDIA_LOOKUP_MAX_HASHES = 10_000
+
+/** `POST /media/lookup` request body: SHA-256 hex digests. */
+export const CmsMediaLookupRequestSchema = Type.Object({
+  contentHashes: Type.Array(Type.String({ pattern: '^[0-9a-f]{64}$' }), { maxItems: MEDIA_LOOKUP_MAX_HASHES }),
+})
+
+/** `POST /media/lookup` — library assets whose content hash matched. */
+export const CmsMediaLookupResponseSchema = Type.Object({
+  matches: Type.Array(Type.Object({
+    contentHash: Type.String(),
+    id: Type.String(),
+    publicPath: Type.String(),
+    filename: Type.String(),
+  })),
+})
+
 // ---------------------------------------------------------------------------
 // cmsPublish.ts
 // ---------------------------------------------------------------------------
 
+/**
+ * Something a publish did that its author may not expect. The publish
+ * succeeded; a warning is information, not a failure.
+ *
+ *   loop-source-unavailable — loops that `pageCount` pages render (their
+ *   own, or ones inside a Visual Component they use) have the source
+ *   `sourceId`, which nobody provides (its plugin is disabled or removed), so
+ *   those loops published as empty lists. `pages` names the first few pages.
+ */
+export const CmsPublishWarningSchema = Type.Object({
+  kind: Type.Literal('loop-source-unavailable'),
+  sourceId: Type.String(),
+  pages: Type.Array(Type.String()),
+  pageCount: Type.Number(),
+})
+export type CmsPublishWarning = Static<typeof CmsPublishWarningSchema>
+
+/** How many warnings a publish result lists; `warningsTotal` counts them all. */
+export const CMS_PUBLISH_WARNINGS_LISTED = 10
+
+/** How many pages one warning names; `pageCount` counts them all. */
+export const CMS_PUBLISH_WARNING_PAGES_NAMED = 3
+
+// `warnings` and `warningsTotal` are optional here on purpose: a publish that
+// succeeded must never fail on the client because the server answering it is
+// a build that does not send them (a rollback, a mixed deploy).
 export const CmsPublishResultSchema = Type.Object({
   publishedPages: Type.Number(),
+  warnings: Type.Optional(Type.Array(CmsPublishWarningSchema)),
+  warningsTotal: Type.Optional(Type.Number()),
 })
 
 export type CmsPublishResult = Static<typeof CmsPublishResultSchema>

@@ -6,8 +6,7 @@
 .propertyRowWrap {
     position: relative;
     color: var(--text);
-    --class-remove-label-column: 100px;
-    --class-remove-row-center: 14px;
+    --class-remove-row-center: calc(var(--control-height) / 2);
     --class-remove-button-size: 22px;
     --class-remove-fade-width: 36px;
     --class-remove-row-bg: var(--bg-body);
@@ -26,7 +25,7 @@
         var(--class-remove-row-center) - (var(--class-remove-button-size) / 2)
     );
     left: calc(
-        var(--class-remove-label-column) - var(--class-remove-fade-width)
+        var(--control-label-column) - var(--class-remove-fade-width)
     );
     z-index: 1;
     width: var(--class-remove-fade-width);
@@ -59,7 +58,7 @@
         var(--class-remove-row-center) - (var(--class-remove-button-size) / 2)
     );
     left: calc(
-        var(--class-remove-label-column) - var(--class-remove-button-size) - 4px
+        var(--control-label-column) - var(--class-remove-button-size) - 4px
     );
     z-index: 2;
     opacity: 0;
@@ -73,8 +72,6 @@
 .removeBtn.removeBtn {
     width: var(--class-remove-button-size);
     height: var(--class-remove-button-size);
-    border-radius: 10px;
-    background: transparent;
     color: var(--text-muted);
     background: var(--bg-body);
     border: 1px solid var(--border-muted);
@@ -94,4 +91,52 @@
 .propertyRowWrap:hover::after,
 .propertyRowWrap:focus-within::after {
     opacity: 1;
+}
+
+.numberPair, .stepButtons {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: center;
+    gap: var(--space-xs);
+}
+
+.stepButtons { gap: var(--space-4xs); }
+
+
+.opacitySlider.opacitySlider {
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    appearance: none;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+}
+
+.opacitySlider::-webkit-slider-runnable-track {
+    height: 3px;
+    border-radius: var(--radius);
+    background: var(--border-strong);
+}
+
+.opacitySlider::-webkit-slider-thumb {
+    appearance: none;
+    width: 11px;
+    height: 11px;
+    transform: translateY(-4px);
+    border-radius: 50%;
+    background: var(--text);
+}
+
+.opacitySlider::-moz-range-track {
+    height: 3px;
+    background: var(--border-strong);
+}
+
+.opacitySlider::-moz-range-thumb {
+    width: 11px;
+    height: 11px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--text);
 }

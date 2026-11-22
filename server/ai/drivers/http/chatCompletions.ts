@@ -137,6 +137,140 @@ function toolOutputToString(output: AiToolOutput): string {
 }
 
 // ---------------------------------------------------------------------------
+// Wire-level tool pairing repair
+// ---------------------------------------------------------------------------
+
+/**
+ * Text sent back for a `tool_call_id` the history never answered. Strict
+ * OpenAI-compatible gateways (DeepSeek above all) reject the whole request with
+ * "An assistant message with 'tool_calls' must be followed by tool messages
+ * responding to each 'tool_call_id'" when even one call is unanswered, which
+ * makes the conversation permanently un-sendable.
+ */
+export const UNANSWERED_TOOL_CALL_RESULT =
+  'Tool call was interrupted before it returned a result. Re-issue it if the work is still needed.'
+
+/**
+ * Enforce the two wire invariants every strict chat/completions gateway checks
+ * on the final message array.
+ *
+ * 1. **Tool pairing.** `buildMessageHistory` heals the persisted history, but
+ *    the in-flight loop can still hand us a broken run: an aborted turn pushes
+ *    the assistant `tool_calls` message before its results (see `runToolLoop`'s
+ *    abort returns), and a re-mapped history leaves stale indices behind.
+ *    Healing here — the last boundary before `JSON.stringify` — means no caller
+ *    can emit a request a strict provider rejects.
+ * 2. **Role alternation.** DeepSeek answers two consecutive `user` (or
+ *    `assistant`) messages with `400 does not support successive user or
+ *    assistant messages`. History produces that shape on its own: a user who
+ *    sends, aborts before the assistant row is written, then sends again leaves
+ *    two adjacent `user` rows.
+ *
+ * Guarantees on return:
+ * - every assistant `tool_calls` entry is answered by a `role:'tool'` message
+ *   for that exact id, immediately after it;
+ * - no `role:'tool'` message answers a call that was never declared;
+ * - duplicate call ids within one assistant turn are collapsed (the second
+ *   copy could never be answered twice);
+ * - no two adjacent messages share a role.
+ */
+export function sanitizeToolPairing(messages: readonly ChatMessage[]): ChatMessage[] {
+  const out: ChatMessage[] = []
+  // Ids declared by the current assistant run and not yet answered, in issue
+  // order so synthetic results land where the model expects them.
+  const pending = new Map<string, true>()
+
+  const flushPending = (): void => {
+    for (const id of pending.keys()) {
+      out.push({ role: 'tool', tool_call_id: id, content: UNANSWERED_TOOL_CALL_RESULT })
+    }
+    pending.clear()
+  }
+
+  /** Push an assistant turn, absorbing a preceding text-only assistant turn. */
+  const pushAssistant = (content: string, toolCalls: ChatToolCall[] | null): void => {
+    const previous = out[out.length - 1]
+    if (previous?.role === 'assistant' && !previous.tool_calls?.length) {
+      const merged = joinText(previous.content, content)
+      out[out.length - 1] = toolCalls
+        ? { role: 'assistant', content: merged, tool_calls: toolCalls }
+        : { role: 'assistant', content: merged }
+      return
+    }
+    out.push(
+      toolCalls ? { role: 'assistant', content, tool_calls: toolCalls } : { role: 'assistant', content },
+    )
+  }
+
+  for (const original of messages) {
+    if (original.role === 'tool') {
+      // Orphan result: nothing declared this id, so replaying it is a 400.
+      if (!pending.has(original.tool_call_id)) continue
+      pending.delete(original.tool_call_id)
+      out.push(original)
+      continue
+    }
+
+    // Any non-tool message closes the open assistant run.
+    flushPending()
+
+    if (original.role === 'system') {
+      out.push(original)
+      continue
+    }
+
+    if (original.role === 'assistant' && original.tool_calls && original.tool_calls.length > 0) {
+      const seen = new Set<string>()
+      const toolCalls: ChatToolCall[] = []
+      for (const call of original.tool_calls) {
+        if (!call.id || seen.has(call.id)) continue
+        seen.add(call.id)
+        toolCalls.push(call)
+      }
+      if (toolCalls.length === 0) {
+        pushAssistant(original.content, null)
+        continue
+      }
+      pushAssistant(original.content, toolCalls)
+      for (const call of toolCalls) pending.set(call.id, true)
+      continue
+    }
+
+    if (original.role === 'user') {
+      const previous = out[out.length - 1]
+      if (previous?.role === 'user') {
+        out[out.length - 1] = { role: 'user', content: joinUserContent(previous.content, original.content) }
+        continue
+      }
+      out.push(original)
+      continue
+    }
+
+    pushAssistant(original.content, null)
+  }
+
+  flushPending()
+  return out
+}
+
+function joinText(a: string, b: string): string {
+  if (a.length === 0) return b
+  if (b.length === 0) return a
+  return `${a}\n\n${b}`
+}
+
+function joinUserContent(a: string | ChatContentPart[], b: string | ChatContentPart[]): string | ChatContentPart[] {
+  if (typeof a === 'string' && typeof b === 'string') return joinText(a, b)
+  const toParts = (content: string | ChatContentPart[]): ChatContentPart[] =>
+    typeof content === 'string'
+      ? content.length > 0
+        ? [{ type: 'text', text: content }]
+        : []
+      : [...content]
+  return [...toParts(a), ...toParts(b)]
+}
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -346,7 +480,9 @@ export function makeChatCompletionsAdapter(opts: {
     buildRequestBody(messages, req) {
       const body: Record<string, unknown> = {
         model: req.modelId,
-        messages: messages.flat(),
+        // Repair here, not in the callers: every driver sharing this adapter
+        // (Custom Provider, Ollama, …) then emits a strictly pairable array.
+        messages: sanitizeToolPairing(messages.flat()),
         stream: true,
         stream_options: { include_usage: true },
       }

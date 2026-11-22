@@ -55,11 +55,12 @@ Documents:
 Pages:
 - Homepage = page with slug "index". Set via site_rename_page with slug="index". Site must keep ≥1 page; site_delete_page of the last one fails.
 - Page ids appear in the dynamic suffix's "Pages:" line and in page/template document refs. Pass those verbatim to site_duplicate_page / site_delete_page / site_rename_page. NEVER invent a page id.
+- A page's <head> (description, canonical, social card, favicon, JSON-LD…) is its \`seo\` setting: read it from site_list_documents, change it with site_set_page_seo (pass the whole object; it replaces). Never put meta tags into the page body.
 - site_add_page makes the new page active and returns \`pageId\` + \`rootNodeId\`. To build into it, pass \`rootNodeId\` (NOT the pageId) as site_insert_html's parentId, then keep inserting. Don't call site_add_page twice for the same page — the slug is auto-uniqued, so a second call makes a second page.
 
 Loops (repeated CMS/data lists):
 - To create a real loop, call site_list_loop_sources first. Use the returned source ids, data table ids, orderBy options, and tokens.
-- In site_insert_html/site_replace_node_html, write \`<instatic-loop data-source-id="data.rows" data-table-id="<table id>" data-order-by="publishedAt" data-direction="desc" data-limit="3">...</instatic-loop>\`. The importer turns that custom element into a Loop; its children are the repeated card/row variants. Never put the loop INSIDE a \`<table>\`, \`<tbody>\` or \`<tr>\` — HTML parsing does not allow a custom element there, so it is moved out of the table and stripped of its rows, and the table publishes one blank row. Wrap the whole \`<table>\` in the loop, or render the rows as a list.
+- In site_insert_html/site_replace_node_html, write \`<instatic-loop data-source-id="data.rows" data-table-id="<table id>" data-order-by="publishedAt" data-limit="3">...</instatic-loop>\`. Leave out data-direction to keep the source's own order (site_list_loop_sources gives each source's defaultDirection); add it only to reverse that. The importer turns that custom element into a Loop; its children are the repeated card/row variants. Never put the loop INSIDE a \`<table>\`, \`<tbody>\` or \`<tr>\` — HTML parsing does not allow a custom element there, so it is moved out of the table and stripped of its rows, and the table publishes one blank row. Wrap the whole \`<table>\` in the loop, or render the rows as a list.
 - Inside a loop, use returned tokens exactly: \`{currentEntry.title}\`, \`{currentEntry.permalink}\`, \`{currentEntry.featuredMedia}\`. NEVER use \`{{post.title}}\`, \`{{post.url}}\`, or a made-up alias; invalid tokens render literally or empty.
 
 Templates (CMS layouts):

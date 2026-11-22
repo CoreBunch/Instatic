@@ -51,15 +51,15 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
-export function BranchContextStrip() {
+export function BranchContextStrip({ mobile }: { mobile: boolean }) {
   const current = useActiveBranch()
   if (current.id === MAIN_BRANCH_ID) return null
   // Keyed by branch so every piece of per-branch state (preview link, open
   // menus, dialogs) starts fresh on a switch instead of being reset by hand.
-  return <BranchStripBody key={current.id} branch={current} />
+  return <BranchStripBody key={current.id} branch={current} mobile={mobile} />
 }
 
-function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
+function BranchStripBody({ branch: current, mobile }: { branch: SiteBranch; mobile: boolean }) {
   const user = useCurrentAdminUser()
   // Merge is a manager's call; everything else here belongs to whoever may
   // act on THIS branch: a manager, or the creator who forked it.
@@ -90,6 +90,9 @@ function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
     return () => controller.abort()
   }, [current.id])
 
+  const shareLabel = preview ? 'New preview link' : 'Share preview'
+  const reviewLabel = canManage ? 'Review merge…' : 'Request merge…'
+  const actionSize = mobile ? 'sm' : 'xs'
   const updated = describeUpdated(current.updatedAt)
   const meta = [`from ${current.baseBranchId ?? MAIN_BRANCH_ID}`, updated].filter(Boolean).join(' · ')
 
@@ -148,38 +151,42 @@ function BranchStripBody({ branch: current }: { branch: SiteBranch }) {
       {canAuthor && (
         <Button
           variant="secondary"
-          size="xs"
+          size={actionSize}
+          iconOnly={mobile}
           type="button"
           busy={sharing}
+          aria-label={shareLabel}
           tooltip={preview ? 'Issue a fresh link; the previous one stops working' : 'Anyone with the link sees this branch’s draft'}
           tooltipSide="bottom"
           data-testid="branch-strip-share"
           onClick={() => { void share() }}
         >
           <ShareSolidIcon size={12} aria-hidden="true" />
-          <span>{preview ? 'New preview link' : 'Share preview'}</span>
+          {!mobile && <span>{shareLabel}</span>}
         </Button>
       )}
 
       {!onReviewPage && (
         <Button
           variant="primary"
-          size="xs"
+          size={actionSize}
+          iconOnly={mobile}
           type="button"
+          aria-label={reviewLabel}
           data-testid="branch-strip-merge"
           tooltip={canManage ? 'Open the merge review; merging happens there' : 'Review the changes and request a merge'}
           tooltipSide="bottom"
           onClick={() => navigate(`/admin/branches/${encodeURIComponent(current.id)}/review`)}
         >
           <GitMergeSolidIcon size={12} aria-hidden="true" />
-          <span>{canManage ? 'Review merge…' : 'Request merge…'}</span>
+          {!mobile && <span>{reviewLabel}</span>}
         </Button>
       )}
 
       <Button
         ref={moreRef}
         variant="ghost"
-        size="xs"
+        size={actionSize}
         type="button"
         iconOnly
         aria-label="More branch actions"

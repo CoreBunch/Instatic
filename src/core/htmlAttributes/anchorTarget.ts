@@ -10,9 +10,15 @@
  */
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 
+/**
+ * `''` is "no target attribute": the link opens where links open by default
+ * (the same tab, or wherever a page's `<base target>` says). `'_self'` is the
+ * author explicitly choosing the same tab, and is written out, because it
+ * overrides a `<base target>` in custom head code.
+ */
 export const AnchorTargetSchema = Type.Union(
-  [Type.Literal('_self'), Type.Literal('_blank'), Type.Literal('_parent')],
-  { default: '_self' },
+  [Type.Literal(''), Type.Literal('_self'), Type.Literal('_blank'), Type.Literal('_parent')],
+  { default: '' },
 )
 
 export type AnchorTarget = Static<typeof AnchorTargetSchema>
@@ -27,15 +33,16 @@ const ANCHOR_TARGETS: ReadonlySet<string> = new Set(
  * Authored markup carries values the schema does not model, and none of them
  * can be stored as-is: `AnchorTargetSchema` would reject the node's props at
  * publish time. Each maps to the stored value that navigates the same way
- * outside a frameset. An empty string (`target=""` or a bare `target`) and
- * `_top` open in the same tab, so they become `_self`. Any other value names
+ * outside a frameset. No attribute, an empty `target=""` and a bare `target`
+ * are the default, `''`. `_top` opens in the same tab, so it becomes `_self`.
+ * Any other value names
  * a browsing context; with no frame of that name the browser opens a new tab,
  * so it becomes `_blank`. HTML matches the keywords ASCII case-insensitively,
  * so `_BLANK` is still `_blank`.
  */
 export function normalizeAnchorTarget(raw: string | null | undefined): AnchorTarget {
-  if (raw === null || raw === undefined) return '_self'
-  const keyword = raw.toLowerCase()
+  if (raw === null || raw === undefined) return ''
+  const keyword = raw.trim().toLowerCase()
   if (ANCHOR_TARGETS.has(keyword)) return keyword as AnchorTarget
-  return keyword === '' || keyword === '_top' ? '_self' : '_blank'
+  return keyword === '_top' ? '_self' : '_blank'
 }

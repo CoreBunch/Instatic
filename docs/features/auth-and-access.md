@@ -339,7 +339,7 @@ Lockouts are per-account (keyed on `users.id`), not per-IP. The IP rate limit (`
 | `loginPerIpRateLimit`  | `<ip>`                   | 30 attempts | 10 minutes |
 | `mfaRateLimit`         | `<ip>`                   | 10 attempts | 10 minutes |
 
-`RateLimiter` is a token bucket. Use `RateLimiter.consume(key)` — returns `{ allowed, retryAfterMs }`.
+`RateLimiter` is an exact sliding-window log: one timestamp per accepted attempt, so it suits small limits. `consume(key)` returns `{ ok, retryAfterMs, remaining }`; a refused attempt is not recorded. Stale keys are swept every `PRUNE_INTERVAL` calls, and once the map grows past a size mark that starts at `PRUNE_SIZE_THRESHOLD` and is reset after each sweep to twice the keys still live, so a map full of live keys is not swept on every call. Sweeping never changes a decision. Plugin counters (`api.cms.rateLimit.take`) use the fixed-size `PluginRateLimitStore` instead (see [plugin-system](plugin-system.md)).
 
 ---
 

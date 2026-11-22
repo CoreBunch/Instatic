@@ -78,9 +78,9 @@ test.describe('dashboard', () => {
       await expectLoaded(media)
       await expect(media).toContainText(/files/)
 
-      const status = await expectWidget(page, 'status', 'Status')
-      await expect(status).toContainText('Site')
-      await expect(status).toContainText('Live')
+      const status = await expectWidget(page, 'status', 'Publishing status')
+      await expectLoaded(status)
+      await expect(status).toContainText('Not published')
 
       const activity = await expectWidget(page, 'activity', 'Activity')
       await expectLoaded(activity)
@@ -92,8 +92,12 @@ test.describe('dashboard', () => {
       await expectLoaded(plugins)
 
       const domain = await expectWidget(page, 'domain', 'Domain')
-      await expect(domain).toContainText('instatic.com')
-      await expect(domain).toContainText('HTTPS')
+      await expectLoaded(domain)
+      const publicOrigin = new URL(ADMIN_BASE_URL)
+      await expect(domain.getByText(publicOrigin.host, { exact: true })).toBeVisible()
+      await expect(domain).toContainText(
+        publicOrigin.protocol === 'https:' ? 'HTTPS configured' : 'Configured public URL',
+      )
     })
 
     await test.step('mobile dashboard remains contained', async () => {
