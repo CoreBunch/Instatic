@@ -79,7 +79,6 @@ const EXPECTED_TARGET_PERMISSIONS: Record<string, string> = {
   'cms.content.entries.update': 'cms.content.write',
   'cms.content.entries.delete': 'cms.content.delete',
   'cms.content.entries.publish': 'cms.content.publish',
-  'cms.content.entries.moveTable': 'cms.content.write',
   'cms.content.entries.createMany': 'cms.content.write',
   'cms.content.entries.updateMany': 'cms.content.write',
   'cms.content.entries.deleteMany': 'cms.content.delete',

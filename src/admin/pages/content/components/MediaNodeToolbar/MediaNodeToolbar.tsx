@@ -136,19 +136,19 @@ export function MediaNodeToolbar({ editor, onPickMedia, iframeEl }: MediaNodeToo
           <>
             <Button
               variant="ghost"
-              size="xs"
+              size="sm"
               tooltip="Replace media"
               aria-label="Replace media"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => onPickMedia()}
-              className={styles.button}
+              iconOnly
             >
               <ImagesSolidIcon size={14} aria-hidden="true" />
             </Button>
             {state.mediaType === 'image' && (
               <Button
                 variant="ghost"
-                size="xs"
+                size="sm"
                 tooltip="Edit alt text"
                 aria-label="Edit alt text"
                 onMouseDown={(event) => event.preventDefault()}
@@ -161,7 +161,7 @@ export function MediaNodeToolbar({ editor, onPickMedia, iframeEl }: MediaNodeToo
             <span className={styles.divider} aria-hidden="true" />
             <Button
               variant="ghost"
-              size="xs"
+              size="sm"
               tooltip="Delete media"
               aria-label="Delete media"
               onMouseDown={(event) => event.preventDefault()}
@@ -170,7 +170,7 @@ export function MediaNodeToolbar({ editor, onPickMedia, iframeEl }: MediaNodeToo
               }}
               tone="danger"
               dangerHover
-              className={styles.button}
+              iconOnly
             >
               <TrashSolidIcon size={14} aria-hidden="true" />
             </Button>
@@ -221,7 +221,7 @@ function AltEditor({ initial, onCancel, onSubmit }: AltEditorProps) {
           }
         }}
       />
-      <Button type="submit" variant="primary" size="xs">
+      <Button type="submit" variant="primary" size="sm">
         Save
       </Button>
     </form>

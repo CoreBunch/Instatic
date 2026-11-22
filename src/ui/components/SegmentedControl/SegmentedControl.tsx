@@ -29,6 +29,7 @@ import type { ReactNode } from 'react'
 import { Button, type ButtonProps } from '@ui/components/Button'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { cn } from '@ui/cn'
+import controlSize from '@ui/ControlSize.module.css'
 import styles from './SegmentedControl.module.css'
 
 export interface SegmentedControlOption<T extends string> {
@@ -71,7 +72,7 @@ export function SegmentedControl<T extends string>({
   options,
   onChange,
   onClear,
-  size = 'sm',
+  size = 'md',
   activeSurface,
   trailing,
   className,
@@ -87,9 +88,10 @@ export function SegmentedControl<T extends string>({
       role="group"
       aria-label={ariaLabel}
       data-testid={dataTestId}
+      data-size={size}
       data-active-surface={activeSurface}
       data-clearable={clearable ? 'true' : undefined}
-      className={cn(styles.group, fullWidth && styles.fullWidth, className)}
+      className={cn(styles.group, controlSize[size], fullWidth && styles.fullWidth, className)}
     >
       {options.map((option) => {
         const isActive = value === option.value

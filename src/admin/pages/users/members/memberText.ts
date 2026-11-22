@@ -1,18 +1,3 @@
-/** Words for a member's status and activity, shared by the list and the detail panel. */
-import type { MemberAdminStatus } from '@core/members'
-
-export const STATUS_LABEL: Record<MemberAdminStatus, string> = {
-  active: 'Active',
-  pending: 'Pending',
-  suspended: 'Suspended',
-}
-
-export const STATUS_TONE: Record<MemberAdminStatus, 'success' | 'warning' | 'danger'> = {
-  active: 'success',
-  pending: 'warning',
-  suspended: 'danger',
-}
-
 const EVENT_LABEL: Record<string, string> = {
   signup: 'Signed up',
   verified: 'Confirmed their email address',

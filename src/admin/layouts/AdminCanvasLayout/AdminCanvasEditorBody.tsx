@@ -18,7 +18,8 @@ import { LeftSidebar } from '@admin/pages/site/sidebars/LeftSidebar'
 import { RuntimeDiagnosticsContext } from '@site/diagnostics'
 import { summarizeRuntimeDiagnostics } from '@core/site-runtime'
 import { RightSidebar } from '@admin/pages/site/sidebars/RightSidebar'
-import { selectRightSidebarExpanded, useEditorStore } from '@admin/pages/site/store/store'
+import { useMobileViewport } from '@admin/lib/mobileViewport'
+import { selectPropertiesPanelVisible, useEditorStore } from '@admin/pages/site/store/store'
 import { useNarrowEditorChrome } from '@site/layout/responsiveChrome'
 import { Dialog } from '@ui/components/Dialog'
 import { Button } from '@ui/components/Button'
@@ -69,10 +70,12 @@ export function AdminCanvasEditorBody({
   useBindPluginFragmentsApi(canEditDraftSite)
 
   const propertiesPanelMode = useEditorStore((s) => s.propertiesPanelMode)
-  const rightSidebarExpanded = useEditorStore(selectRightSidebarExpanded)
+  const phone = useMobileViewport()
+  const docked = phone || propertiesPanelMode === 'docked'
+  const inspectorVisible = useEditorStore(selectPropertiesPanelVisible)
   const importHtmlModalOpen = useEditorStore((s) => s.importHtmlModalOpen)
   const insertFragmentModalOpen = useEditorStore((s) => s.insertFragmentModalOpen)
-  const hasRightSidebar = rightSidebarExpanded
+  const hasRightSidebar = canSaveSite && docked && inspectorVisible
   const narrowChrome = useNarrowEditorChrome()
 
   // Site Explorer organization hooks into this outer DndContext. DomPanel has
@@ -104,7 +107,7 @@ export function AdminCanvasEditorBody({
             workspace="site"
             editable={canEditDraftSite}
             canUseAiChat={canUseAiChat}
-            railOnly={hasRightSidebar && narrowChrome}
+            railOnly={hasRightSidebar && narrowChrome && !phone}
           />
           <div
             className={cn(styles.canvasStage, hasRightSidebar && styles.canvasStageRightSidebarOpen)}
@@ -118,17 +121,12 @@ export function AdminCanvasEditorBody({
                 <CanvasRoot editable={canEditDraftSite} />
               )}
               {/* Properties can be unpinned into the floating draggable overlay. */}
-              {canSaveSite && propertiesPanelMode === 'floating' && <PropertiesPanel variant="floating" />}
+              {canSaveSite && !docked && <PropertiesPanel variant="floating" />}
             </div>
           </div>
-          {/* `mode` tells the RightSidebar which expansion model to use:
-              - `'site'`:      Site editor — width follows the selection-
-                gated `sitePropertiesExpanded` selector.
-              - `'hidden'`:    Site viewer with no `pages.draft.save`
-                capability. */}
           <RightSidebar
-            key="site"
-            mode={canSaveSite ? 'site' : 'hidden'}
+            docked={canSaveSite && docked}
+            expanded={hasRightSidebar}
           />
         </div>
       </DndContext>

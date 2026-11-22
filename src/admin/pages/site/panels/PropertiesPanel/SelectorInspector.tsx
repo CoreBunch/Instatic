@@ -72,13 +72,6 @@ export function SelectorInspector({ cls }: SelectorInspectorProps) {
         />
       </div>
       <div className={styles.selectorSurfaceLayout}>
-        <div ref={scrollRef} className={styles.selectorScrollContainer}>
-          <StyleRuleComposer
-            key={cls.id}
-            cls={cls}
-            styleQuery={styleQuery}
-          />
-        </div>
         <StyleCategoryRail
           activeAnchorId={activeAnchorId}
           sectionSetCounts={sectionSetCounts}
@@ -86,6 +79,13 @@ export function SelectorInspector({ cls }: SelectorInspectorProps) {
           definition={null}
           activeClass={cls}
         />
+        <div ref={scrollRef} className={styles.selectorScrollContainer}>
+          <StyleRuleComposer
+            key={cls.id}
+            cls={cls}
+            styleQuery={styleQuery}
+          />
+        </div>
       </div>
     </div>
   )

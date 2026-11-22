@@ -48,6 +48,7 @@ import {
 } from '@core/plugins/modulePackLoader'
 import { jsonResponse } from '../http'
 import { hookBus } from '@core/plugins/hookBus'
+import { nestedPluginId } from '@core/plugins/namespaceOwnership'
 import { setQueuedMailOutcomeHandler } from '../mail/outcomes'
 import { syncPluginMailTemplates } from '../mail/pluginTemplates'
 import { announcePluginMailOutcome } from './host/handlers/mail'
@@ -393,6 +394,27 @@ function registerCrashRecoveryHandler(db: DbClient, uploadsDir: string): void {
   })
 }
 
+/**
+ * Installs made before nested plugin ids were refused may hold a pair such as
+ * `acme.vault` and `acme.vault.x`. They keep running (registration checks
+ * ownership exactly), but the owner should know: one of them has to go or be
+ * re-issued under another id.
+ */
+function warnAboutNestedPluginIds(pluginIds: string[]): void {
+  const reported = new Set<string>()
+  for (const pluginId of pluginIds) {
+    const other = nestedPluginId(pluginId, pluginIds)
+    if (!other) continue
+    const pair = [pluginId, other].sort().join(' / ')
+    if (reported.has(pair)) continue
+    reported.add(pair)
+    console.warn(
+      `[plugins] installed plugin ids nest: ${pair}. Their namespaces overlap; ` +
+        'such a pair can no longer be installed. Remove one, or re-issue it under an id that does not nest.',
+    )
+  }
+}
+
 export async function activateInstalledServerPlugins(
   db: DbClient,
   uploadsDir?: string,
@@ -431,6 +453,7 @@ export async function activateInstalledServerPlugins(
   startPublishScheduler(db, uploadsDir)
 
   const results = await listInstalledPlugins(db)
+  warnAboutNestedPluginIds(results.map((result) => (result.kind === 'ok' ? result.plugin.id : result.id)))
   for (const result of results) {
     // Phase: manifest-validation — the stored manifest_json failed to parse.
     // Mark the plugin as broken in the DB so the admin UI surfaces the error,
@@ -460,6 +483,7 @@ export async function activateInstalledServerPlugins(
     // which plugin code may consult synchronously during `activate()`.
     await primePluginSettingsCache(db, plugin)
 
+    let bootSucceeded = true
     // Phase: module-pack-load — registers canvas modules in the host registry
     // so server-rendered (publisher) and editor-rendered (canvas) pages can
     // use them immediately.  Failure is isolated: the server entrypoint can
@@ -471,7 +495,9 @@ export async function activateInstalledServerPlugins(
       try {
         const pack = await loadPluginModulePack(manifest, uploadsDir)
         if (pack) activateSandboxedPluginModulePack(manifest, pack)
+        else bootSucceeded = false
       } catch (err) {
+        bootSucceeded = false
         const message = err instanceof Error ? err.message : 'Module pack load failed'
         console.error(`[plugin:${manifest.id}] boot module-pack-load failed: ${message}`)
         try {
@@ -487,7 +513,9 @@ export async function activateInstalledServerPlugins(
       try {
         const loaded = await loadPluginServerEntrypoint(manifest, uploadsDir)
         if (loaded) await runPluginLifecycle(db, manifest.id, 'activate')
+        else bootSucceeded = false
       } catch (err) {
+        bootSucceeded = false
         const message = err instanceof Error ? err.message : 'Server entrypoint activation failed'
         console.error(`[plugin:${manifest.id}] boot server-entrypoint failed: ${message}`)
         try {
@@ -496,6 +524,9 @@ export async function activateInstalledServerPlugins(
           console.error(`[plugin:${manifest.id}] failed to persist boot entrypoint error:`, dbErr)
         }
       }
+    }
+    if (bootSucceeded && plugin.lifecycleStatus === 'error') {
+      await setPluginLifecycleStatus(db, manifest.id, 'active')
     }
   }
   await syncPluginMailTemplates(db)

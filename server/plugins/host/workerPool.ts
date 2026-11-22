@@ -19,6 +19,11 @@ import { handleWorkerCrash } from './crashRecovery'
 import { replyApiError } from './apiReplies'
 import { pendingRequests, workers } from './workerState'
 
+declare const INSTATIC_COMPILED_PLUGIN_WORKER: string
+const workerPath = typeof INSTATIC_COMPILED_PLUGIN_WORKER === 'undefined'
+  ? '../pluginWorker.ts'
+  : INSTATIC_COMPILED_PLUGIN_WORKER
+
 type ApiCallDispatcher = (msg: ValidatedApiCall) => Promise<void> | void
 
 let apiCallDispatcher: ApiCallDispatcher | null = null
@@ -35,7 +40,7 @@ export function setApiCallDispatcher(dispatcher: ApiCallDispatcher): void {
 function ensureWorkerFor(pluginId: string): Worker {
   const existing = workers.get(pluginId)
   if (existing) return existing
-  const w = new Worker(new URL('../pluginWorker.ts', import.meta.url).href)
+  const w = new Worker(new URL(workerPath, import.meta.url).href)
   workers.set(pluginId, w)
   w.addEventListener('message', (event: MessageEvent) => {
     handleWorkerMessage(pluginId, event.data)

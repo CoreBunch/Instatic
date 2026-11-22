@@ -173,6 +173,13 @@ export function definePlugin(config: DefinePluginConfig): PluginDefinition {
       )
     }
   }
+  for (const page of config.pack?.pages ?? []) {
+    if (!page.id.startsWith(`${config.id}/`) && !page.id.startsWith(`${config.id}.`)) {
+      throw new Error(
+        `[plugin-sdk] Pack page id "${page.id}" must be namespaced under the plugin id "${config.id}".`,
+      )
+    }
+  }
   for (const vc of config.pack?.visualComponents ?? []) {
     if (!vc.id.startsWith(`${config.id}/`)) {
       throw new Error(

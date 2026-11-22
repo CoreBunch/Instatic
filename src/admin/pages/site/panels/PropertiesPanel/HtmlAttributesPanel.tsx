@@ -176,7 +176,7 @@ function HtmlAttributeRow({
         />
         <Button
           variant="ghost"
-          size="xs"
+          size="sm"
           iconOnly
           aria-label={`Remove ${row.name || 'attribute'}`}
           tooltip="Remove attribute"

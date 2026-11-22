@@ -57,7 +57,6 @@ import {
   handleContentEntriesGet,
   handleContentEntriesGetBySlug,
   handleContentEntriesList,
-  handleContentEntriesMoveTable,
   handleContentEntriesPublish,
   handleContentEntriesUpdate,
   handleContentEntriesUpdateMany,
@@ -67,10 +66,12 @@ import {
   handleContentTablesCreate,
   handleContentTablesGet,
   handleContentTablesList,
+} from './handlers/content'
+import {
   handleContentTreeMutate,
   handleContentTreeRead,
   handleContentTreeReplace,
-} from './handlers/content'
+} from './handlers/contentTree'
 import { handleMailSend, handleMailSendExternal, handleSitePublicUrl } from './handlers/mail'
 import { handleRateLimitTake } from './handlers/rateLimit'
 import {
@@ -139,7 +140,6 @@ const apiHandlers = {
   'cms.content.entries.update': handleContentEntriesUpdate,
   'cms.content.entries.delete': handleContentEntriesDelete,
   'cms.content.entries.publish': handleContentEntriesPublish,
-  'cms.content.entries.moveTable': handleContentEntriesMoveTable,
   'cms.content.entries.createMany': handleContentEntriesCreateMany,
   'cms.content.entries.updateMany': handleContentEntriesUpdateMany,
   'cms.content.entries.deleteMany': handleContentEntriesDeleteMany,

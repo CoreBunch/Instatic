@@ -11,6 +11,8 @@ import {
 import { publicFormPerFormRateLimit, publicFormPerIpRateLimit } from '../../../server/forms/rateLimit'
 import { configurePublicOrigins, resetPublicOrigins, stampSocketIp } from '../../../server/auth/security'
 import { hookBus } from '@core/plugins/hookBus'
+import { parsePluginManifest } from '@core/plugins/manifest'
+import { hostPlugins } from '../../../server/plugins/host/registry'
 import { createFakeDb } from './dbTestFake'
 import type { PublishedPageSnapshot } from '../../../server/repositories/publish'
 
@@ -165,7 +167,9 @@ function makeDb(options: {
     if (sql.startsWith('select data_tables.slug')) {
       const row = createdRows.find((candidate) => candidate.id === params[0])
       const table = row ? tableRows[String(row.table_id)] : undefined
-      return table ? { rows: [{ slug: table.slug }], rowCount: 1 } : { rows: [], rowCount: 0 }
+      return table
+        ? { rows: [{ slug: table.slug, created_by_plugin_id: null }], rowCount: 1 }
+        : { rows: [], rowCount: 0 }
     }
     if (sql.startsWith('select data_rows.logical_id') && sql.includes('from data_rows')) {
       const row = createdRows.find((candidate) => candidate.id === params[0])
@@ -229,6 +233,7 @@ describe('public CMS-native form endpoint', () => {
   afterEach(() => {
     resetPublicOrigins()
     hookBus.reset()
+    hostPlugins.delete('test.notifications')
   })
 
   it('router owns public form challenge URLs before public-route/setup fallthrough', async () => {
@@ -426,6 +431,28 @@ describe('public CMS-native form endpoint', () => {
     publicFormPerFormRateLimit.reset('unknown|newsletter')
     const { db, createdRows } = makeDb()
     const createdEvents: unknown[] = []
+    // Entry events reach only a plugin whose content access covers the table.
+    hostPlugins.set('test.notifications', {
+      manifest: {
+        ...parsePluginManifest({
+          id: 'test.notifications',
+          name: 'Notifications',
+          version: '1.0.0',
+          apiVersion: 1,
+          permissions: ['cms.hooks', 'cms.content.read'],
+          contentAccess: [{ table: 'newsletter-submissions', modes: ['read'] }],
+        }),
+        grantedPermissions: ['cms.hooks', 'cms.content.read'],
+      },
+      assetRootPath: '',
+      routes: new Map(),
+      hookListeners: [],
+      hookFilters: [],
+      loopSources: [],
+      mediaAdapters: [],
+      mediaUrlTransformers: [],
+      inflightFetches: new Map(),
+    })
     hookBus.on('test.notifications', 'content.entry.created', (payload) => {
       createdEvents.push(payload)
     })

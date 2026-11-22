@@ -46,3 +46,7 @@
     font-size: var(--text-2xs);
     color: var(--text-muted);
 }
+
+@media (max-width: 760px) {
+    .spacingLabel { display: none; }
+}

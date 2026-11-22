@@ -12,6 +12,7 @@ The Data workspace lets operators define and edit table schemas (field types, ro
 - **DataSidebar:** table list, table creation, import/export entry points.
 - **DataGrid:** read-only spreadsheet over `data_rows` — cells display via `CellDisplayRenderer`, editing opens in the inspector. Owns search, status filter, sort, selection, group collapse, and column resize state. Sub-components handle toolbar, header row, group headers, skeleton loading, empty state, and bulk actions.
 - **DataInspector:** right panel — switches between `RowDetail` (cell editor) and `TableSettings` (schema editor) based on row selection.
+- On phones, the inspector starts closed unless the user previously opened it. Tapping a row opens a full-width editor. The fields support touch input and the header shows draft save progress. **Back to rows** waits for pending edits to save and returns to the same grid position and filter. A failed save leaves the editor open for retry.
 - **Context menus:** `DataTableContextMenu` handles table-list actions; `DataRowContextMenu` handles grid-row actions. Both use the shared `ContextMenu` primitive.
 - **NewTableDialog** creates collection identity and its full field schema in one atomic request.
 - **FieldSchemaComposer** is shared by new-table setup and `TableSettings`; `NewFieldDialog` also uses the same definitions for repeater item schemas.

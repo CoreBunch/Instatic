@@ -1692,7 +1692,11 @@ describe('CMS plugin handlers', () => {
       // What the server does at boot: load every installed plugin and
       // register the recovery handler for this database.
       const { activateInstalledServerPlugins } = await import('../../../server/plugins/runtime')
+      db.plugins[0].lifecycle_status = 'error'
+      db.plugins[0].last_error = 'Previous boot failed'
       await activateInstalledServerPlugins(db, uploadsDir)
+      expect(db.plugins[0].lifecycle_status).toBe('active')
+      expect(db.plugins[0].last_error).toBeNull()
       expect(findPluginRouteAccess(id, 'GET', '/ping')).not.toBeNull()
 
       // The worker crashes; on the way back up, activate registers its route
