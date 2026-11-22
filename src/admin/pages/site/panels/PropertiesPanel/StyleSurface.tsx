@@ -2,7 +2,7 @@
  * StyleSurface — unified properties editor surface.
  *
  * Layout: one continuous scrollable column with a sticky icon-rail on the
- * right and a sticky search bar pinned to the top.
+ * right and a search field in its own footer.
  *
  * All sections render together in one scroll:
  *   1. Module settings — wrapped in a Section accordion, always first.
@@ -92,9 +92,6 @@ export function StyleSurface({
   const [styleQuery, setStyleQuery] = useState('')
 
   // Active section + click-to-scroll behaviour (shared with SelectorInspector).
-  // The Module anchor is both the initial active section and the "scroll to
-  // absolute top" target (so the sticky search bar above it is revealed); the
-  // active anchor resets to it whenever the selected node changes.
   const { activeId: activeAnchorId, scrollTo: handleSectionClick } = useScrollSpy(scrollRef, {
     initialId: MODULE_CATEGORY_ID,
     scrollTopId: MODULE_CATEGORY_ID,
@@ -226,28 +223,6 @@ export function StyleSurface({
         />
       </div>
       <div ref={scrollRef} className={styles.surfaceContent}>
-
-        {/* Search bar — sticky at the top, searches both module and CSS.
-            Hidden when no class is selected or the active class is a locked
-            generated utility (no CSS rows to search in either state). */}
-        {searchableClass && (
-          <div className={styles.searchBarRow}>
-            <SearchBar
-              value={styleQuery}
-              onValueChange={setStyleQuery}
-              onClear={clearStyleQuery}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  e.preventDefault()
-                  clearStyleQuery()
-                }
-              }}
-              placeholder={`Search styles in ${styleRuleSelector(searchableClass)}...`}
-              aria-label="Search class style properties to add"
-            />
-          </div>
-        )}
-
         {/* Module section — same Section accordion as CSS sections */}
         {moduleVisible && (
           <div data-style-section={MODULE_CATEGORY_ID}>
@@ -269,6 +244,23 @@ export function StyleSurface({
         {/* CSS area — StyleRuleComposer sections, locked preview, or generated lock */}
         {cssContent}
       </div>
+      {searchableClass && (
+        <div className={styles.searchBarRow}>
+          <SearchBar
+            value={styleQuery}
+            onValueChange={setStyleQuery}
+            onClear={clearStyleQuery}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                clearStyleQuery()
+              }
+            }}
+            placeholder={`Search styles in ${styleRuleSelector(searchableClass)}...`}
+            aria-label="Search class style properties to add"
+          />
+        </div>
+      )}
     </div>
   )
 }
