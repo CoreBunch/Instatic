@@ -73,6 +73,7 @@ export function CanvasModeToggle({ scriptStatus, onRefreshScripts, peek = false 
           role="toolbar"
           aria-label="Canvas mode"
           data-testid="canvas-mode-toggle"
+          data-canvas-mode-pill=""
           onClick={stopCanvasInteraction}
         >
       <div role="tablist" aria-label="Canvas view" className={styles.tablist}>

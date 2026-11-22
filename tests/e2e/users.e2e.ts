@@ -28,7 +28,7 @@ test.describe('users and roles', () => {
       email,
       displayName: 'E2E Member',
       password: 'member-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
 
     await expect(page.getByText(email)).toBeVisible()
@@ -61,8 +61,54 @@ test.describe('users and roles', () => {
     await expect(row.getByText('Active')).toBeVisible()
     await expect(row.getByText('Admin')).toBeVisible()
 
+    await test.step('inspect the account on desktop and in a narrow drawer', async () => {
+      const ownerRow = userRow(page, OWNER.email)
+      await ownerRow.getByRole('button').click()
+      await expect(ownerRow).toHaveAttribute('aria-current', 'true')
+      await row.getByRole('button').click()
+      const panel = page.getByRole('article', { name: 'User details' })
+      await expect(panel.getByRole('heading', { name: initialDisplayName })).toBeVisible()
+      await expect(panel.getByRole('button', { name: 'Close details' })).toBeFocused()
+      const search = page.getByRole('searchbox', { name: 'Search name or email' })
+      await search.fill('no-matching-account')
+      await expect(panel).toBeHidden()
+      await search.fill('')
+      await expect(panel).toBeVisible()
+      await expect(search).toBeFocused()
+      await expect(ownerRow).not.toHaveAttribute('aria-current', 'true')
+      await expect(row).toHaveAttribute('aria-current', 'true')
+      const selectedCell = row.getByRole('cell').first()
+      const panelStyle = await panel.evaluate((element) => {
+        const { backgroundColor, borderTopLeftRadius } = getComputedStyle(element)
+        return { backgroundColor, radius: borderTopLeftRadius }
+      })
+      await row.hover()
+      await expect(selectedCell).toHaveCSS('background-color', panelStyle.backgroundColor)
+      await expect(selectedCell).toHaveCSS('box-shadow', 'none')
+      await expect(selectedCell).toHaveCSS('border-top-left-radius', panelStyle.radius)
+      await expect(row.getByRole('cell').last()).toHaveCSS('border-top-right-radius', panelStyle.radius)
+      await panel.hover()
+      await expect(selectedCell).toHaveCSS('background-color', panelStyle.backgroundColor)
+      await page.screenshot({ path: '.tmp/evidence/admin-user-inspector.png' })
+      await panel.getByRole('button', { name: 'Close details' }).click()
+      await expect(row).not.toHaveAttribute('aria-current', 'true')
+      await expect(row.getByRole('button')).toBeFocused()
+
+      const viewport = page.viewportSize()!
+      await page.setViewportSize({ width: 390, height: 844 })
+      await row.getByRole('button').click()
+      const drawer = page.getByRole('dialog', { name: 'User details' })
+      await expect(drawer.getByText(email)).toBeInViewport()
+      await expect(drawer.getByRole('button', { name: 'Delete user' })).toBeInViewport()
+      await page.screenshot({ path: '.tmp/evidence/admin-user-drawer.png' })
+      await page.keyboard.press('Escape')
+      await expect(drawer).toBeHidden()
+      await expect(row.getByRole('button')).toBeFocused()
+      await page.setViewportSize(viewport)
+    })
+
     await test.step('edit identity fields', async () => {
-      await openUserAction(page, initialDisplayName, 'Edit')
+      await clickUserAction(page, initialDisplayName, 'Edit user')
       const dialog = page.getByRole('dialog', { name: 'Edit User' })
       await expect(dialog).toBeVisible()
       await dialog.locator('input[name="edited-user-email-address"]').fill(editedEmail)
@@ -78,7 +124,7 @@ test.describe('users and roles', () => {
     })
 
     await test.step('suspend blocks login', async () => {
-      await openUserAction(page, editedDisplayName, 'Suspend')
+      await clickUserAction(page, editedDisplayName, 'Suspend')
       await completeStepUp(page)
       row = userRow(page, editedEmail)
       await expect(row.getByText('Suspended')).toBeVisible()
@@ -93,12 +139,12 @@ test.describe('users and roles', () => {
     })
 
     await test.step('activate and reset password restores login', async () => {
-      await openUserAction(page, editedDisplayName, 'Activate')
+      await clickUserAction(page, editedDisplayName, 'Activate')
       await completeStepUp(page)
       row = userRow(page, editedEmail)
       await expect(row.getByText('Active')).toBeVisible()
 
-      await openUserAction(page, editedDisplayName, 'Reset password')
+      await clickUserAction(page, editedDisplayName, 'Reset password')
       const dialog = page.getByRole('dialog', { name: 'Reset Password' })
       await expect(dialog).toBeVisible()
       await dialog.locator('input[name="edited-user-new-password"]').fill(resetPassword)
@@ -113,7 +159,12 @@ test.describe('users and roles', () => {
       await loginAs(activeAdmin, editedEmail, resetPassword)
 
       await test.step('delete removes the user and invalidates fresh access', async () => {
-        await openUserAction(page, editedDisplayName, 'Delete')
+        await clickUserAction(page, editedDisplayName, 'Delete user')
+        const confirm = page.getByRole('alertdialog', { name: `Delete ${editedDisplayName}?` })
+        await confirm.getByRole('button', { name: 'Cancel' }).click()
+        await expect(userRow(page, editedEmail)).toBeVisible()
+        await clickUserAction(page, editedDisplayName, 'Delete user')
+        await confirm.getByRole('button', { name: 'Delete user' }).click()
         await completeStepUp(page)
         await expect(userRow(page, editedEmail)).toHaveCount(0)
 
@@ -144,7 +195,7 @@ test.describe('users and roles', () => {
       email,
       displayName: 'Step-Up Guard',
       password: 'step-up-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await page.locator('button[form="users-page-user-form"]').click()
 
@@ -181,7 +232,7 @@ test.describe('users and roles', () => {
       email,
       displayName: 'Mobile Step-Up Guard',
       password: 'step-up-mobile-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await page.locator('button[form="users-page-user-form"]').click()
 
@@ -216,7 +267,7 @@ test.describe('users and roles', () => {
       email: firstEmail,
       displayName: 'Fresh Step-Up Window',
       password: 'step-up-fresh-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await expect(page.getByText(firstEmail)).toBeVisible()
 
@@ -226,7 +277,7 @@ test.describe('users and roles', () => {
       email: staleEmail,
       displayName: 'Expired Step-Up Window',
       password: 'step-up-stale-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await page.locator('button[form="users-page-user-form"]').click()
 
@@ -265,7 +316,7 @@ test.describe('users and roles', () => {
         await limited.goto('/admin/users')
         await expect(limited).not.toHaveURL(/\/admin\/users/)
         await expect(
-          limited.getByRole('heading', { name: 'All Users' }),
+          limited.getByRole('heading', { name: 'Admin users' }),
         ).toHaveCount(0)
       } finally {
         await context.close()
@@ -286,16 +337,19 @@ test.describe('users and roles', () => {
       await loginAs(limited, email, password)
       const toolbar = limited.getByTestId('toolbar')
 
-      await expect(toolbar.getByText('Site', { exact: true })).toBeVisible()
-      await expect(toolbar.getByRole('link', { name: 'Media' })).toBeVisible()
-      await expect(toolbar.getByText('Content', { exact: true })).toHaveCount(0)
-      await expect(toolbar.getByText('Users', { exact: true })).toHaveCount(0)
-      await expectLimitedToolbarMobileLayout(limited)
-
-      await toolbar.getByTestId('account-menu-trigger').click()
+      const switcher = toolbar.getByRole('button', { name: /Switch workspace/ })
+      await expect(switcher).toContainText('Site')
+      await switcher.click()
+      const sheet = limited.getByRole('dialog', { name: 'Workspaces' })
+      await expect(sheet.getByRole('link')).toHaveText(['Site', 'Media'])
+      await expect(sheet.getByRole('link', { name: 'Media' })).toBeInViewport({ ratio: 1 })
+      await expect(sheet.getByTestId('account-menu-trigger')).toBeInViewport({ ratio: 1 })
+      expect(await toolbar.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+      expect(await limited.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+      await sheet.getByTestId('account-menu-trigger').click()
+      await expect(sheet).toBeHidden()
       await expect(limited.getByRole('menu', { name: 'Account menu' })).toBeVisible()
-      await expect(limited.getByTestId('account-menu-go-to-account')).toBeVisible()
-      await expectLimitedToolbarMobileLayout(limited)
+      await expect(limited.getByTestId('account-menu-go-to-account')).toBeInViewport({ ratio: 1 })
     } finally {
       await context.close()
     }
@@ -400,7 +454,7 @@ test.describe('users and roles', () => {
       email,
       displayName,
       password: 'audit-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await expect(page.getByText(email)).toBeVisible()
 
@@ -415,7 +469,7 @@ test.describe('users and roles', () => {
     })
     await expect(createdRow).toBeVisible()
     await expect(createdRow.getByText(`by ${OWNER.email}`)).toBeVisible()
-    await expect(createdRow.getByText('Role: Member')).toBeVisible()
+    await expect(createdRow.getByText('Role: No access')).toBeVisible()
     await expect(auditTable.getByText('user.create')).toHaveCount(0)
   })
 
@@ -433,7 +487,7 @@ test.describe('users and roles', () => {
       email,
       displayName,
       password: 'audit-mobile-pass-12345',
-      role: 'Member',
+      role: 'No access',
     })
     await expect(page.getByText(email)).toBeVisible()
 
@@ -546,12 +600,9 @@ function userRow(page: Page, email: string): Locator {
   return page.getByRole('row', { name: new RegExp(`User ${escapeRegExp(email)}`) })
 }
 
-async function openUserAction(page: Page, displayName: string, action: string): Promise<void> {
-  await page.getByRole('button', { name: `Actions for ${displayName}` }).click()
-  await page
-    .getByRole('menu', { name: `User actions for ${displayName}` })
-    .getByRole('menuitem', { name: action })
-    .click()
+async function clickUserAction(page: Page, displayName: string, action: string): Promise<void> {
+  await page.getByRole('table', { name: 'Users' }).getByRole('button').filter({ hasText: displayName }).click()
+  await page.getByRole('group', { name: 'User actions' }).getByRole('button', { name: action, exact: true }).click()
 }
 
 async function expectLoginRejected(
@@ -682,37 +733,4 @@ async function expectStepUpDialogMobileLayout(dialog: Locator): Promise<void> {
   expect(metrics.requiredControlsPresent).toBe(true)
   expect(metrics.controlsContained).toBe(true)
   expect(metrics.alertContained).toBe(true)
-}
-
-async function expectLimitedToolbarMobileLayout(page: Page): Promise<void> {
-  const metrics = await page.getByTestId('toolbar').evaluate((toolbar) => {
-    const documentElement = document.documentElement
-    const viewportWidth = documentElement.clientWidth
-    const viewportHeight = window.innerHeight
-    const toolbarRect = toolbar.getBoundingClientRect()
-    const mediaLink = toolbar.querySelector('a[href="/admin/media"]')
-    const accountTrigger = toolbar.querySelector('[data-testid="account-menu-trigger"]')
-    const controls = [mediaLink, accountTrigger].filter(
-      (control): control is Element => control !== null,
-    )
-
-    return {
-      viewportWidth,
-      viewportHeight,
-      pageOverflow: documentElement.scrollWidth - viewportWidth,
-      toolbarContained: toolbarRect.left >= -1 && toolbarRect.right <= viewportWidth + 1,
-      requiredControlsPresent: controls.length === 2,
-      controlsContained: controls.every((control) => {
-        const rect = control.getBoundingClientRect()
-        return rect.left >= -1 && rect.right <= viewportWidth + 1
-      }),
-    }
-  })
-
-  expect(metrics.viewportWidth).toBe(390)
-  expect(metrics.viewportHeight).toBe(844)
-  expect(metrics.pageOverflow).toBeLessThanOrEqual(1)
-  expect(metrics.toolbarContained).toBe(true)
-  expect(metrics.requiredControlsPresent).toBe(true)
-  expect(metrics.controlsContained).toBe(true)
 }

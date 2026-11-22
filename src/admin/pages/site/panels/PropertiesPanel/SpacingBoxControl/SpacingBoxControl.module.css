@@ -1,98 +1,30 @@
-/**
- * SpacingBoxControl — visual box-model editor for padding & margin.
- *
- * Echoes the classic Chrome DevTools box-model diagram:
- *   - Outer dashed rectangle = margin.
- *   - Inner solid rectangle = padding (50% of margin, centred).
- *   - Two corner-to-corner diagonals through both layers — DASHED while
- *     they cross the margin region, SOLID inside the padding region.
- *
- * Each side of each box is a `.segment` element that fills the entire
- * box body but uses a `clip-path` polygon to define the visible /
- * clickable region — a trapezoid for margin (around the inner padding
- * box) and a triangle for padding (formed by the corner-to-corner
- * diagonals). The segment provides a generous hover hit area; the
- * actual <input> sits on top, transparent and centred at the segment's
- * centroid, so clicking anywhere in the segment focuses the input.
- *
- * The whole widget is locked to a 4:3 aspect ratio so the diagonals
- * read as a stable, predictable X regardless of panel width.
- */
-
 .root {
     width: 100%;
-    max-width: 280px;
-    margin: 0 auto;
-    aspect-ratio: 4 / 3;
+    height: 140px;
     min-width: 0;
 }
 
-/* ── Box (margin / padding) ──────────────────────────────────────────────── */
-
 .box {
+    --band-x: min(12%, 36px);
+    --band-y: 28px;
     position: relative;
-    display: block;
-    border: 1px dashed var(--overlay-20);
-    background: var(--overlay-5);
-    transition: border-color 120ms ease;
+    border-radius: var(--radius);
 }
 
-.box:hover {
-    border-color: var(--overlay-30);
-}
-
-/* Margin box fills the (4:3) root. */
 .box--margin {
-    width: 100%;
     height: 100%;
+    background: var(--bg-surface-3);
 }
 
-/* Padding box — solid border + opaque background so it visually
- * interrupts the margin's dashed diagonals where the two layers
- * overlap. Sized automatically by its parent .boxInner (inset: 25%
- * per axis → padding box keeps the same 4:3 aspect ratio). */
 .box--padding {
-    border-style: solid;
-    background: var(--bg-surface);
+    --band-x: min(16%, 34px);
+    --band-y: 25px;
+    background: var(--bg-surface-2);
 }
-
-/* ── Diagonal overlay (corner-to-corner X) ───────────────────────────────── */
-/*
- * Sits ABOVE the segments (z-index 2) but is pointer-events: none so it
- * doesn't intercept clicks. This way the segment hover background paints
- * underneath the diagonals — the diagonals stay visible while a segment
- * is highlighted.
- */
-.boxDiagonals {
-    position: absolute;
-    inset: 0;
-    z-index: 2;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    overflow: visible;
-}
-
-.diagonal {
-    stroke: var(--overlay-20);
-    stroke-width: 1;
-    fill: none;
-    /* preserveAspectRatio="none" stretches the line geometry to exactly
-     * cover the box; vector-effect keeps the stroke a constant 1px so
-     * the corner-to-corner line doesn't visually thicken on long boxes. */
-    vector-effect: non-scaling-stroke;
-}
-
-.diagonalDashed {
-    stroke: var(--overlay-10);
-    stroke-dasharray: 3 3;
-}
-
-/* ── Box header — tiny label chip overlapping the border (top-left) ──────── */
 
 .boxHeader {
     position: absolute;
-    top: -7px;
+    top: var(--space-2xs);
     left: 6px;
     z-index: 4;
     display: inline-flex;
@@ -100,11 +32,11 @@
     gap: var(--space-px);
     height: 12px;
     padding: 0 var(--space-4xs);
-    background: var(--bg-body);
+    background: transparent;
 }
 
 .boxLabel {
-    color: var(--text-subtle);
+    color: var(--text-muted);
     font-size: var(--text-3xs);
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -142,91 +74,41 @@
     min-width: 0;
 }
 
-/*
- * Inner box wrapper — occupies the central 50% of the margin box so its
- * corner-to-corner diagonals pass through the padding box's outer
- * corners. Only rendered for the margin box (which hosts the nested
- * padding box); the padding box has no inner placeholder.
- */
 .boxInner {
     position: absolute;
-    inset: 25%;
-    z-index: 0;
-    display: flex;
+    inset: var(--band-y) var(--band-x);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
 }
 
-.boxInner > * {
-    flex: 1;
-    width: 100%;
-    height: 100%;
-    min-width: 0;
-}
+.boxInner > * { height: 100%; }
 
-/* ── Segments — clickable hit areas with hover background ───────────────── */
-/*
- * Each segment is a position:absolute element that fills the entire box
- * body. clip-path defines both its visible region AND its hit-test
- * region: trapezoid for margin (around the inner padding box), triangle
- * for padding (one of the four wedges formed by the diagonals). The
- * segments don't overlap each other's hit areas because their clip-paths
- * tile the box exactly.
- */
 .segment {
     position: absolute;
     inset: 0;
-    z-index: 1;
     cursor: text;
-    background-color: transparent;
-    transition: background-color 100ms ease;
 }
 
-.segment:hover {
-    background-color: var(--overlay-5);
+.segment--top {
+    clip-path: polygon(0 0, 100% 0, calc(100% - var(--band-x)) var(--band-y), var(--band-x) var(--band-y));
+    background: var(--overlay-10);
 }
 
-.segment:focus-within,
-.segmentFocused {
-    background-color: var(--overlay-10);
+.segment--bottom {
+    clip-path: polygon(0 100%, var(--band-x) calc(100% - var(--band-y)), calc(100% - var(--band-x)) calc(100% - var(--band-y)), 100% 100%);
+    background: var(--overlay-5);
 }
 
-/* Margin trapezoids — hug the gutter between margin and padding (50% nesting). */
-.box--margin .segment--top {
-    clip-path: polygon(0 0, 100% 0, 75% 25%, 25% 25%);
-}
-.box--margin .segment--right {
-    clip-path: polygon(100% 0, 100% 100%, 75% 75%, 75% 25%);
-}
-.box--margin .segment--bottom {
-    clip-path: polygon(25% 75%, 75% 75%, 100% 100%, 0 100%);
-}
-.box--margin .segment--left {
-    clip-path: polygon(0 0, 25% 25%, 25% 75%, 0 100%);
+.segment--left {
+    clip-path: polygon(0 0, var(--band-x) var(--band-y), var(--band-x) calc(100% - var(--band-y)), 0 100%);
 }
 
-/* Padding triangles — quadrants formed by the corner-to-corner diagonals. */
-.box--padding .segment--top {
-    clip-path: polygon(0 0, 100% 0, 50% 50%);
-}
-.box--padding .segment--right {
-    clip-path: polygon(100% 0, 100% 100%, 50% 50%);
-}
-.box--padding .segment--bottom {
-    clip-path: polygon(0 100%, 100% 100%, 50% 50%);
-}
-.box--padding .segment--left {
-    clip-path: polygon(0 0, 0 100%, 50% 50%);
+.segment--right {
+    clip-path: polygon(100% 0, 100% 100%, calc(100% - var(--band-x)) calc(100% - var(--band-y)), calc(100% - var(--band-x)) var(--band-y));
 }
 
-/* ── Side input — transparent text-style input centred in segment ────────── */
-/*
- * Each input sits at its segment's geometric centroid:
- *   - Margin trapezoid centroid → 12.5% from the outer edge.
- *   - Padding triangle centroid → 1/6 (≈ 16.67%) from the outer edge.
- *
- * The input itself is borderless / transparent so it reads as the value
- * label inside the segment; the segment's hover background provides the
- * visual feedback. Click anywhere in the segment focuses the input.
- */
+.segment:hover, .segmentFocused { background: var(--overlay-20); }
+
 .sideInput.sideInput {
     position: absolute;
     z-index: 3;
@@ -250,7 +132,8 @@
 }
 
 .sideInput.sideInput::placeholder {
-    color: var(--text-disabled);
+    color: var(--text-muted);
+    opacity: 1;
     font-weight: 500;
 }
 
@@ -263,51 +146,69 @@
     outline: none;
 }
 
-/* Margin centroids — half-way through the gutter (12.5%). */
-.box--margin .segment--top .sideInput {
-    top: 12.5%;
+
+.segment--top .sideInput, .segment--bottom .sideInput {
     left: 50%;
-    transform: translate(-50%, -50%);
-}
-.box--margin .segment--bottom .sideInput {
-    bottom: 12.5%;
-    left: 50%;
-    transform: translate(-50%, 50%);
-}
-.box--margin .segment--left .sideInput {
-    left: 12.5%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-}
-.box--margin .segment--right .sideInput {
-    right: 12.5%;
-    top: 50%;
-    transform: translate(50%, -50%);
+    transform: translateX(-50%);
 }
 
-/* Padding centroids — 1/6 from the box edge (centroid of the wedge). */
-.box--padding .segment--top .sideInput {
-    top: 16.6667%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-}
-.box--padding .segment--bottom .sideInput {
-    bottom: 16.6667%;
-    left: 50%;
-    transform: translate(-50%, 50%);
-}
-.box--padding .segment--left .sideInput {
-    left: 16.6667%;
+.segment--top .sideInput { top: calc(var(--band-y) / 2 - 10px); }
+.segment--bottom .sideInput { bottom: calc(var(--band-y) / 2 - 10px); }
+
+.segment--left .sideInput, .segment--right .sideInput {
     top: 50%;
-    transform: translate(-50%, -50%);
-}
-.box--padding .segment--right .sideInput {
-    right: 16.6667%;
-    top: 50%;
-    transform: translate(50%, -50%);
+    transform: translateY(-50%);
 }
 
-/* When linked + uniform, all four sides read as one unit. */
-.segmentLinked .sideInput.sideInput {
-    color: var(--text-bright);
+.segment--left .sideInput { left: calc(var(--band-x) / 2 - 19px); }
+.segment--right .sideInput { right: calc(var(--band-x) / 2 - 19px); }
+.segmentLinked .sideInput.sideInput { color: var(--text-bright); }
+
+@media (max-width: 760px) {
+    .root { height: auto; }
+
+    .phoneBox .boxHeader {
+        position: static;
+        display: flex;
+        justify-content: space-between;
+        height: auto;
+        padding: 0;
+    }
+
+    .phoneBox .boxLabel {
+        color: var(--text);
+        font-size: var(--text-l);
+        letter-spacing: normal;
+        text-transform: none;
+    }
+
+    .phoneBox .boxBody {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: var(--space-s);
+        height: auto;
+    }
+
+    .phoneBox .boxInner {
+        position: static;
+        grid-column: 1 / -1;
+        background: transparent;
+    }
+
+    .phoneBox .boxInner:empty { display: none; }
+
+    .phoneSide {
+        display: grid;
+        gap: var(--space-2xs);
+        min-width: 0;
+        color: var(--text-muted);
+        font-size: var(--text-s);
+        text-transform: capitalize;
+    }
+
+    .phoneSide .phoneInput::placeholder { color: var(--text-muted); }
+
+    .phoneSide .phoneInput {
+        text-align: center;
+    }
 }

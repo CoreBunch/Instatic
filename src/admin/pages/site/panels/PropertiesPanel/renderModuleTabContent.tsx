@@ -38,7 +38,7 @@ import { ParamPromotableRow } from './ParamPromotableRow'
 import { FormSettingsPanel } from './FormSettingsPanel'
 import { isFormSettingsModule } from './formSettingsAnalysis'
 
-const PROMOTED_FORM_PROPERTY_KEYS = new Set(['mode', 'formId', 'targetTableId'])
+const PROMOTED_FORM_PROPERTY_KEYS = new Set(['mode', 'formId', 'targetTableId', 'memberAction'])
 
 interface ModuleTabContentArgs {
   selectedNode: PageNode | null

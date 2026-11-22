@@ -1,6 +1,8 @@
+import { resolveColorPreview } from '@ui/lib/colorVariable'
 import { useState, type CSSProperties, type ChangeEvent, type FocusEvent, type KeyboardEvent } from 'react'
 import { generateFrameworkColorVariableSets } from '@core/framework'
 import { useEditorStore } from '@site/store/store'
+import { InspectorColorSwatch } from './InspectorColorSwatch'
 import { ColorInput } from '@ui/components/ColorInput'
 import { Input } from '@ui/components/Input'
 import { cn } from '@ui/cn'
@@ -15,6 +17,7 @@ interface TokenizedColorFieldProps {
   disabled?: boolean
   inputLabel: string
   swatchLabel: string
+  richPicker?: boolean
   placeholder?: string
   excludeTokenId?: string
   monospace?: boolean
@@ -40,6 +43,7 @@ export function TokenizedColorField({
   disabled = false,
   inputLabel,
   swatchLabel,
+  richPicker,
   placeholder,
   excludeTokenId,
   monospace = false,
@@ -57,7 +61,7 @@ export function TokenizedColorField({
   const variables = generateFrameworkColorVariableSets(colorSettings).light
     .filter((variable) => variable.tokenId !== excludeTokenId)
   const filteredVariables = computeFilteredVariables(value, variables)
-  const swatchValue = resolveTokenReferenceValue(value, variables) ?? value
+  const swatchValue = resolveColorPreview(value, variables)
   const menuId = id ? `${id}-token-menu` : undefined
   const showMenu = open && !disabled && filteredVariables.length > 0
 
@@ -128,7 +132,8 @@ export function TokenizedColorField({
   return (
     <div className={styles.colorRow}>
       <div className={styles.colorField} data-color-field="true">
-        <ColorInput
+        {richPicker ? <InspectorColorSwatch label={swatchLabel} value={value} preview={swatchValue}
+          disabled={disabled} onChange={onSwatchChange} /> : <ColorInput
           id={id ? `${id}-swatch` : undefined}
           value={swatchValue}
           swatchValue={swatchValue}
@@ -137,7 +142,7 @@ export function TokenizedColorField({
           aria-label={swatchLabel}
           fieldSize="xs"
           className={styles.colorInlineSwatch}
-        />
+        />}
         <Input
           id={id}
           type="text"
@@ -221,10 +226,4 @@ function tokenVariableMatches(variable: ColorVariable, query: string): boolean {
   return name.includes(query) ||
     variable.slug.toLowerCase().includes(query) ||
     (variable.variantName?.toLowerCase().includes(query) ?? false)
-}
-
-function resolveTokenReferenceValue(value: string, variables: ColorVariable[]): string | null {
-  const variableName = /^var\(\s*(--[a-z0-9_-]+)\s*\)$/i.exec(value.trim())?.[1]
-  if (!variableName) return null
-  return variables.find((variable) => variable.name === variableName)?.value ?? null
 }

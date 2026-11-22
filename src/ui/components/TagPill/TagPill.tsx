@@ -23,7 +23,7 @@ type TagPillSize = 'xs' | 'sm'
 /** A semantic state instead of a categorical accent: same tint, state-coloured. */
 export type TagPillTone = 'success' | 'warning' | 'danger'
 
-interface TagPillProps {
+export interface TagPillProps {
   label: string
   colorKey?: string
   accent?: PillAccent

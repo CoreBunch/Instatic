@@ -29,10 +29,14 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-instatic}:${POSTGRES_PASSWORD:-CHANGEME_set_POSTGRES_PASSWORD_in_env}@postgres:5432/${POSTGRES_DB:-instatic}
       UPLOADS_DIR: /app/uploads
       STATIC_DIR: /app/dist
+      # Runtime npm packages that published pages load. On the data volume so
+      # recreating the container does not force a reinstall.
+      RUNTIME_CACHE_DIR: /app/data/runtime-cache
       INSTATIC_SECRET_KEY: ${INSTATIC_SECRET_KEY:-}
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
     volumes:
       - uploads:/app/uploads
+      - data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,3 +50,4 @@ services:
 volumes:
   postgres_data:
   uploads:
+  data:

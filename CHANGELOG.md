@@ -4,6 +4,67 @@ All notable changes to Instatic will be documented here.
 
 This project is pre-1.0. Breaking changes may appear in minor or patch releases until a stable release line exists.
 
+## 0.0.22 - 2026-11-16
+
+### Features
+
+- A manager such as Instatic Desktop can now push a complete site to a server, pull it back, take and restore database snapshots, and open the admin through a one-time sign-in link. The API stays off until `INSTATIC_MANAGER_TOKEN` is set; see [`docs/features/manager-api.md`](docs/features/manager-api.md).
+- New sites start with three font tokens, `font-heading`, `font-body` and `font-mono`, so imported pages and copied sections can rely on the same font variables. Existing sites are unchanged.
+- Site settings > Publishing has a new option that sets the root font size the type and spacing scale assumes. New frameworks from the Core preset turn it on; without it, a scale based on 10px rendered 1.6 times larger than shown.
+
+### Bug fixes
+
+- When plugin pages add entries to the top navigation, the ones that do not fit now move into a "More" menu. They used to push Publish, settings and the account menu out of the window.
+- "New post" and Duplicate no longer fail with "a row with slug … already exists". The server now picks the next free slug.
+- A visitor who stayed on a page for several minutes before sending a form no longer gets "Form submitted too quickly" on the first try.
+- Forms that write to a Select or Multi-select field no longer reject every submission as an invalid option.
+- The URL field accepts `tel:` and `sms:` links, so click-to-call and SMS links can be set on links and buttons in the editor.
+- A site's own custom properties named like `--radius` or `--text` now render in the canvas with the site's values, as they do on the published page.
+- Sections marked as theme-inverted now take the alternate colors, in the canvas and on published pages.
+- Collaborators without a display name now show their cursor and selection to others, labelled with their email.
+- Opening a large site no longer drops the editor's live connection during the first sync, which left it reconnecting and blocked publishing.
+- The upload queue window stays closed when you close it during an upload. It used to reopen immediately.
+- Settings shows the current site name and details after a site is imported from Data, instead of the values from before the import.
+- "Open site" after an HTML import from Data now opens the imported page in the Site workspace.
+- The Preview overlay and the Site panel's hover preview rebuild once the draft stops changing and keep showing the last build meanwhile, instead of blanking on every keystroke.
+- Publishing or scheduling a single page now updates the live site. The request used to succeed while visitors still saw the old page or a missing route.
+- Publishing a post no longer leaves the dynamic parts of unchanged pages empty. After upgrading, publish the whole site once so pages published by an earlier version pick this up.
+- Restoring a site backup brings back the published site as well as the drafts. Collection lists used to come back empty and stale pages stayed visible.
+- One invalid property on an element no longer resets the whole element at publish. A link with a bad target used to publish as "Click here" pointing nowhere.
+- Published CSS keeps rules that use `:not()`, `:is()` or `:where()` with a class no element carries. They were dropped as unused.
+- Published CSS keeps custom properties with underscores or a leading `--_`, and no longer rewrites mixed-case names such as `--brandColor`.
+- Elements with a `data-style` or `data-class` attribute keep their real styles and classes when published.
+- Links and buttons that carry their own `rel` now publish one merged `rel`. They used to publish two, and the browser ignored the second.
+- Images in a post body are no longer stripped when the post is published.
+- A custom media field on a post page now publishes as the image address instead of an internal id.
+- Loops sorted by a number field now order by value, so 9 comes before 10.
+- Site Import keeps `var()` references working when it renames color and font variables, and no longer merges two font variables that differ only in letter case.
+- Site Import uploads video files and poster images and points the imported video at them.
+- Site Import keeps a class rule that appears twice in a stylesheet at its later position, so the declaration that wins in the browser also wins after import.
+- An unclosed `@media` block in one imported `<style>` element no longer swallows the rules of the next one.
+- Imported submit buttons keep the icon or image they wrap instead of publishing the word "Submit".
+- Imported links with an empty, named or `_top` target now open the way the original did instead of losing their new-tab behavior.
+- Imported fonts keep their `font-display` setting.
+- Site archives up to the documented 1 GiB limit can be imported. Archives over about 128 MiB were refused.
+- A replace import now removes the previous site's media, so importing a second site that ships the same file no longer fails halfway.
+- The AI assistant's code tools work when the admin is opened over plain HTTP on a local network.
+- AI conversations on Postgres keep their history. Messages were stored unreadable, so the next reply failed.
+- Edits sent by an MCP client to the open editor no longer time out or fail partway through a batch.
+- The assistant no longer waits on a background tab's slowed timers before taking a page snapshot.
+
+### Security
+
+- MCP connector tokens stopped working only when deleted, not when their owner lost access ([GHSA-95mq-c75h-ffm9](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-95mq-c75h-ffm9)). A personal access token or OAuth connection kept reading and editing the site after its owner was suspended or lost the AI permission. Every MCP request now checks the owner's current account status and role, and authorizing a new connection requires AI access. Reported by [@0xcomrade](https://github.com/0xcomrade).
+- An open editor connection kept its access after it should have ended ([GHSA-3w5h-rwwx-mjf8](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-3w5h-rwwx-mjf8)). A user who was suspended, signed out everywhere, or lost editing permissions could keep reading and changing the site through a collaboration socket opened earlier, because access was checked only when the socket opened. The server now rechecks the session and current permissions before applying or delivering anything. Reported by [@0xcomrade](https://github.com/0xcomrade); the permission-removal case was found independently by [@Liam-G](https://github.com/Liam-G).
+- Dashboard endpoints returned content details to accounts that could not read the content itself ([GHSA-83pg-4p8c-pv37](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-83pg-4p8c-pv37)). Any signed-in account, including a Member with no permissions, could read page and post counts, storage usage, and the paths, status and scheduled times of unpublished drafts. The dashboard now applies the same permissions as the content it summarises. Reported by [@0xcomrade](https://github.com/0xcomrade).
+
+### Other changes
+
+- Published script bundles are minified.
+- Uploads and admin files are revalidated instead of downloaded again on every load, which makes editor previews of image-heavy sites much lighter.
+- Each publish removes stored script files of page versions that are no longer live, which keeps the database and backups from growing with every publish.
+- Upgraded Happy DOM to 21.0.4, which fixes an upstream advisory in a feature Instatic keeps turned off.
+
 ## 0.0.21 - 2026-10-12
 
 ### Features

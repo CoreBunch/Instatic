@@ -13,6 +13,7 @@
  */
 
 import { describe, it, expect } from 'bun:test'
+import { registry } from '@core/module-engine'
 import { bagToCSS, bagToInlineStyle, collectClassCSS, generateClassCSS } from '@core/publisher'
 import { classKindSelector, makeConditionDef } from '@core/page-tree'
 import type { StyleRule, Page, PageNode, SiteDocument } from '@core/page-tree'
@@ -130,6 +131,37 @@ describe('bagToCSS', () => {
     expect(css).toBe('')
   })
 
+  it('emits custom properties with underscores or a leading --_ as authored (#616)', () => {
+    // Webflow exports generate both forms; dropping them breaks every var().
+    const css = bagToCSS({
+      '--card_bg': '#0575d6',
+      '--_accent': '#fc834b',
+      '--brand---ds_mapped---background--page': '#fff',
+      '--plain-ok': '#161617',
+    } as never)
+    expect(css).toContain('--card_bg: #0575d6;')
+    expect(css).toContain('--_accent: #fc834b;')
+    expect(css).toContain('--brand---ds_mapped---background--page: #fff;')
+    expect(css).toContain('--plain-ok: #161617;')
+  })
+
+  it('keeps the case of a custom property name', () => {
+    // Custom properties are case-sensitive: `--brandColor` must not become
+    // `--brand-color`, or `var(--brandColor)` stops resolving.
+    const css = bagToCSS({ '--brandColor': 'red' } as never)
+    expect(css).toBe('  --brandColor: red;')
+  })
+
+  it('drops an invalid custom property name', () => {
+    const css = bagToCSS({ '--': 'a', '--has space': 'b', '--x;y': 'c', '--a:b': 'd' } as never)
+    expect(css).toBe('')
+  })
+
+  it('still rejects underscores in a standard property name', () => {
+    const css = bagToCSS({ font_size: '12px', '-_x': '1' } as never)
+    expect(css).toBe('')
+  })
+
   it('drops undefined and null and empty-string values', () => {
     const css = bagToCSS({ fontSize: undefined, color: '' } as never)
     expect(css).toBe('')
@@ -190,7 +222,7 @@ describe('bagToCSS', () => {
 
   it('rewrites media background images to optimized fallback plus image-set declarations', () => {
     const css = bagToCSS(
-      { backgroundImage: "url('/uploads/hero.png')" },
+      { backgroundImage: "url('/uploads/hero.png')", backgroundSize: 'cover' },
       { mediaAssets: new Map([['/uploads/hero.png', resolvedMedia()]]) },
     )
 
@@ -200,6 +232,44 @@ describe('bagToCSS', () => {
     expect(css).toContain('url("/uploads/hero-w1024.webp") 1x')
     expect(css).toContain('url("/uploads/hero-w2048.webp") 2x')
     expect(css).not.toContain('/uploads/hero.png')
+  })
+
+  it.each([undefined, 'auto', 'auto auto', 'auto, auto'])(
+    'makes image-set descriptors relative to the original width when background-size is %p',
+    (backgroundSize) => {
+      const css = bagToCSS(
+        { backgroundImage: "url('/uploads/hero.png')", backgroundSize },
+        { mediaAssets: new Map([['/uploads/hero.png', resolvedMedia()]]) },
+      )
+
+      expect(css).toContain('url("/uploads/hero-w320.webp") 0.13x')
+      expect(css).toContain('url("/uploads/hero-w1024.webp") 0.43x')
+      expect(css).toContain('url("/uploads/hero-w2048.webp") 0.85x')
+    },
+  )
+
+  it.each(['cover', 'contain', '100% auto', 'auto 50%', 'cover, auto'])(
+    'keeps the 1024px descriptor reference when background-size is %p',
+    (backgroundSize) => {
+      const css = bagToCSS(
+        { backgroundImage: "url('/uploads/hero.png')", backgroundSize },
+        { mediaAssets: new Map([['/uploads/hero.png', resolvedMedia()]]) },
+      )
+
+      expect(css).toContain('url("/uploads/hero-w320.webp") 0.31x')
+      expect(css).toContain('url("/uploads/hero-w1024.webp") 1x')
+      expect(css).toContain('url("/uploads/hero-w2048.webp") 2x')
+    },
+  )
+
+  it('falls back to a 1024px reference under background-size auto when the original width is unknown', () => {
+    const css = bagToCSS(
+      { backgroundImage: "url('/uploads/hero.png')" },
+      { mediaAssets: new Map([['/uploads/hero.png', { ...resolvedMedia(), width: null }]]) },
+    )
+
+    expect(css).toContain('url("/uploads/hero-w1024.webp") 1x')
+    expect(css).toContain('url("/uploads/hero-w2048.webp") 2x')
   })
 
   it('rewrites media background images inside inline style strings without selecting the original', () => {
@@ -825,7 +895,7 @@ describe('collectClassCSS', () => {
       { root: ['nav'] },
       [makeScript('scripts/nav.js', "button.addEventListener('click', () => menu.classList.toggle('nav--open'))")],
     )
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     expect(css).toContain('.nav {')
     expect(css).toContain('.nav--open {')
     expect(css).toContain('display: flex')
@@ -841,7 +911,7 @@ describe('collectClassCSS', () => {
       { root: ['nav'] },
       [makeScript('scripts/nav.js', "menu.classList.toggle('nav--open')")],
     )
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     expect(css).toContain('.nav--open {')
     expect(css).not.toContain('.orphan')
   })
@@ -852,7 +922,7 @@ describe('collectClassCSS', () => {
       {},
       [{ id: 'notes', path: 'docs/notes.md', type: 'doc', content: 'the orphan class is for later' } as SiteDocument['files'][number]],
     )
-    expect(collectClassCSS(site)).not.toContain('.orphan')
+    expect(collectClassCSS(site, registry)).not.toContain('.orphan')
   })
 
   it('emits user-authored CSS but skips framework-generated CSS', () => {
@@ -877,7 +947,7 @@ describe('collectClassCSS', () => {
       { child1: [userClass.id, frameworkClass.id] },
     )
 
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
 
     expect(css).toContain('.user-class {')
     expect(css).toContain('color: green;')
@@ -887,7 +957,7 @@ describe('collectClassCSS', () => {
 
   it('returns empty string when no nodes have classIds', () => {
     const site = makeSite({ cls1: makeClass('cls1', { color: 'red' }) })
-    expect(collectClassCSS(site)).toBe('')
+    expect(collectClassCSS(site, registry)).toBe('')
   })
 
   it('only emits CSS for classes actually used by nodes (tree-shaking)', () => {
@@ -898,7 +968,7 @@ describe('collectClassCSS', () => {
       },
       { child1: ['used'] },
     )
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     expect(css).toContain('.used {')
     expect(css).not.toContain('.unused')
   })
@@ -918,10 +988,10 @@ describe('collectClassCSS', () => {
       { child: ['variant'] },
     )
 
-    expect(collectClassCSS(withDependency)).toContain(
+    expect(collectClassCSS(withDependency, registry)).toContain(
       '.group:hover .group-hover\\:block',
     )
-    expect(collectClassCSS(withoutDependency)).not.toContain('group-hover')
+    expect(collectClassCSS(withoutDependency, registry)).not.toContain('group-hover')
   })
 
   it('tree-shakes ambient fragments by known class dependencies', () => {
@@ -950,7 +1020,7 @@ describe('collectClassCSS', () => {
       { child: ['used'] },
     )
 
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     expect(css).toContain('.used:hover')
     expect(css).not.toContain('.unused:hover')
     expect(css).toContain('body {')
@@ -964,7 +1034,7 @@ describe('collectClassCSS', () => {
       },
       { child1: ['cls1'], child2: ['cls2'] },
     )
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     expect(css).toContain('.cls1')
     expect(css).toContain('.cls2')
   })
@@ -974,20 +1044,20 @@ describe('collectClassCSS', () => {
     // Insert </style> manually via name abuse — test the sanitizer, not the class gen
     // (bagToCSS already blocks javascript: etc; test the outer sanitizeModuleCSS wrapper)
     const site = makeSite({ evil: malicious }, { child1: ['evil'] })
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     expect(css).not.toMatch(/<\/style\s*>/)
   })
 
   it('gracefully handles missing class references in the registry', () => {
     const site = makeSite({}, { child1: ['nonexistent-id'] })
-    expect(() => collectClassCSS(site)).not.toThrow()
-    expect(collectClassCSS(site)).toBe('')
+    expect(() => collectClassCSS(site, registry)).not.toThrow()
+    expect(collectClassCSS(site, registry)).toBe('')
   })
 
   it('returns empty string when all used class styles are blocked by the sanitiser', () => {
     const evilClass = makeClass('evil', { backgroundImage: 'javascript:alert(1)' })
     const site = makeSite({ evil: evilClass }, { child1: ['evil'] })
-    const css = collectClassCSS(site)
+    const css = collectClassCSS(site, registry)
     // No valid declarations → collectClassCSS should return empty (or whitespace only)
     expect(css.trim()).toBe('')
   })

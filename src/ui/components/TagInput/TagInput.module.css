@@ -1,0 +1,19 @@
+.root {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    min-width: 0;
+}
+
+.tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-3xs);
+}
+
+.problem {
+    margin: 0;
+    color: var(--danger);
+    font-size: var(--text-xs);
+    line-height: 1.3;
+}

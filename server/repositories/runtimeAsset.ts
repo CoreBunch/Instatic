@@ -17,7 +17,7 @@ interface RuntimeAssetRow {
 export async function savePublishedRuntimeAssets(
   db: DbClient,
   dataRowVersionId: string,
-  files: BuiltRuntimeAssetFile[],
+  files: Omit<BuiltRuntimeAssetFile, 'content'>[],
 ): Promise<void> {
   for (const file of files) {
     await db`

@@ -19,6 +19,7 @@
  * @see Constraint #402 — No Tailwind / no inline styles
  * @see Constraint #403 — No !important
  */
+import { ArrowLeftIcon } from 'pixel-art-icons/icons/arrow-left'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { Button } from '@ui/components/Button'
 import styles from './PanelHeader.module.css'
@@ -43,7 +44,9 @@ interface PanelHeaderProps {
    * → produces: data-testid="panel-close-dom", etc.
    */
   panelId: string
-  /** Called when the close (✕) button is clicked. Should hide/toggle the panel. */
+  /** Optional visible return destination for a full-width inspector. */
+  closeLabel?: string
+  /** Called when the panel is dismissed. */
   onClose: () => void
   /**
    * Spread onto the header div to enable drag-to-reposition.
@@ -57,7 +60,7 @@ interface PanelHeaderProps {
   children?: React.ReactNode
 }
 
-export function PanelHeader({ title, titleContent, panelId, onClose, dragHandleProps, children }: PanelHeaderProps) {
+export function PanelHeader({ title, titleContent, panelId, closeLabel, onClose, dragHandleProps, children }: PanelHeaderProps) {
   return (
     <div
       {...dragHandleProps}
@@ -77,15 +80,22 @@ export function PanelHeader({ title, titleContent, panelId, onClose, dragHandleP
 
       {/* Close button — closes the panel completely (toolbar button reopens) */}
       <Button
-        variant="ghost"
-        size="xs"
-        iconOnly
+        variant={closeLabel ? 'secondary' : 'ghost'}
+        size={closeLabel ? 'md' : 'xs'}
+        iconOnly={!closeLabel}
         onClick={onClose}
-        aria-label={`Close ${title} panel`}
-        tooltip={`Close ${title} panel`}
+        aria-label={closeLabel ?? `Close ${title} panel`}
+        tooltip={closeLabel ? undefined : `Close ${title} panel`}
         data-testid={`panel-close-${panelId}`}
       >
-        <CloseIcon size={12} color="currentColor" aria-hidden="true" />
+        {closeLabel ? (
+          <>
+            <ArrowLeftIcon size={14} aria-hidden="true" />
+            {closeLabel}
+          </>
+        ) : (
+          <CloseIcon size={12} aria-hidden="true" />
+        )}
       </Button>
     </div>
   )

@@ -18,13 +18,21 @@ export async function publishCmsDraft(
   })
 }
 
-export async function getCmsPublishStatus(
-  fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
+interface PublishStatusRequestOptions {
+  fetchImpl?: FetchLike
+  basePath?: string
+  signal?: AbortSignal
+}
+
+export async function getCmsPublishStatus({
+  fetchImpl = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',
-): Promise<CmsPublishStatus> {
+  signal,
+}: PublishStatusRequestOptions = {}): Promise<CmsPublishStatus> {
   return apiRequest(`${basePath}/publish/status`, {
     schema: CmsPublishStatusSchema,
     fetchImpl,
+    signal,
     fallbackMessage: 'CMS publish status request failed',
   })
 }

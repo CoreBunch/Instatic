@@ -286,7 +286,7 @@ describe('UsersPage', () => {
     )
 
     expect(await screen.findByRole('table', { name: 'Users' })).toBeDefined()
-    expect(screen.getByRole('tab', { name: 'Users' })).toBeDefined()
+    expect(screen.getByRole('tab', { name: 'Admin users' })).toBeDefined()
     expect(screen.queryByRole('tab', { name: 'Roles' })).toBeNull()
     expect(screen.queryByRole('tab', { name: 'Audit' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Create User' })).toBeDefined()
@@ -315,7 +315,7 @@ describe('UsersPage', () => {
     )
 
     expect(await screen.findByRole('table', { name: 'Roles' })).toBeDefined()
-    expect(screen.queryByRole('tab', { name: 'Users' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Admin users' })).toBeNull()
     expect(screen.getByRole('tab', { name: 'Roles' })).toBeDefined()
     expect(screen.queryByRole('tab', { name: 'Audit' })).toBeNull()
     expect(screen.getByRole('button', { name: 'Create Role' })).toBeDefined()
@@ -348,7 +348,7 @@ describe('UsersPage', () => {
     )
 
     expect(await screen.findByRole('table', { name: 'Audit events' })).toBeDefined()
-    expect(screen.queryByRole('tab', { name: 'Users' })).toBeNull()
+    expect(screen.queryByRole('tab', { name: 'Admin users' })).toBeNull()
     expect(screen.queryByRole('tab', { name: 'Roles' })).toBeNull()
     expect(screen.getByRole('tab', { name: 'Audit' })).toBeDefined()
     expect(screen.queryByRole('button', { name: /create user/i })).toBeNull()
@@ -380,7 +380,7 @@ describe('UsersPage', () => {
       </Wrapper>,
     )
 
-    expect(await screen.findByText('No audit events yet.')).toBeDefined()
+    expect(await screen.findByText('No audit events yet')).toBeDefined()
     expect(screen.queryByRole('table', { name: 'Audit events' })).toBeNull()
   })
 
@@ -402,7 +402,7 @@ describe('UsersPage', () => {
     )
 
     expect((await screen.findByRole('alert')).textContent).toContain('Audit service unavailable')
-    expect(screen.getByText('No audit events yet.')).toBeDefined()
+    expect(screen.getByText('No audit events yet')).toBeDefined()
   })
 
   it('locks the owner row and exposes edit/reset actions for regular users', async () => {
@@ -417,37 +417,31 @@ describe('UsersPage', () => {
     expect(usersTable.getAttribute('data-density')).toBe('compact')
 
     const ownerRow = await screen.findByLabelText('User hello@davidbabinec.com')
-    expect(within(ownerRow).queryByRole('button', { name: /suspend/i })).toBeNull()
-    expect(within(ownerRow).queryByRole('button', { name: /delete/i })).toBeNull()
-    expect(within(ownerRow).queryByRole('button', { name: /reset/i })).toBeNull()
-    expect(within(ownerRow).queryByRole('button', { name: /actions/i })).toBeNull()
-    expect(within(ownerRow).queryByRole('combobox')).toBeNull()
-    expect(within(ownerRow).getByText('Owner account')).toBeDefined()
-    expect(within(ownerRow).getByText('Owner account').getAttribute('data-accent')).toBeTruthy()
+    expect(screen.queryByRole('article', { name: 'User details' })).toBeNull()
+    fireEvent.click(within(ownerRow).getByRole('button'))
+    const ownerPanel = screen.getByRole('article', { name: 'User details' })
+    expect(within(ownerPanel).getByText('Owner account')).toBeDefined()
+    expect(within(ownerPanel).queryByRole('group', { name: 'User actions' })).toBeNull()
+    fireEvent.click(within(ownerPanel).getByRole('button', { name: 'Close details' }))
+    expect(screen.queryByRole('article')).toBeNull()
 
+    const search = screen.getByLabelText('Search name or email')
+    fireEvent.change(search, { target: { value: 'TEST@' } })
+    expect(screen.queryByLabelText('User hello@davidbabinec.com')).toBeNull()
     const userRow = screen.getByLabelText('User test@test.com')
-    expect(within(userRow).getByText('Active').getAttribute('data-accent')).toBeTruthy()
-    expect(within(userRow).getByText('Member').getAttribute('data-accent')).toBeTruthy()
-    expect(within(userRow).queryByRole('button', { name: /edit tester one/i })).toBeNull()
-    expect(within(userRow).queryByRole('button', { name: /reset password for tester one/i })).toBeNull()
-    expect(within(userRow).queryByRole('button', { name: /suspend tester one/i })).toBeNull()
-    expect(within(userRow).queryByRole('button', { name: /delete tester one/i })).toBeNull()
-
-    fireEvent.click(within(userRow).getByRole('button', { name: /actions for tester one/i }))
-    const userMenu = screen.getByRole('menu', { name: 'User actions for Tester One' })
-    expect(within(userMenu).getByRole('menuitem', { name: 'Edit' })).toBeDefined()
-    expect(within(userMenu).getByRole('menuitem', { name: 'Reset password' })).toBeDefined()
-    expect(within(userMenu).getByRole('menuitem', { name: 'Suspend' })).toBeDefined()
-    expect(within(userMenu).getByRole('menuitem', { name: 'Delete' })).toBeDefined()
-
-    fireEvent.click(within(userMenu).getByRole('menuitem', { name: 'Edit' }))
+    expect(within(userRow).getByText('Active')).toBeDefined()
+    expect(within(userRow).getByText('Member')).toBeDefined()
+    fireEvent.click(within(userRow).getByRole('button'))
+    const panel = screen.getByRole('article', { name: 'User details' })
+    const actions = within(panel).getByRole('group', { name: 'User actions' })
+    expect(within(actions).getByRole('button', { name: 'Suspend' })).toBeDefined()
+    expect(within(actions).getByRole('button', { name: 'Delete user' })).toBeDefined()
+    fireEvent.click(within(actions).getByRole('button', { name: 'Edit user' }))
     const editDialog = screen.getByRole('dialog', { name: 'Edit User' })
     expect(within(editDialog).getByDisplayValue('test@test.com')).toBeDefined()
 
     fireEvent.click(within(editDialog).getByRole('button', { name: 'Close dialog' }))
-    fireEvent.click(within(userRow).getByRole('button', { name: /actions for tester one/i }))
-    const resetMenu = screen.getByRole('menu', { name: 'User actions for Tester One' })
-    fireEvent.click(within(resetMenu).getByRole('menuitem', { name: 'Reset password' }))
+    fireEvent.click(within(actions).getByRole('button', { name: 'Reset password' }))
     const resetDialog = screen.getByRole('dialog', { name: 'Reset Password' })
     expect(within(resetDialog).getByLabelText('New password')).toBeDefined()
 

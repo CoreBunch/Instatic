@@ -9,6 +9,8 @@
  *
  *   GET    /admin/api/cms/data/tables/:id/rows          — list rows in a table
  *   POST   /admin/api/cms/data/tables/:id/rows          — create a draft row
+ *   GET    /admin/api/cms/data/tables/:id/access        — who may open the table's entries
+ *   PUT    /admin/api/cms/data/tables/:id/access        — change it (step-up, takes effect at once)
  *   GET    /admin/api/cms/data/tables/:id/loop-preview  — published rows as LoopItems (editor canvas)
  *
  * The `/tables/:id/rows` and `/loop-preview` routes live here (not in rows.ts)
@@ -32,8 +34,10 @@ import {
   listDataTablesWithCounts,
   softDeleteDataTable,
   updateDataTable,
+  appendDataTableFields,
   createDataRow,
   getDataRowBySlug,
+  nextFreeDataRowSlug,
   listDataRows,
 } from '../../../repositories/data'
 import { normalizeDataTableFields } from '@core/data/fields'
@@ -45,8 +49,9 @@ import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '.
 import { CMS_API_PREFIX, requestAuditContext } from '../shared'
 import {
   TableCreateBodySchema,
+  TableAccessBodySchema,
   TablePatchBodySchema,
-  RowUpsertBodySchema,
+  RowCreateBodySchema,
   type TablePatchBody,
 } from './schemas'
 import {
@@ -66,8 +71,12 @@ import {
   assertSystemTableUpdateAllowed,
   protectedBuiltInCreateCellKey,
 } from '@core/data/systemTableGuard'
-import { requireStepUp } from '../../../auth/authz'
-import { isMainScope, type BranchScope } from '../../../branches/scope'
+import { requireStepUp, userHasCapability } from '../../../auth/authz'
+import { newPageStructuralCells } from '../../../writePolicy/pageStructuralCells'
+import { isMainScope, MAIN_SCOPE, type BranchScope } from '../../../branches/scope'
+import { isGrantableMemberTag, PUBLIC_ACCESS } from '@core/members'
+import { getTableAccess } from '../../../repositories/data/tableAccess'
+import { setTableAccess } from '../../../publish/tableAccess'
 import { physicalId } from '@core/branches'
 
 // ---------------------------------------------------------------------------
@@ -117,6 +126,7 @@ type TableAuditAction =
   | 'data.table.create'
   | 'data.table.update'
   | 'data.table.delete'
+  | 'data.table.access'
 
 async function recordTableAuditEvent(
   db: DbClient,
@@ -273,6 +283,20 @@ async function handleTableItem(
     const body = await readValidatedBody(req, TablePatchBodySchema)
     if (!body) return badRequest('Invalid table payload')
 
+    if (body.appendFields !== undefined) {
+      if (Object.keys(body).length !== 1) {
+        return badRequest('Provide only the fields to append')
+      }
+      const fields = normalizeDataTableFields(body.appendFields)
+      if (table.system && fields.some(field => field.builtIn)) {
+        return badRequest('System tables cannot add built-in fields')
+      }
+      const updated = await appendDataTableFields(db, scope, tableId, fields, user.id)
+      if (!updated) return jsonResponse({ error: 'Table not found' }, { status: 404 })
+      await recordTableAuditEvent(db, user, req, 'data.table.update', updated)
+      return jsonResponse({ table: updated })
+    }
+
     const update = buildTablePatch(body, user.id)
     if ('error' in update) return badRequest(update.error)
 
@@ -294,6 +318,43 @@ async function handleTableItem(
   }
 
   return methodNotAllowed()
+}
+
+/**
+ * Who may open a table's entry routes on the published site. Unlike the rest
+ * of a table this is a live setting of the main site, not branch content: it
+ * is read and written on main whatever branch the editor is on, and a change
+ * applies from the next request (`setTableAccess`).
+ */
+async function handleTableAccess(
+  req: Request,
+  db: DbClient,
+  tableId: string,
+  uploadsDir: string | undefined,
+): Promise<Response> {
+  const user = await requireDataTablesRead(req, db)
+  if (user instanceof Response) return user
+  const table = await getDataTable(db, MAIN_SCOPE, tableId)
+  if (!table || !canReadTable(user, table)) return jsonResponse({ error: 'Table not found' }, { status: 404 })
+
+  if (req.method === 'GET') {
+    return jsonResponse({ access: (await getTableAccess(db, tableId)) ?? PUBLIC_ACCESS })
+  }
+  if (req.method !== 'PUT') return methodNotAllowed()
+
+  if (!canManageTable(user, table)) return forbidden()
+  const stepUp = await requireStepUp(req, db, user)
+  if (stepUp) return stepUp
+  const body = await readValidatedBody(req, TableAccessBodySchema)
+  if (!body) return badRequest('Invalid access rule')
+  if (body.access.level === 'tags' && !body.access.tags.every(isGrantableMemberTag)) {
+    return badRequest('A tag in the rule cannot be granted to a member')
+  }
+  if (!(await setTableAccess(db, tableId, body.access, uploadsDir))) {
+    return jsonResponse({ error: 'Table not found' }, { status: 404 })
+  }
+  await recordTableAuditEvent(db, user, req, 'data.table.access', table)
+  return jsonResponse({ access: body.access })
 }
 
 async function handleTableRows(
@@ -318,7 +379,7 @@ async function handleTableRows(
   }
 
   if (req.method === 'POST') {
-    const body = await readValidatedBody(req, RowUpsertBodySchema)
+    const body = await readValidatedBody(req, RowCreateBodySchema)
     if (!body) return badRequest('Invalid row payload')
 
     // Editor-managed built-in values can't be set through the Data grid.
@@ -332,12 +393,14 @@ async function handleTableRows(
     // Run the `content.entry.cells` filter pipeline before persistence so
     // plugins can validate / normalize / auto-fill cells — the same shared
     // helper the plugin `cms.content.*` surface applies.
-    const cells = await applyContentEntryCellsFilter(body.cells ?? {}, {
+    let cells = await applyContentEntryCellsFilter(body.cells ?? {}, {
       tableSlug: table.slug,
       entryId: 'new',
       actor: { kind: 'user', userId: user.id },
     })
-    const slug = slugForTable(table, cells)
+    // Head settings on a new page need the same right as changing them later.
+    cells = newPageStructuralCells(tableId, cells, userHasCapability(user, 'site.structure.edit'))
+    let slug = slugForTable(table, cells)
 
     // A slug collision is an ordinary, recoverable authoring conflict, but the
     // unique index raises a driver error that would otherwise surface as an
@@ -345,7 +408,13 @@ async function handleTableRows(
     // guess whether it hit a bug or a duplicate. Name it instead.
     if (slug) {
       const clash = await getDataRowBySlug(db, scope, tableId, slug)
-      if (clash) {
+      if (clash && body.allocateSlug) {
+        // The caller asked for a new row, not for this exact slug: the list it
+        // derived the slug from can be stale or still loading, so the free
+        // name is picked here, against the table itself.
+        slug = await nextFreeDataRowSlug(db, scope, tableId, slug)
+        cells = { ...cells, slug }
+      } else if (clash) {
         return jsonResponse(
           { error: `A row with slug "${slug}" already exists in this table.`, conflictRowId: clash.id },
           { status: 409 },
@@ -423,6 +492,7 @@ async function handleTableLoopPreview(
 // ---------------------------------------------------------------------------
 
 const TABLE_ITEM_PATTERN = /^\/admin\/api\/cms\/data\/tables\/([^/]+)$/
+const TABLE_ACCESS_PATTERN = /^\/admin\/api\/cms\/data\/tables\/([^/]+)\/access$/
 const TABLE_ROWS_PATTERN = /^\/admin\/api\/cms\/data\/tables\/([^/]+)\/rows$/
 const TABLE_LOOP_PREVIEW_PATTERN = /^\/admin\/api\/cms\/data\/tables\/([^/]+)\/loop-preview$/
 
@@ -434,6 +504,7 @@ export async function handleDataTableRoutes(
   req: Request,
   db: DbClient,
   scope: BranchScope,
+  options: { uploadsDir?: string } = {},
 ): Promise<Response | null> {
   const { pathname } = new URL(req.url)
 
@@ -447,6 +518,11 @@ export async function handleDataTableRoutes(
   const loopPreviewMatch = pathname.match(TABLE_LOOP_PREVIEW_PATTERN)
   if (loopPreviewMatch) {
     return handleTableLoopPreview(req, db, scope, decodeURIComponent(loopPreviewMatch[1]))
+  }
+
+  const accessMatch = pathname.match(TABLE_ACCESS_PATTERN)
+  if (accessMatch) {
+    return handleTableAccess(req, db, decodeURIComponent(accessMatch[1]), options.uploadsDir)
   }
 
   const rowsMatch = pathname.match(TABLE_ROWS_PATTERN)

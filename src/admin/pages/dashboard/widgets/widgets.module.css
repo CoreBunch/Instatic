@@ -16,37 +16,55 @@
     margin-top: var(--space-3xs);
 }
 
-/* ── List-style widgets (Top pages, Publish queue) ────────────────── */
-.wlist {
+/* ── Publish lineup ───────────────────────────────────────────────── */
+.lineupList {
     list-style: none;
-    display: grid;
-    gap: 0;
-    margin-top: auto;
+    min-height: 0;
+    overflow-y: auto;
+    margin: auto 0 0;
     padding: 0;
 }
 
-.wlist li {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--space-m);
-    padding: var(--space-m) 0;
+.lineupList li + li {
     border-top: 1px solid var(--border);
-    font-size: var(--text-m);
+}
+
+.lineupRow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: var(--space-s);
+    padding: var(--space-m) var(--space-2xs);
     color: var(--text);
+    text-decoration: none;
 }
 
-.wlist li:first-child {
-    border-top: 0;
+.lineupRow:any-link:hover,
+.lineupRow:any-link:focus-visible {
+    background: var(--overlay-10);
 }
 
-.wlistTitle {
+.lineupRow:focus-visible {
+    outline: 1px solid var(--text-muted);
+    outline-offset: -1px;
+}
+
+.lineupName {
+    display: grid;
+    min-width: 0;
+}
+
+.lineupPath {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    display: flex;
-    align-items: center;
-    gap: var(--space-s);
+    font-family: var(--font-mono);
+    font-size: var(--text-s);
+}
+
+.lineupNoPath {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
 }
 
 .wlistMeta {
@@ -56,12 +74,6 @@
     display: inline-flex;
     align-items: center;
     gap: var(--space-s);
-}
-
-.wlistPath {
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    color: var(--text-disabled);
 }
 
 .deltaSpacing {
@@ -232,27 +244,22 @@
     color: var(--text-subtle);
 }
 
-.badgeLive {
-    background: var(--success-10);
-    color: var(--success);
-}
-
 .badgeQueued {
     background: var(--warning-10);
     color: var(--warning);
 }
 
-/* "PUBLISHED" pill — success tone, sibling of `.badgeLive` but
-   semantically a finished publish rather than an in-flight build.
-   Same colour as `.badgeLive` for now; both signal "this row is on
-   the live site" — visually distinct from the warning-tone scheduled
-   pill so the eye scans the lineup at a glance. */
+.badgeOverdue {
+    background: var(--danger-10);
+    color: var(--danger-text);
+}
+
 .badgePublished {
     background: var(--success-10);
     color: var(--success);
 }
 
-/* ── Pages / posts / status row utilities ──────────────────────────── */
+/* ── Pages / posts footer ──────────────────────────────────────────── */
 .subFootRow {
     margin-top: auto;
     display: flex;
@@ -262,30 +269,14 @@
     color: var(--text-subtle);
 }
 
-.statusRow {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--space-m) 0;
-    border-top: 1px solid var(--border);
-}
-
-.statusRow:first-of-type {
-    border-top: 0;
-}
-
-.statusLabel {
+/* ── Publishing status widget ─────────────────────────────────────── */
+.publishState {
     display: flex;
     align-items: center;
     gap: var(--space-s);
-    font-size: var(--text-s);
-    color: var(--text);
-}
-
-.statusGrid {
-    display: grid;
-    gap: 0;
-    margin-top: var(--space-3xs);
+    margin: 0 0 var(--space-xs);
+    font-size: var(--text-l);
+    color: var(--text-bright);
 }
 
 /* ── Domain widget ─────────────────────────────────────────────────── */
@@ -293,26 +284,18 @@
     font-family: var(--font-mono);
     font-size: var(--text-l);
     color: var(--text-bright);
-    margin-top: var(--space-4xs);
+    margin: 0 0 var(--space-xs);
+    overflow-wrap: anywhere;
 }
 
-.domainList {
-    margin-top: auto;
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-xs);
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    color: var(--text-subtle);
+.widgetHint {
+    margin: 0;
+    font-size: var(--text-s);
+    color: var(--text-muted);
 }
 
-.domainList > div {
-    display: flex;
-    justify-content: space-between;
-}
-
-.domainOk {
-    color: var(--success);
+.widgetHint + .widgetHint {
+    margin-top: var(--space-xs);
 }
 
 /* ── Media thumbnail grid ──────────────────────────────────────────── */

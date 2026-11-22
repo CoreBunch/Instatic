@@ -12,12 +12,18 @@
 // screen.
 //
 // `frontend.assets` requires the `frontend.assets` permission. CSP is relaxed
-// automatically based on what the plan actually contains (e.g. inline scripts
-// trigger `script-src 'unsafe-inline'`; pure-external scripts don't).
+// automatically based on what the plan actually contains: an external script
+// adds `script-src 'self'`, an executed inline script adds its own hash.
+// `'unsafe-inline'` is never granted to scripts, so inline code runs only when
+// it is declared here as a `script-inline` asset; inline event handlers
+// (`onclick="…"`) and inline scripts added to the page any other way are
+// blocked by the browser.
 //
 // Naming the placement anchors:
-//   - 'head'        → just inside <head>, before any existing tag (rare; for
-//                     things that must come first, e.g. a charset reset).
+//   - 'head'        → at the top of <head>, directly below the charset and
+//                     the page's Content-Security-Policy (rare; for things
+//                     that must come before the page's own head content).
+//                     Nothing a plugin declares is placed above the policy.
 //   - 'head-end'    → just before </head>. Default for <meta>, <link>,
 //                     stylesheets, JSON-LD, preconnects.
 //   - 'body-start'  → just after <body …>, before page content. Default for
@@ -37,9 +43,11 @@ export type FrontendAssetPlacement = 'head' | 'head-end' | 'body-start' | 'body-
  */
 export type FrontendAsset =
   /**
-   * External JS file shipped in the plugin zip (resolved against
-   * `assetBasePath`). Emits one `<script>` tag at the given placement.
-   * `strategy` maps to the matching HTML attribute (or `module` for ESM).
+   * External JS file. `src` is either a file shipped in the plugin zip
+   * (resolved against `assetBasePath`) or an absolute `https://` address on a
+   * host declared in `frontend.origins.scripts`. Emits one `<script>` tag at
+   * the given placement. `strategy` maps to the matching HTML attribute (or
+   * `module` for ESM).
    */
   | {
     kind: 'script'
@@ -51,8 +59,10 @@ export type FrontendAsset =
   }
   /**
    * Inline `<script>` block. The host wraps `content` in a `<script>` tag at
-   * the given placement. Triggers `script-src 'unsafe-inline'` in the page
-   * CSP for the inline content to actually execute.
+   * the given placement and allows exactly this script in the page CSP by its
+   * hash (line endings are normalised to LF first). A data block, such as
+   * `attrs: { type: 'application/ld+json' }`, is not executed and changes
+   * nothing in the policy.
    */
   | {
     kind: 'script-inline'
@@ -101,10 +111,20 @@ export type FrontendAsset =
   }
 
 /**
- * Manifest-level `frontend` block. Currently carries only the `assets`
- * array; kept as a nested object so future host-managed runtime declarations
- * (e.g. `runtimePackages`, `importmapExtensions`) can grow alongside it
- * without another manifest-shape migration.
+ * Third-party origins a plugin's published-page code may use. Each entry is a
+ * bare hostname (`js.example.com`) or a leading-`*.` wildcard
+ * (`*.example.com`); the host always emits it as `https://<host>`.
+ */
+export interface PluginFrontendOrigins {
+  /** Hosts scripts may be loaded from. Added to the page's `script-src`. */
+  scripts?: string[]
+  /** Hosts frames may be embedded from. Added to the page's `frame-src`. */
+  frames?: string[]
+}
+
+/**
+ * Manifest-level `frontend` block: the `assets` array and the third-party
+ * `origins` published pages may load from.
  */
 export interface PluginFrontendDeclarations {
   /**
@@ -113,4 +133,9 @@ export interface PluginFrontendDeclarations {
    * with the same placement are emitted in declaration order.
    */
   assets: FrontendAsset[]
+  /**
+   * Third-party script and frame origins, granted with `frontend.assets` and
+   * listed on the install / upgrade review.
+   */
+  origins?: PluginFrontendOrigins
 }

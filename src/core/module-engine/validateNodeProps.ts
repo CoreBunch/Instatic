@@ -24,6 +24,10 @@
  *      exactly as before, for non-conforming values and for schemas where
  *      Check-pass does not imply Parse-identity.
  *
+ *   3. REPAIR — when the slow path throws, each declared prop is parsed on
+ *      its own and only the props that still fail take the module default
+ *      (see `repairProps`). One unsupported value never resets the node.
+ *
  * Design constraints:
  *   - SOFT boundary — exceptions from coercion are caught; never bubbles.
  *   - Unknown/injected keys survive — the fast path returns them untouched on
@@ -181,8 +185,11 @@ function fastPathEligible(schema: TSchema): boolean {
  *   - Schema present, coercion succeeds → `{ ...rawProps, ...cleanedProps }`.
  *     Known props are coerced/defaulted by Value.Parse; unknown keys from
  *     rawProps survive untouched.
- *   - Schema present, coercion fails → `{ ...rawProps, ...def.defaults }`.
- *     Falls back to module defaults for known keys, unknown keys still survive.
+ *   - Schema present, coercion fails → `{ ...rawProps, ...repaired }` where
+ *     each declared prop is parsed individually and only the props that
+ *     cannot be coerced fall back to the module default for that key, when
+ *     one is declared.
+ *     Unknown keys still survive.
  */
 export function validateNodeProps(
   def: AnyModuleDefinition,
@@ -203,9 +210,54 @@ export function validateNodeProps(
     const cleaned = parseValue(def.propsSchema, rawProps) as Record<string, unknown>
     return { ...rawProps, ...cleaned }
   } catch (_err) {
-    // Value.Parse threw — the input is unrecoverable for this schema even
-    // after applying defaults and type coercions. Fall back to the module's
-    // declared defaults, while still preserving any injected unknown keys.
-    return { ...rawProps, ...def.defaults }
+    // Value.Parse threw — at least one prop cannot be coerced into shape.
+    // Repair per prop so one bad value costs only that value, not the
+    // node's whole authored content; injected unknown keys still survive.
+    return { ...rawProps, ...repairProps(def, rawProps) }
   }
+}
+
+/**
+ * Tier 3 — per-prop repair for an object schema whose whole-value Parse
+ * failed. Every declared prop is parsed on its own (Default + Convert +
+ * Check for that leaf); a prop that still fails takes the module's declared
+ * default for that key. Props that pass stay exactly as authored, so a link
+ * with an unsupported `target` keeps its `href` and `text`, and a stale
+ * enum on one field does not wipe the rest of the node.
+ *
+ * A non-object schema has no per-prop granularity and keeps the old
+ * behaviour: the module defaults replace the value wholesale. So does a
+ * schema without TypeBox's `Kind` symbol (for example one rebuilt from
+ * JSON), because Value.Parse cannot read it.
+ */
+function repairProps(
+  def: AnyModuleDefinition,
+  rawProps: Record<string, unknown>,
+): Record<string, unknown> {
+  const schema = def.propsSchema as TSchema
+  const properties: unknown = schema.properties
+  if (schema[Kind] !== 'Object' || !isSchemaObject(properties)) {
+    return { ...def.defaults }
+  }
+
+  // Browser-loaded plugin packs pass `defaults` through unvalidated; this
+  // boundary never throws, so treat a non-object as "no defaults".
+  const defaults: Record<string, unknown> =
+    typeof def.defaults === 'object' && def.defaults !== null ? def.defaults : {}
+  const repaired: Record<string, unknown> = {}
+  for (const [key, propSchema] of Object.entries(properties)) {
+    if (!isSchemaObject(propSchema)) continue
+    const value = rawProps[key]
+    // An absent optional prop without a default is valid as-is; Parse on the
+    // bare leaf would reject `undefined` because the Optional modifier only
+    // means something inside the parent object. One with a default falls
+    // through so it is filled, as the successful slow path does.
+    if (value === undefined && OptionalKind in propSchema && !('default' in propSchema)) continue
+    try {
+      repaired[key] = parseValue(propSchema, value)
+    } catch (_err) {
+      if (key in defaults) repaired[key] = defaults[key]
+    }
+  }
+  return repaired
 }

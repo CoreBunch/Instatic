@@ -29,7 +29,7 @@ describe('publishPage — Layer C hole placeholders', () => {
       'plugin.live-widget': makeModule('plugin.live-widget', { dynamic: true }),
     })
 
-    const { html } = publishPage(page, site, reg, { publishVersion: 42 })
+    const { html } = publishPage(page, site, reg, { snapshotHash: '42' })
 
     // The placeholder must be present
     expect(html).toContain('<instatic-hole')
@@ -51,7 +51,7 @@ describe('publishPage — Layer C hole placeholders', () => {
       'plugin.live-widget': makeModule('plugin.live-widget', { dynamic: true }),
     })
 
-    const { html } = publishPage(page, site, reg, { publishVersion: 1 })
+    const { html } = publishPage(page, site, reg, { snapshotHash: '1' })
 
     // The runtime script must be in <head>
     const headSection = html.slice(html.indexOf('<head>'), html.indexOf('</head>'))
@@ -73,7 +73,7 @@ describe('publishPage — Layer C hole placeholders', () => {
       'base.text': makeModule('base.text'),
     })
 
-    const { html } = publishPage(page, site, reg, { publishVersion: 1 })
+    const { html } = publishPage(page, site, reg, { snapshotHash: '1' })
 
     expect(html).not.toContain('hole-runtime.js')
     expect(html).not.toContain('<instatic-hole')
@@ -102,7 +102,7 @@ describe('publishPage — Layer C hole placeholders', () => {
       'base.text': makeModule('base.text'),
     })
 
-    const { html } = publishPage(page, site, reg, { publishVersion: 1 })
+    const { html } = publishPage(page, site, reg, { snapshotHash: '1' })
 
     // The placeholder is emitted
     expect(html).toContain('<instatic-hole')
@@ -110,7 +110,7 @@ describe('publishPage — Layer C hole placeholders', () => {
     expect(html).not.toContain('SHOULD_NOT_APPEAR')
   })
 
-  it('stamps the publishVersion onto the data-instatic-version attribute', () => {
+  it('stamps the snapshotHash onto the data-instatic-version attribute', () => {
     const page = makePage({
       root: { moduleId: 'base.body', children: ['w'] },
       w: { moduleId: 'plugin.live-widget' },
@@ -123,14 +123,43 @@ describe('publishPage — Layer C hole placeholders', () => {
       'plugin.live-widget': makeModule('plugin.live-widget', { dynamic: true }),
     })
 
-    const { html: html7 } = publishPage(page, site, reg, { publishVersion: 7 })
+    const { html: html7 } = publishPage(page, site, reg, { snapshotHash: '7' })
     expect(html7).toContain('data-instatic-version="7"')
 
-    const { html: html99 } = publishPage(page, site, reg, { publishVersion: 99 })
+    const { html: html99 } = publishPage(page, site, reg, { snapshotHash: '99' })
     expect(html99).toContain('data-instatic-version="99"')
+
+    const { html: escaped } = publishPage(page, site, reg, { snapshotHash: '" onload="bad' })
+    expect(escaped).toContain('data-instatic-version="&quot; onload=&quot;bad"')
   })
 
-  it('defaults publishVersion to 0 when not provided', () => {
+  it('stamps the hole runtime version, not the snapshot hash, onto the runtime script URL', () => {
+    const page = makePage({
+      root: { moduleId: 'base.body', children: ['w'] },
+      w: { moduleId: 'plugin.live-widget' },
+    })
+    const reg = makeRegistry({
+      'base.body': makeModule('base.body', {
+        render: (_p, children) => ({ html: `<body>${children.join('')}</body>` }),
+      }),
+      'plugin.live-widget': makeModule('plugin.live-widget', { dynamic: true }),
+    })
+
+    // Same frozen site, a new runtime (a CMS upgrade): the URL must move.
+    const before = publishPage(page, makeSite(), reg, { snapshotHash: 's', holeRuntimeVersion: 'aaa' })
+    const after = publishPage(page, makeSite(), reg, { snapshotHash: 's', holeRuntimeVersion: 'bbb' })
+    expect(before.html).toContain('/_instatic/hole-runtime.js?v=aaa"')
+    expect(after.html).toContain('/_instatic/hole-runtime.js?v=bbb"')
+
+    const escaped = publishPage(page, makeSite(), reg, { holeRuntimeVersion: '" onload="bad' })
+    expect(escaped.html).toContain('/_instatic/hole-runtime.js?v=%22%20onload%3D%22bad')
+
+    // No version supplied (editor and tool renders): no dangling `?v=`.
+    const unversioned = publishPage(page, makeSite(), reg, { snapshotHash: 's' })
+    expect(unversioned.html).toContain('src="/_instatic/hole-runtime.js" defer')
+  })
+
+  it('defaults snapshotHash to an empty string when not provided', () => {
     const page = makePage({
       root: { moduleId: 'base.body', children: ['w'] },
       w: { moduleId: 'plugin.live-widget' },
@@ -144,7 +173,7 @@ describe('publishPage — Layer C hole placeholders', () => {
     })
 
     const { html } = publishPage(page, site, reg)
-    expect(html).toContain('data-instatic-version="0"')
+    expect(html).toContain('data-instatic-version=""')
   })
 
   it('renders static siblings of a dynamic node normally', () => {
@@ -167,7 +196,7 @@ describe('publishPage — Layer C hole placeholders', () => {
       'plugin.live-widget': makeModule('plugin.live-widget', { dynamic: true }),
     })
 
-    const { html } = publishPage(page, site, reg, { publishVersion: 1 })
+    const { html } = publishPage(page, site, reg, { snapshotHash: '1' })
 
     // Static sibling IS in the output
     expect(html).toContain('STATIC_TEXT')

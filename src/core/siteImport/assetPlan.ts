@@ -3,12 +3,15 @@
  * then normalise all URL-shaped values in the plan to FileMap keys so that
  * `applyAssetRewrites` can do exact-string replacement.
  *
- * Two sources of asset references:
- *   1. PageNode props — `src`, `href`, `srcset` values set by the HTML
+ * Three sources of asset references:
+ *   1. PageNode props — `src`, `href`, `srcset`, `videoUrl`, `poster` values set by the HTML
  *      importer from element attributes, plus imported `htmlAttributes` bags
  *      such as `data-bg-src`.
  *   2. CSS rule styles — `url(...)` payloads recorded by Phase 1's
  *      `cssToStyleRules` in the returned `AssetRef[]`.
+ *   3. Page head settings (`PagePlan.seo`) — the favicon, Open Graph and
+ *      Twitter images, and extra `<link>` hrefs (preloads, touch icons,
+ *      alternates). See `normalizeSeo`.
  *
  * After normalisation:
  *   - URL-shaped props in node fragments are replaced with their FileMap key
@@ -22,13 +25,17 @@
  * asset list; only files present in the FileMap are included.
  */
 
-import { dirname, joinPaths } from './paths'
+import {
+  NON_ASSET_MIME_PREFIXES,
+  resolveAndRecord,
+  type AssetResolver,
+} from './assetResolver'
+import { normalizeHeadSeoUrls } from './headSeo'
 import type { PageNode } from '@core/page-tree'
 import type { ImportFragment } from '@core/htmlImport'
 import type { FontFileFormat } from '@core/fonts'
 import type {
   FileMap,
-  ImportWarning,
   PagePlan,
   AssetRef,
   NewStyleRule,
@@ -38,13 +45,21 @@ import type {
   ImportStylesheet,
   ImportAsset,
 } from './types'
+import type { ImportWarning } from './warnings'
 import { guessMimeType, isImportUploadableMimeType } from './mimeTypes'
 
 // ---------------------------------------------------------------------------
 // Props that may contain relative asset URLs in page nodes
 // ---------------------------------------------------------------------------
 
-const URL_BEARING_PROPS: ReadonlySet<string> = new Set(['src', 'href', 'srcset'])
+/**
+ * Node props that carry an asset URL. `videoUrl` is where the HTML importer
+ * stores a `<video src>` / first `<source src>`; without it an imported video
+ * kept its relative path. `poster` carries the native preview image.
+ * Shared with `applyAssetRewrites`
+ * so normalisation and rewrite always agree on the same props.
+ */
+export const URL_BEARING_PROPS: ReadonlySet<string> = new Set(['src', 'href', 'srcset', 'videoUrl', 'poster'])
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -62,15 +77,16 @@ export interface CssFileResult {
 }
 
 /**
- * A stylesheet kept as a file (`mode: 'file'`), pre-flattening. Each part is
+ * A stylesheet imported as a file (kept `mode: 'file'`, or unlinked and
+ * site-wide), pre-flattening. Each part is
  * one source file of the sheet's expanded `@import` graph, in cascade order —
  * kept separate until url() normalisation because relative `url(...)` paths
  * resolve against the PART's own directory, not the top-level sheet's.
  */
 export interface RawStylesheetSource {
-  /** FileMap key of the top-level linked CSS file. */
+  /** FileMap key of the top-level CSS file. */
   path: string
-  /** HTML FileMap sources that linked this stylesheet. */
+  /** HTML FileMap sources that linked this stylesheet. Empty for an unlinked, site-wide sheet. */
   pageSources: string[]
   /** Cascade ordering within the user-stylesheet bundle. */
   priority: number
@@ -94,26 +110,6 @@ interface AssetPlanResult {
   /** Deduplicated asset list for upload, keyed by FileMap path. */
   assets: ImportAsset[]
   warnings: ImportWarning[]
-}
-
-/**
- * Everything URL normalisation needs, gathered once per import.
- *
- * The four normalisers below (node props, CSS bags, raw CSS text, `@font-face`)
- * all funnel into `resolveAndRecord`, and all of them need the same four
- * things — so they take the resolver rather than passing the pieces around
- * individually. The two caches live here for the same reason: they are per
- * import, not per call.
- */
-interface AssetResolver {
-  fileMap: FileMap
-  /** Deduplicated assets to upload, keyed by FileMap key. */
-  assetMap: Map<string, ImportAsset>
-  warnings: ImportWarning[]
-  /** Lazily built by `normalizedIndex` — see the note there. */
-  byNormalizedPath?: ReadonlyMap<string, string | null>
-  /** One `unresolved-asset` warning per path, however many pages reference it. */
-  reportedMissing: Set<string>
 }
 
 /** Format preference when an `@font-face` lists several fallback files. */
@@ -159,7 +155,7 @@ export function buildAssetPlan(
   // --- Normalise node fragments ---
   const normalizedPagePlans: PagePlan[] = pagePlans.map((plan) => {
     const normalizedFragment = normalizeFragment(plan.nodeFragment, plan.source, plan.imageAlts, resolver)
-    return { ...plan, nodeFragment: normalizedFragment }
+    return { ...plan, nodeFragment: normalizedFragment, seo: normalizeHeadSeoUrls(plan.seo, plan.source, resolver) }
   })
 
   // --- Normalise CSS rules ---
@@ -297,6 +293,7 @@ function buildFontFamilies(
         variant: face.variant,
         format: best.format,
         src: best.src,
+        ...(face.fontDisplay ? { fontDisplay: face.fontDisplay } : {}),
         ...(face.unicodeRange ? { unicodeRange: face.unicodeRange } : {}),
       })
     }
@@ -517,162 +514,9 @@ function normalizeRules(
 // Shared helpers
 // ---------------------------------------------------------------------------
 
-/** URLs that should always pass through unchanged (external + special schemes). */
-const EXTERNAL_URL_RE = /^https?:\/\/|^\/\/|^data:|^mailto:|^tel:|^#/
-
 function isStringRecord(value: unknown): value is Record<string, string> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false
   return Object.values(value).every((entry) => typeof entry === 'string')
-}
-
-/**
- * MIME type prefixes that identify web document / script sources.
- *
- * Files with these types are processed by the pipeline as pages or style
- * sources, not uploaded to the media library.  An `<a href="about.html">`
- * anchor should never cause `about.html` to appear in `plan.assets`, even
- * if the file exists in the FileMap.
- */
-const NON_ASSET_MIME_PREFIXES: readonly string[] = [
-  'text/html',
-  'text/css',
-  'text/javascript',
-  'application/javascript',
-  'application/x-javascript',
-]
-
-/**
- * Resolve a raw URL relative to `basePath`, look it up in the FileMap,
- * register the asset in `assetMap`, and return the FileMap key.
- *
- * Returns null when:
- *   - the URL is external / uses a special scheme,
- *   - the resolved path is not in the FileMap (a media reference that lands
- *     here also emits an `unresolved-asset` warning), or
- *   - the resolved file is a web document / script (HTML, CSS, JS), or any
- *     other MIME the CMS media endpoint cannot store.
- */
-function resolveAndRecord(rawUrl: string, basePath: string, resolver: AssetResolver): string | null {
-  if (!rawUrl || EXTERNAL_URL_RE.test(rawUrl)) return null
-
-  const resolvedPath = resolveRelativePath(rawUrl, basePath)
-  if (!resolvedPath) return null
-
-  const fileMapKey = resolveFileMapKey(resolvedPath, resolver)
-  if (!fileMapKey) return null
-
-  const entry = resolver.fileMap.files[fileMapKey]
-  if (!entry) return null
-
-  const { assetMap } = resolver
-  const mimeType = entry.mimeType ?? guessMimeType(fileMapKey)
-
-  // HTML, CSS, and JS files are page/style sources — never upload them as
-  // media assets.  An anchor <a href="other-page.html"> must not cause
-  // "other-page.html" to appear in plan.assets. Likewise, source companions
-  // such as SCSS, sourcemaps, PHP mail handlers, and OS metadata are not
-  // public media assets and would be rejected by the media endpoint.
-  if (NON_ASSET_MIME_PREFIXES.some((prefix) => mimeType.toLowerCase().startsWith(prefix))) {
-    return null
-  }
-  if (!isImportUploadableMimeType(mimeType)) return null
-
-  if (!assetMap.has(fileMapKey)) {
-    assetMap.set(fileMapKey, { sourcePath: fileMapKey, mimeType, bytes: entry.bytes })
-  }
-
-  return fileMapKey
-}
-
-/**
- * Turn a resolved archive path into the FileMap key that actually holds the
- * bytes, and report the ones that hold nothing.
- *
- * An exact hit is the normal case. The fallback exists because exporters do
- * not always agree with themselves about filenames: a file stored as
- * `101-&Berlin-Office-Us+ Coworking.webp` gets referenced from the HTML as
- * `101-Berlin-Office-Us-Coworking.webp`, and the page imports with a broken
- * image through no fault of the archive's owner. Comparing punctuation-
- * insensitively reunites the two.
- *
- * The match must be UNIQUE. Two files that differ only in punctuation are two
- * different files, and picking one would silently put the wrong image on the
- * page — a worse outcome than the broken reference we started with. Ambiguity
- * and genuine absence both fall through to the same warning.
- */
-function resolveFileMapKey(resolvedPath: string, resolver: AssetResolver): string | null {
-  if (resolver.fileMap.files[resolvedPath]) return resolvedPath
-
-  const match = normalizedIndex(resolver).get(normalizeAssetPath(resolvedPath))
-  if (match) return match
-
-  // Only media references are worth reporting. Anchors point at pages and
-  // extensionless routes that legitimately live outside the archive, and a
-  // wall of warnings about those would bury the images that really are gone.
-  if (isImportUploadableMimeType(guessMimeType(resolvedPath)) && !resolver.reportedMissing.has(resolvedPath)) {
-    resolver.reportedMissing.add(resolvedPath)
-    resolver.warnings.push({
-      kind: 'unresolved-asset',
-      message: `"${resolvedPath}" is referenced but not in the archive — the element imports with a broken link. Re-export the site, or upload the file and repoint it.`,
-      path: resolvedPath,
-    })
-  }
-  return null
-}
-
-/**
- * Index of every FileMap key by its punctuation-insensitive form. Keys that
- * collide map to `null` — an ambiguous match is no match.
- *
- * Built on the first miss: an archive whose references all resolve exactly
- * never pays for it.
- */
-function normalizedIndex(resolver: AssetResolver): ReadonlyMap<string, string | null> {
-  if (resolver.byNormalizedPath) return resolver.byNormalizedPath
-
-  const index = new Map<string, string | null>()
-  for (const filePath of Object.keys(resolver.fileMap.files)) {
-    const key = normalizeAssetPath(filePath)
-    index.set(key, index.has(key) ? null : filePath)
-  }
-  resolver.byNormalizedPath = index
-  return index
-}
-
-/**
- * Strip a path down to what survives an exporter's filename sanitising:
- * lowercase, with everything but letters, digits, `.` and `/` removed. That
- * folds `&`, `+`, spaces, and `-` together, which is exactly the set that
- * differs between a stored filename and the reference written to it.
- */
-function normalizeAssetPath(path: string): string {
-  return path.toLowerCase().replace(/[^a-z0-9./]+/g, '')
-}
-
-/**
- * Resolve a raw URL against a base file path to produce a FileMap key.
- * Returns null for traversal-escaping paths or empty strings.
- *
- * As in `resolveHref`, a query string or fragment is stripped before the
- * lookup — it addresses a file, it does not identify one. Callers keep the
- * original `rawUrl` for the in-place CSS string replacement
- * (`replaceRawUrlInValue`), so stripping here affects only which FileMap entry
- * is found.
- */
-function resolveRelativePath(rawUrl: string, basePath: string): string | null {
-  const baseDir = dirname(basePath)
-
-  const pathOnly = rawUrl.split(/[?#]/)[0]
-  if (!pathOnly) return null
-
-  const resolved = pathOnly.startsWith('/')
-    ? pathOnly.slice(1) // root-relative: strip leading /
-    : joinPaths(baseDir, pathOnly)
-
-  // Reject escaped or empty results
-  if (!resolved || resolved.startsWith('../')) return null
-
-  return resolved
 }
 
 /** Replace a raw URL payload inside a CSS `url()` expression with the FileMap key. */
@@ -683,4 +527,3 @@ function replaceRawUrlInValue(value: string, rawUrl: string, fileMapKey: string)
   const re = new RegExp(`url\\(\\s*(['"]?)${escaped}\\1\\s*\\)`, 'g')
   return value.replace(re, `url('${fileMapKey}')`)
 }
-

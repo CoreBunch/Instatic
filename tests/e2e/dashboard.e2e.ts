@@ -1,6 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { Type, type Static } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
+import { ADMIN_BASE_URL } from './helpers'
 
 const DashboardLayoutSaveItemSchema = Type.Object({
   id: Type.String(),
@@ -77,9 +78,9 @@ test.describe('dashboard', () => {
       await expectLoaded(media)
       await expect(media).toContainText(/files/)
 
-      const status = await expectWidget(page, 'status', 'Status')
-      await expect(status).toContainText('Site')
-      await expect(status).toContainText('Live')
+      const status = await expectWidget(page, 'status', 'Publishing status')
+      await expectLoaded(status)
+      await expect(status).toContainText('Not published')
 
       const activity = await expectWidget(page, 'activity', 'Activity')
       await expectLoaded(activity)
@@ -91,8 +92,12 @@ test.describe('dashboard', () => {
       await expectLoaded(plugins)
 
       const domain = await expectWidget(page, 'domain', 'Domain')
-      await expect(domain).toContainText('instatic.com')
-      await expect(domain).toContainText('HTTPS')
+      await expectLoaded(domain)
+      const publicOrigin = new URL(ADMIN_BASE_URL)
+      await expect(domain.getByText(publicOrigin.host, { exact: true })).toBeVisible()
+      await expect(domain).toContainText(
+        publicOrigin.protocol === 'https:' ? 'HTTPS configured' : 'Configured public URL',
+      )
     })
 
     await test.step('mobile dashboard remains contained', async () => {
@@ -121,6 +126,15 @@ test.describe('dashboard', () => {
   test('customizes the widget grid and persists changes (DASH-002)', async ({
     page,
   }) => {
+    // Start from the default layout. A previous attempt of this test that
+    // failed partway leaves its widget on the dashboard, and the retry would
+    // then fail on its first assertion instead of testing anything.
+    const reset = await page.request.delete(
+      `${ADMIN_BASE_URL}/admin/api/cms/me/preferences/dashboard-layout`,
+      { headers: { origin: ADMIN_BASE_URL } },
+    )
+    expect(reset.status(), 'reset the saved dashboard layout').toBe(204)
+
     await page.goto('/admin/dashboard')
     await expect(page).toHaveURL(/\/admin\/dashboard$/)
     await expect(page.getByText('09 blocks')).toBeVisible()
@@ -340,8 +354,7 @@ async function dragLocatorBy(
   deltaX: number,
   deltaY: number,
 ): Promise<void> {
-  const box = await locator.boundingBox()
-  if (!box) throw new Error('Cannot drag locator without a bounding box')
+  const box = await settledBoundingBox(locator)
   const startX = box.x + box.width / 2
   const startY = box.y + box.height / 2
   await page.mouse.move(startX, startY)
@@ -350,9 +363,33 @@ async function dragLocatorBy(
   await page.mouse.up()
 }
 
+type Box = NonNullable<Awaited<ReturnType<Locator['boundingBox']>>>
+
+/**
+ * The element's box once it has stopped moving. Entering customize mode
+ * reflows the grid, and a drag whose start point was read mid-reflow begins
+ * somewhere else than the widget: the drop then lands in the column it
+ * started from. Two identical consecutive readings mean the layout is at rest.
+ */
+async function settledBoundingBox(locator: Locator): Promise<Box> {
+  let previous: Box | null = null
+  let settled: Box | null = null
+  await expect(async () => {
+    const box = await locator.boundingBox()
+    const unchanged =
+      box !== null && previous !== null &&
+      box.x === previous.x && box.y === previous.y &&
+      box.width === previous.width && box.height === previous.height
+    previous = box
+    expect(unchanged, 'element is still moving').toBe(true)
+    settled = box
+  }).toPass({ intervals: [50], timeout: 5_000 })
+  if (!settled) throw new Error('Cannot drag locator without a bounding box')
+  return settled
+}
+
 async function dragWidgetToLibrary(page: Page, widgetCell: Locator): Promise<void> {
-  const box = await widgetCell.boundingBox()
-  if (!box) throw new Error('Cannot remove widget without a bounding box')
+  const box = await settledBoundingBox(widgetCell)
   const startX = box.x + box.width / 2
   const startY = box.y + box.height / 2
   await page.mouse.move(startX, startY)

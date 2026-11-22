@@ -15,6 +15,7 @@ import {
   updateCmsDataRowStatus,
 } from '@core/persistence'
 import { useWorkspaceLayout } from '@admin/state/workspaceLayout'
+import { isMobileViewport } from '@admin/lib/mobileViewport'
 import type {
   DataTable,
   DataRow,
@@ -93,7 +94,7 @@ export function useContentWorkspace({
     selectedEntryRef.current = entry
     editorViewRef.current = null
     setSelectedEntry(entry)
-    if (entry) setRightPanel({ collapsed: false })
+    if (entry && !isMobileViewport()) setRightPanel({ collapsed: false })
   }, [setRightPanel])
 
   useEffect(() => {
@@ -348,12 +349,14 @@ export function useContentWorkspace({
 
   const createUntitledEntry = async () => {
     if (!selectedCollection) return null
-    const nextSlug = entries.length === 0 ? 'untitled' : `untitled-${entries.length + 1}`
+    // The server picks the free slug. The loaded list cannot: it may still be
+    // loading, be filtered to the caller's own rows, or already be out of date.
     const row = await createCmsDataRow(selectedCollection.id, {
       cells: {
         title: 'Untitled',
-        slug: nextSlug,
+        slug: 'untitled',
       },
+      allocateSlug: true,
     })
     // Keep "Untitled" stored on the server + visible in the sidebar list, but
     // hand the editor a draft view with an empty title so the title field
@@ -374,6 +377,7 @@ export function useContentWorkspace({
     if (!collection) throw new Error('Collection not found')
     const duplicated = await createCmsDataRow(entry.tableId, {
       cells: buildDuplicateRowCells(collection, entry, entries),
+      allocateSlug: true,
     })
     setEntries((current) => updateRowList(current, duplicated))
     selectEntry(duplicated)

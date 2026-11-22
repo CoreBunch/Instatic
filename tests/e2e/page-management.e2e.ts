@@ -176,7 +176,8 @@ test.describe('page management', () => {
       await expect(dialog).toBeHidden({ timeout: 20_000 })
     })
 
-    await test.step('the dashboard reports the scheduled page row', async () => {
+    await test.step('the dashboard shows the exact route and marks the page overdue when its time passes', async () => {
+      await page.clock.install()
       await page.goto('/admin/dashboard')
       await expect(page).toHaveURL(/\/admin\/dashboard$/)
 
@@ -186,8 +187,22 @@ test.describe('page management', () => {
 
       const publishLineup = page.locator('[data-widget="publish"]')
       await expect(publishLineup).toContainText('Publish lineup')
-      await expect(publishLineup).toContainText(`/${slug}`)
-      await expect(publishLineup).toContainText('scheduled')
+      const path = `/${slug}`
+      const scheduledRow = publishLineup.getByRole('link').filter({ has: page.getByText(path, { exact: true }) })
+      await expect(scheduledRow).toContainText('scheduled')
+      const time = scheduledRow.locator('time')
+      await expect(time).toHaveAttribute('datetime', /^\d{4}-\d{2}-\d{2}T/)
+      const scheduledAt = await time.getAttribute('datetime')
+      const now = await page.evaluate(() => Date.now())
+      const refreshed = page.waitForResponse((response) =>
+        new URL(response.url()).pathname === '/admin/api/cms/dashboard/publish-lineup' && response.ok())
+      await page.clock.fastForward(Math.max(0, Date.parse(scheduledAt ?? '') - now) + 1_000)
+      await refreshed
+      await expect(scheduledRow).toContainText('overdue')
+
+      await scheduledRow.press('Enter')
+      await expect(page).toHaveURL(new RegExp('/admin/site\\?page=' + slug + '$'))
+      await expect(canvasFrame(page).getByText(draftText)).toBeVisible()
     })
   })
 })

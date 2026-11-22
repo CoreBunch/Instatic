@@ -116,7 +116,7 @@ export function buildPreviewCells(table: DataTable): DataRowCells {
 /**
  * Convert a `DataTable`'s field definitions into a synthetic `LoopItem` for
  * canvas preview. The item's `fields` map mirrors the shape produced at
- * runtime by `publishedDataRowToLoopItem` so template bindings resolve the
+ * runtime by `publishedDataRowToEntryItem` so template bindings resolve the
  * same way during preview as they do when rendering a real published row.
  */
 export function dataTablePreviewToLoopItem(table: DataTable): LoopItem {

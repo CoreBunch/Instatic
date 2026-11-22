@@ -585,12 +585,15 @@ const UpdateDataTableInputSchema = Type.Object({
   pluralLabel: Type.Optional(Type.String()),
   primaryFieldId: Type.Optional(Type.String()),
   fields: Type.Optional(Type.Array(DataFieldSchema)),
+  appendFields: Type.Optional(Type.Array(DataFieldSchema)),
 })
 
 export type UpdateDataTableInput = Static<typeof UpdateDataTableInputSchema>
 
 const CreateDataRowInputSchema = Type.Object({
   cells: Type.Optional(DataRowCellsSchema),
+  /** Take the next free `<slug>-N` when the slug is in use, instead of failing. */
+  allocateSlug: Type.Optional(Type.Boolean()),
 })
 
 export type CreateDataRowInput = Static<typeof CreateDataRowInputSchema>

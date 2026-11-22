@@ -7,7 +7,7 @@
  * a new branch is two keystrokes away without leaving the toolbar. Managing
  * (rename, delete) lives in a dialog behind "Manage branches…".
  */
-import { Suspense, lazy, useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { Suspense, lazy, useEffect, useId, useRef, useState, type RefObject, type FormEvent, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { ChevronLeftIcon } from 'pixel-art-icons/icons/chevron-left'
@@ -88,7 +88,7 @@ function BranchRow({
   )
 }
 
-export function BranchChip() {
+export function BranchChip({ sheetAnchor }: { sheetAnchor?: RefObject<HTMLButtonElement | null> }) {
   const user = useCurrentAdminUser()
   const canCreate = hasCapability(user, 'site.branches.create')
   const branches = useBranches()
@@ -142,7 +142,7 @@ export function BranchChip() {
     // Unmounting the focused search field drops focus to <body>. Hand it
     // back to the chip — unless the dismissing click already moved it
     // elsewhere, or a switch is remounting the toolbar around the chip.
-    const chip = chipRef.current
+    const chip = (sheetAnchor ?? chipRef).current
     setTimeout(() => {
       if (document.activeElement === document.body && chip?.isConnected) chip.focus()
     }, 0)
@@ -172,19 +172,19 @@ export function BranchChip() {
         variant="ghost"
         size="xs"
         type="button"
-        iconOnly
-        aria-label={onMain ? 'Branches' : `Branch . Switch branch`}
+        iconOnly={!sheetAnchor}
+        aria-label={onMain ? 'Branches' : `Branch ${current.name}. Switch branch`}
         aria-haspopup={mode === 'create' ? 'dialog' : 'menu'}
         aria-expanded={open}
         active={open}
-        className={cn(styles.chip, !onMain && styles.chipBranch)}
+        className={sheetAnchor ? undefined : cn(styles.chip, !onMain && styles.chipBranch)}
         style={branchAccentStyle(current)}
-        tooltip={onMain ? 'Branches' : `On  — switch branch`}
+        tooltip={sheetAnchor ? undefined : onMain ? 'Branches' : `On ${current.name} — switch branch`}
         tooltipSide="bottom"
         data-testid="branch-chip"
         onClick={() => (open ? close() : openSwitcher('list'))}
       >
-        <GitBranchSolidIcon size={12} aria-hidden="true" />
+        {sheetAnchor ? 'Branches' : <GitBranchSolidIcon size={12} aria-hidden="true" />}
       </Button>
 
       {open && createPortal(
@@ -195,6 +195,7 @@ export function BranchChip() {
           ariaLabel={mode === 'create' ? 'Create branch' : 'Branches'}
           onClose={close}
           anchorRef={chipRef}
+          getAnchorRect={sheetAnchor && (() => sheetAnchor.current?.getBoundingClientRect() ?? null)}
           side="bottom"
           align="start"
           width={360}

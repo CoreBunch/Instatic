@@ -64,6 +64,10 @@ describe('self-host docker config', () => {
     expect(compose).toContain('condition: service_healthy')
     expect(compose).toContain('postgres_data:')
     expect(compose).toContain('uploads:')
+    // Runtime npm packages live on a volume in both database modes, outside
+    // the publicly served uploads directory.
+    expect(compose).toContain('RUNTIME_CACHE_DIR: /app/data/runtime-cache')
+    expect(compose).toContain('- data:/app/data')
     expect(buildOverride).toContain('build:')
     expect(buildOverride).toContain('dockerfile: Dockerfile')
   })

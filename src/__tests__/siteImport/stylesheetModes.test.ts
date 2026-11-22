@@ -53,7 +53,7 @@ function resolveWithDefaults(plan: ImportPlan): ImportPlan {
 // ---------------------------------------------------------------------------
 
 describe('cross-sheet class conflicts', () => {
-  it('flags divergent definitions and renames the later one by default', () => {
+  it('confines unrelated per-page definitions to their own pages by default', () => {
     const plan = buildImportPlan({
       fileMap: twoPageFileMap(
         '.btn { border-radius: 0; } .btn:hover { opacity: 0.9; }',
@@ -62,35 +62,61 @@ describe('cross-sheet class conflicts', () => {
       currentSite: makeEmptySiteDocument(),
     })
 
-    expect(plan.conflicts.crossSheetClasses).toHaveLength(1)
-    const conflict = plan.conflicts.crossSheetClasses[0]
-    expect(conflict.desiredName).toBe('btn')
-    expect(conflict.pageSources).toEqual(['original.html'])
-    expect(conflict.sources).toEqual(['css/b.css'])
-    expect(conflict.defaultResolution).toEqual({ action: 'auto-rename', resolvedName: 'btn-2' })
+    // Each sheet would reach the other page through the global registry.
+    expect(plan.conflicts.crossSheetClasses.map((c) => [c.kind, c.sources, c.pageSources])).toEqual([
+      ['leak', ['css/a.css'], ['index.html']],
+      ['leak', ['css/b.css'], ['original.html']],
+    ])
+    expect(plan.conflicts.crossSheetClasses.map((c) => c.defaultResolution)).toEqual([
+      { action: 'auto-rename', resolvedName: 'btn-2' },
+      { action: 'auto-rename', resolvedName: 'btn-3' },
+    ])
 
     const resolved = resolveWithDefaults(plan)
-
-    // The kept definition owns the bare name; the renamed one is materialised.
     const classRules = resolved.styleRules.filter((r) => r.kind === 'class')
-    expect(classRules.map((r) => r.name).sort()).toEqual(['btn', 'btn-2'])
-    expect(classRules.find((r) => r.name === 'btn')?.styles.borderTopLeftRadius).toBe('0px')
-    expect(classRules.find((r) => r.name === 'btn-2')?.styles.borderTopLeftRadius).toBe('999px')
-
-    // The renamed cascade's ambient selectors and node tokens follow.
+    expect(classRules.find((r) => r.name === 'btn-2')?.styles.borderTopLeftRadius).toBe('0px')
+    expect(classRules.find((r) => r.name === 'btn-3')?.styles.borderTopLeftRadius).toBe('999px')
     const hoverSelectors = resolved.styleRules
       .filter((r) => r.kind === 'ambient')
       .map((r) => r.selector)
       .sort()
-    expect(hoverSelectors).toEqual(['.btn-2:hover', '.btn:hover'])
+    expect(hoverSelectors).toEqual(['.btn-2:hover', '.btn-3:hover'])
 
-    const pageA = resolved.pages.find((p) => p.source === 'index.html')!
-    const pageB = resolved.pages.find((p) => p.source === 'original.html')!
-    const tokensOf = (page: typeof pageA) =>
-      Object.values(page.nodeFragment.nodes).flatMap((n) => n.classIds ?? [])
-    expect(tokensOf(pageA)).toContain('btn')
-    expect(tokensOf(pageB)).toContain('btn-2')
-    expect(tokensOf(pageB)).not.toContain('btn')
+    // Elements keep the authored class and gain their own sheet's name.
+    const tokensOf = (source: string) =>
+      Object.values(resolved.pages.find((p) => p.source === source)!.nodeFragment.nodes)
+        .flatMap((n) => n.classIds ?? [])
+    expect(tokensOf('index.html')).toEqual(['btn', 'btn-2'])
+    expect(tokensOf('original.html')).toEqual(['btn', 'btn-3'])
+  })
+
+  it('falls back to a divergent definition when pages load the sheets in opposite orders', () => {
+    const pageHtml = (hrefs: string[]) => `<!doctype html><html><head>
+      ${hrefs.map((href) => `<link rel="stylesheet" href="${href}">`).join('')}
+    </head><body><a class="btn" href="#">Buy</a></body></html>`
+    const plan = buildImportPlan({
+      fileMap: {
+        files: {
+          'index.html': { bytes: encoder.encode(pageHtml(['css/a.css', 'css/b.css'])), mimeType: 'text/html' },
+          'original.html': { bytes: encoder.encode(pageHtml(['css/b.css', 'css/a.css'])), mimeType: 'text/html' },
+          'css/a.css': { bytes: encoder.encode('.btn { border-radius: 0; }'), mimeType: 'text/css' },
+          'css/b.css': { bytes: encoder.encode('.btn { border-radius: 999px; }'), mimeType: 'text/css' },
+        },
+      },
+      currentSite: makeEmptySiteDocument(),
+    })
+    expect(plan.conflicts.crossSheetClasses.map((c) => [c.kind, c.pageSources])).toEqual([
+      ['divergent', ['original.html']],
+    ])
+
+    const resolved = resolveWithDefaults(plan)
+    const renamed = resolved.styleRules.find((r) => r.kind === 'class' && r.name === 'btn-2')
+    // original.html loads a.css last, so its materialised definition is a.css's.
+    expect(renamed?.styles.borderTopLeftRadius).toBe('0px')
+    const tokens = Object.values(resolved.pages.find((p) => p.source === 'original.html')!.nodeFragment.nodes)
+      .flatMap((n) => n.classIds ?? [])
+    expect(tokens).toContain('btn-2')
+    expect(tokens).not.toContain('btn')
   })
 
   it('does not flag identical definitions', () => {
@@ -122,7 +148,7 @@ describe('cross-sheet class conflicts', () => {
     expect(plan.conflicts.crossSheetClasses).toHaveLength(0)
   })
 
-  it('preserves priority when materialising a renamed divergent definition', () => {
+  it('preserves priority when confining a definition under a new name', () => {
     const plan = buildImportPlan({
       fileMap: twoPageFileMap(
         '.btn { color: red; }',
@@ -132,13 +158,13 @@ describe('cross-sheet class conflicts', () => {
     })
     const resolved = resolveWithDefaults(plan)
     const renamed = resolved.styleRules.find(
-      (rule) => rule.kind === 'class' && rule.name === 'btn-2',
+      (rule) => rule.kind === 'class' && rule.name === 'btn-3',
     )
     expect(renamed?.styles.color).toBe('blue')
     expect(renamed?.stylePriorities).toEqual({ color: 'important' })
   })
 
-  it('keep-first (skip) drops the divergent definition and binds its pages to the first', () => {
+  it('skip drops a leaking sheet\'s fragments; its pages keep the other definitions', () => {
     const plan = buildImportPlan({
       fileMap: twoPageFileMap(
         '.btn { border-radius: 0; }',
@@ -146,24 +172,18 @@ describe('cross-sheet class conflicts', () => {
       ),
       currentSite: makeEmptySiteDocument(),
     })
-    const conflict = plan.conflicts.crossSheetClasses[0]
+    const [rowA, rowB] = plan.conflicts.crossSheetClasses
 
     const resolved = applyConflictResolutions(plan, [], [], [], [
-      { ...conflict, defaultResolution: { action: 'skip' } },
+      { ...rowA, defaultResolution: { action: 'skip' } },
+      rowB,
     ])
 
-    const btnRules = resolved.styleRules.filter((r) =>
-      (r.kind === 'class' && r.name === 'btn') || (r.kind === 'ambient' && r.selector === '.btn'),
-    )
-    expect(btnRules).toHaveLength(1)
-    expect(btnRules[0].styles.borderTopLeftRadius).toBe('0px')
-
-    const pageB = resolved.pages.find((p) => p.source === 'original.html')!
-    const tokens = Object.values(pageB.nodeFragment.nodes).flatMap((n) => n.classIds ?? [])
-    expect(tokens).toContain('btn')
+    const btnRules = resolved.styleRules.filter((r) => r.selector === '.btn' || r.selector === '.btn-3')
+    expect(btnRules.map((r) => [r.selector, r.styles.borderTopLeftRadius])).toEqual([['.btn-3', '999px']])
   })
 
-  it('overwrite makes the divergent definition win the bare name', () => {
+  it('overwrite keeps a leaking sheet on the bare name for every page', () => {
     const plan = buildImportPlan({
       fileMap: twoPageFileMap(
         '.btn { border-radius: 0; }',
@@ -171,17 +191,15 @@ describe('cross-sheet class conflicts', () => {
       ),
       currentSite: makeEmptySiteDocument(),
     })
-    const conflict = plan.conflicts.crossSheetClasses[0]
+    const [rowA, rowB] = plan.conflicts.crossSheetClasses
 
     const resolved = applyConflictResolutions(plan, [], [], [], [
-      { ...conflict, defaultResolution: { action: 'overwrite' } },
+      { ...rowA, defaultResolution: { action: 'overwrite' } },
+      rowB,
     ])
 
-    const btnRules = resolved.styleRules.filter((r) =>
-      (r.kind === 'class' && r.name === 'btn') || (r.kind === 'ambient' && r.selector === '.btn'),
-    )
-    expect(btnRules).toHaveLength(1)
-    expect(btnRules[0].styles.borderTopLeftRadius).toBe('999px')
+    const bare = resolved.styleRules.filter((r) => r.selector === '.btn')
+    expect(bare.map((r) => r.styles.borderTopLeftRadius)).toEqual(['0px'])
   })
 
   it('reserves rename suffixes against existing site class names', () => {
@@ -251,8 +269,8 @@ describe('stylesheet mode: file', () => {
     expect(plan.conflicts.crossSheetClasses).toHaveLength(0)
     // The page no longer treats the sheet as a converted cascade…
     expect(plan.pages[0].linkedCssPaths).toEqual([])
-    // …but the sheet is used, not "unused CSS".
-    expect(plan.unusedCss).toHaveLength(0)
+    // …and it is the one kept sheet, not also an unlinked site-wide one.
+    expect(plan.stylesheets.filter((sheet) => sheet.pageSources.length === 0)).toHaveLength(0)
     // Node class tokens stay — commit auto-creates bare classes for them.
     const tokens = Object.values(plan.pages[0].nodeFragment.nodes).flatMap((n) => n.classIds ?? [])
     expect(tokens).toContain('spec-cell')
@@ -287,7 +305,8 @@ describe('stylesheet mode: file', () => {
     expect(content.indexOf('margin: 0')).toBeLessThan(content.indexOf('.spec-cell'))
     expect(content).not.toContain('@import')
     expect(plan.googleFonts.map((f) => f.family)).toEqual(['Manrope'])
-    expect(plan.unusedCss).toHaveLength(0)
+    // The @imported file is part of the kept sheet, not a sheet of its own.
+    expect(plan.stylesheets.map((sheet) => sheet.path)).toEqual(['css/style.css'])
   })
 
   it('converted sheets are unaffected by another sheet being kept', () => {

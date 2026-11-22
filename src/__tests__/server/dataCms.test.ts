@@ -14,7 +14,7 @@ import {
 } from '../../../server/repositories/data'
 import { handleServerRequest } from '../../../server/router'
 import { resetForTests } from '../../../server/publish/renderCache'
-import { createFakeDb } from './dbTestFake'
+import { answerAccessIndexRead, createFakeDb } from './dbTestFake'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
 
 type QueryHandler = (sql: string, params: unknown[]) => DbResult | undefined
@@ -22,6 +22,8 @@ type QueryHandler = (sql: string, params: unknown[]) => DbResult | undefined
 function makeDataFakeDb(handlers: QueryHandler[]) {
   return createFakeDb(async (rawSql, params): Promise<DbResult> => {
     const sql = rawSql.replace(/\s+/g, ' ').trim().toLowerCase()
+    const accessIndexRead = answerAccessIndexRead(sql)
+    if (accessIndexRead) return accessIndexRead
     for (const handler of handlers) {
       const result = handler(sql, params)
       if (result) return result

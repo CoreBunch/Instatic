@@ -6,6 +6,20 @@
  */
 import type { DbClient } from './db/client'
 import type { CollabRelay } from './collab/relay'
+import type { ManagerConfig } from './manager/config'
+
+/** What the Manager API needs from the process that hosts it. */
+export interface ManagerRuntime {
+  config: ManagerConfig
+  /** Ids of every migration this server build knows, applied or not. */
+  knownMigrationIds: string[]
+  /**
+   * Flush and exit with the "restart me" code so a staged restore is applied
+   * on the next boot. Returns immediately; the exit happens after the
+   * response is sent.
+   */
+  requestRestart: () => void
+}
 
 export interface ServerRuntime {
   db: DbClient
@@ -18,6 +32,8 @@ export interface ServerRuntime {
    */
   databaseUrl?: string
   collabRelay?: CollabRelay
+  /** Present on every boot; the API itself is live only when a token is configured. */
+  manager?: ManagerRuntime
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   serializeRouteRequest,
 } from '../../../server/plugins/host/routeIo'
 import type { HostPluginRecord } from '../../../server/plugins/host/types'
+import { PluginRateLimitStore } from '../../../server/plugins/host/pluginRateLimit'
 
 /**
  * Binary safety for everything crossing the plugin sandbox boundary
@@ -96,6 +97,7 @@ function makeEntry(allowlist: string[]): HostPluginRecord {
   return {
     manifest: { id: 'test.plugin', networkAllowedHosts: allowlist },
     inflightFetches: new Map(),
+    rateLimits: new PluginRateLimitStore(10),
   } as unknown as HostPluginRecord
 }
 

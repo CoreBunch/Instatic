@@ -4,7 +4,7 @@
  * Replaces 33+ one-off button classes across 37 files.
  *
  * Variants:  ghost | secondary | primary | destructive
- * Sizes:     micro (18px) | xs (26px) | sm (28px, default) | md (32px) | lg (44px touch target)
+ * Sizes:     micro (18px) | xs (24px) | sm (28px) | md (32px, default) | lg (44px touch target)
  * Icon-only: iconOnly={true} → square, requires aria-label
  * Pressed:   pressed={true} → aria-pressed + active bg (toolbar toggles)
  * Tooltip:   tooltip={...} → wraps with Tooltip primitive (works for disabled too).
@@ -22,6 +22,7 @@ import { type Ref, type ReactNode } from "react";
 import { LoaderIcon } from "pixel-art-icons/icons/loader";
 import { cn } from "@ui/cn";
 import { Tooltip, type TooltipSide } from "@ui/components/Tooltip";
+import controlSize from '@ui/ControlSize.module.css'
 import styles from "./Button.module.css";
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -61,7 +62,7 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 export function Button(
   {
     variant,
-    size = "sm",
+    size = "md",
     align = "center",
     shape = "default",
     tone = "default",
@@ -130,6 +131,7 @@ export function Button(
         data-danger-hover={dangerHover ? "true" : undefined}
         className={cn(
           styles.btn,
+          controlSize[size],
           styles[`variant-${variant}`],
           styles[`size-${size}`],
           styles[`align-${align}`],

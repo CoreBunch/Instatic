@@ -83,3 +83,25 @@ export function resolveInsertLocation(
 
   return { parentId: targetNodeId, index: undefined }
 }
+
+/**
+ * Where a fragment lands: right after the selected element, as its next
+ * sibling, so inserting a second section while the first is still selected
+ * puts it below the first instead of inside it. With nothing selected or the
+ * document root selected it goes at the end of the root. A selected slot
+ * instance (or a component ref, which redirects to its slot) still receives
+ * content inside it, because a slot's children are its only editable place.
+ */
+export function resolveSiblingInsertLocation(
+  page: NodeTree<PageNode>,
+  targetNodeId: string,
+): InsertLocation | null {
+  const target = page.nodes[targetNodeId]
+  if (!target || targetNodeId === page.rootNodeId) {
+    return resolveInsertLocation(page, page.rootNodeId)
+  }
+  if (target.moduleId === 'base.slot-instance' || target.moduleId === 'base.visual-component-ref') {
+    return resolveInsertLocation(page, targetNodeId)
+  }
+  return siblingAfter(page, targetNodeId) ?? resolveInsertLocation(page, page.rootNodeId)
+}

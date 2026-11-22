@@ -193,7 +193,7 @@ export const PREFERENCE_CATALOG = [
     type: 'select-dynamic',
     category: 'canvas',
     label: 'Default viewport',
-    description: 'Which viewport context the canvas focuses on when a site is opened. Mobile-first designers usually pick mobile.',
+    description: 'The viewport the canvas focuses on when a site opens. Defaults to Mobile on phones and Desktop on larger screens.',
     optionsSource: 'site.breakpoints',
     default: 'desktop',
   },

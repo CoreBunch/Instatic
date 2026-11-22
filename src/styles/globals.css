@@ -192,12 +192,43 @@
     --chart-segment-empty-border: var(--overlay-5);
     --chart-track-bg: var(--overlay-5);
 
+    /* Color picker spectrum and transparency preview */
+    --picker-white: #ffffff;
+    --picker-black: #000000;
+    --picker-hue-track: linear-gradient(
+        to right,
+        #ff0000 0%,
+        #ffff00 17%,
+        #00ff00 33%,
+        #00ffff 50%,
+        #0000ff 67%,
+        #ff00ff 83%,
+        #ff0000 100%
+    );
+    --picker-checkerboard-size: 8px;
+    --picker-checkerboard: repeating-conic-gradient(
+        #ffffff 0% 25%,
+        #c9c9c9 0% 50%
+    );
+
+    /* Shared control heights (xs, sm, md) */
+    --control-height-xs: 24px;
+    --control-height: 28px;
+    --control-height-md: 32px;
+
+    /* Property inspector row geometry */
+    --control-label-column: 100px;
+
+    --button-size-lg: 44px;
+
     /* Radius */
     --radius-sm: 3px;
     --radius: 6px;
     --card-radius: 16px;
     --panel-radius: 12px;
     --input-radius: 1em;
+    --segment-track-radius: var(--panel-radius);
+    --segment-radius: calc(var(--segment-track-radius) - var(--space-4xs));
     --radius-pill: 999px;
     --tooltip-radius: 6px;
 
@@ -278,6 +309,7 @@
 
     /* Z-index layers */
     --z-dropdown: 20;
+    --floating-panel-z-index: 1000;
 
     /* Tooltips are transient hover hints that must sit above every modal layer,
      * including the spotlight-style dialogs (--spotlight-z-index: 9000, used by
@@ -295,6 +327,20 @@
     /* Spotlight */
     --backdrop-blur: 8px;
     --spotlight-z-index: 9000;
+
+    /* The password re-entry (step-up) dialog gates an action started from any
+     * surface, including the spotlight-layer modals (Settings), so it sits
+     * above them and below toasts. */
+    --step-up-z-index: 9500;
+
+    /* The email template preview shows the message on the light ground an
+     * inbox gives it, in both admin themes. */
+    --email-preview-surface: #f4f4f5;
+    --email-preview-card: #ffffff;
+    --email-preview-text: #18181b;
+    --email-preview-muted: #71717a;
+    --email-preview-rule: #e4e4e7;
+    --email-preview-link: #1d4ed8;
     --spotlight-width: 640px;
     --progress-shimmer: var(--overlay-40);
 

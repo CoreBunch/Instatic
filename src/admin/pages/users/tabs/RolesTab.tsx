@@ -46,6 +46,8 @@ import {
 import type { UsersPageData } from '../hooks/useUsersPageData'
 import styles from '../UsersPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { EmptyState } from '@ui/components/EmptyState'
+import { LockSolidIcon } from 'pixel-art-icons/icons/lock-solid'
 
 interface RolesTabProps {
   data: UsersPageData
@@ -196,7 +198,7 @@ export function RolesTab({ data, canManageRoles }: RolesTabProps) {
     <section className={styles.section} aria-labelledby="roles-list-title">
       <div className={styles.sectionHeader}>
         <div>
-          <h2 id="roles-list-title">Roles</h2>
+          <h1 id="roles-list-title">Roles</h1>
           <p>System roles are fixed. Custom roles can be edited.</p>
         </div>
         {canManageRoles && (
@@ -306,7 +308,12 @@ export function RolesTab({ data, canManageRoles }: RolesTabProps) {
           </DataTableBody>
         </DataTable>
       ) : (
-        <p className={styles.emptyState}>No roles configured.</p>
+        <EmptyState
+          variant="centered"
+          icon={<LockSolidIcon size={28} />}
+          title="No roles configured"
+          description="A role decides what the users who hold it can do."
+        />
       )}
 
       {canManageRoles && dialogMode && (

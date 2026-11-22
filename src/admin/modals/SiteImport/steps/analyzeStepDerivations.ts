@@ -54,18 +54,11 @@ export function buildMediaGroups(plan: ImportPlan): MediaGroup[] {
 
 /** Items that could not be imported — surfaced under the "Can't import" entry. */
 export function buildSkippedList(plan: ImportPlan): SkippedItem[] {
-  return [
-    ...plan.unusedCss.map((path) => ({
-      label: path,
-      reason: 'Stylesheet isn’t linked by any imported page',
-      kind: 'css',
-    })),
-    ...plan.droppedAtRules.map((src) => ({
-      label: src.length > 72 ? `${src.slice(0, 72)}…` : src,
-      reason: 'At-rule the engine can’t model',
-      kind: 'at-rule',
-    })),
-  ]
+  return plan.droppedAtRules.map((src) => ({
+    label: src.length > 72 ? `${src.slice(0, 72)}…` : src,
+    reason: 'At-rule the engine can’t model',
+    kind: 'at-rule',
+  }))
 }
 
 /** Count style rules whose source stylesheet is linked by the given page. */

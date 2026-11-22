@@ -301,3 +301,60 @@
     flex-direction: column;
     gap: var(--space-s);
 }
+
+/* ── Table access ── */
+.accessHint {
+    margin: 0;
+    color: var(--text-subtle);
+    font-size: var(--text-xs);
+    line-height: 1.45;
+}
+
+.accessActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-s);
+}
+
+.rowNavigation {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-l);
+    padding: var(--space-3xs) var(--space-s);
+    border-bottom: 1px solid var(--border);
+}
+
+.draftStatus {
+    flex-shrink: 0;
+    margin-right: var(--space-m);
+    color: var(--text-muted);
+    font-size: var(--text-s);
+}
+
+@media (max-width: 760px) {
+    .section {
+        padding: var(--space-3xl);
+        gap: var(--space-3xl);
+    }
+
+    .formGroup {
+        gap: var(--space-xs);
+    }
+
+    .formGroup .label {
+        font-size: var(--text-m);
+    }
+
+    .formGroup :is(input:not([type="checkbox"], [type="radio"]), textarea) {
+        min-height: 44px;
+        font-size: max(16px, var(--text-l));
+    }
+}
+
+.rowTitle {
+    margin: var(--space-3xl) var(--space-3xl) 0;
+    color: var(--text-bright);
+    font-size: var(--text-2xl);
+    overflow-wrap: anywhere;
+}

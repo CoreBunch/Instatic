@@ -3,12 +3,17 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { handleServerRequest } from '../../../server/router'
+import { resetForTests as resetRenderCache } from '../../../server/publish/renderCache'
 import type { DbClient, DbResult } from '../../../server/db'
 import {
   prepareInactiveSlot,
   writeArtefact,
   swapSlot,
 } from '../../../server/publish/staticArtefact'
+
+// Each fake DB represents a separate install; never inherit another test's
+// published response or snapshot memo when exercising the setup fallback.
+beforeEach(resetRenderCache)
 
 interface FakeDbCounts {
   site: number

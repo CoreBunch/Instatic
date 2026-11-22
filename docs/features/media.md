@@ -94,6 +94,8 @@ const {
 
 The editor store does **not** grow new slices. The Media page is self-contained — it talks to the CMS API directly through the persistence layer, and its shared chrome state uses `src/admin/state/workspaceLayout.ts`.
 
+On phones the library keeps upload, search and all five file-type filters visible. **View options** opens the sort order and list/grid controls. The phone picker opens full screen with Folders collapsed. The folder button opens the dock below the thumbnails. Type filters match the kinds accepted by the field, and the selection footer stays outside the scrolling library.
+
 ### Folder navigation and moves
 
 `MediaCanvas` treats folders as regular canvas items:
@@ -154,7 +156,7 @@ Each floating window has a unique `FloatingPanelId` (`'mediaDetachedInspector' |
 |-----------------|-------------------------------------------------------------------------------------------------|
 | `MediaViewerWindow` | Derived during render: `selectedAssetId !== null && selectedAssetIds.size <= 1`. Closing clears the selection. No `useState`. |
 | `BulkEditWindow`    | Derived during render: `selectedAssetIds.size >= 2`. Mutually exclusive with the viewer. No `useState`. |
-| `UploadQueueWindow` | `uploadQueueOpen` in local `useState`. Auto-opens via `useEffect` when uploads start; stays open after completion until the user dismisses it. Toolbar button toggles it. |
+| `UploadQueueWindow` | `useUploadQueueWindow(active)` — local state. Opens on the transition INTO an active upload (detected during render, not in an effect) and nothing reopens it after that, so a user can close it mid-transfer; it stays open after completion until dismissed. Toolbar button toggles it. |
 
 The viewer and bulk-edit are derived rather than stored because "closed" is identical to "no selection" — every close path calls `workspace.clearSelection()`. Deriving avoids an extra render commit and the one-frame open lag that appeared with the old `setState`-in-effect approach.
 
@@ -192,6 +194,7 @@ Media data lives in dedicated tables (not in `data_tables` — they predate the 
 | `poster_path`         | `text`        | `text`          | Nullable. URL for video poster frame                                                            |
 | `deleted_at`          | `timestamptz` | `text`          | Nullable. Non-null = soft-deleted (in Trash)                                                    |
 | `replaced_at`         | `timestamptz` | `text`          | Nullable. Set when binary is swapped via "Replace file"                                         |
+| `content_hash`        | `text`        | `text`          | Nullable. SHA-256 hex of the bytes the client sent (before SVG sanitising), set on upload, on Replace file, and by CMS bundle imports (insert and overwrite). Indexed. Site Import matches it to reuse an asset instead of uploading a copy. Rows from before migration 040 have none. |
 | `created_at`          | `timestamptz` | `text`          |                                                                                                 |
 
 ### `media_folders`
@@ -238,7 +241,7 @@ JSON columns end in `_json` per the convention — see [docs/reference/database-
 
 | Handler                          | Routes                                                     |
 |----------------------------------|------------------------------------------------------------|
-| `server/handlers/cms/media.ts`   | `GET/POST/PATCH/DELETE /admin/api/cms/media[/:id]`         |
+| `server/handlers/cms/media.ts`   | `GET/POST/PATCH/DELETE /admin/api/cms/media[/:id]`, plus `POST /admin/api/cms/media/lookup` (`media.read`): body `{ contentHashes }` (SHA-256 hex, max 10,000, body at most 1 MB) → `{ matches: [{ contentHash, id, publicPath, filename }] }` for live assets, oldest first |
 | `server/handlers/cms/mediaFolders.ts` | `GET/POST/PATCH/DELETE /admin/api/cms/media/folders[/:id]` |
 | `server/handlers/cms/mediaUpload.ts`, `mediaUploadDispatch.ts`, `mediaUploadExecutor.ts` | `POST /admin/api/cms/media/upload` + dispatcher / executor pipeline |
 | `server/handlers/cms/mediaStorageAdmin.ts`, `mediaStorageMigration.ts`, `mediaStorageReader.ts` | `/admin/api/cms/media/storage[/...]` — manage adapters, kick off migrations |

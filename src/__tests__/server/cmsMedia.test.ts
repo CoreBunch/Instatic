@@ -137,7 +137,7 @@ function makeFakeDb() {
     // storagePath, publicPath, uploadedByUserId, storageAdapterId,
     // externallyHosted, altText. The fake DB router matches before
     // importMediaAsset because importMediaAsset's column list is much longer.
-    if (normalized.includes('insert into media_assets') && values.length === 10) {
+    if (normalized.includes('insert into media_assets') && values.length === 11) {
       const row = mediaRow({
         id: values[0],
         filename: values[1],
@@ -149,6 +149,7 @@ function makeFakeDb() {
         storage_adapter_id: values[7],
         externally_hosted: values[8],
         alt_text: values[9],
+        content_hash: values[10],
         created_at: new Date('2026-01-03').toISOString(),
       })
       media.push(row)
@@ -268,24 +269,13 @@ function cmsRequest(
   url: string,
   init: { method?: string; formData?: FormData; headers?: Record<string, string>; body?: string } = {},
 ): Request {
-  const headers = new Map(
-    Object.entries(init.headers ?? {}).map(([key, value]) => [key.toLowerCase(), value]),
-  )
-  return {
-    url,
+  const req = new Request(url, {
     method: init.method ?? 'GET',
-    headers: {
-      get(name: string) {
-        return headers.get(name.toLowerCase()) ?? null
-      },
-    },
-    async formData() {
-      return init.formData ?? new FormData()
-    },
-    async json() {
-      return init.body ? JSON.parse(init.body) : {}
-    },
-  } as Request
+    body: init.formData ?? init.body,
+  })
+  // happy-dom strips fetch-forbidden headers passed to the constructor.
+  for (const [name, value] of Object.entries(init.headers ?? {})) req.headers.set(name, value)
+  return req
 }
 
 describe('CMS media repository', () => {
@@ -437,6 +427,32 @@ describe('CMS media handlers', () => {
       const payload = await res.json() as { asset: { altText: string } }
       expect(payload.asset.altText).toBe('Team photo in the Berlin office')
       expect(db.media[0].alt_text).toBe('Team photo in the Berlin office')
+    } finally {
+      rmSync(uploadsDir, { recursive: true, force: true })
+    }
+  })
+
+  it('stores the SHA-256 of the uploaded bytes so Site Import can reuse the asset', async () => {
+    const db = makeFakeDb()
+    const cookie = await createCookie(db)
+    const uploadsDir = mkdtempSync(join(tmpdir(), 'instatic-uploads-'))
+    mediaStorageRegistry.configureLocalDisk({ uploadsDir })
+    const body = new FormData()
+    body.set('file', pngFile('hero.png'))
+
+    try {
+      const res = await handleCmsRequest(
+        cmsRequest('http://localhost/admin/api/cms/media', {
+          method: 'POST',
+          headers: { cookie },
+          formData: body,
+        }),
+        db,
+        { uploadsDir },
+      )
+
+      expect(res.status).toBe(201)
+      expect(db.media[0].content_hash).toBe(new Bun.CryptoHasher('sha256').update(PNG_BYTES).digest('hex'))
     } finally {
       rmSync(uploadsDir, { recursive: true, force: true })
     }

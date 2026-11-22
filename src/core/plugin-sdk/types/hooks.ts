@@ -2,6 +2,8 @@
 // CMS server-side hook event surface
 // ---------------------------------------------------------------------------
 
+import type { PluginMailFailureReason, PluginMailRecipient } from './mail'
+
 /**
  * Actor that originated a content mutation. Carried on every
  * `content.entry.*` event so listeners can filter their own writes
@@ -38,6 +40,24 @@ export interface CmsServerEvents {
     tableSlug: string
     entryId: string
     actor: ContentEntryActor
+  }
+  // Site member events. Listening needs `members.read`. They are sent
+  // without waiting: a listener cannot delay or cancel what happened.
+  'member.created': { memberId: string; email: string }
+  'member.verified': { memberId: string; email: string }
+  'member.signedIn': { memberId: string; email: string }
+  'member.tagged': { memberId: string; tag: string; source: string; expiresAt: string | null }
+  'member.deleted': { memberId: string }
+  // What became of an email this plugin queued. Only the plugin that sent it
+  // hears about it. `to` is the recipient as the plugin named it (a member's
+  // address is never handed back); `reference` is the one given to
+  // `api.cms.mail.send`; `reason` is a fixed code, never the provider's text.
+  'mail.delivered': { template: string; to: PluginMailRecipient; reference: string | null }
+  'mail.failed': {
+    template: string
+    to: PluginMailRecipient
+    reference: string | null
+    reason: PluginMailFailureReason
   }
   // Plugin-defined events fall through. The host does not pre-define any
   // frontend-specific event channels — plugins that ingest events from
