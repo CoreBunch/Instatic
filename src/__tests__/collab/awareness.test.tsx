@@ -10,6 +10,8 @@ import { render, screen, cleanup, act } from '@testing-library/react'
 import * as Y from 'yjs'
 import * as awarenessProtocol from 'y-protocols/awareness'
 import { AdminSessionContext } from '@admin/sessionContext'
+import { MAIN_BRANCH_ID } from '@core/branches'
+import { encodeCollabDocId, MAIN_SITE_DOC_ID, seedPageDoc, seedSiteDoc, type ResetReason } from '@core/collab'
 import type { CmsCurrentUser } from '@core/persistence'
 import { useEditorStore } from '@site/store/store'
 import {
@@ -21,12 +23,12 @@ import {
   connectCollabProvider,
   disconnectCollabProvider,
 } from '@site/store/slices/site/collabBinding'
+import { whenCollabWritable } from '@site/store/slices/site/collabWriteGate'
 import type {
   BoundCollabDoc,
   CollabProvider,
   CollabResetListener,
 } from '@site/collab/collabProvider'
-import type { ResetReason } from '@core/collab'
 import { PeerPresenceOverlay } from '@admin/pages/site/canvas/PeerPresenceOverlay'
 import { PeerAvatarStack } from '@admin/pages/site/toolbar/PeerAvatarStack'
 import '@modules/base/index'
@@ -69,8 +71,8 @@ function WithAdminSession({ children }: { children: ReactNode }) {
   )
 }
 
-/** Minimal provider stub: real Awareness, synced-on-bind docs, no transport. */
-function fakeProvider(): CollabProvider & {
+/** Minimal provider stub: real Awareness and server seeds, no transport. */
+function fakeProvider(seedDoc?: (docId: string, doc: Y.Doc) => void): CollabProvider & {
   awareness: awarenessProtocol.Awareness
   triggerReset: (docId: string, reason?: ResetReason) => void
 } {
@@ -82,7 +84,9 @@ function fakeProvider(): CollabProvider & {
     bind: (docId) => {
       let entry = bound.get(docId)
       if (!entry) {
-        entry = { doc: new Y.Doc(), synced: true, whenSynced: Promise.resolve() }
+        const doc = new Y.Doc()
+        seedDoc?.(docId, doc)
+        entry = { doc, synced: true, whenSynced: Promise.resolve() }
         bound.set(docId, entry)
       }
       return entry
@@ -227,20 +231,22 @@ describe('PeerPresenceOverlay', () => {
     expect(rulesOnly).not.toContain('display: none')
   })
 
-
   it('shows toolbar and canvas presence only for other accounts', async () => {
-    const provider = fakeProvider()
-    connectCollabProvider(provider)
-
-    // The overlay derives its docId from the store's active page.
     const site = useEditorStore.getState().createSite('Presence Site')
-    const pageId = site.pages[0].id
-    useEditorStore.setState({ activePageId: pageId })
+    const [page] = site.pages
+    const pageDocId = encodeCollabDocId({ kind: 'page', branchId: MAIN_BRANCH_ID, rowId: page.id })
+    const provider = fakeProvider((docId, doc) => {
+      if (docId === MAIN_SITE_DOC_ID) seedSiteDoc(doc, site)
+      if (docId === pageDocId) seedPageDoc(doc, page)
+    })
+    connectCollabProvider(provider)
+    expect(await whenCollabWritable()).toBe(true)
+    expect(useEditorStore.getState().activePageId).toBe(page.id)
 
     const presence = {
-      docId: `page:main:${pageId}`,
-      selectedNodeIds: [site.pages[0].rootNodeId],
-      editingNodeId: site.pages[0].rootNodeId,
+      docId: pageDocId,
+      selectedNodeIds: [page.rootNodeId],
+      editingNodeId: page.rootNodeId,
       pointer: { x: 10, y: 20, breakpointId: 'bp-desktop' },
       textCaret: null,
     }
