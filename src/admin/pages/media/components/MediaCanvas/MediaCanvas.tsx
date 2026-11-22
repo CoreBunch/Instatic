@@ -71,6 +71,7 @@ interface MediaCanvasProps {
   workspace: UseMediaWorkspaceResult
   /** Picker mode: plain click toggles assets instead of replacing selection. */
   selectionMode?: 'standard' | 'multiple'
+  mediaKind?: 'image' | 'svg' | 'video' | 'any'
 }
 
 const TYPE_FILTERS: FilterBarItem<MediaType>[] = [
@@ -123,7 +124,7 @@ function folderMatchesQuery(folder: CmsMediaFolder, query: string): boolean {
   return folder.name.toLowerCase().includes(normalized)
 }
 
-export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanvasProps) {
+export function MediaCanvas({ workspace, selectionMode = 'standard', mediaKind = 'any' }: MediaCanvasProps) {
   const currentUser = useCurrentAdminUser()
   const mobile = useMobileViewport()
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false)
@@ -356,7 +357,9 @@ export function MediaCanvas({ workspace, selectionMode = 'standard' }: MediaCanv
     >
       <header className={styles.toolbar}>
         <FilterBar<MediaType>
-          items={TYPE_FILTERS}
+          items={mediaKind === 'any' ? TYPE_FILTERS : TYPE_FILTERS.filter(({ value }) =>
+            value === mediaKind || (mediaKind === 'image' && value === 'svg'),
+          )}
           value={workspace.filters.type}
           onValueChange={workspace.setFilterType}
           search={{

@@ -26,6 +26,8 @@ import { lazy, Suspense, useContext, useEffect, useEffectEvent, useRef, useState
 import { useEditorStore, selectActiveCanvasPage, selectPropertiesPanelVisible, selectRightSidebarExpanded } from '@site/store/store'
 import type { Breakpoint, PageNode } from '@core/page-tree'
 import { useMobileViewport } from '@admin/lib/mobileViewport'
+import { canReadMedia } from '@admin/access'
+import { PhoneImageAction } from './PhoneImageAction'
 import { inlineTextEditSpec } from '@site/store/slices/inlineEditSlice'
 import { MoreHorizontalSolidIcon } from 'pixel-art-icons/icons/more-horizontal-solid'
 import { Button } from '@ui/components/Button'
@@ -85,9 +87,11 @@ interface CanvasRootProps {
   editable?: boolean
 }
 
-function hasEditableText(node: PageNode | undefined): boolean {
+function phoneContentAction(node: PageNode | undefined, canBrowseImages: boolean) {
+  if (!node || node.hidden) return null
+  if (node.moduleId === 'base.image' && canBrowseImages && !node.locked && !node.dynamicBindings?.src) return 'image'
   const spec = inlineTextEditSpec(node)
-  return Boolean(node && !node.hidden && spec && typeof node.props[spec.prop] === 'string')
+  return spec && typeof node.props[spec.prop] === 'string' ? 'text' : null
 }
 
 export function CanvasRoot({ editable = true }: CanvasRootProps) {
@@ -160,15 +164,18 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   //   canEditStyle / canEditStructure → properties sidebar
   const permissions = useEditorPermissions()
   const editingText = useEditorStore((s) => s.activeInlineEdit !== null)
-  const canShowTextActions = useEditorStore((s) =>
+  const canShowContentActions = useEditorStore((s) =>
     s.selectedNodeIds.length === 1 && s.propertiesPanel.collapsed &&
     !s.collapsedBreakpointIds.includes(s.activeBreakpointId),
   )
   const endInlineEdit = useEditorStore((s) => s.endInlineEdit)
   const setPropertiesPanel = useEditorStore((s) => s.setPropertiesPanel)
-  const phoneTextEnabled = phone && !isLive && editable && permissions.canEditContent
-  const showPhoneTextActions = phoneTextEnabled && canShowTextActions && selectedNodeId &&
-    hasEditableText(canvasPage?.nodes[selectedNodeId]) &&
+  const phoneContentEnabled = phone && !isLive && editable && permissions.canEditContent
+  const canBrowseImages = canReadMedia(currentUser)
+  const selectedNode = selectedNodeId ? canvasPage?.nodes[selectedNodeId] : undefined
+  const action = phoneContentAction(selectedNode, canBrowseImages)
+  const showPhoneContentActions = phoneContentEnabled && canShowContentActions && selectedNodeId &&
+    action &&
     breakpoints.some((bp) => bp.id === activeBreakpointId && bp.previewFrame !== false)
   const phoneEditing = phone && editingText
   const [layerActionsFor, setLayerActionsFor] = useState<string | null>(null)
@@ -308,8 +315,8 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
       : e.metaKey || e.ctrlKey
         ? 'toggle'
         : 'replace'
-    const preservePropertiesPanelCollapse = phoneTextEnabled && mode === 'replace' &&
-      hasEditableText(selectActiveCanvasPage(useEditorStore.getState())?.nodes[nodeId])
+    const preservePropertiesPanelCollapse = phoneContentEnabled && mode === 'replace' &&
+      Boolean(phoneContentAction(selectActiveCanvasPage(useEditorStore.getState())?.nodes[nodeId], canBrowseImages))
     selectNode(nodeId, mode, { propertiesPanel: preservePropertiesPanelCollapse ? 'preserve' : 'open' })
     setFocusedPanel('canvas')
   }
@@ -477,7 +484,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
           data-instatic-canvas-root="true"
           data-canvas-state={canvasPage ? 'canvas-ready' : 'canvas-empty'}
           data-canvas-view={canvasView}
-          data-hide-layer-actions={phoneEditing || (showPhoneTextActions && !showLayerActions) || undefined}
+          data-hide-layer-actions={phoneEditing || (showPhoneContentActions && !showLayerActions) || undefined}
           data-vc-mode={activeDocument?.kind === 'visualComponent' ? 'true' : undefined}
           onKeyDown={onCanvasKeyDown}
           onClick={onCanvasClick}
@@ -526,12 +533,12 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
             </div>
           )}
 
-          {(phoneEditing || showPhoneTextActions) && (
+          {(phoneEditing || showPhoneContentActions) && (
             <div
-              className={styles.phoneTextActions}
+              className={styles.phoneContentActions}
               data-editing={phoneEditing}
               role="group"
-              aria-label="Text editing"
+              aria-label={action === 'image' ? 'Image editing' : 'Text editing'}
               onClick={(event) => event.stopPropagation()}
             >
               {phoneEditing ? (
@@ -551,12 +558,16 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
                 </Button>
               ) : selectedNodeId && (
                 <>
-                  <Button variant="primary" size="md" onClick={() => {
-                    setLayerActionsFor(null)
-                    startInlineEdit(selectedNodeId, activeBreakpointId)
-                  }}>
-                    Edit text
-                  </Button>
+                  {action === 'image' && selectedNode ? (
+                    <PhoneImageAction key={selectedNode.id} node={selectedNode} />
+                  ) : (
+                    <Button variant="primary" size="md" onClick={() => {
+                      setLayerActionsFor(null)
+                      startInlineEdit(selectedNodeId, activeBreakpointId)
+                    }}>
+                      Edit text
+                    </Button>
+                  )}
                   <Button variant="ghost" size="md" onClick={() => setPropertiesPanel({ collapsed: false })}>
                     Properties
                   </Button>

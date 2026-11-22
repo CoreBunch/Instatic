@@ -93,7 +93,7 @@ const {
 
 The editor store does **not** grow new slices. The Media page is self-contained — it talks to the CMS API directly through the persistence layer, and its shared chrome state uses `src/admin/state/workspaceLayout.ts`.
 
-On phones the library keeps upload, search and all five file-type filters visible. **View options** opens the sort order and list/grid controls. The picker uses the same portrait dock as the Media workspace, with folders below the thumbnails and the selection footer outside the scrolling library.
+On phones the library keeps upload, search and all five file-type filters visible. **View options** opens the sort order and list/grid controls. The phone picker opens full screen with Folders collapsed. The folder button opens the dock below the thumbnails. Type filters match the kinds accepted by the field, and the selection footer stays outside the scrolling library.
 
 ### Folder navigation and moves
 

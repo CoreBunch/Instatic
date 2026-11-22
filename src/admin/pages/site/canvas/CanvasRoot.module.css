@@ -52,7 +52,7 @@
     line-height: 1.35;
 }
 
-.phoneTextActions {
+.phoneContentActions {
     position: absolute;
     z-index: 54;
     bottom: var(--space-xl);
@@ -67,11 +67,11 @@
     box-shadow: var(--shadow-panel);
 }
 
-.phoneTextActions > button {
+.phoneContentActions > button {
     border-radius: calc(var(--panel-radius) - var(--space-2xs));
 }
 
-.phoneTextActions[data-editing="true"] {
+.phoneContentActions[data-editing="true"] {
     bottom: auto;
     top: var(--space-s);
     right: var(--space-s);

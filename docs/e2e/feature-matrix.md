@@ -309,13 +309,13 @@ MEMBER-007 note: `members-apps.e2e.ts` plays an app that keeps an Ed25519 device
 |---|---:|:---:|---|---|---|---|---|---|
 | MEDIA-001 | P1 | ✅ | Uploads | Upload an image and place it on a page | Logged in | Image/media control | Image previews in editor and public page | broken preview, path leakage |
 | MEDIA-002 | P2 | ✅ | Uploads | Try unsupported file upload | Logged in | Media control | User gets clear validation feedback | vague errors, security footguns |
-| MEDIA-003 | P2 | ✅ | Media Library | Reuse an uploaded asset | Existing upload | Media picker | Asset can be selected without re-upload | missing search, stale thumbnails |
+| MEDIA-003 | P2 | ✅ | Media Library | Reuse an uploaded asset | Existing upload | Media picker or Replace image on a phone | Existing asset appears on the selected block | missing search, stale thumbnails |
 | MEDIA-004 | P2 | partial | Metadata | Edit media metadata | Uploaded asset | Media page viewer | Title, filename, alt text, caption, and tag changes persist after reload | invalid filename, bulk edit, mobile viewer |
 | MEDIA-005 | P2 | partial | Lifecycle | Replace, trash, restore, and purge an asset | Uploaded asset | Media page viewer and Trash folder | Replacement updates asset binary/name, trash hides active asset, restore returns it, purge removes it from Trash | unsupported replacement, asset-in-use, confirmation safety, permissions |
 | MEDIA-006 | P2 | partial | Storage | Review built-in media storage settings | Clean/local install | Media Storage panel | Local disk backs every role, local sharp delegate is selected, empty adapter/delegate states are clear, no migration/test actions appear without external adapters or backlog | external adapter verify/elect, migration progress, delegate plugins, permissions |
 | MEDIA-007 | P2 | partial | Presentation | Serve sanitized SVG media and public image assets | Uploaded SVG asset | Media upload and public `/uploads` URL | Unsafe SVG vectors are stripped before storage/serving while safe geometry remains accessible | raster variant ladder, missing variant fallback, external signed URLs, responsive attrs |
 
-MEDIA-003 exercises the picker at 320px, checks the canvas sits above its folder dock and applies an existing asset. MEDIA-004 exercises type filters, sorting and list view on a phone before editing the asset.
+MEDIA-003 exercises the picker at 320px, checks the canvas sits above its folder dock and applies an existing asset. `site-mobile-image.e2e.ts` searches the library from a selected image at 320px, cancels a pick, replaces the image and verifies canvas focus, Undo, Redo and reload. MEDIA-004 exercises type filters, sorting and list view on a phone before editing the asset.
 
 MEDIA-004 note: viewer metadata edits for title, filename, alt text, caption, and tags are automated in `media.e2e.ts`; the same spec now covers 390px mobile viewer containment, metadata control reachability, upload-queue close reachability, and mobile metadata edits. Invalid filename handling, bulk edit, and permission-gate variants remain lower-level or future browser coverage.
 
