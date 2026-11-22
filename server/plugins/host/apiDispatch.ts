@@ -23,13 +23,22 @@
 import type { AllowedApiTarget, ValidatedApiCall } from '../protocol/apiCallSchema'
 import { TARGET_PERMISSIONS } from '../protocol/targets'
 import type { DbClient } from '../../db/client'
-import { hostPlugins, getDbForApi, assertHostPluginPermission } from './registry'
+import { hostPlugins, getPluginHostContext, assertHostPluginPermission } from './registry'
+import { PluginFetchTimeoutError } from './network'
 import { replyApiError } from './apiReplies'
 import type { HostPluginRecord } from './types'
 import { handleRoutesRegister } from './handlers/routes'
 import { handleHooksOn, handleHooksFilter, handleHooksEmit } from './handlers/hooks'
 import { handleLoopsRegisterSource } from './handlers/loops'
-import { handleStorageList, handleStorageCreate, handleStorageUpdate, handleStorageDelete } from './handlers/storage'
+import {
+  handleStorageCreate,
+  handleStorageCreateIfAbsent,
+  handleStorageDelete,
+  handleStorageGet,
+  handleStorageGetByKey,
+  handleStorageList,
+  handleStorageUpdate,
+} from './handlers/storage'
 import { handleSettingsReplace } from './handlers/settings'
 import { handleNetworkFetch, handleNetworkAbort } from './handlers/network'
 import { handleScheduleRegister, handleScheduleCancel } from './handlers/schedule'
@@ -48,7 +57,6 @@ import {
   handleContentEntriesGet,
   handleContentEntriesGetBySlug,
   handleContentEntriesList,
-  handleContentEntriesMoveTable,
   handleContentEntriesPublish,
   handleContentEntriesUpdate,
   handleContentEntriesUpdateMany,
@@ -58,15 +66,30 @@ import {
   handleContentTablesCreate,
   handleContentTablesGet,
   handleContentTablesList,
+} from './handlers/content'
+import {
   handleContentTreeMutate,
   handleContentTreeRead,
   handleContentTreeReplace,
-} from './handlers/content'
+} from './handlers/contentTree'
+import { handleMailSend, handleMailSendExternal, handleSitePublicUrl } from './handlers/mail'
+import { handleRateLimitTake } from './handlers/rateLimit'
+import {
+  handleMembersDeletedSince,
+  handleMembersEmailStatus,
+  handleMembersEnsure,
+  handleMembersExportProvider,
+  handleMembersGet,
+  handleMembersInvite,
+  handleMembersTagsGrant,
+  handleMembersTagsRevoke,
+} from './handlers/members'
 
 type HostApiHandler<TTarget extends AllowedApiTarget> = (
   msg: Extract<ValidatedApiCall, { target: TTarget }>,
   entry: HostPluginRecord,
   db: DbClient,
+  uploadsDir: string | undefined,
 ) => Promise<void>
 /**
  * One handler per target, keyed by the SSOT target union. Because
@@ -80,6 +103,7 @@ type AnyHostApiHandler = (
   msg: ValidatedApiCall,
   entry: HostPluginRecord,
   db: DbClient,
+  uploadsDir: string | undefined,
 ) => Promise<void>
 
 const apiHandlers = {
@@ -92,6 +116,9 @@ const apiHandlers = {
   'cms.storage.create': handleStorageCreate,
   'cms.storage.update': handleStorageUpdate,
   'cms.storage.delete': handleStorageDelete,
+  'cms.storage.get': handleStorageGet,
+  'cms.storage.getByKey': handleStorageGetByKey,
+  'cms.storage.createIfAbsent': handleStorageCreateIfAbsent,
   'cms.settings.replace': handleSettingsReplace,
   'network.fetch': handleNetworkFetch,
   'network.abort': handleNetworkAbort,
@@ -113,7 +140,6 @@ const apiHandlers = {
   'cms.content.entries.update': handleContentEntriesUpdate,
   'cms.content.entries.delete': handleContentEntriesDelete,
   'cms.content.entries.publish': handleContentEntriesPublish,
-  'cms.content.entries.moveTable': handleContentEntriesMoveTable,
   'cms.content.entries.createMany': handleContentEntriesCreateMany,
   'cms.content.entries.updateMany': handleContentEntriesUpdateMany,
   'cms.content.entries.deleteMany': handleContentEntriesDeleteMany,
@@ -123,11 +149,23 @@ const apiHandlers = {
   'cms.content.search': handleContentSearch,
   'cms.content.snapshot': handleContentSnapshot,
   'cms.content.republishAll': handleContentRepublishAll,
+  'cms.members.get': handleMembersGet,
+  'cms.members.invite': handleMembersInvite,
+  'cms.members.ensure': handleMembersEnsure,
+  'cms.members.emailStatus': handleMembersEmailStatus,
+  'cms.members.exportProvider': handleMembersExportProvider,
+  'cms.members.deletedSince': handleMembersDeletedSince,
+  'cms.members.tags.grant': handleMembersTagsGrant,
+  'cms.members.tags.revoke': handleMembersTagsRevoke,
+  'cms.mail.send': handleMailSend,
+  'cms.mail.sendExternal': handleMailSendExternal,
+  'cms.site.publicUrl': handleSitePublicUrl,
+  'cms.rateLimit.take': handleRateLimitTake,
 } satisfies HostApiHandlerTable
 
 export async function dispatchApiCall(msg: ValidatedApiCall): Promise<void> {
-  const db = getDbForApi()
-  if (!db) {
+  const context = getPluginHostContext()
+  if (!context) {
     replyApiError(msg.pluginId, msg.correlationId, 'Plugin worker host has no DbClient configured')
     return
   }
@@ -151,8 +189,13 @@ export async function dispatchApiCall(msg: ValidatedApiCall): Promise<void> {
     // limitation (it can't tie `apiHandlers[msg.target]` to `msg`'s narrowed
     // shape), it does NOT mask a missing handler.
     const handler = apiHandlers[msg.target] as AnyHostApiHandler
-    await handler(msg, entry, db)
+    await handler(msg, entry, context.db, context.uploadsDir)
   } catch (err) {
-    replyApiError(msg.pluginId, msg.correlationId, err instanceof Error ? err.message : String(err))
+    replyApiError(
+      msg.pluginId,
+      msg.correlationId,
+      err instanceof Error ? err.message : String(err),
+      err instanceof PluginFetchTimeoutError ? err.code : undefined,
+    )
   }
 }

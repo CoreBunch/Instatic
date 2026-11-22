@@ -11,7 +11,8 @@
  * synthetic `LoopItem` from the request's draft cells (or the active
  * version's cells when no overrides are passed). The HTML is post-
  * processed by the same `applyPublishedHtmlPipeline` as a public-route
- * response so plugin asset injection + filter hooks behave identically.
+ * response so plugin asset injection behaves identically. It is marked as
+ * a preview: plugin `publish.html` filters are not handed unpublished work.
  *
  * Security: requires data-read access on the row's table. The endpoint
  * does NOT mutate the database — it's a render-only pipeline.
@@ -25,9 +26,9 @@ import { resolveTemplateChain, composeTemplateChain } from '@core/templates'
 import { buildRouteFrame } from '@core/templates/contextFrames'
 import { publishPage } from '@core/publisher'
 import { buildSiteCssBundle } from '../../../publish/siteCssBundle'
-import { buildPublishedSiteModuleJsMap } from '../../../publish/moduleJsBundle'
-import { getPublishVersion } from '../../../publish/publishState'
-import { prefetchLoopData, publishedDataRowToLoopItem } from '../../../publish/loopPrefetch'
+import { buildPublishedSiteModuleJsMap, resolveModuleScripts } from '../../../publish/moduleJsBundle'
+import { prefetchLoopData, publishedDataRowToEntryItem } from '../../../publish/loopPrefetch'
+import { LOOP_RUNTIME_VERSION } from '../../../publish/loopRuntime'
 import { prefetchMediaAssets } from '../../../publish/mediaPrefetch'
 import { registry } from '@core/module-engine'
 import { getLatestPublishedSiteSnapshot } from '../../../repositories/publish'
@@ -114,7 +115,7 @@ export async function handleRowPreview(
   const publicPath = buildEntryPublicPath(table.routeBase, draftPublishedRow.slug)
   const syntheticUrl = new URL(`http://localhost${publicPath}`)
   const templateContext = {
-    entryStack: [publishedDataRowToLoopItem(draftPublishedRow)],
+    entryStack: [await publishedDataRowToEntryItem(db, draftPublishedRow, table.fields)],
     route: buildRouteFrame(syntheticUrl.toString()),
   }
   const loopData = await prefetchLoopData(merged, snapshot.site, db, undefined, {
@@ -137,6 +138,7 @@ export async function handleRowPreview(
     loopData,
     mediaAssets,
     loopEndpointBaseUrl: LOOP_ENDPOINT_BASE_URL,
+    loopRuntimeVersion: LOOP_RUNTIME_VERSION,
   })
   const moduleJsMap = buildPublishedSiteModuleJsMap(snapshot.site, registry)
 
@@ -146,10 +148,10 @@ export async function handleRowPreview(
       pageId: merged.id,
       slug: merged.slug,
       siteId: snapshot.site.id,
-      jsModuleIds: published.jsModuleIds.filter((id) => moduleJsMap.has(id)),
-      publishVersion: getPublishVersion(),
+      moduleScripts: resolveModuleScripts(published.jsModuleIds, moduleJsMap),
     },
     db,
+    'preview',
   )
 
   return new Response(finalHtml, {

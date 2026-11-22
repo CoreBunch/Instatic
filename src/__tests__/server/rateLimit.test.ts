@@ -107,18 +107,21 @@ describe('RateLimiter', () => {
       expect(rl.size()).toBe(1)
     })
 
-    it('sweeps immediately once the map exceeds PRUNE_SIZE_THRESHOLD keys', () => {
+    it('sweeps once a map with many live keys has doubled, not on every call', () => {
       const rl = new RateLimiter({ limit: 5, windowMs: 1000 })
+      let sweeps = 0
+      const sweep = rl.prune.bind(rl)
+      rl.prune = (now?: number) => { sweeps += 1; sweep(now) }
 
-      const total = RateLimiter.PRUNE_SIZE_THRESHOLD + 1
+      // Every key stays live: past the threshold, each call used to sweep.
+      const total = RateLimiter.PRUNE_SIZE_THRESHOLD + 2000
       for (let i = 0; i < total; i++) rl.consume(`key-${i}`, 0)
-      // Interval-triggered sweeps ran during the loop, but nothing had aged
-      // out yet — every bucket is still tracked.
       expect(rl.size()).toBe(total)
+      // Interval sweeps plus at most one size sweep: nowhere near one per call.
+      expect(sweeps).toBeLessThanOrEqual(Math.ceil(total / RateLimiter.PRUNE_INTERVAL) + 1)
 
-      // One consume() past the window: the size trigger fires without
-      // waiting for the call counter, dropping every aged-out bucket.
-      rl.consume('fresh', 2000)
+      // Once the keys age out, the next sweep drops them.
+      for (let i = 0; i < RateLimiter.PRUNE_INTERVAL; i++) rl.consume('fresh', 2000)
       expect(rl.size()).toBe(1)
     })
 

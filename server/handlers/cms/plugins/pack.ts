@@ -14,20 +14,26 @@
 import type { DbClient } from '../../../db/client'
 import type { AuthUser } from '../../../repositories/users'
 import { createAuditEvent } from '../../../repositories/audit'
-import { getInstalledPlugin } from '../../../repositories/plugins'
+import { getInstalledPlugin, listInstalledPluginIds } from '../../../repositories/plugins'
+import { owningPluginId } from '@core/plugins/namespaceOwnership'
 import type { InstalledPlugin } from '@core/plugin-sdk'
 import {
   applyPluginPackToSite,
   loadPluginPackFile,
   parsePluginPack,
+  isPackIdInPluginNamespace,
   PluginPackError,
 } from '../../../plugins/pack'
 import { getDraftSite, saveDraftSite } from '../../../repositories/site'
 import {
+  findDataRowSlot,
+  getDataRow,
+  getDataRowBySlug,
   listDataRows,
-  createDataRow,
-  saveDataRowDraft,
+  updateDataRowStatus,
+  upsertDataRowDraft,
 } from '../../../repositories/data'
+import { keepPageStructuralCells, newPageStructuralCells } from '../../../writePolicy/pageStructuralCells'
 import { pageFromRow, pageToCells } from '../../../../src/core/data/pageFromRow'
 import { visualComponentToCells } from '../../../../src/core/data/componentFromRow'
 import { savedLayoutFromRow, savedLayoutToCells } from '../../../../src/core/data/layoutFromRow'
@@ -46,6 +52,88 @@ export interface PluginPackSummary {
     layouts: { id: string; name: string }[]
   }
   replaced: { visualComponents: string[]; pages: string[]; classes: string[]; layouts: string[] }
+}
+
+interface PackRow {
+  id: string
+  tableId: 'pages' | 'components' | 'layouts'
+  cells: Record<string, unknown>
+  slug: string
+}
+
+/**
+ * Every id a pack writes under (pages, Visual Components, layouts, classes)
+ * belongs to this plugin. The one check, for all four kinds:
+ *   - an id with a `/` must have exactly the plugin id before its first `/`;
+ *   - a dot-form id belongs to the installed plugin with the longest
+ *     matching id, which must be this one (plugin ids may nest).
+ */
+function assertPackIdsOwned(pluginId: string, ids: readonly string[], installed: readonly string[]): void {
+  for (const id of ids) {
+    if (!isPackIdInPluginNamespace(pluginId, id)) {
+      throw new PluginPackError(
+        `Plugin "${pluginId}" pack entry "${id}" must be namespaced under the plugin id (e.g. "${pluginId}/${id}").`,
+      )
+    }
+    if (id.includes('/')) continue
+    const owner = owningPluginId(id, [...installed, pluginId])
+    if (owner !== pluginId) {
+      throw new PluginPackError(`Plugin "${pluginId}" pack entry "${id}" is in the namespace of plugin "${owner}".`)
+    }
+  }
+}
+
+/**
+ * Everything else that can stop a pack row from being written, checked for
+ * the WHOLE pack before anything is written: an id that belongs to a row of
+ * another table, and a slug another row of the same table already holds (or
+ * that two rows of the pack both want).
+ */
+async function assertPackRowsCanBeWritten(db: DbClient, pluginId: string, rows: readonly PackRow[]): Promise<void> {
+  const wanted = new Map<string, string>()
+  for (const row of rows) {
+    const slot = await findDataRowSlot(db, MAIN_SCOPE, row.id)
+    if (slot && slot.tableId !== row.tableId) {
+      throw new PluginPackError(
+        `Plugin "${pluginId}" pack entry "${row.id}" uses an id that already belongs to something else on this site.`,
+      )
+    }
+    if (!row.slug) continue
+    const key = `${row.tableId}\u0000${row.slug}`
+    const holder = (await getDataRowBySlug(db, MAIN_SCOPE, row.tableId, row.slug))?.id ?? wanted.get(key)
+    if (holder !== undefined && holder !== row.id) {
+      throw new PluginPackError(
+        `Plugin "${pluginId}" pack entry "${row.id}" cannot be installed: the slug "${row.slug}" is already used in "${row.tableId}".`,
+      )
+    }
+    wanted.set(key, row.id)
+  }
+}
+
+/**
+ * Write one pack row under the id the pack names.
+ *
+ *  - The id is namespaced under the plugin id (`parsePluginPack` refuses
+ *    anything else), so it cannot be a row the owner or another plugin made.
+ *    What can still stop the write (the id held by a row of another table, a
+ *    slug already taken) was checked for the whole pack beforehand
+ *    (`assertPackRowsCanBeWritten`).
+ *  - A page that is already there keeps its access rule and head settings.
+ *  - A row the owner deleted still holds its id (inserting it again would
+ *    fail), so it is brought back. It comes back as a draft: a re-sync is
+ *    not a publish, and what was live before the delete stays off the site
+ *    until someone publishes it.
+ */
+async function writePackRow(db: DbClient, row: PackRow, actorUserId: string): Promise<void> {
+  const slot = await findDataRowSlot(db, MAIN_SCOPE, row.id)
+  const stored = slot && !slot.deleted ? await getDataRow(db, MAIN_SCOPE, row.id) : null
+  const cells = stored
+    ? keepPageStructuralCells(stored, row.cells)
+    : newPageStructuralCells(row.tableId, row.cells)
+  await upsertDataRowDraft(db, MAIN_SCOPE, { ...row, cells }, actorUserId)
+  if (slot?.deleted && slot.status !== 'draft') {
+    await updateDataRowStatus(db, MAIN_SCOPE, row.id, 'draft', actorUserId)
+  }
 }
 
 /**
@@ -96,44 +184,25 @@ async function installPluginPackToSite(
 
   const { site: nextSiteDoc, replaced } = applyPluginPackToSite(tempSiteDoc, pack)
 
+  // The pack's pages, Visual Components and layouts as data rows. Only the
+  // pack's own: the site's other pages are not rewritten.
+  const rows: PackRow[] = [
+    ...pack.pages.map((page): PackRow => ({ id: page.id, tableId: 'pages', cells: pageToCells(page), slug: page.slug })),
+    ...pack.visualComponents.map((vc): PackRow => ({
+      id: vc.id, tableId: 'components', cells: visualComponentToCells(vc), slug: vcSlugFromName(vc.name),
+    })),
+    ...pack.layouts.map((layout): PackRow => ({
+      id: layout.id, tableId: 'layouts', cells: savedLayoutToCells(layout), slug: layoutSlugFromName(layout.name),
+    })),
+  ]
+  // Checked for the whole pack before the first write (the shell included).
+  assertPackIdsOwned(plugin.id, [...rows.map((row) => row.id), ...pack.classes.map((cls) => cls.id)], await listInstalledPluginIds(db))
+  await assertPackRowsCanBeWritten(db, plugin.id, rows)
+
   // Extract shell (strip pages, visualComponents, and layouts) and save
-  const { pages: packPages, visualComponents: _vcs, layouts: _layouts, ...nextShell } = nextSiteDoc
+  const { pages: _pages, visualComponents: _vcs, layouts: _layouts, ...nextShell } = nextSiteDoc
   await saveDraftSite(db, MAIN_SCOPE, nextShell, actorUserId)
-
-  // Upsert pack pages as data_rows
-  const existingPagesById = new Map(pageRows.map((r) => [r.id, r]))
-  for (const page of packPages) {
-    const cells = pageToCells(page)
-    if (existingPagesById.has(page.id)) {
-      await saveDataRowDraft(db, MAIN_SCOPE, page.id, { cells, slug: page.slug }, actorUserId)
-    } else {
-      await createDataRow(db, MAIN_SCOPE, { id: page.id, tableId: 'pages', cells, slug: page.slug }, actorUserId)
-    }
-  }
-
-  // Upsert pack VCs as data_rows
-  const existingVCsById = new Map(vcRows.map((r) => [r.id, r]))
-  for (const vc of pack.visualComponents) {
-    const cells = visualComponentToCells(vc)
-    const slug = vcSlugFromName(vc.name)
-    if (existingVCsById.has(vc.id)) {
-      await saveDataRowDraft(db, MAIN_SCOPE, vc.id, { cells, slug }, actorUserId)
-    } else {
-      await createDataRow(db, MAIN_SCOPE, { id: vc.id, tableId: 'components', cells, slug }, actorUserId)
-    }
-  }
-
-  // Upsert pack layouts as data_rows
-  const existingLayoutRowsById = new Map(layoutRows.map((r) => [r.id, r]))
-  for (const layout of pack.layouts) {
-    const cells = savedLayoutToCells(layout)
-    const slug = layoutSlugFromName(layout.name)
-    if (existingLayoutRowsById.has(layout.id)) {
-      await saveDataRowDraft(db, MAIN_SCOPE, layout.id, { cells, slug }, actorUserId)
-    } else {
-      await createDataRow(db, MAIN_SCOPE, { id: layout.id, tableId: 'layouts', cells, slug }, actorUserId)
-    }
-  }
+  for (const row of rows) await writePackRow(db, row, actorUserId)
 
   await createAuditEvent(db, {
     actorUserId,

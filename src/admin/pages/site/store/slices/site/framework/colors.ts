@@ -266,14 +266,14 @@ export function createFrameworkColorActions({
       const colors = site.settings.framework?.colors ?? { tokens: [] }
       const token = createFrameworkColorTokenFromInput(input, colors)
 
-      mutateSite((draftSite) => {
+      const accepted = mutateSite((draftSite) => {
         const draftColors = ensureFrameworkColors(draftSite)
         draftColors.tokens.push(token)
         reconcileFrameworkClasses(draftSite)
         return true
       })
 
-      return token
+      return accepted ? token : null
     },
 
     /**

@@ -1,2 +1,2 @@
-export { TagPill, type TagPillTone } from './TagPill'
+export { TagPill, type TagPillProps, type TagPillTone } from './TagPill'
 

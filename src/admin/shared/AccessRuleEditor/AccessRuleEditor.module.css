@@ -1,0 +1,27 @@
+.root {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-l);
+    min-width: 0;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    min-width: 0;
+}
+
+.label {
+    color: var(--text-subtle);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.hint {
+    margin: 0;
+    color: var(--text-subtle);
+    font-size: var(--text-xs);
+    line-height: 1.45;
+}

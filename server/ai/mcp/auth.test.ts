@@ -7,16 +7,16 @@ import type { DbClient } from '../../db/client'
 import { createBearerConnection } from './connectors/store'
 import {
   generatePersonalAccessToken,
-  hashMcpSecret,
-  pkceChallengeForVerifier,
 } from './connectors/token'
 import { resolveMcpAuth, unauthorizedResponse } from './auth'
 import {
   createOAuthAuthorizationGrant,
-  exchangeAuthorizationCode,
+  mcpOAuthRealm,
   registerOAuthClient,
 } from './oauth/store'
 import { nowIso } from '@core/utils/isoDate'
+import { hashOpaqueToken, pkceChallengeForVerifier } from '../../oauth/secrets'
+import { exchangeAuthorizationCode } from '../../oauth/grants'
 
 async function freshDb(): Promise<DbClient> {
   const db = createSqliteClient(':memory:')
@@ -60,7 +60,7 @@ describe('mcp auth', () => {
     const token = generatePersonalAccessToken()
     await createBearerConnection(db, {
       userId: 'u1', label: 'L',
-      capabilities: ['ai.chat', 'content.manage'], tokenHash: await hashMcpSecret(token),
+      capabilities: ['ai.chat', 'content.manage'], tokenHash: await hashOpaqueToken(token),
     })
     const req = new Request('http://x/_instatic/mcp', { headers: { Authorization: `Bearer ${token}` } })
     const res = await resolveMcpAuth(req, db)
@@ -84,7 +84,7 @@ describe('mcp auth', () => {
   it('rejects a revoked connector token', async () => {
     const token = generatePersonalAccessToken()
     const rec = await createBearerConnection(db, {
-      userId: 'u1', label: 'L', capabilities: ['ai.chat'], tokenHash: await hashMcpSecret(token),
+      userId: 'u1', label: 'L', capabilities: ['ai.chat'], tokenHash: await hashOpaqueToken(token),
     })
     await db`update ai_mcp_connectors set revoked_at = ${nowIso()} where id = ${rec.id}`
     const req = new Request('http://x/_instatic/mcp', { headers: { Authorization: `Bearer ${token}` } })
@@ -96,7 +96,7 @@ describe('mcp auth', () => {
     // Create a connector that expired 1 second ago.
     const pastExpiry = new Date(Date.now() - 1000).toISOString()
     const rec = await createBearerConnection(db, {
-      userId: 'u1', label: 'L', capabilities: ['ai.chat'], tokenHash: await hashMcpSecret(token),
+      userId: 'u1', label: 'L', capabilities: ['ai.chat'], tokenHash: await hashOpaqueToken(token),
       ttlDays: 90,
     })
     // Backdate expires_at to a past timestamp to simulate expiry.
@@ -108,7 +108,7 @@ describe('mcp auth', () => {
   it('accepts a grandfathered connector with NULL expires_at (non-expiring)', async () => {
     const token = generatePersonalAccessToken()
     const rec = await createBearerConnection(db, {
-      userId: 'u1', label: 'Legacy', capabilities: ['ai.chat'], tokenHash: await hashMcpSecret(token),
+      userId: 'u1', label: 'Legacy', capabilities: ['ai.chat'], tokenHash: await hashOpaqueToken(token),
     })
     // Simulate a pre-migration 019 row with no expiry set.
     await db`update ai_mcp_connectors set expires_at = null where id = ${rec.id}`
@@ -137,7 +137,7 @@ describe('mcp auth', () => {
         resource: 'http://x/_instatic/mcp',
       },
     })
-    const tokens = await exchangeAuthorizationCode(db, {
+    const tokens = await exchangeAuthorizationCode(db, mcpOAuthRealm, {
       code,
       clientId: client.clientId,
       redirectUri: client.redirectUris[0]!,
@@ -215,7 +215,7 @@ describe('mcp auth issuer trust', () => {
         resource: hostileResource,
       },
     })
-    const tokens = await exchangeAuthorizationCode(db, {
+    const tokens = await exchangeAuthorizationCode(db, mcpOAuthRealm, {
       code,
       clientId: client.clientId,
       redirectUri: client.redirectUris[0]!,
@@ -230,7 +230,7 @@ describe('mcp auth issuer trust', () => {
 
     const personal = generatePersonalAccessToken()
     await createBearerConnection(db, {
-      userId: 'u1', label: 'Local', capabilities: ['ai.chat'], tokenHash: await hashMcpSecret(personal),
+      userId: 'u1', label: 'Local', capabilities: ['ai.chat'], tokenHash: await hashOpaqueToken(personal),
     })
     const pat = await resolveMcpAuth(hostileRequest({ Authorization: `Bearer ${personal}` }), db)
     expect(pat.ok).toBe(true)

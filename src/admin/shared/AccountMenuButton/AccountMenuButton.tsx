@@ -24,7 +24,7 @@
  * The button stays signed-out-safe: when there is no current user (admin
  * shell hasn't hydrated yet), the component returns null.
  */
-import { useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type RefObject, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@ui/components/Button'
 import {
@@ -42,10 +42,11 @@ import { UserAvatar } from '@admin/shared/UserAvatar'
 import { logoutAllOtherCmsSessions, logoutCms } from '@core/persistence'
 import styles from './AccountMenuButton.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
+import { userDisplayLabel } from '@core/users/displayName'
 
 const ACCOUNT_ROUTE = '/admin/account'
 
-export function AccountMenuButton(): ReactNode {
+export function AccountMenuButton({ sheetAnchor }: { sheetAnchor?: RefObject<HTMLButtonElement | null> }): ReactNode {
   const user = useAuthenticatedAdminUser()
   const navigate = useAdminNavigate()
   const { runStepUp } = useStepUp()
@@ -54,7 +55,7 @@ export function AccountMenuButton(): ReactNode {
   const [status, setStatus] = useState<{ tone: 'info' | 'error'; message: string } | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
 
-  const displayName = user.displayName.trim() || user.email
+  const displayName = userDisplayLabel(user)
   const roleLabel = user.role.name
 
   function close(): void {
@@ -119,18 +120,19 @@ export function AccountMenuButton(): ReactNode {
         aria-label={`Account menu for ${displayName}`}
         aria-haspopup="menu"
         aria-expanded={open}
-        className={styles.trigger}
+        className={sheetAnchor ? undefined : styles.trigger}
         data-testid="account-menu-trigger"
         data-active={open ? 'true' : undefined}
         onClick={() => setOpen((current) => !current)}
       >
-        <UserAvatar user={user} size={26} alt={null} className={styles.triggerAvatar} />
+        {sheetAnchor ? 'Account' : <UserAvatar user={user} size={26} alt={null} className={styles.triggerAvatar} />}
       </Button>
       {open && typeof document !== 'undefined' && createPortal(
         <ContextMenu
           ariaLabel="Account menu"
           onClose={close}
           anchorRef={triggerRef}
+          getAnchorRect={sheetAnchor && (() => sheetAnchor.current?.getBoundingClientRect() ?? null)}
           side="bottom"
           align="end"
           width={240}
@@ -145,6 +147,7 @@ export function AccountMenuButton(): ReactNode {
           </header>
           <ContextMenuSeparator />
           <ContextMenuItem
+            autoFocus={!!sheetAnchor}
             onClick={() => {
               close()
               navigate(ACCOUNT_ROUTE)

@@ -37,10 +37,12 @@ import {
   getDataRowVersion,
   listDataRowVersions,
 } from '../../../repositories/data'
-import { publishDataRow, removeDataRowArtefact } from '../../../publish/publishRow'
+import { publishDataRow, retractDataRowArtefacts } from '../../../publish/publishRow'
 import { runPublishFlush } from '../../../publish/publishFlush'
 import { findUserById } from '../../../repositories/users'
 import { slugForTable } from '@core/data/cells'
+import { userHasCapability } from '../../../auth/authz'
+import { keepPageStructuralCells } from '../../../writePolicy/pageStructuralCells'
 import { badRequest, jsonResponse, readValidatedBody } from '../../../http'
 import { bumpPublishVersionSerialized } from '../../../publish/publishState'
 import type { CmsHandlerOptions } from '../shared'
@@ -193,15 +195,23 @@ async function handleRowItemPatch(
   const table = await getDataTable(db, scope, currentRow.tableId)
   if (!table) return rowNotFound()
 
-  const rawCells = body.cells ?? currentRow.cells
+  // A page's access rule and head settings stay as stored unless this user may change them.
+  const rawCells = keepPageStructuralCells(
+    currentRow,
+    body.cells ?? currentRow.cells,
+    userHasCapability(user, 'site.structure.edit'),
+  )
   // Run the `content.entry.cells` filter pipeline before persistence so
   // plugins can validate / normalize / auto-fill cells — the same shared
   // helper the plugin `cms.content.*` surface applies.
-  const cells = await applyContentEntryCellsFilter(rawCells, {
-    tableSlug: table.slug,
+  const filtered = await applyContentEntryCellsFilter(rawCells, {
+    scope,
+    table,
     entryId: rowId,
     actor: { kind: 'user', userId: user.id },
   })
+  // Checked again after the filters: a plugin filter is not a way around the rule either.
+  const cells = keepPageStructuralCells(currentRow, filtered, userHasCapability(user, 'site.structure.edit'))
   const slug = slugForTable(table, cells)
 
   const row = await saveDataRowDraft(db, scope, rowId, { cells, slug }, user.id)
@@ -234,10 +244,11 @@ async function handleRowItemDelete(
   const row = await softDeleteDataRow(db, scope, rowId, user.id)
   if (!row) return rowNotFound()
   // Prune the baked public artefact — a deleted row must stop being served
-  // by Layer A, which reads the disk slot with no DB awareness (ISS-039).
+  // by Layer A, which reads the disk slot with no DB awareness (ISS-039) —
+  // along with the baked pages that list it through a loop over its table.
   // Only main is served: a branch row never had an artefact or a cached route.
   if (options.uploadsDir && isMainScope(scope)) {
-    await removeDataRowArtefact(db, options.uploadsDir, rowId, row.slug).catch((err) => {
+    await retractDataRowArtefacts(db, options.uploadsDir, row, { wasPublished: row.status === 'published' }).catch((err) => {
       console.error('[publish:row] failed to remove artefact for deleted row', rowId, err)
     })
   }
@@ -362,10 +373,11 @@ async function handleRowStatus(
   const row = await updateDataRowStatus(db, scope, rowId, body.status, user.id)
   if (!row) return rowNotFound()
   // draft and unpublished both leave public visibility — prune the baked
-  // artefact so Layer A stops serving the retracted content (ISS-039).
+  // artefact so Layer A stops serving the retracted content (ISS-039), and
+  // the baked pages that listed the row while it was published.
   // Only main has artefacts.
   if (options.uploadsDir && isMainScope(scope)) {
-    await removeDataRowArtefact(db, options.uploadsDir, rowId, row.slug).catch((err) => {
+    await retractDataRowArtefacts(db, options.uploadsDir, row, { wasPublished: currentRow.status === 'published' }).catch((err) => {
       console.error('[publish:row] failed to remove artefact for retracted row', rowId, err)
     })
   }
@@ -418,6 +430,7 @@ async function handleRowTable(
   db: DbClient,
   params: RouteParams,
   scope: BranchScope,
+  options: CmsHandlerOptions,
 ): Promise<Response> {
   const rowId = params.id
   // Cross-collection move = structurally distinct from cell-level editing.
@@ -434,8 +447,28 @@ async function handleRowTable(
   const currentRow = await loadRowForAccess(db, scope, rowId, user, canEditDataRow)
   if (currentRow instanceof Response) return currentRow
 
+  const fromTable = await getDataTable(db, scope, currentRow.tableId)
   const result = await updateDataRowTable(db, scope, rowId, body.tableId, user.id)
   if (result.ok) {
+    // The entry now lives at its new table's address. Its baked page at the
+    // old one, and the baked pages that list either table, are stale: Layer A
+    // reads the disk slot with no DB awareness. A published entry stays
+    // published and is rendered live at the new address until the next
+    // publish bakes it there.
+    if (options.uploadsDir && isMainScope(scope) && result.row.tableId !== currentRow.tableId) {
+      const wasPublished = currentRow.status === 'published'
+      const retractions = [
+        // Where it was: its own page under the old route base, and that table's listings.
+        { row: currentRow, options: { wasPublished, ...(fromTable ? { bakedUnderRouteBase: fromTable.routeBase } : {}) } },
+        // Where it is now: the new table's listings.
+        { row: result.row, options: { wasPublished } },
+      ]
+      for (const { row, options: retract } of retractions) {
+        await retractDataRowArtefacts(db, options.uploadsDir, row, retract).catch((err) => {
+          console.error('[publish:row] failed to remove artefact for moved row', rowId, err)
+        })
+      }
+    }
     await recordRowAuditEvent(db, user, req, 'data.row.move', result.row)
     return jsonResponse({ row: result.row })
   }
@@ -502,11 +535,15 @@ async function handleRowVersionRestore(
   // The restored cells go through the same pipeline as a draft save: the
   // `content.entry.cells` filter, then the slug derived from the cells —
   // the version's stored slug may since have been taken by another row.
-  const cells = await applyContentEntryCellsFilter(version.cells, {
-    tableSlug: table.slug,
+  const restored = await applyContentEntryCellsFilter(version.cells, {
+    scope,
+    table,
     entryId: current.id,
     actor: { kind: 'user', userId: user.id },
   })
+  // Restoring brings back a page's content, never who may open it or its
+  // head settings: both stay as they are now, whatever the old version carried.
+  const cells = keepPageStructuralCells(current, restored)
   const slug = slugForTable(table, cells)
   if (slug) {
     const holder = await getDataRowBySlug(db, scope, table.id, slug)

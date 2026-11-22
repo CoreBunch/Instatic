@@ -17,9 +17,16 @@
     z-index: var(--toast-z-index);
     display: flex;
     flex-direction: column-reverse;
-    gap: var(--space-s);
-    max-width: min(420px, calc(100vw - 32px));
+    gap: var(--space-m);
+    width: min(360px, calc(100% - 32px));
     pointer-events: none;
+}
+
+/* Keep the dialog's footer actions reachable while it reports a result. */
+body:has([aria-modal="true"]) .stack {
+    inset: 16px 0 auto;
+    margin-inline: auto;
+    flex-direction: column;
 }
 
 /* ── Toast card ──────────────────────────────────────────────────────────── */
@@ -27,18 +34,13 @@
 .toast {
     pointer-events: auto;
     display: grid;
-    grid-template-columns: 16px 1fr auto;
-    align-items: flex-start;
-    gap: var(--space-m);
-    padding: var(--space-m) var(--space-l);
-    background: var(--bg-surface);
-    border: 1px solid var(--overlay-10);
-    border-radius: var(--panel-radius);
-    box-shadow: var(--shadow-panel);
-    backdrop-filter: blur(var(--panel-blur));
-    color: var(--text);
-    font-size: var(--text-s);
-    line-height: 1.4;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: var(--space-l);
+    padding: var(--space-2xl) var(--space-3xl);
+    background: var(--bg-surface-2);
+    border-radius: var(--card-radius);
+    box-shadow: var(--shadow-panel-drop);
     animation: toast-enter 140ms ease-out;
 }
 
@@ -53,73 +55,46 @@
     }
 }
 
-/* ── Per-kind accents ────────────────────────────────────────────────────── */
-/*
- * The card itself stays achromatic — only the leading icon and a 1px tinted
- * left edge carry the semantic colour. Aligned with the achromatic-color-policy
- * gate (Constraint #376): semantic state tokens are the only chromatic accents
- * permitted on editor chrome.
- */
-
-.kind-error {
-    border-left: 2px solid var(--danger);
-}
-.kind-error .icon {
-    color: var(--danger-light);
-}
-
-.kind-warning {
-    border-left: 2px solid var(--warning);
-}
-.kind-warning .icon {
-    color: var(--warning);
-}
-
-.kind-success {
-    border-left: 2px solid var(--success);
-}
-.kind-success .icon {
-    color: var(--success);
-}
-
-.kind-info {
-    border-left: 2px solid var(--text-subtle);
-}
-.kind-info .icon {
+.icon {
+    display: grid;
+    place-items: center;
+    min-height: 22px;
     color: var(--text-muted);
 }
 
-/* ── Slots ───────────────────────────────────────────────────────────────── */
+.toast[data-toast-kind="error"] .icon {
+    color: var(--danger-text);
+}
 
-.icon {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    margin-top: var(--space-px);
+.toast[data-toast-kind="warning"] .icon {
+    color: var(--warning-text);
+}
+
+.toast[data-toast-kind="success"] .icon {
+    color: var(--success-text);
 }
 
 .content {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--space-4xs);
+    align-items: start;
+    gap: var(--space-2xs);
 }
 
 .title {
     margin: 0;
     color: var(--text-bright);
-    font-size: var(--text-s);
-    font-weight: 500;
-    line-height: 1.35;
+    font-size: var(--text-l);
+    font-weight: 600;
+    line-height: max(1.4em, 22px);
     overflow-wrap: anywhere;
 }
 
 .body {
     margin: 0;
     color: var(--text-muted);
-    font-size: var(--text-xs);
+    font-size: var(--text-m);
     line-height: 1.45;
     overflow-wrap: anywhere;
     /* Cap to ~3 lines so a noisy stack trace can't fill the viewport. */
@@ -141,11 +116,10 @@
         "Liberation Mono",
         monospace;
     font-size: var(--text-2xs);
+    overflow-wrap: anywhere;
     letter-spacing: 0.01em;
 }
 
-.actions {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-3xs);
+.action {
+    margin-top: var(--space-xs);
 }

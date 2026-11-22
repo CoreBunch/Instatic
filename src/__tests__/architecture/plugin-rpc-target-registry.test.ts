@@ -59,6 +59,9 @@ const EXPECTED_TARGET_PERMISSIONS: Record<string, string> = {
   'cms.storage.create': 'cms.storage',
   'cms.storage.update': 'cms.storage',
   'cms.storage.delete': 'cms.storage',
+  'cms.storage.get': 'cms.storage',
+  'cms.storage.getByKey': 'cms.storage',
+  'cms.storage.createIfAbsent': 'cms.storage',
   'network.fetch': 'network.outbound',
   'cms.schedule.register': 'cms.schedule',
   'cms.schedule.cancel': 'cms.schedule',
@@ -76,7 +79,6 @@ const EXPECTED_TARGET_PERMISSIONS: Record<string, string> = {
   'cms.content.entries.update': 'cms.content.write',
   'cms.content.entries.delete': 'cms.content.delete',
   'cms.content.entries.publish': 'cms.content.publish',
-  'cms.content.entries.moveTable': 'cms.content.write',
   'cms.content.entries.createMany': 'cms.content.write',
   'cms.content.entries.updateMany': 'cms.content.write',
   'cms.content.entries.deleteMany': 'cms.content.delete',
@@ -86,6 +88,16 @@ const EXPECTED_TARGET_PERMISSIONS: Record<string, string> = {
   'cms.content.search': 'cms.content.read',
   'cms.content.snapshot': 'cms.content.read',
   'cms.content.republishAll': 'cms.content.publish',
+  'cms.members.get': 'members.read',
+  'cms.members.invite': 'members.write',
+  'cms.members.ensure': 'members.write',
+  'cms.members.emailStatus': 'members.write',
+  'cms.members.exportProvider': 'members.read',
+  'cms.members.deletedSince': 'members.read',
+  'cms.members.tags.grant': 'members.tags',
+  'cms.members.tags.revoke': 'members.tags',
+  'cms.mail.send': 'mail.send',
+  'cms.mail.sendExternal': 'mail.send.external',
 }
 
 /** Targets that intentionally require NO permission (must be absent from map). */
@@ -94,6 +106,8 @@ const UNGATED_TARGETS = [
   'network.abort',
   'crypto.digest',
   'crypto.signHmac',
+  'cms.site.publicUrl',
+  'cms.rateLimit.take',
 ]
 
 describe('plugin RPC target registry', () => {

@@ -122,6 +122,13 @@
     line-height: 1.5;
 }
 
+/* A wildcard origin covers hosts the reviewer cannot see listed. */
+.wildcardWarning {
+    color: var(--warning-text);
+    font-size: var(--text-s);
+    line-height: 1.5;
+}
+
 .badge {
     display: inline-flex;
     align-items: center;
@@ -191,4 +198,32 @@
     display: flex;
     justify-content: flex-end;
     gap: var(--space-s);
+}
+
+/* One email template, read before it is approved: subject, then the body in a script-less frame. */
+.mailPreview {
+    margin-top: var(--space-xs);
+    font-size: var(--text-s);
+    color: var(--text-muted);
+}
+
+.mailPreview summary {
+    cursor: pointer;
+    width: fit-content;
+}
+
+.review .mailSubject {
+    margin: var(--space-s) 0;
+    color: var(--text-bright);
+    font-size: var(--text-s);
+    font-weight: 600;
+}
+
+.mailBody {
+    display: block;
+    width: 100%;
+    height: 260px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--email-preview-surface);
 }

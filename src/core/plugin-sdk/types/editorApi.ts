@@ -7,6 +7,7 @@ import type {
 import type { PluginCanvasOverlay } from './canvasOverlays'
 import type { PluginCommand, PluginPaletteProvider, PluginToolbarButton } from './commands'
 import type { PluginDashboardWidget } from './dashboardWidgets'
+import type { EditorFragmentsApi } from './fragments'
 import type { PluginEditorPanel } from './panels'
 import type { PluginPermission } from './permissions'
 
@@ -60,6 +61,14 @@ export interface EditorPluginApi {
       read: () => EditorStore
       transaction: (mutate: (store: EditorStore) => void) => void
     }
+    /**
+     * Insert site fragments into the open document, apply a theme to the
+     * site, or plan either as a dry run. Requires the `editor.fragments`
+     * permission. Works while the site editor is open; elsewhere `insert`
+     * and `applyTheme` resolve `{ ok: false, stage: 'unavailable' }`, and
+     * `plan` and `planTheme` `{ ok: false }`.
+     */
+    fragments: EditorFragmentsApi
     /**
      * Command Spotlight (⌘K) integration.
      *

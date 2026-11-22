@@ -80,6 +80,20 @@ export {
   SkeletonCards,
   SkeletonRows,
 } from '@ui/components/Skeleton'
+
+/**
+ * Small editor controls — SegmentedControl, TagPill, Kbd, ShortcutKeys.
+ *
+ * The same toggles, chips and key caps the editor's own panels and dialogs
+ * use, so a plugin's view switches, filter chips and shortcut hints match
+ * the rest of the admin instead of being restyled by hand.
+ */
+export { SegmentedControl } from '@ui/components/SegmentedControl'
+export { TagPill } from '@ui/components/TagPill'
+export { Kbd, ShortcutKeys } from '@ui/components/Kbd'
+export type { SegmentedControlOption, SegmentedControlProps } from '@ui/components/SegmentedControl'
+export type { TagPillProps, TagPillTone } from '@ui/components/TagPill'
+export type { KbdProps, ShortcutKeysProps } from '@ui/components/Kbd'
 export type { WidgetProps, WidgetTint, WidgetIcon } from '@ui/components/Widget'
 export type { RangeTabsProps } from '@ui/components/RangeTabs'
 export type { TabsProps, TabListProps, TabProps, TabPanelProps } from '@ui/components/Tabs'

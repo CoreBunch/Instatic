@@ -17,25 +17,11 @@
     background: var(--border);
 }
 
-/* Square icon button. Overrides the Button primitive's inline-flex sizing
- * so every mark toggle (Bold / Italic / Underline / Strike / Code / Link)
- * has the same 28×28 footprint regardless of icon width. */
-.markButton {
-    width: 28px;
-    height: 28px;
-    min-width: 28px;
-    min-height: 28px;
-    padding: 0;
-    flex-shrink: 0;
-    aspect-ratio: 1 / 1;
-}
-
 .blockTypeButton {
     display: inline-flex;
     align-items: center;
     gap: var(--space-3xs);
     min-width: 0;
-    height: 28px;
     padding: 0 var(--space-s) 0 var(--space-m);
     color: var(--text);
     font-size: var(--text-s);

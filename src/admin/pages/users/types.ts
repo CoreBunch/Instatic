@@ -9,7 +9,7 @@ import type { ReactNode } from 'react'
 import type { CmsCurrentUser } from '@core/persistence'
 import type { CoreCapability } from '@core/capabilities'
 
-export type Tab = 'users' | 'roles' | 'audit'
+export type Tab = 'users' | 'members' | 'roles' | 'audit'
 export type UserDialogMode = 'create' | 'edit' | 'reset'
 export type RoleDialogMode = 'create' | 'edit' | 'view'
 

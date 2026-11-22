@@ -3,7 +3,8 @@
  *
  * Public API:
  *
- *   importHtml(source)   — parse → harvest → strip → walk; the single entry point.
+ *   importHtml(source, options?) — parse → inline SVG sprites → harvest → strip → walk;
+ *                          the single entry point.
  *   parseHtml(source)    — DOMParser wrapper (browser / test polyfill).
  *   stripUnsafe(doc)     — mutates doc in place, returns StripReport.
  *   collectStyleCss(doc) — concatenated CSS of every <style> block (pre-strip).
@@ -22,7 +23,8 @@
  * Internal files import each other via relative paths.
  */
 
-export type {  ImportFragment, ImportResult } from './walkAndMap'
+export type { ImportFragment, ImportHtmlOptions, ImportResult } from './walkAndMap'
+export type { SvgSpriteLoader } from './svgSprites'
 
 export { parseHtml } from './parseHtml'
 export { stripUnsafe } from './stripUnsafe'

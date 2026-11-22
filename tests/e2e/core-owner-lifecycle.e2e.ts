@@ -68,6 +68,11 @@ test.describe('core owner lifecycle', () => {
       await selectTreeLayer(page, 'Text')
       await setPropValue(page, 'text', DRAFT_ONLY_TEXT)
       await expect(canvasFrame(page).getByText(DRAFT_ONLY_TEXT)).toBeVisible()
+      await expect.poll(async () => {
+        const response = await page.request.get('/admin/api/cms/publish/status')
+        expect(response.ok()).toBe(true)
+        return response.json()
+      }).toMatchObject({ hasPublishedVersion: true, draftMatchesPublished: false })
 
       // The unpublished edit must not leak: the public page still shows the
       // last published headline, not the new draft-only text.
@@ -75,6 +80,15 @@ test.describe('core owner lifecycle', () => {
         visibleText: PUBLISHED_TEXT,
         hiddenText: DRAFT_ONLY_TEXT,
       })
+    })
+
+    await test.step('dashboard shows the published version and outstanding draft changes', async () => {
+      await page.goto('/admin/dashboard')
+      const status = page.locator('[data-widget="status"]')
+      await expect(status.getByText('Publishing status', { exact: true })).toBeVisible()
+      await expect(status.getByText('Published', { exact: true })).toBeVisible()
+      await expect(status.getByText('Unpublished site changes.')).toBeVisible()
+      await expect(status.locator('time')).toHaveAttribute('datetime', /^\d{4}-\d{2}-\d{2}T/)
     })
   })
 })

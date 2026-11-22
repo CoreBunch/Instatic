@@ -5,14 +5,16 @@
  *
  *   1. `persistDataRowPublish` — one short DB transaction (the data
  *      repository owns all SQL).
- *   2. Layer A — update the row's baked artefact in the ACTIVE slot in
- *      place (and prune the old path when the slug changed).
+ *   2. Layer A — drop the baked pages that loop over the row's table
+ *      (`loopArtefacts.ts`), then update the row's own baked artefact in the
+ *      ACTIVE slot in place (and prune the old path when the slug changed).
  *   3. Layer B — bump the publish version so the render cache refreshes.
  *
  * Data access lives in `server/repositories/data/publish.ts`; this module
  * owns the sequencing, rendering, and disk artefacts. The dependency
  * direction is one-way: publish → repositories, never back.
  */
+import { loadAccessIndex, rowRouteRules } from './accessGate'
 import type { DbClient } from '../db/client'
 import type { DataRow, DataRowVersion } from '@core/data/schemas'
 import { resolveTemplateChain } from '@core/templates'
@@ -29,9 +31,13 @@ import { getLatestPublishedSiteSnapshot } from '../repositories/publish'
 import { snapshotForEntryRoute } from './entryTemplateSnapshot'
 import { renderPublishedDataRowTemplate } from './publicRenderer'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
-import { removeArtefactInPlace, updateArtefactInPlace } from './staticArtefact'
+import { removeArtefactInPlace, removeArtefactsInPlace, updateArtefactInPlace } from './staticArtefact'
+import { removeArtefactsLoopingOverTable } from './loopArtefacts'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
 import { runPublishFlush } from './publishFlush'
+import { getDataRow } from '../repositories/data'
+import { MAIN_SCOPE } from '../branches/scope'
+import { publishPageRowLocked } from './publishSite'
 
 export interface PublishDataRowResult {
   row: DataRow
@@ -64,12 +70,22 @@ async function publishDataRowLocked(
   publisherUserId: string | null,
   uploadsDir?: string,
 ): Promise<PublishDataRowResult> {
+  const draft = await getDataRow(db, MAIN_SCOPE, rowId)
+  if (!draft) throw new Error('data row not found')
+  if (draft.tableId === 'pages') return publishPageRowLocked(db, draft, publisherUserId, uploadsDir)
+
   const { row, version, previousRoute } = await persistDataRowPublish(db, rowId, publisherUserId)
 
   // Layer A: incremental artefact update outside the transaction.
   // Disk artefacts are derived state — errors are logged but do not fail
   // the publish. The next full publish (publishDraftSite) will rebuild.
   if (uploadsDir) {
+    // Pages that list this table were baked with the previous rows. Drop them
+    // first so the row's own artefact, written next, is the only fresh file
+    // left for a route that lists its own table.
+    await removeArtefactsLoopingOverTable(db, uploadsDir, row.tableId).catch((err) => {
+      console.error('[publish:row] failed to drop baked pages that loop over table', row.tableId, err)
+    })
     // Bake with the NEXT publish version — `bumpPublishVersion()` below is the
     // synchronous statement right after this await resolves, so a hole-shell
     // baked here carries the version that becomes current with no gap.
@@ -132,6 +148,13 @@ async function writeDataRowArtefact(
   if (!publishedDataRow) return
 
   const newPath = publicDataPath(tableInfo.tableRouteBase, publishedRow.slug)
+  // Entries of a protected table never go to disk; drop any file left from
+  // before the table was protected.
+  // Protected by any rule the public router applies to the entry's route.
+  if (rowRouteRules(await loadAccessIndex(db), publishedDataRow.tableId, newPath).length > 0) {
+    await removeArtefactInPlace(uploadsDir, newPath)
+    return
+  }
   const syntheticUrl = new URL(`http://localhost${newPath}`)
   // Runtime assets come from this table's entry template, not from the
   // arbitrary page the site-wide snapshot happens to name.
@@ -143,26 +166,64 @@ async function writeDataRowArtefact(
   })
   if (!rendered) return
 
-  const html = await applyPublishedHtmlPipeline(rendered, db)
+  const html = await applyPublishedHtmlPipeline(rendered, db, 'public')
   await updateArtefactInPlace(uploadsDir, newPath, html)
 }
 
 /**
- * Remove a data row's baked Layer-A artefact from the active slot. Called when
- * a row leaves public visibility (unpublish, revert-to-draft, soft-delete) so
- * the static file stops being served — Layer A reads the disk slot with no
- * publishVersion awareness, so without this a retracted row stays public
- * (ISS-039). The route is resolved WITHOUT the `deleted_at is null` filter so
- * it still works after a soft delete. Best-effort: unresolved route or missing
- * file is a no-op (removeArtefactInPlace never throws on a missing file).
+ * Retract a data row from Layer A after it left public visibility (unpublish,
+ * revert-to-draft, soft-delete). Layer A reads the disk slot with no
+ * publishVersion awareness, so without this the retracted content stays
+ * public (ISS-039):
+ *
+ *   - the row's own baked artefact is removed. The route is resolved WITHOUT
+ *     the `deleted_at is null` filter so it still works after a soft delete;
+ *     an unresolved route or a missing file is a no-op.
+ *   - when the row was published, the baked pages that loop over its table are
+ *     removed too, so no listing keeps a card that links to a 404.
+ *
+ * Runs under the publish lock so a full publish cannot swap the active slot
+ * mid-way. Never call it inside an open DB transaction (see
+ * `bumpPublishVersionSerialized`).
  */
-export async function removeDataRowArtefact(
+export function retractDataRowArtefacts(
   db: DbClient,
   uploadsDir: string,
-  rowId: string,
-  slug: string,
+  row: Pick<DataRow, 'id' | 'tableId' | 'slug'>,
+  options: {
+    wasPublished: boolean
+    /**
+     * The route base the row's page was baked under, when that is no longer
+     * the route base of the table the row is in now (the row was moved).
+     */
+    bakedUnderRouteBase?: string
+  },
 ): Promise<void> {
-  const routeBase = await getRowTableRouteBase(db, rowId)
-  if (routeBase === null) return
-  await removeArtefactInPlace(uploadsDir, publicDataPath(routeBase, slug))
+  return retractDataRowArtefactsMany(db, uploadsDir, [{ ...row, ...options }])
+}
+
+/**
+ * Batch form of `retractDataRowArtefacts`: one publish-lock hold for the whole
+ * batch, and the listing pages of each table are removed once however many of
+ * its published rows left.
+ */
+export function retractDataRowArtefactsMany(
+  db: DbClient,
+  uploadsDir: string,
+  rows: ReadonlyArray<
+    Pick<DataRow, 'id' | 'tableId' | 'slug'> & { wasPublished: boolean; bakedUnderRouteBase?: string }
+  >,
+): Promise<void> {
+  return withPublishLock(async () => {
+    const ownPaths: string[] = []
+    for (const row of rows) {
+      const routeBase = row.bakedUnderRouteBase ?? (await getRowTableRouteBase(db, row.id))
+      if (routeBase !== null) ownPaths.push(publicDataPath(routeBase, row.slug))
+    }
+    await removeArtefactsInPlace(uploadsDir, ownPaths)
+    const listedTableIds = new Set(rows.filter((row) => row.wasPublished).map((row) => row.tableId))
+    for (const tableId of listedTableIds) {
+      await removeArtefactsLoopingOverTable(db, uploadsDir, tableId)
+    }
+  })
 }

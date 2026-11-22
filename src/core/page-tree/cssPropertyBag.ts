@@ -177,6 +177,8 @@ const CSSPropertyBagSchema = Type.Object({
   // elements needs it to round-trip.
   appearance: Type.Optional(Type.String()),
 
+  visibility: Type.Optional(Type.String()),
+
   // Effects
   boxShadow: Type.Optional(Type.String()),
   filter: Type.Optional(Type.String()),

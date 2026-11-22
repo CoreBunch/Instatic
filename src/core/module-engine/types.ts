@@ -4,7 +4,7 @@ import type {
   FormEventHandler,
   KeyboardEventHandler,
   ReactNode,
-  Ref,
+  RefObject,
 } from 'react'
 import type { IconComponent } from 'pixel-art-icons/types'
 import type { TSchema } from '@core/utils/typeboxHelpers'
@@ -169,7 +169,7 @@ export interface ModuleComponentProps<
  */
 export interface InlineEditBinding {
   /** Ref the canvas attaches to focus + seed the element and read it on commit. */
-  ref: Ref<HTMLElement>
+  ref: RefObject<HTMLElement | null>
   /** Fires on every edit — the canvas reads `innerText` and commits live. */
   onInput: FormEventHandler<HTMLElement>
   /** Escape cancels, Enter commits/breaks per the module's multiline flag. */
@@ -328,6 +328,19 @@ export interface ModuleDefinition<
    * Omit for the standard path.
    */
   publishBehavior?: 'standard' | 'special' | 'transparent'
+
+  /**
+   * Class names this module's published output may carry that no node's
+   * `classIds` names: classes `render()` writes into its own HTML, or that
+   * its frontend script toggles. Each entry is an exact class name or a
+   * `prefix*` (`commerce-checkout*` covers `commerce-checkout__total` and
+   * `commerce-checkout--busy`). The publisher's class tree-shaker keeps site
+   * class rules matching the declarations of every module placed on the site,
+   * so CSS written for the module's markup (often imported with the site)
+   * reaches the published stylesheet. Omit when the module's markup carries
+   * only node classes.
+   */
+  emittedClassNames?: readonly string[]
 
   /**
    * When `true`, this module's render output varies per visitor request and

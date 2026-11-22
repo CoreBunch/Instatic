@@ -1,0 +1,260 @@
+.directory, .list, .inspector, .section {
+    display: grid;
+    min-width: 0;
+    align-content: start;
+}
+
+.directory {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-4xl);
+}
+
+.directory[data-split="true"] {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 32%);
+}
+
+.list {
+    gap: var(--space-2xl);
+    container-type: inline-size;
+}
+
+.toolbar, .access, .status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+}
+
+.toolbar, .access {
+    flex-wrap: wrap;
+}
+
+.toolbar {
+    --input-radius: calc(var(--control-height) / 2);
+    --segment-track-radius: var(--input-radius);
+    --segment-radius: var(--radius-pill);
+}
+
+.search {
+    flex: 1 1 240px;
+    min-width: 0;
+}
+
+.table.table {
+    table-layout: fixed;
+    min-width: 0;
+    border-spacing: 0;
+}
+
+.table th, .table td {
+    overflow-wrap: anywhere;
+}
+
+.table thead th {
+    padding: var(--space-xs) var(--space-l) var(--space-s);
+}
+
+.table tbody tr {
+    position: relative;
+}
+
+.table tbody td {
+    padding: var(--space-m) var(--space-l);
+    border-radius: 0;
+    background: transparent;
+}
+
+.table tbody td:first-child {
+    border-radius: var(--panel-radius) 0 0 var(--panel-radius);
+}
+
+.table tbody td:last-child {
+    border-radius: 0 var(--panel-radius) var(--panel-radius) 0;
+}
+
+.directory .table tbody tr:hover td {
+    background: var(--overlay-5);
+}
+
+.directory .table tbody tr[aria-current="true"] td {
+    background: var(--bg-surface-2);
+}
+
+.table .select {
+    position: static;
+    height: auto;
+    max-width: 100%;
+    padding: 0;
+    background: transparent;
+    text-align: left;
+}
+
+.select::after {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--panel-radius);
+    content: '';
+}
+
+.select:focus-visible::after {
+    box-shadow: var(--focus-ring);
+}
+
+.identity {
+    display: flex;
+    gap: var(--space-m);
+    min-width: 0;
+    align-items: center;
+}
+
+.identityText {
+    display: grid;
+    min-width: 0;
+    gap: var(--space-4xs);
+}
+
+.identityText strong, .identityText small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.identityText strong, .identityText h3 {
+    color: var(--text-bright);
+    font-weight: 600;
+    font-size: var(--text-l);
+}
+
+.identityText small, .loginColumn {
+    color: var(--text-muted);
+    font-weight: 400;
+    font-size: var(--text-s);
+}
+
+.identity .avatar, .initials { border-radius: var(--panel-radius); }
+
+.initials {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 32px;
+    height: 32px;
+    background: var(--overlay-10);
+    color: var(--text);
+    font-size: var(--text-s);
+}
+
+.accessColumn { width: 23%; }
+.statusColumn { width: 19%; }
+.loginColumn { width: 22%; }
+.access { min-width: 0; }
+.access > * { max-width: 100%; overflow: hidden; }
+
+.status {
+    color: var(--text);
+    font-size: var(--text-s);
+    white-space: nowrap;
+}
+
+.status::before {
+    width: 7px;
+    height: 7px;
+    flex: none;
+    border-radius: var(--radius-pill);
+    background: var(--success);
+    content: '';
+}
+
+.status[data-status="pending"]::before { background: var(--warning); }
+.status[data-status="suspended"]::before { background: var(--danger); }
+
+.inspector {
+    position: sticky;
+    top: var(--space-l);
+    gap: var(--space-5xl);
+    padding: var(--space-4xl);
+    max-height: calc(100dvh - 100px);
+    overflow: auto;
+    overflow-wrap: anywhere;
+    background: var(--bg-surface-2);
+    border-radius: var(--panel-radius);
+}
+
+.panelHeader {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: var(--space-l);
+}
+
+.panelHeader .identityText h3 {
+    margin: 0;
+    font-size: var(--text-l);
+}
+
+.panelHeader small {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.panelHeader .status {
+    grid-column: 1 / -1;
+}
+
+.actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 128px), 1fr));
+    gap: var(--space-l) var(--space-s);
+}
+
+.actions button {
+    height: auto;
+    min-height: 32px;
+    white-space: normal;
+}
+
+.section { gap: var(--space-m); }
+.section h4 {
+    margin: 0;
+    color: var(--text-bright);
+    font-size: var(--text-m);
+    font-weight: 600;
+}
+
+.facts {
+    display: grid;
+    gap: var(--space-m);
+    margin: 0;
+    font-size: var(--text-s);
+}
+
+.facts > div {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    gap: var(--space-l);
+}
+
+.facts dt { color: var(--text-muted); }
+.facts dd { margin: 0; text-align: end; }
+
+.drawer[data-size] {
+    position: fixed;
+    inset-block: var(--space-s);
+    right: var(--space-s);
+    max-height: none;
+    width: min(400px, calc(100% - 2 * var(--space-s)));
+}
+
+.drawer .drawerBody { padding: 0; background: var(--bg-surface-2); }
+.drawer .inspector { position: static; max-height: none; overflow: visible; border-radius: 0; }
+
+@container (max-width: 640px) {
+    .loginColumn { display: none; }
+    .statusColumn { width: 24%; }
+    .table tbody td.statusColumn { border-radius: 0 var(--panel-radius) var(--panel-radius) 0; }
+}
+
+@container (max-width: 460px) {
+    .accessColumn { display: none; }
+    .statusColumn { width: 32%; }
+}

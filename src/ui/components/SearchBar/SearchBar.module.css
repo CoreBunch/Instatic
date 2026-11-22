@@ -4,8 +4,8 @@
     flex-shrink: 0;
     gap: var(--space-xs);
     box-sizing: border-box;
-    min-height: 28px;
-    padding: var(--space-2xs) var(--space-s);
+    height: var(--control-height);
+    padding: 0 var(--space-s);
     background: transparent;
     border: 1px solid var(--overlay-20);
     border-radius: var(--input-radius);

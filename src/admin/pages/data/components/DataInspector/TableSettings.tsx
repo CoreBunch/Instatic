@@ -10,6 +10,7 @@ import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { StepUpCancelledMessage } from '@admin/shared/StepUp'
 import type { DataTable, DataRow, UpdateDataTableInput } from '@core/data/schemas'
 import { FieldsSection } from './FieldsSection'
+import { TableAccessSection } from './TableAccessSection'
 import styles from './DataInspector.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
@@ -258,6 +259,7 @@ export function TableSettings({
       )}
 
       {/* ── Fields ── */}
+      {table.kind === 'postType' && <TableAccessSection table={table} canEdit={canEdit} />}
       <FieldsSection
         table={table}
         tables={tables}

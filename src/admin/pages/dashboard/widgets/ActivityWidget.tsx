@@ -20,6 +20,7 @@ import {
   type DashboardActivityEntry,
 } from '../hooks/useDashboardStats'
 import styles from './widgets.module.css'
+import { userDisplayLabel } from '@core/users/displayName'
 
 /**
  * Diameter of the actor avatar in the feed row. Picked to fit the
@@ -82,6 +83,22 @@ function actionVerb(action: string): string {
       return 'installed plugin pack'
     case 'plugin.settings.update':
       return 'updated settings for'
+    case 'mail.connector.create':
+      return 'added an email connector'
+    case 'mail.connector.delete':
+      return 'removed an email connector'
+    case 'mail.connector.secret':
+      return 'replaced an email connector secret'
+    case 'mail.defaults.update':
+      return 'updated the email defaults'
+    case 'mail.template.update':
+      return 'edited email template'
+    case 'mail.template.reset':
+      return 'reset email template'
+    case 'member.app.create':
+      return 'added a member sign-in app'
+    case 'member.app.delete':
+      return 'removed a member sign-in app'
     case 'user.create':
       return 'added user'
     case 'user.update':
@@ -187,7 +204,7 @@ export function ActivityWidget({ span, editing }: DashboardWidgetRendererProps) 
               <UserAvatar
                 user={r.actor}
                 size={AVATAR_SIZE}
-                alt={`Avatar for ${r.actor.displayName || r.actor.email}`}
+                alt={`Avatar for ${userDisplayLabel(r.actor)}`}
               />
             ) : (
               <span className={styles.feedSystemAvatar} title="System" aria-hidden="true">

@@ -45,3 +45,9 @@
   min-width: 280px;
   max-width: 100%;
 }
+
+.error {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--danger);
+}

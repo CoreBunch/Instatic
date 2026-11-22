@@ -3,7 +3,7 @@ import type { Page } from '@core/page-tree'
 import type { TemplateRenderDataContext } from '@core/templates/dynamicBindings'
 import { dataTablePreviewToLoopItem } from '@core/templates/templatePreviewData'
 import { getCmsDataTableBySlug, previewCmsDataLoopItems } from '@core/persistence/cmsData'
-import { buildPageFrame, buildRouteFrame, buildSiteFrame } from '@core/templates/contextFrames'
+import { buildPageFrame, buildRouteFrame, buildSiteFrame, PREVIEW_MEMBER_FRAME } from '@core/templates/contextFrames'
 import { primaryTemplateTableSlug } from '@core/templates'
 import { useEditorStore } from '@site/store/store'
 
@@ -98,6 +98,7 @@ export function useTemplatePreviewContext(page: Page | null): TemplatePreviewCon
       // doesn't have the real request URL, so we derive from the page's
       // permalink — same shape, same fields.
       route: buildRouteFrame(pageFrame.permalink),
+      member: PREVIEW_MEMBER_FRAME,
     },
   }
 }

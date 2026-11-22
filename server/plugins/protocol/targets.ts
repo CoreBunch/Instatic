@@ -24,13 +24,17 @@
  *                              mint a live abortId, so the lookup just no-ops.
  *   - `crypto.digest` / `crypto.signHmac` — pure computation, no I/O, no
  *                              privilege escalation (same model as `Math`/`JSON`).
+ *   - `cms.site.publicUrl`   — the site's public address, which every visitor
+ *                              already knows.
+ *   - `cms.rateLimit.take`   — the plugin's own in-memory counters; nothing
+ *                              outside the plugin is read or changed.
  *
  * Conditional/extra checks that CANNOT live in a static target→permission map
  * stay in their handlers (host + VM both keep them):
  *   - `cms.routes.register` with `access.kind === 'public'` additionally
  *     requires `cms.routes.public` (surfaced in the install consent dialog).
  *   - `cms.content.*` handlers additionally enforce the manifest's
- *     `contentAccess[]` allowlist via `assertContentTableAccess`.
+ *     `contentAccess[]` allowlist via `pluginHasContentTableAccess`.
  *
  * NOTE: this module is bundled into the QuickJS VM via `buildApi.ts`. Keep its
  * runtime surface a PURE DATA literal — only `import type` is allowed, so the
@@ -55,6 +59,9 @@ export const TARGET_PERMISSIONS = {
   'cms.storage.create': 'cms.storage',
   'cms.storage.update': 'cms.storage',
   'cms.storage.delete': 'cms.storage',
+  'cms.storage.get': 'cms.storage',
+  'cms.storage.getByKey': 'cms.storage',
+  'cms.storage.createIfAbsent': 'cms.storage',
   // Network — outbound HTTP (allowlist enforced separately in host/network.ts).
   'network.fetch': 'network.outbound',
   // Scheduled jobs
@@ -76,7 +83,6 @@ export const TARGET_PERMISSIONS = {
   'cms.content.entries.update': 'cms.content.write',
   'cms.content.entries.delete': 'cms.content.delete',
   'cms.content.entries.publish': 'cms.content.publish',
-  'cms.content.entries.moveTable': 'cms.content.write',
   'cms.content.entries.createMany': 'cms.content.write',
   'cms.content.entries.updateMany': 'cms.content.write',
   'cms.content.entries.deleteMany': 'cms.content.delete',
@@ -86,4 +92,14 @@ export const TARGET_PERMISSIONS = {
   'cms.content.search': 'cms.content.read',
   'cms.content.snapshot': 'cms.content.read',
   'cms.content.republishAll': 'cms.content.publish',
+  'cms.members.get': 'members.read',
+  'cms.members.invite': 'members.write',
+  'cms.members.ensure': 'members.write',
+  'cms.members.emailStatus': 'members.write',
+  'cms.members.exportProvider': 'members.read',
+  'cms.members.deletedSince': 'members.read',
+  'cms.members.tags.grant': 'members.tags',
+  'cms.members.tags.revoke': 'members.tags',
+  'cms.mail.send': 'mail.send',
+  'cms.mail.sendExternal': 'mail.send.external',
 } satisfies Partial<Record<AllowedApiTarget, PluginPermission>>

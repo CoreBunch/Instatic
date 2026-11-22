@@ -54,3 +54,12 @@
 .dragSource {
     opacity: 0.46;
 }
+
+.preview {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-muted);
+    font-size: var(--text-s);
+    line-height: 1.4;
+}

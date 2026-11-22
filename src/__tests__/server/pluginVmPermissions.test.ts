@@ -36,7 +36,7 @@ const HOOK_PLUGIN_SOURCE = `
       // Awaited so the host-call deferred settles before activate returns —
       // keeps VM teardown clean. The permission check throws synchronously
       // BEFORE this point when cms.hooks is not granted.
-      await api.cms.hooks.on('some.event', function () {});
+      await api.cms.hooks.on('publish.after', function () {});
     };
   })();
 `
@@ -116,9 +116,52 @@ describe('VM-side permission enforcement', () => {
       await vm.runLifecycle('activate')
       const registration = calls.find((c) => c.target === 'cms.hooks.on')
       expect(registration).toBeDefined()
-      expect(registration?.args?.[0]).toMatchObject({ event: 'some.event' })
+      expect(registration?.args?.[0]).toMatchObject({ event: 'publish.after' })
     } finally {
       vm.dispose()
+    }
+  })
+
+  it('refuses a hook the granted permissions cannot cover, before any host call', async () => {
+    const attempts = [
+      ["on", "content.entry.updated", "cms.content.read"],
+      ["filter", "content.entry.cells", "cms.content.read"],
+      ["on", "member.created", "members.read"],
+      ["filter", "media.url.transform", "registerUrlTransformer"],
+      ["on", "made.up.event", "emits no event"],
+      ["filter", "made.up.filter", "applies no filter"],
+    ] as const
+    for (const [method, name, reason] of attempts) {
+      const calls: RecordedCall[] = []
+      const vm = await createPluginVm({
+        pluginSource: `
+          ;(function () {
+            const __plugin_exports = (globalThis.__plugin_exports = {});
+            __plugin_exports.activate = async function activate(api) {
+              api.cms.hooks.${method}('${name}', function (value) { return value; });
+            };
+          })();
+        `,
+        env: {
+          pluginId: 'acme.hooksonly',
+          manifestVersion: '1.0.0',
+          grantedPermissions: ['cms.hooks'],
+          assetBasePath: '/uploads/plugins/acme.hooksonly/1.0.0',
+          settings: {},
+          hostCall: async (target, args) => {
+            calls.push({ target, args })
+            return null
+          },
+          log: () => {},
+        },
+      })
+      try {
+        // Not awaited by the plugin, and still an error: the throw is synchronous.
+        await expect(vm.runLifecycle('activate')).rejects.toThrow(reason)
+        expect(calls).toEqual([])
+      } finally {
+        vm.dispose()
+      }
     }
   })
 

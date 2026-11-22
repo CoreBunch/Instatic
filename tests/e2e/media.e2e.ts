@@ -11,9 +11,9 @@ import {
   publishDraft,
 } from './helpers'
 
-/** A minimal but valid 1×1 PNG — enough for the server's magic-byte check. */
+/** A 1×1 PNG that both the browser and the thumbnail worker can decode. */
 const PNG_1X1 = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWP4//8/AAX+Av5Y8msOAAAAAElFTkSuQmCC',
   'base64',
 )
 
@@ -125,11 +125,23 @@ test.describe('media', () => {
       await insertNotchModule(page, 'image')
       await page.getByRole('button', { name: 'Browse image library' }).click()
       const picker = page.getByTestId('media-picker-modal')
+      await page.setViewportSize({ width: 320, height: 640 })
+      const folders = picker.getByTestId('media-left-sidebar-panel-slot')
+      const canvas = picker.getByTestId('media-canvas')
+      const canvasBox = await canvas.boundingBox()
+      const foldersBox = await folders.boundingBox()
+      if (!canvasBox || !foldersBox) throw new Error('Expected the library and its folder dock')
+      expect(canvasBox.width).toBeGreaterThan(240)
+      expect(canvasBox.y + canvasBox.height).toBeCloseTo(foldersBox.y, 0)
+      await expect(folders).toBeInViewport({ ratio: 1 })
       // The asset is already in the library — selecting it proves reuse.
       const existing = picker.getByRole('button', { name: `Open ${filename}` })
       await expect(existing).toBeVisible()
+      await existing.locator('img').evaluate((image: HTMLImageElement) => image.decode())
       await existing.click()
-      await picker.getByRole('button', { name: 'Use selected' }).click()
+      const useSelected = picker.getByRole('button', { name: 'Use selected' })
+      await expect(useSelected).toBeInViewport({ ratio: 1 })
+      await useSelected.click()
       await expect(picker).toBeHidden()
     })
 
@@ -250,6 +262,20 @@ test.describe('media', () => {
     await login(page)
     await page.goto('/admin/media')
 
+    const library = page.getByRole('region', { name: 'Media library' })
+    const types = library.getByRole('group', { name: 'Filter media type' })
+    const options = library.getByRole('button', { name: 'View options' })
+    for (const label of ['All', 'Images', 'SVG', 'Videos', 'Other']) {
+      await expect(types.getByRole('button', { name: label, exact: true })).toBeInViewport({ ratio: 1 })
+    }
+    await types.getByRole('button', { name: 'Images' }).click()
+    await options.click()
+    await library.getByRole('combobox', { name: 'Sort media' }).click()
+    await page.getByRole('option', { name: 'Sort Oldest' }).click()
+    await library.getByRole('button', { name: 'List view' }).click()
+    await options.click()
+    await expect(library.getByRole('combobox', { name: 'Sort media' })).toBeHidden()
+
     await uploadFile(page, {
       name: filename,
       mimeType: 'image/png',
@@ -345,9 +371,13 @@ test.describe('media', () => {
     await page.getByTestId('media-folder-row-trash').click()
     await expect(page.getByRole('button', { name: `Open ${replacementFilename}` })).toBeVisible()
     await openAssetMenu(page.getByRole('button', { name: `Open ${replacementFilename}` }), page)
+    // Purging cannot be undone, so the Trash menu asks before it happens.
+    await page.getByRole('menu', { name: 'Media item options' }).getByRole('menuitem', { name: 'Delete' }).click()
+    const purgeConfirm = page.getByRole('alertdialog', { name: `Delete "${replacementFilename}" permanently?` })
+    await expect(purgeConfirm).toBeVisible()
     await Promise.all([
       waitForMediaDelete(page),
-      page.getByRole('menu', { name: 'Media item options' }).getByRole('menuitem', { name: 'Delete' }).click(),
+      purgeConfirm.getByRole('button', { name: 'Delete permanently' }).click(),
     ])
     await expect(page.getByRole('button', { name: `Open ${replacementFilename}` })).toHaveCount(0)
     await expect(page.getByText('Trash is empty')).toBeVisible()

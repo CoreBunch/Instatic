@@ -98,6 +98,10 @@ const AiPage = prewarmedLazy(
   () => import('./pages/ai/AiPage').then((m) => ({ default: m.AiPage })),
   { displayName: 'AiPage' },
 )
+const EmailPage = prewarmedLazy(
+  () => import('./pages/email/EmailPage').then((m) => ({ default: m.EmailPage })),
+  { displayName: 'EmailPage' },
+)
 const AccountPage = prewarmedLazy(
   () => import('./pages/account/AccountPage').then((m) => ({ default: m.AccountPage })),
   { displayName: 'AccountPage' },
@@ -161,6 +165,7 @@ if (typeof window !== 'undefined') {
     pathname.startsWith('/admin/plugins') ? PluginsPage :
     pathname.startsWith('/admin/users') ? UsersPage :
     pathname.startsWith('/admin/ai') ? AiPage :
+    pathname.startsWith('/admin/email') ? EmailPage :
     pathname.startsWith('/admin/account') ? AccountPage :
     DashboardPage
   void activePage.preload().catch(() => {
@@ -189,6 +194,7 @@ const ALL_WORKSPACE_PAGES = [
   PluginsPage,
   UsersPage,
   AiPage,
+  EmailPage,
   AccountPage,
   PluginPage,
 ]
@@ -202,6 +208,7 @@ function pageForSection(section: AdminWorkspace) {
     section === 'plugins' ? PluginsPage :
     section === 'users' ? UsersPage :
     section === 'ai' ? AiPage :
+    section === 'email' ? EmailPage :
     section === 'branchReview' ? SitePage :
     section === 'pluginPage' ? PluginPage :
     section === 'account' ? AccountPage :
@@ -328,6 +335,7 @@ export default function AuthenticatedAdmin({ section, currentUser }: Authenticat
                 section === 'plugins' ? <PluginsPage /> :
                 section === 'users' ? <UsersPage /> :
                 section === 'ai' ? <AiPage /> :
+                section === 'email' ? <EmailPage /> :
                 section === 'branchReview' ? <BranchReviewPage /> :
                 section === 'pluginPage' ? <PluginPage /> :
                 section === 'account' ? <AccountPage /> :

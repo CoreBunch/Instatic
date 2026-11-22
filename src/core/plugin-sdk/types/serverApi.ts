@@ -1,7 +1,9 @@
 import type {
   PluginRecord,
+  StorageCreateIfAbsentResult,
   StorageListOptions,
   StorageListResult,
+  StorageWriteOptions,
 } from '../storageSchemas'
 import type {
   ContentEntry,
@@ -22,6 +24,8 @@ import type { LoopEntitySource } from './loops'
 import type { ServerPluginMediaApi } from './media'
 import type { PluginMigrationContext } from './lifecycle'
 import type { PluginPermission } from './permissions'
+import type { ServerPluginMailApi, ServerPluginSiteApi } from './mail'
+import type { MemberRouteOptions, ServerPluginMembersApi } from './members'
 import type { ServerPluginRouteHandler } from './routes'
 import type { ServerPluginScheduleApi } from './schedule'
 import type { ServerPluginSettingsApi } from './settings'
@@ -29,6 +33,27 @@ import type { ServerPluginSettingsApi } from './settings'
 // ---------------------------------------------------------------------------
 // ServerPluginApi — full API surface available to server entrypoints
 // ---------------------------------------------------------------------------
+
+/** `member.get(path, handler)` or `member.get(path, { tag }, handler)`. */
+interface MemberRouteRegistrar {
+  (path: string, handler: ServerPluginRouteHandler): void
+  (path: string, options: MemberRouteOptions, handler: ServerPluginRouteHandler): void
+}
+
+/** What `api.cms.rateLimit.take` answers. */
+export interface PluginRateLimitResult {
+  ok: boolean
+  /** Takes left in the window after this one (0 when refused). */
+  remaining: number
+  /** When refused, ms until a take for this key would be allowed; 0 otherwise. */
+  retryAfterMs: number
+  /**
+   * `limit`: refused, the key used up its limit. `capacity`: allowed, but the
+   * plugin's counters were full and forgot their least recently used key.
+   * Absent otherwise.
+   */
+  reason?: 'limit' | 'capacity'
+}
 
 export interface ServerPluginApi {
   plugin: {
@@ -92,6 +117,44 @@ export interface ServerPluginApi {
         patch: (path: string, handler: ServerPluginRouteHandler) => void
         delete: (path: string, handler: ServerPluginRouteHandler) => void
       }
+      /**
+       * Routes only a signed-in site member reaches (optionally one holding
+       * `tag`). The handler's `ctx.member` is always set. Requires
+       * `members.read`. Served on the public plugin mount,
+       * `/_instatic/plugins/<pluginId>/<path>`, not under `/admin`.
+       */
+      member: {
+        get: MemberRouteRegistrar
+        post: MemberRouteRegistrar
+        patch: MemberRouteRegistrar
+        delete: MemberRouteRegistrar
+      }
+    }
+    /** Site members: look up, invite, and grant or withdraw access tags. */
+    members: ServerPluginMembersApi
+    /** Email: send one of the plugin's declared templates through the site's mail queue. */
+    mail: ServerPluginMailApi
+    /** Facts about the site a plugin needs to build links. No permission needed. */
+    site: ServerPluginSiteApi
+    /**
+     * Sliding-window counters for the plugin's own keys: a throttle, not a
+     * lockout. `take` records one use of `key` and says whether it fits:
+     * about `limit` uses in any `windowMs` (a two-bucket sliding-window
+     * counter: at most `2 × limit − 1` in any true window, and it can refuse
+     * for up to `windowMs ÷ limit` while the true count is low). A refused
+     * take is not counted. In memory only: a plugin reload, a worker respawn
+     * or a server restart drops every counter, and about 10,000 fresh keys in
+     * one pair push any counter out, so a defence that must hold belongs in
+     * the plugin's own records. `limit` is 1 to 10,000; `windowMs` is one
+     * second to one day; at most 16 different pairs (a 17th throws). Each
+     * pair holds 10,000 keys; a new key in a full pair forgets the least
+     * recently used counter that still has room, and a used-up one only when
+     * none has (`reason: 'capacity'`), an order, not a guarantee. Key by
+     * `ctx.ipKey`, an account or an API key, never by a value the caller
+     * types alone. No permission needed.
+     */
+    rateLimit: {
+      take: (key: string, limit: number, windowMs: number) => Promise<PluginRateLimitResult>
     }
     loops: {
       /**
@@ -104,15 +167,39 @@ export interface ServerPluginApi {
      * Read / replace the plugin's persisted settings. The schema declared
      * via `definePlugin({ settings: [...] })` is the source of truth; the
      * host populates defaults at install time and validates updates at the
-     * boundary. Emits the `settings.changed` event when values change.
+     * boundary. A save emits `settings.changed` to this plugin only.
      */
     settings: ServerPluginSettingsApi
     storage: {
       collection: (resourceId: string) => {
         list: (options?: StorageListOptions) => Promise<StorageListResult>
+        /**
+         * Create a record. Rejects with a `storage_duplicate:` message when
+         * the resource has a `uniqueField` and another record holds the value.
+         */
         create: (data: Record<string, unknown>) => Promise<PluginRecord>
-        update: (recordId: string, data: Record<string, unknown>) => Promise<PluginRecord | null>
-        delete: (recordId: string) => Promise<boolean>
+        /**
+         * Create the record, or return the one that already holds its unique
+         * key. Atomic across handlers and server instances: of any number of
+         * concurrent calls with one key, exactly one gets `created: true`.
+         * Needs a `uniqueField` on the resource and a value for it.
+         */
+        createIfAbsent: (data: Record<string, unknown>) => Promise<StorageCreateIfAbsentResult>
+        get: (recordId: string) => Promise<PluginRecord | null>
+        /** Look a record up by the value of the resource's `uniqueField`. */
+        getByKey: (key: string) => Promise<PluginRecord | null>
+        /**
+         * Replace a record's data; its `version` goes up by one. With
+         * `ifVersion` the write applies only if the record is still at that
+         * version, otherwise it rejects with a `storage_conflict:` message.
+         * Resolves null when the record does not exist.
+         */
+        update: (
+          recordId: string,
+          data: Record<string, unknown>,
+          options?: StorageWriteOptions,
+        ) => Promise<PluginRecord | null>
+        delete: (recordId: string, options?: StorageWriteOptions) => Promise<boolean>
       }
     }
     hooks: ServerPluginHooksApi
@@ -160,7 +247,6 @@ export interface ServerPluginApi {
         update: (entryId: string, patch: UpdateContentEntryInput) => Promise<ContentEntry>
         delete: (entryId: string) => Promise<void>
         publish: (entryId: string, options?: { scheduledFor?: string }) => Promise<ContentEntry>
-        moveToTable: (entryId: string, targetTableSlug: string) => Promise<ContentEntry>
         createMany: (
           inputs: ReadonlyArray<CreateContentEntryInput>,
         ) => Promise<ReadonlyArray<ContentEntry>>

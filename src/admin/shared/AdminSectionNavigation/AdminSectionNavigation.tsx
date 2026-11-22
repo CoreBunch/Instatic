@@ -1,16 +1,11 @@
 /**
- * AdminSectionNavigation — the row of section links shown inside the
- * editor toolbar (Site · Content · Plugins · Users · …plugin pages).
- *
- * Lives next to the toolbar styles it consumes so both the heavy
- * AdminCanvasLayout (Site), AdminWorkspaceCanvasLayout (Content / Data /
- * Media), and the lightweight AdminPageLayout (Plugins / Users / Account /
- * plugin pages) can share it without one layout pulling another layout's
- * module graph in.
+ * Shared workspace destinations for the desktop navigation and mobile sheet.
+ * Both consume the signed-in user's grants and installed plugin pages.
  */
-import { useEffect, useState, useSyncExternalStore, type MouseEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ArticleSolidIcon } from 'pixel-art-icons/icons/article-solid'
 import { AiBoxSolidIcon } from 'pixel-art-icons/icons/ai-box-solid'
+import { MailSolidIcon } from 'pixel-art-icons/icons/mail-solid'
 import { DashboardSolidIcon } from 'pixel-art-icons/icons/dashboard-solid'
 import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
 import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
@@ -18,10 +13,8 @@ import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
 import { PackageSolidIcon } from 'pixel-art-icons/icons/package-solid'
 import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
 import { listCmsPlugins } from '@core/persistence/cmsPlugins'
-import type { CmsCurrentUser } from '@core/persistence'
 import type { PluginAdminPageRoute } from '@core/plugin-sdk'
-import { Link, useLocation } from '@admin/lib/routing'
-import { useAdminNavigate } from '@admin/lib/useAdminNavigate'
+import { useLocation } from '@admin/lib/routing'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import { canAccessWorkspace } from '@admin/access'
 import {
@@ -30,6 +23,13 @@ import {
 } from '@admin/pages/plugins/utils/pluginIssuesStore'
 import { CMS_PLUGINS_CHANGED_EVENT } from '@admin/pages/plugins/utils/pluginEvents'
 import type { AdminWorkspace } from '@admin/workspace'
+import { cn } from '@ui/cn'
+import { MobileWorkspaceSheet } from './MobileWorkspaceSheet'
+import { AdminNavLink } from './AdminNavLink'
+import { AdminNavMoreMenu } from './AdminNavMoreMenu'
+import { useAdminRouteNavigation } from './useAdminRouteNavigation'
+import { useFittingEntryCount } from './useFittingEntryCount'
+import type { AdminNavEntry } from './navEntry'
 import toolbarStyles from '@site/toolbar/Toolbar.module.css'
 
 /**
@@ -41,7 +41,7 @@ const NAV_ICON_SIZE = 13
 
 interface AdminSectionNavigationProps {
   section: AdminWorkspace
-  currentUser?: CmsCurrentUser | null
+  mobile?: { siteName: string | null; pluginActions: ReactNode }
   onWorkspaceNavigateStart?: () => unknown
 }
 
@@ -66,7 +66,7 @@ function setCachedPluginPages(next: PluginAdminPageRoute[]): void {
 
 export function AdminSectionNavigation({
   section,
-  currentUser,
+  mobile,
   onWorkspaceNavigateStart,
 }: AdminSectionNavigationProps) {
   // Hydrate from the session cache so the nav links don't flash empty
@@ -74,8 +74,7 @@ export function AdminSectionNavigation({
   const [pluginPages, setPluginPages] = useState<PluginAdminPageRoute[]>(
     () => cachedPluginPages,
   )
-  const sessionUser = useCurrentAdminUser()
-  const effectiveUser = currentUser ?? sessionUser ?? null
+  const effectiveUser = useCurrentAdminUser()
   const unrestricted = !effectiveUser
   const canAccess = (workspace: AdminWorkspace) => unrestricted || canAccessWorkspace(effectiveUser, workspace)
   const canAccessPlugins = canAccess('plugins')
@@ -124,223 +123,123 @@ export function AdminSectionNavigation({
     }
   }, [canAccessPlugins])
 
-  return (
-    <>
-      {canAccess('dashboard') && (
-        <NavItem
-          to="/admin/dashboard"
-          icon={<DashboardSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-          label="Dashboard"
-          active={section === 'dashboard'}
-          onNavigateStart={onWorkspaceNavigateStart}
-        />
-      )}
-      {canAccess('site') && (
-        <NavItem
-          to="/admin/site"
-          icon={<LayoutSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-          label="Site"
-          active={section === 'site' || section === 'branchReview'}
-          onNavigateStart={onWorkspaceNavigateStart}
-        />
-      )}
-      {canAccess('content') && (
-        <NavItem
-          to="/admin/content"
-          icon={<ArticleSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-          label="Content"
-          active={section === 'content'}
-          onNavigateStart={onWorkspaceNavigateStart}
-        />
-      )}
-      {canAccess('data') && (
-        <NavItem
-          to="/admin/data"
-          icon={<DatabaseSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-          label="Data"
-          active={section === 'data'}
-          onNavigateStart={onWorkspaceNavigateStart}
-        />
-      )}
-      {canAccess('media') && (
-        <NavItem
-          to="/admin/media"
-          icon={<ImagesSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-          label="Media"
-          active={section === 'media'}
-          onNavigateStart={onWorkspaceNavigateStart}
-        />
-      )}
-      {canAccess('plugins') && (
-        <PluginsNavLink
-          active={section === 'plugins'}
-          onNavigateStart={onWorkspaceNavigateStart}
-        />
-      )}
-      {canAccess('ai') && (
-        <NavItem
-          to="/admin/ai"
-          icon={<AiBoxSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-          label="AI"
-          active={section === 'ai'}
-          onNavigateStart={onWorkspaceNavigateStart}
-        />
-      )}
-      {canAccess('users') && (
-        <NavItem
-          to="/admin/users"
-          icon={<UsersSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-          label="Users"
-          active={section === 'users'}
-          onNavigateStart={onWorkspaceNavigateStart}
-        />
-      )}
-      {canAccessPlugins && pluginPages.map((page) => (
-        <AdminRouteLink
-          key={`${page.pluginId}:${page.id}`}
-          to={page.route}
-          onNavigateStart={onWorkspaceNavigateStart}
-        >
-          <PackageSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />
-          <span>{page.navLabel ?? page.title}</span>
-        </AdminRouteLink>
-      ))}
-    </>
-  )
-}
-
-/**
- * Single first-party admin nav slot. Renders the icon + label as the
- * non-clickable `activeSection` span when the user is already on that
- * workspace, otherwise as a soft-navigating `AdminRouteLink`.
- */
-function NavItem({
-  to,
-  icon,
-  label,
-  active,
-  onNavigateStart,
-}: {
-  to: string
-  icon: ReactNode
-  label: string
-  active: boolean
-  onNavigateStart?: () => unknown
-}) {
-  if (active) {
-    return (
-      <span className={toolbarStyles.activeSection}>
-        {icon}
-        <span>{label}</span>
-      </span>
-    )
-  }
-  return (
-    <AdminRouteLink to={to} onNavigateStart={onNavigateStart}>
-      {icon}
-      <span>{label}</span>
-    </AdminRouteLink>
-  )
-}
-
-/**
- * Plugins nav link — renders a tiny red dot next to the label when any
- * plugin is currently in `error` lifecycle state. The dot is fed by the
- * live SSE-driven `pluginIssuesStore`, so a plugin crashing while the
- * user is on (say) the Content page lights up the badge in real time.
- */
-function PluginsNavLink({
-  active,
-  onNavigateStart,
-}: {
-  active: boolean
-  onNavigateStart?: () => unknown
-}) {
-  const issuesCount = useSyncExternalStore(
+  const pluginIssuesCount = useSyncExternalStore(
     subscribePluginIssues,
     getPluginsInErrorCount,
     getPluginsInErrorCount,
   )
-  const dot = issuesCount > 0 ? (
-    <output
-      className={toolbarStyles.pluginsErrorDot}
-      aria-label={`${issuesCount} plugin${issuesCount === 1 ? '' : 's'} in error state`}
-      title={`${issuesCount} plugin${issuesCount === 1 ? '' : 's'} need${issuesCount === 1 ? 's' : ''} attention`}
-    />
-  ) : null
+  const { pathname } = useLocation()
+  const navigateTo = useAdminRouteNavigation(onWorkspaceNavigateStart)
 
-  if (active) {
+  const firstPartyEntries: Array<AdminNavEntry & { workspace: AdminWorkspace }> = [
+    { workspace: 'dashboard', key: 'dashboard', to: '/admin/dashboard', label: 'Dashboard', icon: <DashboardSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />, active: section === 'dashboard' },
+    { workspace: 'site', key: 'site', to: '/admin/site', label: 'Site', icon: <LayoutSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />, active: section === 'site' || section === 'branchReview' },
+    { workspace: 'content', key: 'content', to: '/admin/content', label: 'Content', icon: <ArticleSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />, active: section === 'content' },
+    { workspace: 'data', key: 'data', to: '/admin/data', label: 'Data', icon: <DatabaseSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />, active: section === 'data' },
+    { workspace: 'media', key: 'media', to: '/admin/media', label: 'Media', icon: <ImagesSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />, active: section === 'media' },
+    {
+      workspace: 'plugins', key: 'plugins', to: '/admin/plugins', label: 'Plugins',
+      icon: <PackageSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />,
+      active: section === 'plugins',
+      badge: pluginIssuesCount > 0 ? <PluginsErrorDot count={pluginIssuesCount} /> : undefined,
+    },
+    { workspace: 'ai', key: 'ai', to: '/admin/ai', label: 'AI', icon: <AiBoxSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />, active: section === 'ai' },
+    { workspace: 'email', key: 'email', to: '/admin/email', label: 'Email', icon: <MailSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />, active: section === 'email' },
+    { workspace: 'users', key: 'users', to: '/admin/users', label: 'Users', icon: <UsersSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />, active: section === 'users' },
+  ]
+  const entries: AdminNavEntry[] = [
+    ...firstPartyEntries.filter((entry) => canAccess(entry.workspace)),
+    ...(canAccessPlugins ? pluginPages : []).map((page) => ({
+      key: `${page.pluginId}:${page.id}`,
+      to: page.route,
+      label: page.navLabel ?? page.title,
+      icon: <PackageSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />,
+      active: pathname === page.route,
+    })),
+  ]
+
+  if (mobile) {
     return (
-      <span className={toolbarStyles.activeSection}>
-        <PackageSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />
-        <span>Plugins</span>
-        {dot}
-      </span>
+      <MobileWorkspaceSheet
+        key={pathname}
+        entries={entries}
+        activeLabel={entries.find((entry) => entry.active)?.label ?? (section === 'account' ? 'Account' : 'Workspaces')}
+        siteName={mobile.siteName}
+        pluginActions={mobile.pluginActions}
+        onNavigate={navigateTo}
+      />
     )
   }
+  return <DesktopNavigation entries={entries} navigateTo={navigateTo} />
+}
+
+function DesktopNavigation({ entries, navigateTo }: { entries: AdminNavEntry[]; navigateTo: (to: string) => void }) {
+  const rowRef = useRef<HTMLElement>(null)
+  const moreRef = useRef<HTMLButtonElement>(null)
+  // Plugins add entries, so the row has no upper bound. Whatever does not fit
+  // moves into a trailing "More" menu; the row itself never widens the toolbar.
+  const fit = useFittingEntryCount(rowRef, moreRef, entries.length)
+  const overflowed = entries.slice(fit.count)
+
   return (
-    <AdminRouteLink to="/admin/plugins" onNavigateStart={onNavigateStart}>
-      <PackageSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />
-      <span>Plugins</span>
-      {dot}
-    </AdminRouteLink>
+    <nav ref={rowRef} aria-label="Admin sections" className={toolbarStyles.adminNavigation}>
+      {entries.map((entry, index) => (
+        <span
+          key={entry.key}
+          data-admin-nav-entry=""
+          className={cn(
+            toolbarStyles.adminNavEntry,
+            index >= fit.count && toolbarStyles.adminNavOutOfRow,
+          )}
+        >
+          <NavItem entry={entry} onNavigate={navigateTo} />
+        </span>
+      ))}
+      <AdminNavMoreMenu
+        triggerRef={moreRef}
+        entries={overflowed}
+        left={fit.moreLeft}
+        onNavigate={navigateTo}
+      />
+    </nav>
   )
 }
 
 /**
- * Soft-navigating admin nav link. Always rendered inside the admin Router
- * (the admin shell unconditionally mounts one), so we don't fork into a
- * router-vs-static branch — calling `useAdminNavigate` here is always safe.
+ * One entry in the row: the non-clickable `activeSection` label when the user
+ * is already on that workspace, otherwise a soft-navigating link.
  */
-function AdminRouteLink({
-  to,
-  children,
-  onNavigateStart,
-}: {
-  to: string
-  children: ReactNode
-  onNavigateStart?: () => unknown
-}) {
-  const navigate = useAdminNavigate()
-  const location = useLocation()
-
-  async function navigateToAdminRoute(event: MouseEvent<HTMLAnchorElement>) {
-    // Modifier keys / non-primary buttons / target=_blank → let the native
-    // <a> behaviour run (open-in-new-tab, etc.). Same-page clicks are a
-    // no-op so the soft transition doesn't replay needlessly.
-    if (
-      event.defaultPrevented ||
-      event.button !== 0 ||
-      event.metaKey ||
-      event.altKey ||
-      event.ctrlKey ||
-      event.shiftKey ||
-      event.currentTarget.target
-    ) {
-      return
-    }
-
-    if (location.pathname === to) return
-
-    event.preventDefault()
-    try {
-      const result = onNavigateStart?.()
-      if (isPromiseLike(result)) await result
-      navigate(to)
-    } catch (err) {
-      console.error('[AdminSectionNavigation] Navigation start hook failed:', err)
-    }
+function NavItem({ entry, onNavigate }: { entry: AdminNavEntry; onNavigate: (to: string) => void }) {
+  if (entry.active) {
+    return (
+      <span className={toolbarStyles.activeSection}>
+        {entry.icon}
+        <span>{entry.label}</span>
+        {entry.badge}
+      </span>
+    )
   }
 
   return (
-    <Link className={toolbarStyles.adminLink} to={to} onClick={navigateToAdminRoute}>
-      {children}
-    </Link>
+    <AdminNavLink entry={entry} className={toolbarStyles.adminLink} onNavigate={onNavigate}>
+      {entry.icon}
+      <span>{entry.label}</span>
+      {entry.badge}
+    </AdminNavLink>
   )
 }
 
-function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
-  if (typeof value !== 'object' || value === null) return false
-  if (!('then' in value)) return false
-  return typeof (value as { then: unknown }).then === 'function'
+/**
+ * Red dot next to the Plugins label while any plugin is in `error` lifecycle
+ * state. Fed by the live SSE-driven `pluginIssuesStore`, so a plugin crashing
+ * while the user is on (say) the Content page lights up in real time.
+ */
+function PluginsErrorDot({ count }: { count: number }) {
+  return (
+    <output
+      className={toolbarStyles.pluginsErrorDot}
+      aria-label={`${count} plugin${count === 1 ? '' : 's'} in error state`}
+      title={`${count} plugin${count === 1 ? '' : 's'} need${count === 1 ? 's' : ''} attention`}
+    />
+  )
 }

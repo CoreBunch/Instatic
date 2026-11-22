@@ -26,7 +26,9 @@
 import { PLUGIN_API_VERSION } from '../types'
 import type {
   PluginAdminPage,
+  PluginAppScope,
   PluginFrontendDeclarations,
+  PluginMailDeclarations,
   PluginManifest,
   PluginPermission,
   PluginResource,
@@ -90,6 +92,21 @@ export interface DefinePluginConfig {
   contentAccess?: ContentAccessEntry[]
 
   /**
+   * What an app a site member signed in to may be allowed to do through
+   * this plugin. Each entry becomes the app scope `plugin:<id>:<name>`; the
+   * member reads `description` before allowing the app. A member route lets
+   * apps in by naming one: `routes.member.get(path, { app: { scope } }, handler)`.
+   * Requires the `members.read` permission.
+   */
+  appScopes?: PluginAppScope[]
+
+  /**
+   * The plugin adds a section to a member's data export with
+   * `api.cms.members.exportProvider`. Requires `members.read`.
+   */
+  memberDataExport?: boolean
+
+  /**
    * Admin pages registered by the plugin (markdown / map / resource / app).
    * Auto-deduped against the page id.
    */
@@ -115,9 +132,16 @@ export interface DefinePluginConfig {
    * styles, `<link>`, and `<meta>` tags that the host injects into every
    * published page on behalf of this plugin.
    * Requires the `frontend.assets` permission. See `FrontendAsset` for
-   * the per-tag shape and the four placement anchors.
+   * the per-tag shape and the four placement anchors, and
+   * `PluginFrontendOrigins` for third-party script and frame origins.
    */
   frontend?: PluginFrontendDeclarations
+
+  /**
+   * The email templates the plugin can send with `api.cms.mail.send`.
+   * Requires `mail.send` or `mail.send.external`.
+   */
+  mail?: PluginMailDeclarations
 }
 
 /**
@@ -146,6 +170,13 @@ export function definePlugin(config: DefinePluginConfig): PluginDefinition {
     if (!cls.id.startsWith(`${config.id}/`) && !cls.id.startsWith(`${config.id}.`)) {
       throw new Error(
         `[plugin-sdk] Pack class id "${cls.id}" must be namespaced under the plugin id "${config.id}".`,
+      )
+    }
+  }
+  for (const page of config.pack?.pages ?? []) {
+    if (!page.id.startsWith(`${config.id}/`) && !page.id.startsWith(`${config.id}.`)) {
+      throw new Error(
+        `[plugin-sdk] Pack page id "${page.id}" must be namespaced under the plugin id "${config.id}".`,
       )
     }
   }
@@ -187,6 +218,10 @@ export function definePlugin(config: DefinePluginConfig): PluginDefinition {
     ...(config.contentAccess
       ? { contentAccess: config.contentAccess.map((entry) => ({ ...entry, modes: [...entry.modes] })) }
       : {}),
+    ...(config.appScopes
+      ? { appScopes: config.appScopes.map((scope) => ({ name: scope.name, description: scope.description })) }
+      : {}),
+    ...(config.memberDataExport ? { memberDataExport: true } : {}),
     ...(config.settings !== undefined ? { settings: config.settings } : {}),
     ...(config.author !== undefined ? { author: config.author } : {}),
     ...(config.license !== undefined ? { license: config.license } : {}),
@@ -195,7 +230,29 @@ export function definePlugin(config: DefinePluginConfig): PluginDefinition {
     ...(config.keywords ? { keywords: [...config.keywords] } : {}),
     ...(config.icon !== undefined ? { icon: config.icon } : {}),
     ...(config.frontend !== undefined
-      ? { frontend: { assets: config.frontend.assets.map((asset) => ({ ...asset })) } }
+      ? {
+          frontend: {
+            assets: config.frontend.assets.map((asset) => ({ ...asset })),
+            ...(config.frontend.origins
+              ? {
+                  origins: {
+                    ...(config.frontend.origins.scripts ? { scripts: [...config.frontend.origins.scripts] } : {}),
+                    ...(config.frontend.origins.frames ? { frames: [...config.frontend.origins.frames] } : {}),
+                  },
+                }
+              : {}),
+          },
+        }
+      : {}),
+    ...(config.mail !== undefined
+      ? {
+          mail: {
+            templates: config.mail.templates.map((template) => ({
+              ...template,
+              variables: template.variables.map((variable) => ({ ...variable })),
+            })),
+          },
+        }
       : {}),
   }
   return {

@@ -17,6 +17,7 @@ export function FlexWrapControl({ value, isSet, onChange, onClear }: FlexWrapCon
   return (
     <LabeledControl label="Wrap" isSet={isSet}>
       <SegmentedControl
+        size="sm"
         fullWidth
         aria-label="Flex wrap"
         value={value}

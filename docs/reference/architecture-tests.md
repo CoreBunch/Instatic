@@ -6,7 +6,7 @@ Catalog of every test in `src/__tests__/architecture/`. These are structural gat
 
 ## TL;DR
 
-- 95 gate files across structural domains: SQL, JSON columns, migrations, CSS, icons, primitives, page tree, sandbox, agent, router, content storage, boundary validation, module size, AI, auth, error handling, etc.
+- 104 gate files across structural domains: SQL, JSON columns, migrations, CSS, icons, primitives, page tree, sandbox, agent, router, content storage, boundary validation, module size, AI, auth, error handling, etc.
 - Naming convention: `<topic>.test.ts` (kebab-case) or `<group>-<topic>.test.ts`. A few legacy `task<N>-*` ids remain for live invariants; new gates should use topic names.
 - Run them all: `bun test src/__tests__/architecture/`.
 - Most are **import / source scans** — they parse the files in scope and assert / reject patterns. Some are unit-style (a small in-test database, a synthesized page tree).
@@ -150,12 +150,13 @@ See [docs/features/spotlight.md](../features/spotlight.md).
 | `plugin-sandbox-invariants.test.ts`           | No `node:`, `bun:`, `require(`, `process.binding` in plugin bundles; network permission gate is centralized in `apiDispatch.ts` and driven by `TARGET_PERMISSIONS`. |
 | `plugin-boot-resilience.test.ts`              | One bad plugin doesn't bring the server down. Crashes are isolated.              |
 | `plugin-cms-content-surface.test.ts`          | All five `cms.content.*` permissions are wired across all sync-points (permission values, capability matrix, permission alias builder, SDK type surface, host-side dispatch). |
-| `plugin-content-access-enforced.test.ts`      | `cms.content.*` permission grant is enforced centrally in `apiDispatch.ts` (driven by `TARGET_PERMISSIONS`); per-table handlers additionally call `assertContentTableAccess` (manifest `contentAccess[]` allowlist — slug entries + the `@own-created` marker); `tables.create` records `createdByPluginId`, which the marker resolves against. |
+| `plugin-content-access-enforced.test.ts`      | `cms.content.*` permission grant is enforced centrally in `apiDispatch.ts` (driven by `TARGET_PERMISSIONS`); per-table handlers additionally call `pluginHasContentTableAccess` (manifest `contentAccess[]` allowlist — slug entries + the `@own-created` marker); `tables.create` records `createdByPluginId`, which the marker resolves against. |
 | `plugin-content-tree-via-engine.test.ts`      | Plugin content handlers reach page-tree mutations through `applyTreeOperation` from `@core/page-tree`, not by deep-importing `mutations.ts` directly. |
 | `plugin-host-import-boundaries.test.ts`       | Worker transport (`server/plugins/host/`) does not import `apiDispatch` — prevents circular dependency between the pool and the dispatch layer. |
 | `plugin-host-ui-runtime-parity.test.ts`       | Plugin host UI surfaces match the SDK's declared shape.                          |
 | `plugin-schedule-invariants.test.ts`          | Scheduled job cadence + overlap policy validate at registration; `cms.schedule.*` targets are centrally gated by the `cms.schedule` permission in `TARGET_PERMISSIONS`. |
-| `plugin-secrets-never-leak.test.ts`           | HTTP handlers never touch plugin secret ciphertext/IVs or the plaintext runtime projection; browser-bound plugin settings project through `projectSecretSettings` / `listPluginSecretStates`. |
+| `plugin-hook-rules.test.ts`                   | Every host event and filter name has a rule in `server/plugins/protocol/hookRules.ts`; per-table events and the cells filter are sent only from `contentEvents.ts` with a recipient check; `hookBus.filter` is called only where the rule is checked first. |
+| `plugin-secrets-never-leak.test.ts`           | HTTP handlers never touch plugin secret ciphertext/IVs or the plaintext runtime projection; browser-bound plugin settings project through `projectSecretSettings` / `listPluginSecretStates`. Two hook-bus tripwires: no owner-only event name (`OWNER_ONLY_HOOK_EVENTS`) appears as a literal in an `.emit(` call, and a server file calling a function that returns decrypted plugin settings uses `hookBus` only for listener teardown, or in `settingsSync.ts` for its one value-free `settings.changed`. The enforcement proper is `hookBus`'s run-time checks. |
 | `sandbox-crypto-bridge.test.ts`               | Plugin sandbox's crypto surface is bridged correctly (`subtle.digest`, `subtle.sign`); crypto targets carry no permission gate (pure computation, no I/O). |
 
 See [docs/features/plugin-system.md](../features/plugin-system.md).
@@ -204,7 +205,7 @@ See [docs/features/media.md](../features/media.md).
 | `static-artefact-served-before-render.test.ts`| `publicRouter.ts` calls `readArtefact` BEFORE `resolvePublicRoute`; the fast-path fires when `canonicalRenderQuery(url.searchParams) === ''` — junk params (UTM, etc.) collapse to `''` and serve the artefact, only render-affecting loop-pagination params (`loop_<nodeId>_page`) fall through to the live renderer. |
 | `publish-bumps-cache-version.test.ts`         | Every publish / unpublish entry point (`publishDraftSite`, `publishDataRow`, `updateDataRowStatus`) calls `bumpPublishVersion()` imported from `publishState.ts` so Layer B evicts on every state change visitors can see. |
 | `hole-runtime-asset-route.test.ts`            | The router registers `tryServeHoleRuntimeAsset` and `tryServeHole` BEFORE `tryServePublicRoute`. The `/_instatic/hole/*` namespace can never fall through to slug resolution. |
-| `module-js-asset-route.test.ts`               | The router registers `tryServeModuleJsAsset` BEFORE `tryServePublicRoute`, and wires it from `server/handlers/cms/moduleJs`, so `/_instatic/module-js/*` requests cannot be swallowed by public-slug resolution. |
+| `module-js-asset-route.test.ts`               | The router registers `tryServeModuleJsAsset` BEFORE `tryServePublicRoute`, and wires it from `server/handlers/cms/moduleJs`, so `/_instatic/module-js/*` requests cannot be swallowed by public-slug resolution. Also pins that the tag's `?v=` is the content hash of the script body, never `publishVersion` (which restarts at 0 on boot), that the module-JS, loop-runtime and hole-runtime routes all answer through `serveVersionedScript` (no hand-rolled `max-age`), and that the publisher stamps a version onto both runtime script tags. |
 
 The following test lives in `src/__tests__/server/` (not `architecture/`) but enforces a load-bearing publisher performance invariant:
 
@@ -221,6 +222,14 @@ See [docs/features/publisher.md](../features/publisher.md).
 | `siteImport-headless.test.ts`                 | `src/core/siteImport/` imports no `src/admin/`, `server/`, or `react`/`react-dom` modules and contains no `.tsx` files — keeps the Super Import pipeline framework-agnostic and runnable in headless environments. |
 
 See [docs/features/site-import.md](../features/site-import.md).
+
+### Fragments
+
+| Test                                          | What it enforces                                                                 |
+|-----------------------------------------------|----------------------------------------------------------------------------------|
+| `fragments-headless.test.ts`                  | The runtime import graph reachable from `src/core/fragments/index.ts` (following `@core/*` and relative imports, transitively) contains no `.tsx`, no admin/UI/module/server code, and no npm package besides TypeBox, nanoid and fflate — so build scripts can import the engine by path under Bun. |
+
+See [docs/features/fragments.md](../features/fragments.md).
 
 ### Site transfer (export / import)
 

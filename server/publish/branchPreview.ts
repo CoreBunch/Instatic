@@ -19,6 +19,7 @@ import { registry } from '@core/module-engine'
 import { escapeHtml } from '@core/html-sanitize'
 import { publishPage, type DocumentMetaOverride, type PublishedRuntimePackageImportmap } from '@core/publisher'
 import {
+  buildPageFrame,
   buildRouteFrame,
   composeTemplateChain,
   isTemplatePage,
@@ -26,7 +27,7 @@ import {
   resolveTemplateChain,
   type TemplateRenderDataContext,
 } from '@core/templates'
-import type { SourceRequestContext } from '@core/loops/types'
+import { sourceRequestFor, type LoopRequestScope } from './loopSourceRequest'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { readEntrySeoOverride, readFeaturedMediaCell } from '@core/data/cells'
 import type { DataRow, DataTable, PublishedDataRow } from '@core/data/schemas'
@@ -38,12 +39,12 @@ import { BRANCH_PREVIEW_EXIT_PATH } from '../branches/previewLinks'
 import { getBranch } from '../repositories/branches'
 import { getDataRowBySlug, listDataTables } from '../repositories/data'
 import { getDraftSiteDocument } from '../repositories/publish'
-import { buildPublishedSiteModuleJsMap } from './moduleJsBundle'
+import { buildPublishedSiteModuleJsMap, resolveModuleScripts } from './moduleJsBundle'
 import { applyPublishedHtmlPipeline } from './publishedHtmlPipeline'
-import { prefetchLoopData, publishedDataRowToLoopItem } from './loopPrefetch'
+import { prefetchLoopData, publishedDataRowToEntryItem } from './loopPrefetch'
+import { LOOP_RUNTIME_VERSION } from './loopRuntime'
 import { prefetchMediaAssets } from './mediaPrefetch'
 import { contentRouteFromPath, publicSlugFromPath } from './publicRouter'
-import { getPublishVersion } from './publishState'
 import { buildSiteRuntimeScripts } from './runtime/bundleScripts'
 import { ensureRuntimeDependencyCache } from './runtime/dependencyCache'
 import { buildRuntimePackageImportmap, serializeImportmapForCsp } from './runtime/packageImportmap'
@@ -111,7 +112,8 @@ async function resolvePreview(
     return {
       merged: composeTemplateChain(chain, { kind: 'page', page }),
       scriptPage: page,
-      templateContext: { entryStack: [], route: buildRouteFrame(url.toString()) },
+      // `{page.*}` names the served page, not the layout the tree is keyed by.
+      templateContext: { entryStack: [], page: buildPageFrame(page), route: buildRouteFrame(url.toString()) },
     }
   }
 
@@ -133,7 +135,7 @@ async function resolvePreview(
     merged,
     scriptPage: chain[chain.length - 1] ?? merged,
     templateContext: {
-      entryStack: [publishedDataRowToLoopItem(published)],
+      entryStack: [await publishedDataRowToEntryItem(db, published, table.fields)],
       route: buildRouteFrame(url.toString()),
     },
     documentMeta: readEntrySeoOverride(row.cells),
@@ -208,13 +210,19 @@ export async function renderBranchPreview(
   // request-dependent nodes resolve inline instead of becoming holes that
   // the hole endpoint would hydrate from main's published data.
   const segments = url.pathname.split('/').filter(Boolean)
-  const request: SourceRequestContext = {
-    query: Object.fromEntries(url.searchParams),
-    path: url.pathname,
-    slug: segments.length > 0 ? decodeURIComponent(segments[segments.length - 1]!) : null,
-    cookies: {},
+  // No visitor in the scope: a preview is for a signed-in admin, so a
+  // per-visitor source is told nobody is signed in to the site.
+  const requestScope: LoopRequestScope = {
+    base: {
+      query: Object.fromEntries(url.searchParams),
+      path: url.pathname,
+      slug: segments.length > 0 ? decodeURIComponent(segments[segments.length - 1]!) : null,
+    },
   }
-  const loopData = await prefetchLoopData(merged, site, db, url, { branchId, request })
+  const loopData = await prefetchLoopData(merged, site, db, url, {
+    branchId,
+    requestFor: (source) => sourceRequestFor(source, requestScope),
+  })
   const mediaAssets = await prefetchMediaAssets(merged, site, registry, db, { templateContext, loopData })
   const rendered = publishPage(merged, site, registry, {
     templateContext,
@@ -224,12 +232,12 @@ export async function renderBranchPreview(
     loopData,
     mediaAssets,
     dynamicNodes: 'inline',
-    publishVersion: getPublishVersion(),
+    loopRuntimeVersion: LOOP_RUNTIME_VERSION,
   })
   // The same pipeline as a published page (plugin frontend assets, form
-  // tokens, module scripts, the `publish.*` hooks), so a form or a plugin's
-  // client script works on the preview too. The banner goes in last, past
-  // the filters.
+  // tokens, module scripts), so a form or a plugin's client script works on
+  // the preview too. Marked as a preview: plugin `publish.html` filters are
+  // not handed unpublished work. The banner goes in last.
   const moduleJsMap = buildPublishedSiteModuleJsMap(site, registry)
   const finalHtml = await applyPublishedHtmlPipeline(
     {
@@ -237,10 +245,10 @@ export async function renderBranchPreview(
       pageId: merged.id,
       slug: merged.slug,
       siteId: site.id,
-      jsModuleIds: rendered.jsModuleIds.filter((id) => moduleJsMap.has(id)),
-      publishVersion: getPublishVersion(),
+      moduleScripts: resolveModuleScripts(rendered.jsModuleIds, moduleJsMap),
     },
     db,
+    'preview',
   )
   const banner = previewBanner(branch.name)
   // A function replacement: a `$` in the branch name must not be read as a

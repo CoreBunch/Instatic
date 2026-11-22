@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import {
   DEV_ORIGIN_ALLOWLIST,
+  canonicalIp,
+  visitorIpKey,
   clientIp,
   configurePublicOrigins,
   configureTrustedProxyCidrs,
@@ -273,6 +275,96 @@ describe('clientIp', () => {
     })
     stampSocketIp(req, '10.0.0.99')
     expect(clientIp(req)).toBe('203.0.113.7')
+  })
+})
+
+describe('canonicalIp', () => {
+  it('writes one spelling per address', () => {
+    expect(canonicalIp('203.0.113.7')).toBe('203.0.113.7')
+    expect(canonicalIp('::ffff:203.0.113.7')).toBe('203.0.113.7')
+    expect(canonicalIp('::FFFF:CB00:7107')).toBe('203.0.113.7')
+    expect(canonicalIp('2001:DB8:0:0:0:0:0:1')).toBe('2001:db8::1')
+    expect(canonicalIp('[2001:db8::1]')).toBe('2001:db8::1')
+    expect(canonicalIp('fe80::1%eth0')).toBe('fe80::1')
+    expect(canonicalIp('2001:0db8:0000:0000:0001:0000:0000:0001')).toBe('2001:db8::1:0:0:1')
+    expect(canonicalIp('1:0:3:4:5:6:7:8')).toBe('1:0:3:4:5:6:7:8')
+    expect(canonicalIp('::1')).toBe('::1')
+    expect(canonicalIp('not an address')).toBeNull()
+  })
+})
+
+describe('visitorIpKey', () => {
+  it('keys IPv4 by the address and IPv6 by its /64', () => {
+    expect(visitorIpKey('203.0.113.7')).toBe('203.0.113.7')
+    expect(visitorIpKey('::ffff:203.0.113.7')).toBe('203.0.113.7')
+    expect(visitorIpKey('2001:db8:1:2:3:4:5:6')).toBe('2001:db8:1:2::/64')
+    expect(visitorIpKey('2001:DB8:1:2:ffff::9')).toBe('2001:db8:1:2::/64')
+    expect(visitorIpKey('2001:db8::1')).toBe('2001:db8::/64')
+    // NAT64 (well-known prefix): keyed on the embedded IPv4 address, not one shared /64.
+    expect(visitorIpKey('64:ff9b::cb00:7107')).toBe('203.0.113.7')
+    expect(visitorIpKey('64:ff9b::203.0.113.8')).toBe('203.0.113.8')
+    // Outside the /96 it is an ordinary IPv6 address.
+    expect(visitorIpKey('64:ff9b:1::cb00:7107')).toBe('64:ff9b:1::/64')
+    expect(visitorIpKey('nope')).toBeNull()
+  })
+})
+
+describe('clientIp with entries a proxy writes as host:port', () => {
+  function behindProxy(...forwardedFor: string[]): Request {
+    configureTrustedProxyCidrs(['10.0.0.0/8'])
+    const req = makeReq('http://app:3001/admin/api/cms/login', { method: 'POST' })
+    // Several header lines arrive joined as one comma-separated value.
+    for (const line of forwardedFor) req.headers.append('x-forwarded-for', line)
+    stampSocketIp(req, '10.0.0.2')
+    return req
+  }
+
+  it('reads the proxy-written host:port entry, not the spoofed one to its left', () => {
+    expect(clientIp(behindProxy('6.6.6.6, 5.6.7.8:443'))).toBe('5.6.7.8')
+  })
+
+  it('reads a bracketed IPv6 entry with a port, and one without', () => {
+    expect(clientIp(behindProxy('6.6.6.6, [2001:db8::1]:443'))).toBe('2001:db8::1')
+    expect(clientIp(behindProxy('6.6.6.6, [2001:DB8::2]'))).toBe('2001:db8::2')
+    expect(clientIp(behindProxy('[::ffff:192.0.2.5]:443'))).toBe('192.0.2.5')
+  })
+
+  it('still reads plain IPv4 and IPv6 entries', () => {
+    expect(clientIp(behindProxy('6.6.6.6, 5.6.7.8'))).toBe('5.6.7.8')
+    expect(clientIp(behindProxy('6.6.6.6, 2001:db8::3'))).toBe('2001:db8::3')
+  })
+
+  it('walks past trusted hops written with a port', () => {
+    expect(clientIp(behindProxy('6.6.6.6, 5.6.7.8:51234, 10.0.0.7:443'))).toBe('5.6.7.8')
+  })
+
+  it('stops at an entry it cannot read and answers with the nearest trusted hop, never past it', () => {
+    // Nothing trusted between the socket and the garbage: the socket peer.
+    expect(clientIp(behindProxy('6.6.6.6, unknown'))).toBe('10.0.0.2')
+    expect(clientIp(behindProxy('192.0.2.5, '))).toBe('10.0.0.2')
+    expect(clientIp(behindProxy('192.0.2.5, , 10.0.0.7'))).toBe('10.0.0.7')
+    expect(clientIp(behindProxy('192.0.2.5%invalid'))).toBe('10.0.0.2')
+    expect(clientIp(behindProxy('6.6.6.6, 5.6.7.8:99999'))).toBe('10.0.0.2')
+    expect(clientIp(behindProxy('6.6.6.6, 5.6.7.8:'))).toBe('10.0.0.2')
+    expect(clientIp(behindProxy('6.6.6.6, [2001:db8::1]:x'))).toBe('10.0.0.2')
+    // A trusted hop read before the garbage: that hop.
+    expect(clientIp(behindProxy('6.6.6.6, _hidden, 10.0.0.7'))).toBe('10.0.0.7')
+    expect(clientIp(behindProxy('6.6.6.6, _hidden, 10.0.0.7:443'))).toBe('10.0.0.7')
+  })
+
+  it('reads entries spread over several header lines in order', () => {
+    expect(clientIp(behindProxy('6.6.6.6', '5.6.7.8:443'))).toBe('5.6.7.8')
+    expect(clientIp(behindProxy('6.6.6.6, 5.6.7.8', '10.0.0.7:8443'))).toBe('5.6.7.8')
+  })
+
+  it('ignores forwarding headers from a peer that is not a trusted proxy', () => {
+    configureTrustedProxyCidrs(['10.0.0.0/8'])
+    const req = makeReq('http://app:3001/admin/api/cms/login', {
+      method: 'POST',
+      headers: { 'x-forwarded-for': '6.6.6.6, 5.6.7.8:443' },
+    })
+    stampSocketIp(req, '198.51.100.9')
+    expect(clientIp(req)).toBe('198.51.100.9')
   })
 })
 

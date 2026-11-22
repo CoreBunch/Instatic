@@ -1,51 +1,21 @@
 /**
  * Toolbar — fixed top bar shared by every admin route.
  *
- * Layout (left → right):
- *   [Site brand] [Branch chip] [admin nav]
- *   [Plugin buttons] [spacer→] [right slot]    [Account menu]
- *
- * While a branch other than main is active, the branch context strip renders
- * as a sibling ABOVE the header (a full-width band in the workspace surface
- * colour) — see src/admin/shared/BranchSwitcher.
- *
- * Undo/Redo lives inside the canvas notch (CanvasNotch), not the toolbar —
- * those controls only operate on the visual editor's page tree, so they have
- * no meaning on admin pages outside the canvas (Content, Plugins, …).
- *
- * Composition contract:
- *   - `siteName` / `faviconUrl` are PROPS, NOT a store subscription. That
- *     keeps the toolbar usable from `AdminPageLayout` (Plugins / Users /
- *     Account / plugin admin pages) without pulling the editor store into
- *     the non-editor admin bundle.
- *   - The editor-specific overlay (preview iframe) is passed in by the canvas
- *     layout via `overlay`. AdminPageLayout passes no overlay and the toolbar
- *     shows nothing in that position.
- *   - The `rightSlot` is owned by the caller — `AdminCanvasLayout` builds
- *     zoom / publish / settings buttons; `AdminPageLayout` builds its own
- *     toolbar right slot + settings button.
- *
- * Accessibility (WCAG 2.1 AA):
- * - native <header> banner landmark for the top-level toolbar
- * - aria-label on the nav region
- * - All interactive children have 44×44px minimum touch targets
+ * Desktop shows the brand, branch chip, workspace links and global actions.
+ * On phones the workspace switcher owns the secondary controls inside a sheet.
+ * Layouts supply editor-specific overlays and right-slot actions (e.g. Publish)
+ * to keep the editor store out of the other workspaces.
  */
 
 import { useEffect, useState, type ReactNode } from 'react'
-import { ArticleSolidIcon } from 'pixel-art-icons/icons/article-solid'
-import { AiBoxSolidIcon } from 'pixel-art-icons/icons/ai-box-solid'
-import { DashboardSolidIcon } from 'pixel-art-icons/icons/dashboard-solid'
-import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
-import { ImagesSolidIcon } from 'pixel-art-icons/icons/images-solid'
-import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
-import { PackageSolidIcon } from 'pixel-art-icons/icons/package-solid'
+import { useMobileViewport } from '@admin/lib/mobileViewport'
 import { pluginRuntime } from '@core/plugins/runtime'
 import type { RegisteredPluginToolbarButton } from '@core/plugin-sdk'
 import { AccountMenuButton } from '@admin/shared/AccountMenuButton'
 import { BranchChip, BranchContextStrip } from '@admin/shared/BranchSwitcher'
 import { OpenLivePageButton } from '@admin/shared/OpenLivePageButton'
 import { SettingsButton } from './SettingsButton'
-import { Link } from '@admin/lib/routing'
+import { AdminSectionNavigation } from '@admin/shared/AdminSectionNavigation'
 import { Button } from '@ui/components/Button'
 import { Skeleton } from '@ui/components/Skeleton'
 import { Tooltip } from '@ui/components/Tooltip'
@@ -54,17 +24,14 @@ import type { AdminWorkspace } from '@admin/workspace'
 import styles from './Toolbar.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
-const NAV_ICON_SIZE = 13
-
 interface ToolbarProps {
   /** Site name shown in the brand position. Null renders the loading skeleton. */
   siteName?: string | null
   /** Optional site favicon URL. When set, renders instead of the site-name text. */
   faviconUrl?: string | null
-  /** Active admin section — drives the default nav slot's highlight. */
+  /** Active admin section for the navigation row and mobile switcher. */
   section?: AdminWorkspace
-  /** Replaces the default admin section navigation links. */
-  adminNavigationSlot?: ReactNode
+  onWorkspaceNavigateStart?: () => unknown
   /**
    * Full-screen overlay siblings rendered before the toolbar header. Used by
    * AdminCanvasLayout to mount the preview overlay (also editor-only and
@@ -73,12 +40,7 @@ interface ToolbarProps {
    * stacking context.
    */
   overlay?: ReactNode
-  /**
-   * Content rendered immediately before the account menu. Both layouts
-   * own this region: AdminCanvasLayout fills it with zoom / publish /
-   * settings; AdminPageLayout passes any page-specific toolbar items
-   * followed by the SettingsButton.
-   */
+  /** Actions specific to this workspace, such as Publish or Uploads. */
   rightSlot?: ReactNode
 }
 
@@ -95,10 +57,11 @@ export function Toolbar({
   siteName = null,
   faviconUrl = null,
   section = 'site',
-  adminNavigationSlot,
+  onWorkspaceNavigateStart,
   overlay,
   rightSlot,
 }: ToolbarProps) {
+  const mobile = useMobileViewport()
   const [pluginButtons, setPluginButtons] = useState<RegisteredPluginToolbarButton[]>(() =>
     pluginRuntime.getToolbarButtons(),
   )
@@ -165,10 +128,45 @@ export function Toolbar({
     }
   }
 
+  const pluginActions = pluginButtons.map((button) => {
+    const key = pluginButtonKey(button)
+    const status = pluginStatuses[key]
+    const statusId = `plugin-command-status-${button.pluginId}-${button.id}`
+    return (
+      <div key={key} className={styles.pluginButtonWrapper}>
+        <Button
+          variant="secondary"
+          size="sm"
+          className={styles.pluginButton}
+          aria-describedby={status ? statusId : undefined}
+          data-state={status?.state}
+          disabled={status?.state === 'running'}
+          onClick={() => {
+            void runPluginButtonCommand(button)
+          }}
+        >
+          <span>{status?.state === 'running' ? `${button.label}...` : button.label}</span>
+        </Button>
+        {status && (
+          <output
+            id={statusId}
+            aria-live="polite"
+            className={cn(
+              styles.pluginToast,
+              status.state === 'error' && styles.pluginToastError,
+            )}
+          >
+            {status.message}
+          </output>
+        )}
+      </div>
+    )
+  })
+
   return (
     <>
       {overlay}
-      <BranchContextStrip />
+      <BranchContextStrip mobile={mobile} />
       <header
         aria-label="Editor toolbar"
         data-testid="toolbar"
@@ -176,7 +174,7 @@ export function Toolbar({
       >
         {/* ── Left section ────────────────────────────────────────────────── */}
 
-        {siteName === null ? (
+        {!mobile && (siteName === null ? (
           <span
             className={styles.siteNameSkeleton}
             data-testid="toolbar-site-brand"
@@ -204,143 +202,30 @@ export function Toolbar({
               {siteName}
             </span>
           </Tooltip>
-        )}
-        <BranchChip />
-        {adminNavigationSlot ?? <DefaultAdminNavigation section={section} />}
+        ))}
+        {!mobile && <BranchChip />}
+        <AdminSectionNavigation
+          section={section}
+          onWorkspaceNavigateStart={onWorkspaceNavigateStart}
+          mobile={mobile ? { siteName, pluginActions } : undefined}
+        />
 
         <div className={styles.workspaceToolbarItems}>
-          {pluginButtons.map((button) => {
-            const key = pluginButtonKey(button)
-            const status = pluginStatuses[key]
-            const statusId = `plugin-command-status-${button.pluginId}-${button.id}`
-            return (
-              <div key={key} className={styles.pluginButtonWrapper}>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  className={styles.pluginButton}
-                  aria-describedby={status ? statusId : undefined}
-                  data-state={status?.state}
-                  disabled={status?.state === 'running'}
-                  onClick={() => {
-                    void runPluginButtonCommand(button)
-                  }}
-                >
-                  <span>{status?.state === 'running' ? `${button.label}...` : button.label}</span>
-                </Button>
-                {status && (
-                  <output
-                    id={statusId}
-                    aria-live="polite"
-                    className={cn(
-                      styles.pluginToast,
-                      status.state === 'error' && styles.pluginToastError,
-                    )}
-                  >
-                    {status.message}
-                  </output>
-                )}
-              </div>
-            )
-          })}
-
+          {!mobile && pluginActions}
           {/* ── Spacer ──────────────────────────────────────────────────────── */}
           <div className={styles.spacer} aria-hidden="true" />
 
           {/* ── Right section — caller-owned ─────────────────────────────── */}
           {rightSlot}
-          {/* SettingsButton + OpenLivePageButton + AccountMenuButton are the
-              global toolbar trailer — always rendered regardless of `rightSlot`
-              or which layout mounted the toolbar. SettingsButton opens the
-              global Settings modal (it reads the tiny `adminUi` store, so it
-              never drags the editor toolchain into non-editor bundles);
-              OpenLivePageButton jumps to the live site in a new tab
-              (deep-linking to the active page when one is open in the canvas,
-              the site root elsewhere); AccountMenuButton is the account /
-              sign-out entry point. All three are reachable from every admin
-              route (Site / Content / Data / Media / Plugins / Users / …), so
-              they live in the toolbar shell, not in any layout's right slot. */}
-          <SettingsButton />
-          <OpenLivePageButton />
-          <AccountMenuButton />
+          {!mobile && (
+            <>
+              <SettingsButton />
+              <OpenLivePageButton />
+              <AccountMenuButton />
+            </>
+          )}
         </div>
       </header>
     </>
-  )
-}
-
-function DefaultAdminNavigation({ section }: { section: AdminWorkspace }) {
-  return (
-    <>
-      <DefaultNavSlot
-        to="/admin/dashboard"
-        icon={<DashboardSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-        label="Dashboard"
-        active={section === 'dashboard'}
-      />
-      <DefaultNavSlot
-        to="/admin/site"
-        icon={<LayoutSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-        label="Site"
-        active={section === 'site'}
-      />
-      <DefaultNavSlot
-        to="/admin/content"
-        icon={<ArticleSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-        label="Content"
-        active={section === 'content'}
-      />
-      <DefaultNavSlot
-        to="/admin/data"
-        icon={<DatabaseSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-        label="Data"
-        active={section === 'data'}
-      />
-      <DefaultNavSlot
-        to="/admin/media"
-        icon={<ImagesSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-        label="Media"
-        active={section === 'media'}
-      />
-      <DefaultNavSlot
-        to="/admin/plugins"
-        icon={<PackageSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-        label="Plugins"
-        active={section === 'plugins'}
-      />
-      <DefaultNavSlot
-        to="/admin/ai"
-        icon={<AiBoxSolidIcon size={NAV_ICON_SIZE} aria-hidden="true" />}
-        label="AI"
-        active={section === 'ai'}
-      />
-    </>
-  )
-}
-
-function DefaultNavSlot({
-  to,
-  icon,
-  label,
-  active,
-}: {
-  to: string
-  icon: ReactNode
-  label: string
-  active: boolean
-}) {
-  if (active) {
-    return (
-      <span className={styles.activeSection}>
-        {icon}
-        <span>{label}</span>
-      </span>
-    )
-  }
-  return (
-    <Link className={styles.adminLink} to={to}>
-      {icon}
-      <span>{label}</span>
-    </Link>
   )
 }

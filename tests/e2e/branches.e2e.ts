@@ -29,6 +29,20 @@ test.beforeAll(async () => {
   await mkdir(EVIDENCE_DIR, { recursive: true })
 })
 
+/**
+ * A branch name for this attempt of the running test.
+ *
+ * Branch names are unique and the suite shares one database, so a test that
+ * fails after creating its branch leaves the name taken. The retry then finds
+ * "Create branch" disabled and can never pass. Each attempt after the first
+ * gets its own name.
+ */
+function branchNameForAttempt(base: string): { name: string; slug: string } {
+  const attempt = test.info().retry
+  const name = attempt === 0 ? base : `${base} ${attempt + 1}`
+  return { name, slug: name.toLowerCase().replace(/\s+/g, '-') }
+}
+
 test('create a branch from the toolbar, edit on it, and return to main (BRANCH-001)', async ({ page }) => {
   await openSiteEditor(page)
   const chip = page.getByTestId('branch-chip')
@@ -73,6 +87,19 @@ test('create a branch from the toolbar, edit on it, and return to main (BRANCH-0
   await page.reload()
   await openSiteEditor(page)
   await expect(page.getByTestId('branch-strip')).toContainText('Spring Redesign')
+  await expect(strip.getByRole('button', { name: 'Share preview' })).toHaveText('Share preview')
+  await expect(strip.getByRole('button', { name: 'Review merge…' })).toHaveText('Review merge…')
+
+  // The phone strip keeps the branch name and exposes each action by icon.
+  const desktopHeight = await strip.evaluate((element) => element.clientHeight)
+  await page.setViewportSize({ width: 320, height: 640 })
+  for (const label of ['Share preview', 'Review merge…', 'More branch actions']) {
+    const button = strip.getByRole('button', { name: label, exact: true })
+    await expect(button).toBeInViewport({ ratio: 1 })
+    await expect(button).toHaveText('')
+  }
+  expect(await strip.evaluate((element) => element.clientHeight)).toBe(desktopHeight)
+  await page.screenshot({ path: `${EVIDENCE_DIR}/branches-phone-compact.png`, clip: { x: 0, y: 0, width: 320, height: 90 } })
 
   // Back to main from the strip.
   await page.getByTestId('branch-strip-more').click()
@@ -138,7 +165,8 @@ test('share a preview link and open it as a visitor (BRANCH-004)', async ({ page
   await openSiteEditor(page)
   await page.getByTestId('branch-chip').click()
   await page.getByTestId('branch-create-action').click()
-  await page.getByTestId('branch-create-name').fill('Preview Link')
+  const branch = branchNameForAttempt('Preview Link')
+  await page.getByTestId('branch-create-name').fill(branch.name)
   await page.getByTestId('branch-create-submit').click()
   await expect(page.getByTestId('branch-strip')).toBeVisible()
 
@@ -154,7 +182,7 @@ test('share a preview link and open it as a visitor (BRANCH-004)', async ({ page
   const visitor = await context.browser()!.newContext({ viewport: VIEWPORT })
   const visitorPage = await visitor.newPage()
   await visitorPage.goto(url)
-  await expect(visitorPage.getByRole('status')).toContainText('Previewing branch Preview Link')
+  await expect(visitorPage.getByRole('status')).toContainText(`Previewing branch ${branch.name}`)
   await visitorPage.screenshot({ path: `${EVIDENCE_DIR}/branches-7-visitor-preview.png`, fullPage: false })
   await visitorPage.getByRole('link', { name: 'Exit preview' }).click()
   await expect(visitorPage.getByRole('status')).toHaveCount(0)
@@ -183,7 +211,8 @@ test('merge a branch into main from the review page (BRANCH-005)', async ({ page
   await openSiteEditor(page)
   await page.getByTestId('branch-chip').click()
   await page.getByTestId('branch-create-action').click()
-  await page.getByTestId('branch-create-name').fill('Merge Me')
+  const branch = branchNameForAttempt('Merge Me')
+  await page.getByTestId('branch-create-name').fill(branch.name)
   await page.getByTestId('branch-create-submit').click()
   await expect(page.getByTestId('branch-strip')).toBeVisible()
 
@@ -194,7 +223,7 @@ test('merge a branch into main from the review page (BRANCH-005)', async ({ page
 
   await page.getByTestId('branch-strip-merge').click()
   // The review page: one node per change, the decision in the footer.
-  await expect(page.getByTestId('branch-review-title')).toHaveText('Merge Merge Me into main')
+  await expect(page.getByTestId('branch-review-title')).toHaveText(`Merge ${branch.name} into main`)
   await expect(page.getByTestId('branch-review')).toContainText('1 change')
   // A page that exists only on the branch cannot conflict with main.
   await expect(page.getByText(/Both sides changed|Deleted on one side/)).toHaveCount(0)
@@ -220,13 +249,14 @@ test('a post written on a branch in the Content workspace stays off main until m
   await openSiteEditor(page)
   await page.getByTestId('branch-chip').click()
   await page.getByTestId('branch-create-action').click()
-  await page.getByTestId('branch-create-name').fill('Content Branch')
+  const branch = branchNameForAttempt('Content Branch')
+  await page.getByTestId('branch-create-name').fill(branch.name)
   await page.getByTestId('branch-create-submit').click()
-  await expect(page.getByTestId('branch-strip')).toContainText('Content Branch')
+  await expect(page.getByTestId('branch-strip')).toContainText(branch.name)
 
   // The Content workspace follows the tab's branch.
   await page.goto('/admin/content')
-  await expect(page.getByTestId('branch-strip')).toContainText('Content Branch')
+  await expect(page.getByTestId('branch-strip')).toContainText(branch.name)
   await startNewPost(page)
   await page.getByRole('textbox', { name: 'Title', exact: true }).fill('Branch post')
   await saveSelectedDraft(page, 'Branch post')
@@ -237,8 +267,8 @@ test('a post written on a branch in the Content workspace stays off main until m
   await expect(entryRow(page, 'Branch post')).toHaveCount(0)
 
   // The review names the post by its title, and merging lands it on main.
-  await page.goto('/admin/branches/content-branch/review?branch=content-branch')
-  await expect(page.getByTestId('branch-review-title')).toHaveText('Merge Content Branch into main')
+  await page.goto(`/admin/branches/${branch.slug}/review?branch=${branch.slug}`)
+  await expect(page.getByTestId('branch-review-title')).toHaveText(`Merge ${branch.name} into main`)
   await expect(page.getByTestId('branch-review')).toContainText('Branch post')
   await page.getByTestId('review-delete-toggle').click()
   await page.getByTestId('review-merge').click()

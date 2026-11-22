@@ -5,7 +5,7 @@
  * the canonical import path for consumers.
  */
 
-import { isRichtextPropKey, sanitizeRichtext } from '@core/sanitize'
+import { isRichtextPropKey, RICHTEXT_CONTENT_CONFIG, sanitizeRichtext } from '@core/sanitize'
 
 export class SiteValidationError extends Error {
   readonly path: string
@@ -33,7 +33,7 @@ export function sanitizeNodeProps(node: unknown): void {
   if (n.props && typeof n.props === 'object') {
     for (const [key, val] of Object.entries(n.props)) {
       if (isRichtextPropKey(key) && typeof val === 'string') {
-        n.props[key] = sanitizeRichtext(val)
+        n.props[key] = sanitizeRichtext(val, RICHTEXT_CONTENT_CONFIG)
       }
     }
   }

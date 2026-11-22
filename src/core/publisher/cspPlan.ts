@@ -149,3 +149,18 @@ export function rewriteCspMeta(html: string, mutate: (plan: CspPlan) => void): s
     return cspMetaTag(plan)
   })
 }
+
+/**
+ * Insert `block` directly after the document's CSP `<meta>` tag. Returns `null`
+ * when the document has none.
+ *
+ * A `<meta>` policy only governs what the parser reaches AFTER it, so anything
+ * spliced into `<head>` on a plugin's behalf has to land below the policy, or
+ * that code would run (and load whatever it likes) before the policy exists.
+ */
+export function insertAfterCspMeta(html: string, block: string): string | null {
+  const match = CSP_META_PATTERN.exec(html)
+  if (!match) return null
+  const end = match.index + match[0].length
+  return `${html.slice(0, end)}\n${block}${html.slice(end)}`
+}

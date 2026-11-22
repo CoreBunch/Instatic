@@ -148,6 +148,14 @@ describe('data system-table visibility + lockdown', () => {
       expect(addCustom.status).toBe(200)
       const updated = await readJson<{ table: DataTable }>(addCustom)
       expect(updated.table.fields.some((f) => f.id === 'note')).toBe(true)
+      const append = await harness.cms(path, {
+        method: 'PATCH',
+        cookie: ownerCookie,
+        json: { appendFields: [{ id: 'note', label: 'Foreign note', type: 'text' }, { id: 'details', label: 'Details', type: 'text' }] },
+      })
+      expect(append.status).toBe(200)
+      const appended = await readJson<{ table: DataTable }>(append)
+      expect(appended.table.fields).toEqual([...updated.table.fields, { id: 'details', label: 'Details', type: 'text' }])
     } finally {
       await harness.cleanup()
     }

@@ -15,13 +15,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Check tagged changelog section
+        run: bun scripts/release-notes.ts "$GITHUB_REF_NAME" > /dev/null
 
       - name: Build
         run: bun run build
@@ -41,7 +44,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Resolve release version
         id: version
@@ -52,10 +55,10 @@ jobs:
           echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -63,7 +66,7 @@ jobs:
 
       - name: Extract Docker metadata
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/corebunch/instatic
           tags: |
@@ -72,7 +75,7 @@ jobs:
             type=raw,value=latest
 
       - name: Build and push image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64
@@ -84,17 +87,42 @@ jobs:
             INSTATIC_REVISION=${{ github.sha }}
             INSTATIC_CREATED=${{ steps.version.outputs.created }}
 
+  release:
+    name: Create GitHub Release
+    needs: image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+
+      - name: Create release from tagged changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            exit 0
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$GITHUB_REF_NAME" --jq .body > "$RUNNER_TEMP/generated-notes.md"
+          bun scripts/release-notes.ts "$GITHUB_REF_NAME" "$RUNNER_TEMP/generated-notes.md" > "$RUNNER_TEMP/release-notes.md"
+          gh release create "$GITHUB_REF_NAME" --verify-tag \
+            --title "Instatic ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/release-notes.md"
+
   server-artifacts:
     name: Publish Server Artifacts
     # macOS arm64 runner cross-compiles every supported target from one machine.
-    runs-on: macos-14
+    # Pinned to a release GitHub still hosts: `macos-14` was retired, and a
+    # retired label cancels this job after the image is already published.
+    runs-on: macos-15
     timeout-minutes: 30
     needs:
-      - verify
       - image
+      - release
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -107,18 +135,6 @@ jobs:
 
       - name: Build server artifacts
         run: bun run release:server-artifacts -- --all --version "${{ needs.image.outputs.version }}"
-
-      - name: Create release if missing
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            exit 0
-          fi
-          gh release create "$GITHUB_REF_NAME" \
-            --title "Instatic ${{ needs.image.outputs.version }}" \
-            --generate-notes
 
       - name: Upload server artifacts
         env:
@@ -133,11 +149,11 @@ jobs:
     name: Publish Release Bundle
     runs-on: ubuntu-latest
     needs:
-      - verify
       - image
+      - release
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -147,18 +163,6 @@ jobs:
 
       - name: Build release bundle
         run: bun run release:bundle -- "${{ needs.image.outputs.version }}"
-
-      - name: Create release if missing
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            exit 0
-          fi
-          gh release create "$GITHUB_REF_NAME" \
-            --title "Instatic ${{ needs.image.outputs.version }}" \
-            --generate-notes
 
       - name: Upload release bundle
         env:

@@ -135,6 +135,14 @@ export function publicOriginIsHttps(): boolean {
 export function originAllowed(req: Request): boolean {
   const rawOrigin = req.headers.get('origin')
   if (!rawOrigin) return true
+  return isSiteOrigin(req, rawOrigin)
+}
+
+/**
+ * True when `rawOrigin` is one of this site's own origins for `req`: the
+ * expected origin, any configured public origin, or a dev allowlist entry.
+ */
+export function isSiteOrigin(req: Request, rawOrigin: string): boolean {
   const origin = normalizeOrigin(rawOrigin)
   if (!origin) return false
   if (origin === normalizeOrigin(expectedOrigin(req))) return true
@@ -151,7 +159,7 @@ export function originAllowed(req: Request): boolean {
  * standard one, and any inbound version is stripped in `stampSocketIp`
  * before we set our own value — clients cannot spoof it.
  */
-const BUN_SOCKET_IP_HEADER = 'x-bun-socket-ip'
+export const BUN_SOCKET_IP_HEADER = 'x-bun-socket-ip'
 
 interface ParsedIpAddress {
   family: 4 | 6
@@ -272,6 +280,63 @@ function parseIpAddress(raw: string): ParsedIpAddress | null {
   return null
 }
 
+/**
+ * One spelling per address, so one visitor is one key: IPv4 in dotted form
+ * (an IPv4-mapped IPv6 address included), IPv6 lowercased and compressed as
+ * RFC 5952 writes it (the longest run of two or more zero groups becomes
+ * `::`, the first when tied). Null for anything that is not an IP address.
+ */
+export function canonicalIp(raw: string): string | null {
+  const parsed = parseIpAddress(raw)
+  if (!parsed) return null
+  if (parsed.family === 4) return ipv4String(parsed.value)
+  if (parsed.value >> 32n === 0xffffn) return ipv4String(parsed.value & 0xffffffffn)
+  return ipv6String(parsed.value)
+}
+
+/** `64:ff9b::/96`, the well-known NAT64 prefix (RFC 6052), as its top 96 bits. */
+const NAT64_WELL_KNOWN_PREFIX = 0x0064ff9b0000000000000000n
+
+/**
+ * The key for "one visitor" in a per-visitor limit: an IPv4 address as it
+ * is, an IPv6 address as its /64 (`2001:db8:1:2::/64`), since one household
+ * or phone network is given a whole /64 and can rotate through it. An
+ * address in the well-known NAT64 prefix `64:ff9b::/96` stands for the IPv4
+ * address in its last 32 bits, so it is keyed on that address, as an
+ * IPv4-mapped one is; otherwise every IPv4 site reached through NAT64 would
+ * share one /64. Null for anything that is not an IP address.
+ */
+export function visitorIpKey(raw: string): string | null {
+  const canonical = canonicalIp(raw)
+  if (canonical === null || !canonical.includes(':')) return canonical
+  const parsed = parseIpAddress(canonical)
+  if (!parsed) return null
+  if (parsed.value >> 32n === NAT64_WELL_KNOWN_PREFIX) return ipv4String(parsed.value & 0xffffffffn)
+  return `${ipv6String(maskAddress(parsed.value, 64, 128))}/64`
+}
+
+/** RFC 5952 text for a 128-bit IPv6 value. */
+function ipv6String(value: bigint): string {
+  const groups: number[] = []
+  for (let shift = 112n; shift >= 0n; shift -= 16n) groups.push(Number((value >> shift) & 0xffffn))
+  let bestStart = -1
+  let bestLength = 0
+  for (let i = 0; i < 8; ) {
+    if (groups[i] !== 0) { i++; continue }
+    let end = i
+    while (end < 8 && groups[end] === 0) end++
+    if (end - i > bestLength) { bestStart = i; bestLength = end - i }
+    i = end
+  }
+  const hex = groups.map((group) => group.toString(16))
+  if (bestLength < 2) return hex.join(':')
+  return `${hex.slice(0, bestStart).join(':')}::${hex.slice(bestStart + bestLength).join(':')}`
+}
+
+function ipv4String(value: bigint): string {
+  return [24n, 16n, 8n, 0n].map((shift) => Number((value >> shift) & 0xffn)).join('.')
+}
+
 function maskAddress(value: bigint, prefixBits: number, totalBits: number): bigint {
   if (prefixBits === 0) return 0n
   const hostBits = BigInt(totalBits - prefixBits)
@@ -328,11 +393,25 @@ export function stampSocketIp(req: Request, address: string | null): void {
 }
 
 /**
+ * Whether the browser says this request came from another site (a link or a
+ * form on another page). `Sec-Fetch-Site` is set by the browser and cannot be
+ * changed by page script; a request without it (an old browser, a script
+ * client) is not treated as coming from another site.
+ */
+export function isCrossSiteFetch(req: Request): boolean {
+  const fetchSite = req.headers.get('sec-fetch-site')
+  return fetchSite !== null && fetchSite !== 'same-origin' && fetchSite !== 'none'
+}
+
+/**
  * Best-effort client IP.
  *
  *   1. If the socket peer is a configured trusted proxy, walk
  *      `X-Forwarded-For` right-to-left and return the nearest untrusted IP.
  *      That avoids trusting a spoofed leftmost value preserved by the proxy.
+ *      Entries written as `host:port` / `[v6]:port` are read without the
+ *      port; an entry that holds no address stops the walk at the nearest
+ *      trusted hop (never past it).
  *   2. Otherwise ignore forwarding headers and fall back to the synthetic
  *      `x-bun-socket-ip` header that `stampSocketIp` writes from
  *      `server.requestIP(req)`. That covers dev (`bun run dev`) and any
@@ -345,13 +424,38 @@ export function clientIp(req: Request): string | null {
   if (!socketIp) return null
 
   const forwardedFor = req.headers.get('x-forwarded-for')
-  if (forwardedFor && isTrustedProxyPeer(socketIp)) {
-    const chain = forwardedFor.split(',').map((entry) => entry.trim()).filter(Boolean)
-    for (let i = chain.length - 1; i >= 0; i--) {
-      const candidate = chain[i]
-      if (!candidate || !parseIpAddress(candidate)) continue
-      if (!isTrustedProxyPeer(candidate)) return normalizeIpLiteral(candidate)
-    }
+  if (!forwardedFor || !isTrustedProxyPeer(socketIp)) return socketIp
+
+  // Right to left: each entry was written by the hop to its right, the
+  // rightmost by the socket peer. The nearest hop that is not a trusted
+  // proxy is the client. An entry that cannot be read ends the walk at the
+  // last trusted hop: nothing to its left can be vouched for, and skipping
+  // it would hand the answer to whatever the client wrote further left.
+  let nearestTrustedHop = socketIp
+  const chain = forwardedFor.split(',')
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const address = forwardedAddress(chain[i]?.trim() ?? '')
+    if (address === null) return nearestTrustedHop
+    if (!isTrustedProxyPeer(address)) return address
+    nearestTrustedHop = address
   }
-  return socketIp
+  return nearestTrustedHop
+}
+
+/**
+ * The address in one `X-Forwarded-For` entry, normalised, or null when the
+ * entry holds none. Some proxies (Azure Application Gateway, IIS ARR) write
+ * their client as `host:port`, or `[v6]:port`; the port is dropped. A bare
+ * IPv6 address has colons of its own and is never read as `host:port`.
+ */
+function forwardedAddress(entry: string): string | null {
+  const bracketed = /^\[([^\]]+)\](?::(\d{1,5}))?$/.exec(entry)
+  const ipv4WithPort = /^(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})$/.exec(entry)
+  const host = bracketed?.[1] ?? ipv4WithPort?.[1] ?? entry
+  const port = bracketed?.[2] ?? ipv4WithPort?.[2]
+  if (port !== undefined && (Number(port) < 1 || Number(port) > 65535)) return null
+  // Validate the wire representation before normalising mapped IPv6 to IPv4.
+  const family = isIP(host)
+  if (!family || (bracketed && family !== 6)) return null
+  return canonicalIp(host)
 }

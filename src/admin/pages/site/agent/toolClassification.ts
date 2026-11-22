@@ -53,6 +53,7 @@ export const SITE_MUTATION_TOOLS: ReadonlySet<string> = new Set([
   'site_rename_page',
   'site_duplicate_page',
   'site_set_page_template',
+  'site_set_page_seo',
   'site_clear_page_template',
   'site_set_color_tokens',
   'site_set_font_tokens',

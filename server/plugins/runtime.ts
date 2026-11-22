@@ -48,9 +48,13 @@ import {
 } from '@core/plugins/modulePackLoader'
 import { jsonResponse } from '../http'
 import { hookBus } from '@core/plugins/hookBus'
+import { nestedPluginId } from '@core/plugins/namespaceOwnership'
+import { setQueuedMailOutcomeHandler } from '../mail/outcomes'
+import { syncPluginMailTemplates } from '../mail/pluginTemplates'
+import { announcePluginMailOutcome } from './host/handlers/mail'
 import { requireAuthenticatedUser, requireCapability } from '../auth/authz'
 import { clearPluginCrashCounter, setCrashRecoveryHandler } from './host/crashRecovery'
-import { setPluginWorkerDbClient } from './host/registry'
+import { setPluginHostContext } from './host/registry'
 import {
   findPluginRouteAccess,
   loadPluginInWorker,
@@ -77,7 +81,7 @@ export { clearPluginCrashCounter }
 
 // Re-export the host's setter so the server entry point can wire in the
 // DbClient at boot before any request arrives.
-export { setPluginWorkerDbClient }
+export { setPluginHostContext }
 
 // Settings cache lives in `settingsCache.ts` — the cached record merges the
 // decrypted secret settings (plugin_secrets) over `plugin.settings`, and is
@@ -245,6 +249,10 @@ export async function handleServerPluginRuntimeRequest(
     case 'public':
       user = null
       break
+    case 'member':
+      // Member routes live on the public plugin mount (`publicRoutes.ts`),
+      // where the host can resolve the site member. Here it does not exist.
+      return jsonResponse({ error: 'Plugin route not found' }, { status: 404 })
   }
 
   return await runRouteInWorker({
@@ -255,6 +263,9 @@ export async function handleServerPluginRuntimeRequest(
     user: user
       ? { id: user.id, email: user.email, capabilities: user.capabilities }
       : null,
+    // The admin mount never identifies a site member.
+    member: null,
+    app: null,
   })
 }
 
@@ -363,13 +374,45 @@ function registerCrashRecoveryHandler(db: DbClient, uploadsDir: string): void {
         occurredAt: new Date().toISOString(),
       })
     } catch (err) {
-      // Re-activation itself failed. The next round-trip will record this
-      // as another crash event via the worker's normal error path; if the
-      // failure is repeatable the budget will be exceeded and the plugin
-      // will park in error state on its own. Log here for ops visibility.
+      // Re-activation itself failed. `activate` may have registered routes
+      // and hooks before it threw, and the plugin's row still said `active`.
+      // Unload what is left and say so in its status, as a failed activation
+      // does, so status and behaviour agree.
       console.error(`[plugin:${pluginId}] auto-respawn re-activation failed:`, err)
+      try {
+        await unloadPluginInWorker(pluginId)
+      } catch (unloadErr) {
+        console.error(`[plugin:${pluginId}] unload after a failed re-activation failed:`, unloadErr)
+      }
+      await setPluginLifecycleStatus(
+        db,
+        pluginId,
+        'error',
+        `Could not restart after a crash: ${err instanceof Error ? err.message : String(err)}`,
+      )
     }
   })
+}
+
+/**
+ * Installs made before nested plugin ids were refused may hold a pair such as
+ * `acme.vault` and `acme.vault.x`. They keep running (registration checks
+ * ownership exactly), but the owner should know: one of them has to go or be
+ * re-issued under another id.
+ */
+function warnAboutNestedPluginIds(pluginIds: string[]): void {
+  const reported = new Set<string>()
+  for (const pluginId of pluginIds) {
+    const other = nestedPluginId(pluginId, pluginIds)
+    if (!other) continue
+    const pair = [pluginId, other].sort().join(' / ')
+    if (reported.has(pair)) continue
+    reported.add(pair)
+    console.warn(
+      `[plugins] installed plugin ids nest: ${pair}. Their namespaces overlap; ` +
+        'such a pair can no longer be installed. Remove one, or re-issue it under an id that does not nest.',
+    )
+  }
 }
 
 export async function activateInstalledServerPlugins(
@@ -381,7 +424,7 @@ export async function activateInstalledServerPlugins(
   // Make sure the worker host can reach the DbClient — required before any
   // worker-initiated `cms.storage.*` round-trip lands. Idempotent; safe to
   // call on every boot.
-  setPluginWorkerDbClient(db)
+  setPluginHostContext({ db, uploadsDir })
   registerCrashRecoveryHandler(db, uploadsDir)
 
   // Reset existing in-process state so a re-bind (from `bun --watch`
@@ -390,6 +433,11 @@ export async function activateInstalledServerPlugins(
   await resetPluginWorker()
   resetPluginModulePacks()
   hookBus.reset()
+  // Email templates are NOT cleared here: mail other plugins have waiting
+  // must still find its template while everything reloads. They are brought
+  // in line with the database, one plugin at a time, at the end.
+  // A plugin hears what became of the email it queued, and only its own.
+  setQueuedMailOutcomeHandler(announcePluginMailOutcome)
 
   // Start the scheduler tick. Idempotent — a re-bind with the same
   // process keeps the existing interval pointed at the same DbClient.
@@ -405,6 +453,7 @@ export async function activateInstalledServerPlugins(
   startPublishScheduler(db, uploadsDir)
 
   const results = await listInstalledPlugins(db)
+  warnAboutNestedPluginIds(results.map((result) => (result.kind === 'ok' ? result.plugin.id : result.id)))
   for (const result of results) {
     // Phase: manifest-validation — the stored manifest_json failed to parse.
     // Mark the plugin as broken in the DB so the admin UI surfaces the error,
@@ -434,6 +483,7 @@ export async function activateInstalledServerPlugins(
     // which plugin code may consult synchronously during `activate()`.
     await primePluginSettingsCache(db, plugin)
 
+    let bootSucceeded = true
     // Phase: module-pack-load — registers canvas modules in the host registry
     // so server-rendered (publisher) and editor-rendered (canvas) pages can
     // use them immediately.  Failure is isolated: the server entrypoint can
@@ -445,7 +495,9 @@ export async function activateInstalledServerPlugins(
       try {
         const pack = await loadPluginModulePack(manifest, uploadsDir)
         if (pack) activateSandboxedPluginModulePack(manifest, pack)
+        else bootSucceeded = false
       } catch (err) {
+        bootSucceeded = false
         const message = err instanceof Error ? err.message : 'Module pack load failed'
         console.error(`[plugin:${manifest.id}] boot module-pack-load failed: ${message}`)
         try {
@@ -461,7 +513,9 @@ export async function activateInstalledServerPlugins(
       try {
         const loaded = await loadPluginServerEntrypoint(manifest, uploadsDir)
         if (loaded) await runPluginLifecycle(db, manifest.id, 'activate')
+        else bootSucceeded = false
       } catch (err) {
+        bootSucceeded = false
         const message = err instanceof Error ? err.message : 'Server entrypoint activation failed'
         console.error(`[plugin:${manifest.id}] boot server-entrypoint failed: ${message}`)
         try {
@@ -471,5 +525,9 @@ export async function activateInstalledServerPlugins(
         }
       }
     }
+    if (bootSucceeded && plugin.lifecycleStatus === 'error') {
+      await setPluginLifecycleStatus(db, manifest.id, 'active')
+    }
   }
+  await syncPluginMailTemplates(db)
 }
