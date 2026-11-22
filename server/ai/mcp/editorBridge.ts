@@ -28,7 +28,7 @@ interface EditorBridgeEntry {
   bridge: AiBrowserBridge
   /** The branch the connected workspace has open; browser tools act in it. */
   branchId: string
-  destroy: () => void
+  close: () => void
 }
 
 export type EditorBridgeScope = 'site' | 'content'
@@ -153,8 +153,8 @@ export function createEditorBridgeStream(
       // remains connected, so Site and Content may serve MCP simultaneously.
       const userBridges = byUser.get(userId) ?? new Map<EditorBridgeScope, EditorBridgeEntry>()
       const previous = userBridges.get(scope)
-      if (previous) previous.destroy()
-      userBridges.set(scope, { bridgeId, bridge: created.bridge, branchId, destroy: destroyBridge })
+      previous?.close()
+      userBridges.set(scope, { bridgeId, bridge: created.bridge, branchId, close: cleanup })
       byUser.set(userId, userBridges)
 
       emit({ type: 'bridgeReady', bridgeId })

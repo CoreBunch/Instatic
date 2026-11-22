@@ -164,6 +164,8 @@ The MCP files under `server/ai/mcp/`:
 | `tools/publishTool.ts` | Explicit canonical full-site publish with MCP audit metadata. |
 | `tools/uploadMediaTool.ts` | Server-resolved image upload (`media_upload`) — inline base64 or SSRF-guarded `sourceUrl` download, through the shared media pipeline. |
 
+Opening another tab for the same user and workspace closes the previous bridge stream. Automatic retries send `standby=1` and receive an empty 204 while another tab owns the bridge. A tab returning to the foreground during a retry can take ownership immediately.
+
 ## Tool execution model
 
 MCP exposes the full deduplicated tool catalog, filtered by the connection's capabilities.

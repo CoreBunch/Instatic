@@ -125,6 +125,7 @@ describe('editor bridge', () => {
     await readUntil(secondReader, (e) => e.type === 'bridgeReady')
     expect(hasEditorBridge(userId, 'site')).toBe(true)
 
+    expect((await firstReader.read()).done).toBe(true)
     await firstReader.cancel()
     expect(hasEditorBridge(userId, 'site')).toBe(true)
 

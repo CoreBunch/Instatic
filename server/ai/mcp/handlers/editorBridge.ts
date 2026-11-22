@@ -22,6 +22,7 @@ import type { DbClient } from '../../../db/client'
 import { resolveBranchScope } from '../../../branches/scope'
 import {
   createEditorBridgeStream,
+  hasEditorBridge,
   type EditorBridgeScope,
 } from '../editorBridge'
 
@@ -59,9 +60,10 @@ async function handle(req: Request, db: DbClient): Promise<Response> {
   const userOrResponse = await requireAuthenticatedUser(req, db)
   if (userOrResponse instanceof Response) return userOrResponse
 
+  const query = new URL(req.url).searchParams
   const scopeResult = safeParseValue(
     EditorBridgeScopeSchema,
-    new URL(req.url).searchParams.get('scope'),
+    query.get('scope'),
   )
   if (!scopeResult.ok) {
     return jsonResponse(
@@ -85,6 +87,9 @@ async function handle(req: Request, db: DbClient): Promise<Response> {
   const branch = await resolveBranchScope(req, db)
   if (branch instanceof Response) return branch
 
+  if (query.get('standby') === '1' && hasEditorBridge(userOrResponse.id, scope)) {
+    return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
+  }
   const stream = createEditorBridgeStream(userOrResponse.id, scope, req.signal, { branchId: branch.branchId })
   return new Response(stream, {
     status: 200,
