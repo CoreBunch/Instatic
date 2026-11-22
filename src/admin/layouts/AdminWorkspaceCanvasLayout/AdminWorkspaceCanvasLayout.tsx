@@ -79,7 +79,7 @@ export function AdminWorkspaceCanvasLayout({
         rightSlot={toolbarRightSlot}
       />
 
-      <div className={styles.editorBody}>
+      <div className={cn(styles.editorBody, workspace === 'data' && hasRightSidebar && workspaceStyles.dataInspectorOpen)}>
         {contentSidebar ?? null}
         <div
           className={cn(styles.canvasStage, hasRightSidebar && styles.canvasStageRightSidebarOpen)}

@@ -71,14 +71,14 @@
 }
 
 .size-md {
-    height: 32px;
+    height: var(--control-height-md);
     padding: var(--space-xs) var(--space-xl);
     gap: var(--space-2xs);
     font-size: var(--text-s);
 }
 
 .size-lg {
-    height: 44px;
+    height: var(--button-size-lg);
     padding: 0 var(--space-2xl);
     gap: var(--space-xs);
     font-size: var(--text-m);
@@ -98,10 +98,10 @@
     width: 28px;
 }
 .size-md.iconOnly {
-    width: 32px;
+    width: var(--control-height-md);
 }
 .size-lg.iconOnly {
-    width: 44px;
+    width: var(--button-size-lg);
 }
 
 .fullWidth {

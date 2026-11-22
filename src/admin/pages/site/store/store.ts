@@ -195,15 +195,17 @@ export const selectActivePage = (s: EditorStore): Page | null => {
   return page
 }
 
-/** Select whether the docked right sidebar is currently taking layout space. */
-export const selectRightSidebarExpanded = (s: EditorStore) =>
-  s.propertiesPanelMode === 'docked' &&
+export const selectPropertiesPanelVisible = (s: EditorStore) =>
   !s.propertiesPanel.collapsed &&
   Boolean(
     s.selectedNodeId ||
       s.selectedSelectorClassId ||
       s.selectedSelectorClassIds.length > 0,
   )
+
+/** Select whether the docked right sidebar is currently taking layout space. */
+export const selectRightSidebarExpanded = (s: EditorStore) =>
+  s.propertiesPanelMode === 'docked' && selectPropertiesPanelVisible(s)
 
 // ---------------------------------------------------------------------------
 // selectActiveCanvasPage — VC-aware canvas page selector (Task #438)

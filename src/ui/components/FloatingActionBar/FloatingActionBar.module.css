@@ -3,7 +3,7 @@
  * viewport.
  *
  * Visuals borrowed from the DataGrid bulk-action bar this component
- * supersedes: dark surface, 1px subtle border, 20px radius, generous
+ * supersedes: dark surface, 1px subtle border, pill corners, generous
  * drop shadow + inset top-light for the floating-glass look.
  */
 
@@ -15,11 +15,10 @@
     display: flex;
     align-items: center;
     gap: var(--space-m);
-    height: 40px;
-    padding: 0 var(--space-xs) 0 var(--space-xl);
+    padding: var(--space-xs);
     background: var(--bg-surface);
     border: 1px solid var(--bg-surface-3);
-    border-radius: 20px;
+    border-radius: var(--radius-pill);
     box-shadow:
         0 10px 28px var(--scrim-60),
         inset 0 1px 0 var(--overlay-5);
@@ -77,6 +76,7 @@
 }
 
 .label {
+    margin-inline-start: calc(var(--space-xl) - var(--space-xs));
     font-size: var(--text-s);
     color: var(--text);
     font-weight: 500;

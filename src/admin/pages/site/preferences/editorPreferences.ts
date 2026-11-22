@@ -18,6 +18,7 @@
  * editors open in two tabs stay in sync.
  */
 
+import { isMobileViewport } from '@admin/lib/mobileViewport'
 import { Type, type Static } from '@sinclair/typebox'
 import { useEffect, useState } from 'react'
 import { parseJsonWithFallback } from '@core/utils/jsonValidate'
@@ -41,8 +42,7 @@ interface EditorAppearancePreferences {
 // Schema and defaults — derived from the catalog
 //
 // Every catalog entry contributes one optional field to the schema (we accept
-// missing fields so older snapshots don't crash newer readers) and one entry
-// in DEFAULT_EDITOR_PREFS. `additionalProperties: true` keeps the door open
+// missing fields so the getter can apply the current default). `additionalProperties: true` keeps the door open
 // for fields written by future builds without rejecting them on parse.
 // ---------------------------------------------------------------------------
 
@@ -60,17 +60,6 @@ const EditorPrefsSchema = Type.Object(schemaFields, {
 })
 
 type EditorPrefs = Static<typeof EditorPrefsSchema>
-
-const DEFAULT_EDITOR_PREFS: Required<EditorPrefs> = (() => {
-  const acc: Record<string, boolean | string> = {}
-  for (const def of PREFERENCE_CATALOG) {
-    if (def.type === 'boolean') acc[def.id] = def.default
-    else if (def.type === 'select' || def.type === 'select-dynamic') {
-      acc[def.id] = def.default
-    }
-  }
-  return acc as Required<EditorPrefs>
-})()
 
 // ---------------------------------------------------------------------------
 // Storage IO + in-memory cache
@@ -144,7 +133,7 @@ function readEditorPrefs(): EditorPrefs {
   if (cachedPrefsEntry && cachedPrefsEntry.raw === raw) {
     return cachedPrefsEntry.prefs
   }
-  const prefs = parseJsonWithFallback(raw, EditorPrefsSchema, DEFAULT_EDITOR_PREFS)
+  const prefs = parseJsonWithFallback(raw, EditorPrefsSchema, {})
   cachedPrefsEntry = { raw, prefs }
   return prefs
 }
@@ -194,7 +183,9 @@ export function setEditorPreference(id: BooleanPreferenceId, value: boolean): vo
 export function readEditorSelectPreference(id: SelectPreferenceId): string {
   const prefs = readEditorPrefs() as Record<string, unknown>
   const value = prefs[id]
-  return typeof value === 'string' && value.length > 0 ? value : defaultSelectFor(id)
+  if (typeof value === 'string' && value.length > 0) return value
+  if (id === 'defaultBreakpoint' && isMobileViewport()) return 'mobile'
+  return defaultSelectFor(id)
 }
 
 /** Persist a select / select-dynamic preference and broadcast a change event. */
