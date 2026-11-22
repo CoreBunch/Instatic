@@ -31,6 +31,18 @@ export const NON_VISION_USER_IMAGE_OMITTED =
   '[Attached image omitted because the selected model does not support image input.]'
 
 /**
+ * Replay `data` for a successful tool result from an earlier turn. The
+ * persister keeps only `{ ok }` for successes, so without this marker drivers
+ * would serialise the result as a bare `{"ok":true}` and the model would read
+ * its earlier reads as empty, retracting findings it actually had.
+ */
+export const OMITTED_TOOL_RESULT_DATA = {
+  ok: true,
+  omitted: true,
+  note: 'Output of this earlier tool call was removed from history to save context; call the tool again if you need the data.',
+} as const
+
+/**
  * Reconstruct `AiMessage` history from persisted `MessageRecord` rows.
  *
  * - `user` / `assistant` rows replay their content verbatim (assistant rows
@@ -81,12 +93,15 @@ export function buildMessageHistory(records: MessageRecord[]): AiMessage[] {
       // store boundary), so `ok`/`error` are read directly — never inferred from
       // an empty text block. A `role:'tool'` row with no `toolResult` block is a
       // malformed/legacy row; treat it as a failure so the model never sees a
-      // silently-"succeeded" call with no data behind it.
+      // silently-"succeeded" call with no data behind it. Successful results
+      // carry an explicit omitted marker because their data was not persisted.
       const resultBlock = rec.content.find((b) => b.kind === 'toolResult')
       const output: AiToolOutput =
-        resultBlock?.kind === 'toolResult'
-          ? { ok: resultBlock.ok, error: resultBlock.ok ? undefined : resultBlock.error }
-          : { ok: false, error: INTERRUPTED_TOOL_RESULT_ERROR }
+        resultBlock?.kind !== 'toolResult'
+          ? { ok: false, error: INTERRUPTED_TOOL_RESULT_ERROR }
+          : resultBlock.ok
+            ? { ok: true, data: OMITTED_TOOL_RESULT_DATA }
+            : { ok: false, error: resultBlock.error }
       out.push({ role: 'tool', toolCallId: rec.toolCallId, output })
     }
   }

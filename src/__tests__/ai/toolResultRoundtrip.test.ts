@@ -5,7 +5,7 @@ import {
   listMessagesForConversation,
 } from '../../../server/ai/conversations/store'
 import { createConversationsPersister } from '../../../server/ai/runtime/persister'
-import { buildMessageHistory } from '../../../server/ai/conversations/history'
+import { buildMessageHistory, OMITTED_TOOL_RESULT_DATA } from '../../../server/ai/conversations/history'
 import type { AiMessage } from '../../../server/ai/runtime/types'
 
 /**
@@ -76,7 +76,7 @@ describe('tool-result persist → buildMessageHistory round-trip', () => {
         .map((m) => [m.toolCallId, m.output]),
     )
 
-    expect(byId['ok1']).toEqual({ ok: true, error: undefined })
+    expect(byId['ok1']).toEqual({ ok: true, data: OMITTED_TOOL_RESULT_DATA })
     expect(byId['err1']).toEqual({ ok: false, error: 'boom' })
   })
 })
