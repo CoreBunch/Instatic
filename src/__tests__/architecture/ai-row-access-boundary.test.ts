@@ -30,10 +30,10 @@ const BARE_GET_ROW = /(?<![.\w])getDataRow\s*\(/
 const LIST_OR_SEARCH = /(?<![.\w])(listDataRows|searchDataRows)\s*\(([^)]*)\)/g
 
 /**
- * `treeService.ts` reads the row to resolve a page-tree field and takes an
- * `assertAccess` callback; its only callers are the plugin host content
- * handlers, which pass `assertContentTableAccess`. It is the one sanctioned
- * reader outside `dataAccess.ts`.
+ * `treeService.ts` reads the row to resolve a page-tree field; its only
+ * callers are the plugin host page-tree handlers, which decide access first
+ * (`assertTreeReach`, over `pluginHasContentTableAccess`). It is the one
+ * sanctioned reader outside `dataAccess.ts`.
  */
 const ALLOWLIST = new Set(['server/ai/content/treeService.ts'])
 

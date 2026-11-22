@@ -76,7 +76,7 @@ import { newPageStructuralCells } from '../../../writePolicy/pageStructuralCells
 import { isMainScope, MAIN_SCOPE, type BranchScope } from '../../../branches/scope'
 import { isGrantableMemberTag, PUBLIC_ACCESS } from '@core/members'
 import { getTableAccess } from '../../../repositories/data/tableAccess'
-import { setTableAccess } from '../../../publish/tableAccess'
+import { routeVisibilityChanged, setTableAccess } from '../../../publish/tableAccess'
 import { physicalId } from '@core/branches'
 
 // ---------------------------------------------------------------------------
@@ -253,6 +253,7 @@ async function handleTableItem(
   db: DbClient,
   scope: BranchScope,
   tableId: string,
+  uploadsDir: string | undefined,
 ): Promise<Response> {
   // GET = schema read (Data workspace OR loop pickers in site editor).
   if (req.method === 'GET') {
@@ -306,6 +307,11 @@ async function handleTableItem(
 
     const updated = await updateDataTable(db, scope, tableId, update)
     if (!updated) return jsonResponse({ error: 'Table not found' }, { status: 404 })
+    // Where the table's entries are served, and under which name its rule is
+    // indexed, just changed: nothing cached for the old shape may be served.
+    if (isMainScope(scope) && (updated.routeBase !== table.routeBase || updated.slug !== table.slug)) {
+      await routeVisibilityChanged(uploadsDir)
+    }
     await recordTableAuditEvent(db, user, req, 'data.table.update', updated)
     return jsonResponse({ table: updated })
   }
@@ -313,6 +319,7 @@ async function handleTableItem(
   if (req.method === 'DELETE') {
     const deleted = await softDeleteDataTable(db, scope, tableId, user.id)
     if (!deleted) return jsonResponse({ error: 'Table cannot be deleted' }, { status: 409 })
+    if (isMainScope(scope)) await routeVisibilityChanged(uploadsDir)
     await recordTableAuditEvent(db, user, req, 'data.table.delete', deleted)
     return jsonResponse({ table: deleted })
   }
@@ -394,7 +401,8 @@ async function handleTableRows(
     // plugins can validate / normalize / auto-fill cells — the same shared
     // helper the plugin `cms.content.*` surface applies.
     let cells = await applyContentEntryCellsFilter(body.cells ?? {}, {
-      tableSlug: table.slug,
+      scope,
+      table,
       entryId: 'new',
       actor: { kind: 'user', userId: user.id },
     })
@@ -532,7 +540,7 @@ export async function handleDataTableRoutes(
 
   const itemMatch = pathname.match(TABLE_ITEM_PATTERN)
   if (itemMatch) {
-    return handleTableItem(req, db, scope, decodeURIComponent(itemMatch[1]))
+    return handleTableItem(req, db, scope, decodeURIComponent(itemMatch[1]), options.uploadsDir)
   }
 
   return null

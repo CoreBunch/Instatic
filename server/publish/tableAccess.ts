@@ -15,6 +15,27 @@ import { writeTableAccess } from '../repositories/data/tableAccess'
 import { bumpPublishVersion, withPublishLock } from './publishState'
 import { removeAllHtmlArtefactsInPlace } from './staticArtefact'
 
+/**
+ * Drop every baked page and bump the publish version, which empties the
+ * render cache and reloads the access index. Run under the publish lock.
+ */
+async function forgetServedRoutes(uploadsDir: string | undefined): Promise<void> {
+  if (uploadsDir) await removeAllHtmlArtefactsInPlace(uploadsDir)
+  bumpPublishVersion()
+}
+
+/**
+ * Something on `main` changed that can change who sees which route: a
+ * table's route base, slug or deletion, a branch merge (or its undo) that
+ * moves, deletes or restores entries, pages or tables. Nothing baked or
+ * cached for the old shape may be served: the static slot is read without
+ * asking who is asking. Pages render live until the next publish bakes them
+ * again. The one function for this; an access change does the same steps.
+ */
+export function routeVisibilityChanged(uploadsDir?: string): Promise<void> {
+  return withPublishLock(() => forgetServedRoutes(uploadsDir))
+}
+
 /** Returns false when there is no such table. */
 export function setTableAccess(
   db: DbClient,
@@ -24,8 +45,7 @@ export function setTableAccess(
 ): Promise<boolean> {
   return withPublishLock(async () => {
     if (!(await writeTableAccess(db, tableId, rule))) return false
-    if (uploadsDir) await removeAllHtmlArtefactsInPlace(uploadsDir)
-    bumpPublishVersion()
+    await forgetServedRoutes(uploadsDir)
     return true
   })
 }

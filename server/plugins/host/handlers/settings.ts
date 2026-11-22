@@ -7,7 +7,8 @@
  * encrypted to `plugin_secrets`, everything else to `settings_json`) —
  * which refreshes the host cache, pushes the merged runtime record into
  * the running VM's `__plugin_settings` mirror, and emits `settings.changed`
- * (in that order — listeners reading `settings.get()` see the new values).
+ * to this plugin only (in that order — its listeners reading `settings.get()`
+ * see the new values).
  * Because the push lands before the api-reply, the plugin's awaited
  * `settings.replace()` resolves with its mirror already updated.
  *

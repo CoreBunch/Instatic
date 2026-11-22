@@ -22,7 +22,7 @@ import { FilterBar, type FilterBarItem } from '@ui/components/FilterBar'
 import { Select } from '@ui/components/Select'
 import { Skeleton } from '@ui/components/Skeleton'
 import { canDeleteMedia, canWriteMedia } from '@admin/access'
-import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
+import { useConfirmMediaPurge } from '../../hooks/useConfirmMediaPurge'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import {
   ExplorerItemContextMenu,
@@ -128,7 +128,7 @@ function folderMatchesQuery(folder: CmsMediaFolder, query: string): boolean {
 
 export function MediaCanvas({ workspace, selectionMode = 'standard', mediaKind = 'any' }: MediaCanvasProps) {
   const currentUser = useCurrentAdminUser()
-  const confirmDelete = useConfirmDelete()
+  const confirmPurge = useConfirmMediaPurge(workspace.purgeAsset)
   const mobile = useMobileViewport()
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false)
   const viewOptionsId = useId()
@@ -574,26 +574,7 @@ export function MediaCanvas({ workspace, selectionMode = 'standard', mediaKind =
                 for (const id of targets) void workspace.trashAsset(id)
                 return
               }
-              // Purging is the one media action nothing can undo: it removes
-              // the original and every generated size from the storage
-              // adapter, not just the row — and from here it can reach a
-              // whole selection at once. `alwaysConfirm` because the
-              // `confirmBeforeDelete` preference defaults off, and an operator
-              // who turned it off was opting out of confirming a TRASH, which
-              // is reversible.
-              confirmDelete({
-                title: many
-                  ? `Delete ${targets.length} files permanently?`
-                  : `Delete "${target.filename}" permanently?`,
-                description: many
-                  ? 'This removes every one of these files and all their generated sizes from disk. It cannot be undone.'
-                  : 'This removes the file and every generated size from disk. It cannot be undone.',
-                confirmLabel: many ? `Delete ${targets.length} files` : 'Delete permanently',
-                alwaysConfirm: true,
-                commit: () => {
-                  for (const id of targets) void workspace.purgeAsset(id)
-                },
-              })
+              confirmPurge(target, targets)
             }}
             deleteLabel={
               many

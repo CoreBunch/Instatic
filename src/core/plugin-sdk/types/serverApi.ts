@@ -167,7 +167,7 @@ export interface ServerPluginApi {
      * Read / replace the plugin's persisted settings. The schema declared
      * via `definePlugin({ settings: [...] })` is the source of truth; the
      * host populates defaults at install time and validates updates at the
-     * boundary. Emits the `settings.changed` event when values change.
+     * boundary. A save emits `settings.changed` to this plugin only.
      */
     settings: ServerPluginSettingsApi
     storage: {
@@ -247,7 +247,6 @@ export interface ServerPluginApi {
         update: (entryId: string, patch: UpdateContentEntryInput) => Promise<ContentEntry>
         delete: (entryId: string) => Promise<void>
         publish: (entryId: string, options?: { scheduledFor?: string }) => Promise<ContentEntry>
-        moveToTable: (entryId: string, targetTableSlug: string) => Promise<ContentEntry>
         createMany: (
           inputs: ReadonlyArray<CreateContentEntryInput>,
         ) => Promise<ReadonlyArray<ContentEntry>>

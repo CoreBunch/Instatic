@@ -20,7 +20,7 @@ import { MAIN_SCOPE } from '../../../branches/scope'
 import type { DataTable } from '@core/data/schemas'
 import { parsePluginManifest } from '@core/plugins/manifest'
 import { OWN_CREATED_TABLES_MARKER, type ContentAccessEntry } from '@core/plugin-sdk'
-import { assertContentTableAccess } from '../registry'
+import { pluginHasContentTableAccess } from '../registry'
 import type { HostPluginRecord } from '../types'
 import { PluginRateLimitStore } from '../pluginRateLimit'
 import {
@@ -47,7 +47,7 @@ function pluginRecord(id: string, contentAccess: ContentAccessEntry[]): HostPlug
     contentAccess,
   })
   return {
-    manifest,
+    manifest: { ...manifest, grantedPermissions: manifest.permissions },
     routes: new Map(),
     hookListeners: [],
     hookFilters: [],
@@ -165,7 +165,7 @@ describe('cms.content.tables.create → @own-created access', () => {
       },
       other,
       db,
-    )).rejects.toThrow('does not have contentAccess declared for table "imported-products"')
+    )).rejects.toThrow('has no "write" access to a table "imported-products"')
   })
 
   it('denies a plugin without the marker even for tables it could name', async () => {
@@ -198,14 +198,13 @@ describe('cms.content.tables.create → @own-created access', () => {
       },
       staticDeclarer,
       db,
-    )).rejects.toThrow('not for mode "write"')
+    )).rejects.toThrow('has no "write" access to a table "imported-products"')
   })
 
   it('still denies the creator a mode its marker entry does not declare', async () => {
     // The importer declared read+write only — delete-capable handlers assert
     // mode 'delete' and must fail even for own-created tables.
     const table = await mustGetTable(db, 'imported-products')
-    expect(() => assertContentTableAccess(importer, table, 'delete'))
-      .toThrow('not for mode "delete"')
+    expect(pluginHasContentTableAccess(importer, table, ['delete'])).toBe(false)
   })
 })

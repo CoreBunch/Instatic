@@ -125,7 +125,7 @@ The admin UI mirrors the server capability split:
 - `media.read` can open the workspace, browse assets/folders, open the viewer, and copy public URLs.
 - `media.write` exposes upload, metadata editing, rename, folder management, restore, bulk metadata edits, and internal folder/asset moves.
 - `media.replace` exposes the Replace file action.
-- `media.delete` exposes soft-delete and purge actions.
+- `media.delete` exposes soft-delete and purge actions. Purging from the viewer or the Trash menu always asks for confirmation and names the file.
 
 Storage remains `media_asset_folders` (many-to-many), but the canvas move interaction is intentionally file-manager-like: moving an asset to a folder removes its previous folder assignments and adds only the target folder. The user-facing model is one current folder per asset move.
 

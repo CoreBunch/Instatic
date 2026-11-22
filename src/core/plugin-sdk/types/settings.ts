@@ -16,7 +16,8 @@ export interface ServerPluginSettingsApi {
   /**
    * Replace the full settings record. Validated against the plugin's
    * declared schema before persistence; the host pushes the merged record
-   * back into the running VM, then emits `settings.changed`. Only the
+   * back into the running VM, then emits `settings.changed` to this plugin
+   * alone (no other plugin hears it, and it carries no values). Only the
    * host (admin user) is expected to call this normally — plugins
    * mutating their own settings is allowed but rare.
    */

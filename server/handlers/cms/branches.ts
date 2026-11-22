@@ -137,7 +137,7 @@ export async function handleBranchesRoutes(
       return methodNotAllowed()
     }
     if (segments.length === 3 && segments[2] === 'undo') {
-      if (req.method === 'POST') return handleMergeUndo(req, db, branchId, direction)
+      if (req.method === 'POST') return handleMergeUndo(req, db, branchId, direction, options)
       return methodNotAllowed()
     }
     return null
@@ -222,6 +222,7 @@ async function handleMergeApply(
       direction,
       resolutions: body.resolutions ?? {},
       actorUserId: user.id,
+      ...(options.uploadsDir ? { uploadsDir: options.uploadsDir } : {}),
     })
   } catch (err) {
     if (err instanceof MergeConflictsUnresolvedError) {
@@ -564,6 +565,7 @@ async function handleMergeUndo(
   db: DbClient,
   branchId: string,
   direction: MergeDirection,
+  options: CmsHandlerOptions,
 ): Promise<Response> {
   const user = await requireAuthenticatedUser(req, db)
   if (user instanceof Response) return user
@@ -578,7 +580,12 @@ async function handleMergeUndo(
 
   let result
   try {
-    result = await undoBranchMerge(db, { branchId, direction, actorUserId: user.id })
+    result = await undoBranchMerge(db, {
+      branchId,
+      direction,
+      actorUserId: user.id,
+      ...(options.uploadsDir ? { uploadsDir: options.uploadsDir } : {}),
+    })
   } catch (err) {
     if (err instanceof MergeUndoError) {
       return jsonResponse({ error: err.message, code: 'merge_undo' }, { status: 409 })

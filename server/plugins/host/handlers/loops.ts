@@ -16,7 +16,7 @@ import type { SourceFetchContext, SourceRequestContext } from '@core/loops/types
 import type { ApiCallFor } from '../../protocol/apiCallSchema'
 import type { DbClient } from '../../../db/client'
 import { replyApiOk } from '../apiReplies'
-import { hostPluginHasPermission } from '../registry'
+import { assertOwnsNamespacedId, hostPluginHasPermission, hostPlugins } from '../registry'
 import { runLoopFetchInWorker } from '../rpc'
 import type { HostPluginRecord } from '../types'
 
@@ -45,13 +45,16 @@ function pluginMayKnowMember(pluginId: string): boolean {
 export async function handleLoopsRegisterSource(
   msg: ApiCallFor<'cms.loops.registerSource'>,
   entry: HostPluginRecord,
-  _db: DbClient,
+  db: DbClient,
 ): Promise<void> {
   const [descriptor] = msg.args
-  if (!descriptor.id?.startsWith(`${msg.pluginId}.`)) {
-    throw new Error(
-      `Loop source id "${descriptor.id}" must start with the plugin id "${msg.pluginId}.".`,
-    )
+  await assertOwnsNamespacedId(db, msg.pluginId, descriptor.id, 'Loop source')
+  // A source of this id registered earlier by another plugin: it registered
+  // under a shorter id prefix before this plugin was loaded (the check above
+  // rules out every other case). The id is this plugin's; the other loses it.
+  for (const [otherId, other] of hostPlugins) {
+    if (otherId === msg.pluginId) continue
+    other.loopSources = other.loopSources.filter((source) => source.sourceId !== descriptor.id)
   }
   const fullSource = {
     ...descriptor,

@@ -45,6 +45,8 @@ import type { SiteDocument, SiteSettings } from '@core/page-tree'
 import type { FrameworkPreferencesSettings } from '@core/framework-schema'
 import { useEditorStore } from '@site/store/store'
 import { useAdminUi } from '@admin/state/adminUi'
+import { currentBranchId } from '@admin/state/activeBranch'
+import { useActiveBranchId } from '@admin/state/branchStore'
 import { CMS_SITE_RELOAD_EVENT, requestCmsSiteReload } from '@admin/state/adminEvents'
 import { getErrorMessage } from '@core/utils/errorMessage'
 
@@ -69,6 +71,12 @@ const SHELL_ONLY_DIRTY = {
 interface SettingsDraftState {
   /** The persisted document loaded for standalone (non-editor) editing. */
   doc: SiteDocument | null
+  /**
+   * The branch `doc` was loaded from. Requests address the tab's active
+   * branch, so a doc from any other branch must never be saved — its whole
+   * shell (style rules, breakpoints, settings, …) would replace that branch's.
+   */
+  branchId: string | null
   /**
    * The shell seq this store last synchronized with — the conflict-detection
    * base its shell-only saves ship (and bump from each save response).
@@ -110,19 +118,26 @@ let saveGeneration = 0
  */
 export const useSettingsDraftStore = create<SettingsDraftState>((set, get) => {
   function persist(next: SiteDocument): void {
+    const branchId = get().branchId
+    if (branchId !== currentBranchId()) {
+      // The tab switched branch since `doc` loaded: drop the edit and load
+      // the active branch's document instead.
+      void get().ensureLoaded()
+      return
+    }
     saveGeneration += 1
     set({ doc: next })
     saveChain = saveChain
-      .then(() =>
-        cmsAdapter.saveSite(next, {
-          dirty: SHELL_ONLY_DIRTY,
-          baseSeqs: {},
-          shellBaseSeq: get().shellBaseSeq,
-        }),
-      )
+      .then(() => cmsAdapter.saveSite(next, {
+        branchId,
+        dirty: SHELL_ONLY_DIRTY,
+        baseSeqs: {},
+        shellBaseSeq: get().shellBaseSeq,
+      }))
       .then(({ seq }) => {
-        // This save's seq is the new shell base for the next one.
+        // Loads wait for this queue, so the next save still uses its predecessor's seq.
         set({ shellBaseSeq: seq })
+        if (branchId !== currentBranchId()) return
         // Refresh the toolbar brand + any other site-summary readers, and let
         // the editor store re-hydrate from disk next time it loads.
         useAdminUi.getState().setSiteSummary({
@@ -168,14 +183,16 @@ export const useSettingsDraftStore = create<SettingsDraftState>((set, get) => {
 
   return {
     doc: null,
+    branchId: null,
     shellBaseSeq: 0,
     status: 'idle',
     error: null,
     stale: false,
 
     ensureLoaded: async () => {
-      const { status, stale } = get()
-      if (status === 'loading' || (status === 'ready' && !stale)) return
+      const { status, stale, branchId: loadedBranchId } = get()
+      const fresh = status === 'ready' && !stale && loadedBranchId === currentBranchId()
+      if (status === 'loading' || fresh) return
       if (inFlightLoad) return inFlightLoad
       set({ status: 'loading', error: null, stale: false })
       inFlightLoad = (async () => {
@@ -184,10 +201,12 @@ export const useSettingsDraftStore = create<SettingsDraftState>((set, get) => {
           // leave `doc` / `shellBaseSeq` behind the server.
           await saveChain
           const generation = saveGeneration
+          const branchId = currentBranchId()
           const result = await cmsAdapter.loadSite(SITE_ID)
-          if (generation !== saveGeneration) {
+          if (generation !== saveGeneration || branchId !== currentBranchId()) {
             // A save started meanwhile: this response may not contain it, and
-            // its shell seq would rewind the save's conflict base. Fetch again.
+            // its shell seq would rewind the save's conflict base. Or the tab
+            // switched branch, so it is another branch's document. Fetch again.
             set({ status: 'ready', stale: true })
             return
           }
@@ -195,7 +214,7 @@ export const useSettingsDraftStore = create<SettingsDraftState>((set, get) => {
             set({ status: 'error', error: 'No site found. Complete first-run setup first.' })
             return
           }
-          set({ doc: result.site, shellBaseSeq: result.shellSeq, status: 'ready', error: null })
+          set({ doc: result.site, branchId, shellBaseSeq: result.shellSeq, status: 'ready', error: null })
         } catch (err) {
           console.error('[useSiteSettingsController] failed to load site settings:', err)
           set({ status: 'error', error: getErrorMessage(err, 'Failed to load site settings') })
@@ -266,7 +285,9 @@ export function useSiteSettingsController(): SiteSettingsController {
   const editorUpdateFrameworkPreferences = useEditorStore((s) => s.updateFrameworkPreferences)
 
   // Standalone source (every other admin page).
-  const draftDoc = useSettingsDraftStore((s) => s.doc)
+  const activeBranchId = useActiveBranchId()
+  // Another branch's cached document is never shown (nor edited).
+  const draftDoc = useSettingsDraftStore((s) => (s.branchId === activeBranchId ? s.doc : null))
   const draftError = useSettingsDraftStore((s) => s.error)
   const draftStale = useSettingsDraftStore((s) => s.stale)
   const ensureLoaded = useSettingsDraftStore((s) => s.ensureLoaded)
@@ -279,11 +300,11 @@ export function useSiteSettingsController(): SiteSettingsController {
   const editorActive = editorSite !== null
 
   // `draftStale`: an out-of-modal site write while Settings is open reloads
-  // right away; otherwise the next open does.
+  // right away; otherwise the next open does. Same for a branch switch.
   useEffect(() => {
     if (editorActive) return
     void ensureLoaded()
-  }, [editorActive, draftStale, ensureLoaded])
+  }, [editorActive, draftStale, activeBranchId, ensureLoaded])
 
   if (editorActive) {
     return {

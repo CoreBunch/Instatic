@@ -20,9 +20,11 @@
  * see the call sites in `server/plugins/pluginWorkerHost.ts`.
  */
 
+import { isInPluginNamespace, mayReplaceRegistration } from './namespaceOwnership'
+
 interface MediaVariantDelegateRecord {
   id: string
-  /** namespaced under the plugin id; used by host code to tear down. */
+  /** The plugin that registered it; tear-down goes by this, not by id prefix. */
   pluginId: string
   variantUrlTemplate: string
   widths: ReadonlyArray<number>
@@ -36,20 +38,24 @@ class MediaVariantDelegateRegistry {
     if (!record.id) {
       throw new Error('[mediaVariantDelegateRegistry] delegate id is required')
     }
-    if (!record.id.startsWith(`${record.pluginId}.`)) {
+    if (!isInPluginNamespace(record.id, record.pluginId)) {
       throw new Error(
         `[mediaVariantDelegateRegistry] delegate id "${record.id}" must start with the plugin id "${record.pluginId}."`,
+      )
+    }
+    const current = this.byId.get(record.id)
+    if (current && !mayReplaceRegistration(record.id, record.pluginId, current.pluginId)) {
+      throw new Error(
+        `[mediaVariantDelegateRegistry] delegate id "${record.id}" is registered by plugin "${current.pluginId}"`,
       )
     }
     this.byId.set(record.id, record)
   }
 
+  /** Remove the delegates this plugin registered, and only those. */
   unregisterPlugin(pluginId: string): void {
-    const prefix = `${pluginId}.`
-    for (const id of this.byId.keys()) {
-      if (id === pluginId || id.startsWith(prefix)) {
-        this.byId.delete(id)
-      }
+    for (const [id, record] of this.byId) {
+      if (record.pluginId === pluginId) this.byId.delete(id)
     }
   }
 

@@ -32,6 +32,7 @@
  * heap ceiling on its first 50 MB video upload.
  */
 
+import { isInPluginNamespace, mayReplaceRegistration } from './namespaceOwnership'
 import type {
   MediaAssetRole,
   MediaStorageAdapter,
@@ -146,6 +147,8 @@ function buildLocalDiskAdapter(options: LocalDiskAdapterOptions): MediaStorageAd
 
 class MediaStorageRegistry {
   private adapters = new Map<string, MediaStorageAdapter>()
+  /** Which plugin registered each plugin adapter (the local-disk adapter has no owner). */
+  private owners = new Map<string, string>()
   private localDiskReady = false
 
   /**
@@ -159,11 +162,12 @@ class MediaStorageRegistry {
   }
 
   /**
-   * Register a plugin adapter. Called by the QuickJS host bridge when a
-   * plugin invokes `api.cms.media.registerStorageAdapter(...)`. Phase B
-   * wires this side.
+   * Register a plugin adapter for `ownerPluginId`. Called by the QuickJS host
+   * bridge when a plugin invokes `api.cms.media.registerStorageAdapter(...)`.
+   * A plugin replaces its own adapter; it cannot replace another plugin's
+   * (see `namespaceOwnership.ts` for the one exception, nested plugin ids).
    */
-  register(adapter: MediaStorageAdapter): void {
+  register(adapter: MediaStorageAdapter, ownerPluginId: string): void {
     if (!adapter.id) {
       throw new Error('[mediaStorageRegistry] Adapter id is required')
     }
@@ -172,20 +176,31 @@ class MediaStorageRegistry {
         `[mediaStorageRegistry] Adapter id "" is reserved for the built-in local-disk adapter`,
       )
     }
+    if (!isInPluginNamespace(adapter.id, ownerPluginId)) {
+      throw new Error(
+        `[mediaStorageRegistry] Adapter id "${adapter.id}" must start with the plugin id "${ownerPluginId}."`,
+      )
+    }
+    const currentOwner = this.owners.get(adapter.id)
+    if (currentOwner !== undefined && !mayReplaceRegistration(adapter.id, ownerPluginId, currentOwner)) {
+      throw new Error(
+        `[mediaStorageRegistry] Adapter id "${adapter.id}" is registered by plugin "${currentOwner}"`,
+      )
+    }
     this.adapters.set(adapter.id, adapter)
+    this.owners.set(adapter.id, ownerPluginId)
   }
 
   /**
-   * Tear down every adapter registered under a given plugin id. Called on
-   * plugin disable / uninstall. The local-disk adapter is never affected.
+   * Tear down every adapter the given plugin registered. Called on plugin
+   * disable / uninstall. The local-disk adapter is never affected, and
+   * neither is another plugin's adapter whose id merely shares the prefix.
    */
   unregisterPlugin(pluginId: string): void {
-    const prefix = `${pluginId}.`
-    for (const id of this.adapters.keys()) {
-      if (id === LOCAL_DISK_ADAPTER_ID) continue
-      if (id === pluginId || id.startsWith(prefix)) {
-        this.adapters.delete(id)
-      }
+    for (const [id, owner] of this.owners) {
+      if (owner !== pluginId) continue
+      this.adapters.delete(id)
+      this.owners.delete(id)
     }
   }
 
@@ -232,6 +247,7 @@ class MediaStorageRegistry {
   /** Test-only reset. */
   __reset(): void {
     this.adapters.clear()
+    this.owners.clear()
     this.localDiskReady = false
   }
 }

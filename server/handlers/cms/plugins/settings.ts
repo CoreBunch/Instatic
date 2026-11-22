@@ -10,8 +10,8 @@
  *       `persistAndSyncPluginSettings`, which persists (secret fields split
  *       into the encrypted `plugin_secrets` table: `'***'` preserves, a new
  *       value rotates, `''` clears), refreshes the runtime cache, pushes the
- *       decrypted runtime record into the running VM, and fires
- *       `settings.changed` so plugin server hooks see real values.
+ *       decrypted runtime record into the running VM, and tells that plugin
+ *       alone that its settings changed (`settings.changed`, no values).
  */
 import type { DbClient } from '../../../db/client'
 import type { AuthUser } from '../../../repositories/users'
@@ -74,8 +74,8 @@ export async function handlePluginSettings(
     // `persistAndSyncPluginSettings` then refreshes the runtime cache
     // (decrypted secrets merged), pushes the record into the plugin's
     // running VM (no-op when it isn't loaded), and emits `settings.changed`
-    // — in that order, so hook listeners reading `api.cms.settings.get(...)`
-    // observe the new values.
+    // to that plugin only — in that order, so its hook listeners reading
+    // `api.cms.settings.get(...)` observe the new values.
     let runtimeSettings: PluginSettingsValues
     try {
       runtimeSettings = await persistAndSyncPluginSettings(db, pluginId, declared, cleaned)
