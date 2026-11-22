@@ -22,6 +22,7 @@ import { type Ref, type ReactNode } from "react";
 import { LoaderIcon } from "pixel-art-icons/icons/loader";
 import { cn } from "@ui/cn";
 import { Tooltip, type TooltipSide } from "@ui/components/Tooltip";
+import controlSize from '@ui/ControlSize.module.css'
 import styles from "./Button.module.css";
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
@@ -130,6 +131,7 @@ export function Button(
         data-danger-hover={dangerHover ? "true" : undefined}
         className={cn(
           styles.btn,
+          controlSize[size],
           styles[`variant-${variant}`],
           styles[`size-${size}`],
           styles[`align-${align}`],

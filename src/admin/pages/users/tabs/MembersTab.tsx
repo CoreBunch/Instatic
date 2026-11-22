@@ -347,7 +347,7 @@ export function MembersTab({
           />
           {counts && <SegmentedControl<StatusFilter>
             className={memberStyles.statusFilter}
-            size="xs"
+            size="sm"
             value={status}
             options={[
               { value: 'all', label: `All ${counts.all.toLocaleString()}` },

@@ -36,7 +36,7 @@ export function UrlCell({
       {context === 'detail' && hasUrl && (
         <Button
           variant="ghost"
-          size="sm"
+          size="md"
           iconOnly
           tooltip="Open URL in new tab"
           aria-label="Open URL in new tab"

@@ -81,9 +81,15 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
   await test.step('find them, and give them a tag that ends', async () => {
     const searchField = tab.getByLabel('Search name or email')
     const statusFilter = tab.getByRole('group', { name: 'Filter by status' })
-    const searchRadius = await searchField.evaluate((input) => getComputedStyle(input.parentElement!).borderRadius)
-    await expect(statusFilter).toHaveCSS('border-radius', searchRadius)
-    await tab.getByLabel('Search name or email').fill(`member-${suffix}`)
+    const searchBox = searchField.locator('..')
+    const searchStyle = await searchBox.evaluate((box) => {
+      const { borderRadius, height } = getComputedStyle(box)
+      return { borderRadius, height }
+    })
+    await expect(statusFilter).toHaveCSS('border-radius', searchStyle.borderRadius)
+    await expect(statusFilter).toHaveCSS('height', searchStyle.height)
+    await searchField.fill(`member-${suffix}`)
+    await expect(searchBox).toHaveCSS('height', searchStyle.height)
     const rows = tab.getByRole('table', { name: 'Site members' })
     await expect(rows.getByRole('button')).toHaveCount(1)
     await expect(rows.getByRole('row', { name: `Member ${email}`, exact: true })).toHaveAttribute('aria-current', 'true')
@@ -101,6 +107,7 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
     await until.fill(tomorrow)
     const dateBounds = await until.boundingBox()
     const addBounds = await add.boundingBox()
+    await expect(add).toHaveCSS('height', searchStyle.height)
     expect(addBounds!.height).toBe(dateBounds!.height)
     expect(addBounds!.height).toBe((await tag.boundingBox())!.height)
     expect(addBounds!.x).toBeGreaterThanOrEqual(dateBounds!.x + dateBounds!.width)
