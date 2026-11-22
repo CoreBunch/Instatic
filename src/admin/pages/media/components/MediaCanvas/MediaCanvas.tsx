@@ -22,7 +22,7 @@ import { FilterBar, type FilterBarItem } from '@ui/components/FilterBar'
 import { Select } from '@ui/components/Select'
 import { Skeleton } from '@ui/components/Skeleton'
 import { canDeleteMedia, canWriteMedia } from '@admin/access'
-import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
+import { useConfirmMediaPurge } from '../../hooks/useConfirmMediaPurge'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import {
   ExplorerItemContextMenu,
@@ -127,7 +127,7 @@ function folderMatchesQuery(folder: CmsMediaFolder, query: string): boolean {
 
 export function MediaCanvas({ workspace, selectionMode = 'standard', mediaKind = 'any' }: MediaCanvasProps) {
   const currentUser = useCurrentAdminUser()
-  const confirmDelete = useConfirmDelete()
+  const confirmPurge = useConfirmMediaPurge(workspace.purgeAsset)
   const mobile = useMobileViewport()
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false)
   const viewOptionsId = useId()
@@ -562,23 +562,8 @@ export function MediaCanvas({ workspace, selectionMode = 'standard', mediaKind =
           onDelete={() => {
             const target = contextMenu.asset
             setContextMenu(null)
-            if (!trashView) {
-              void workspace.trashAsset(target.id)
-              return
-            }
-            // Purging is the one media action nothing can undo: it removes the
-            // original and every generated size from the storage adapter, not
-            // just the row. `alwaysConfirm` because the `confirmBeforeDelete`
-            // preference defaults off, and an operator who turned it off was
-            // opting out of confirming a TRASH, which is reversible.
-            confirmDelete({
-              title: `Delete "${target.filename}" permanently?`,
-              description:
-                'This removes the file and every generated size from disk. It cannot be undone.',
-              confirmLabel: 'Delete permanently',
-              alwaysConfirm: true,
-              commit: () => void workspace.purgeAsset(target.id),
-            })
+            if (trashView) confirmPurge(target)
+            else void workspace.trashAsset(target.id)
           }}
           showRename={canWrite}
           showDelete={canDelete}
