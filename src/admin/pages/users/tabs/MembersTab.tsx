@@ -40,7 +40,7 @@ import {
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
-import { RangeTabs } from '@ui/components/RangeTabs'
+import { SegmentedControl } from '@ui/components/SegmentedControl'
 import { SearchBar } from '@ui/components/SearchBar'
 import { Select } from '@ui/components/Select'
 import { TagPill } from '@ui/components/TagPill'
@@ -345,7 +345,9 @@ export function MembersTab({
             placeholder="Search name or email"
             aria-label="Search name or email"
           />
-          {counts && <RangeTabs<StatusFilter>
+          {counts && <SegmentedControl<StatusFilter>
+            className={memberStyles.statusFilter}
+            size="xs"
             value={status}
             options={[
               { value: 'all', label: `All ${counts.all.toLocaleString()}` },
@@ -354,7 +356,7 @@ export function MembersTab({
               { value: 'suspended', label: `Suspended ${counts.suspended.toLocaleString()}` },
             ]}
             onChange={setStatus}
-            ariaLabel="Filter by status"
+            aria-label="Filter by status"
           />}
           {list.data && list.data.tags.length > 0 && (
             <div className={memberStyles.filterSelect}>

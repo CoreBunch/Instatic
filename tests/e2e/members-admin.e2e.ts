@@ -79,6 +79,10 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
   const details = page.getByRole('article', { name: 'Member details' })
 
   await test.step('find them, and give them a tag that ends', async () => {
+    const searchField = tab.getByLabel('Search name or email')
+    const statusFilter = tab.getByRole('group', { name: 'Filter by status' })
+    const searchRadius = await searchField.evaluate((input) => getComputedStyle(input.parentElement!).borderRadius)
+    await expect(statusFilter).toHaveCSS('border-radius', searchRadius)
     await tab.getByLabel('Search name or email').fill(`member-${suffix}`)
     const rows = tab.getByRole('table', { name: 'Site members' })
     await expect(rows.getByRole('button')).toHaveCount(1)
@@ -102,7 +106,9 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
     await page.getByRole('dialog').getByRole('button', { name: 'Suspend', exact: true }).click()
     await expect(details.getByText('Suspended: this member cannot sign in')).toBeVisible()
     await tab.getByLabel('Search name or email').fill('')
-    await tab.getByRole('tablist', { name: 'Filter by status' }).getByRole('tab', { name: /^Suspended 1/ }).click()
+    const suspended = tab.getByRole('group', { name: 'Filter by status' }).getByRole('button', { name: /^Suspended 1/ })
+    await suspended.click()
+    await expect(suspended).toHaveAttribute('aria-pressed', 'true')
     await expect(tab.getByRole('table', { name: 'Site members' }).getByRole('button')).toHaveCount(1)
     await details.getByRole('button', { name: 'More actions' }).click()
     await page.getByRole('menuitem', { name: 'Restore access', exact: true }).click()
