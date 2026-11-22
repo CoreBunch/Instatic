@@ -81,12 +81,15 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
   await test.step('find them, and give them a tag that ends', async () => {
     const searchField = tab.getByLabel('Search name or email')
     const statusFilter = tab.getByRole('group', { name: 'Filter by status' })
+    const tagFilter = tab.getByRole('combobox', { name: 'Filter by tag' }).locator('..')
     const searchBox = searchField.locator('..')
     const searchStyle = await searchBox.evaluate((box) => {
       const { borderRadius, height } = getComputedStyle(box)
       return { borderRadius, height }
     })
+    expect(searchStyle.borderRadius).toBe(`${parseFloat(searchStyle.height) / 2}px`)
     await expect(statusFilter).toHaveCSS('border-radius', searchStyle.borderRadius)
+    await expect(tagFilter).toHaveCSS('border-radius', searchStyle.borderRadius)
     await expect(statusFilter).toHaveCSS('height', searchStyle.height)
     await searchField.fill(`member-${suffix}`)
     await expect(searchBox).toHaveCSS('height', searchStyle.height)

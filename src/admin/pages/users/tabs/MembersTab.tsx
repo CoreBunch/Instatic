@@ -346,7 +346,6 @@ export function MembersTab({
             aria-label="Search name or email"
           />
           {counts && <SegmentedControl<StatusFilter>
-            className={memberStyles.statusFilter}
             size="sm"
             value={status}
             options={[

@@ -16,11 +16,6 @@
     line-height: 1.5;
 }
 
-.statusFilter {
-    --segment-track-radius: var(--input-radius);
-    --segment-radius: var(--radius-pill);
-}
-
 .filterSelect {
     flex: 0 1 200px;
     min-width: 150px;
