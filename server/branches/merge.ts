@@ -93,6 +93,12 @@ function scopesFor(branchId: string, direction: MergeDirection): { from: BranchS
   return direction === 'merge' ? { from: branch, into: MAIN_SCOPE } : { from: MAIN_SCOPE, into: branch }
 }
 
+/**
+ * Within a kind, deletes go before updates and updates before creates, so a
+ * slug a deleted or renamed entity frees is free by the time another takes it.
+ */
+const ACTION_ORDER: Record<MergeChange['action'], number> = { delete: 0, update: 1, create: 2 }
+
 /** Where a change sits in an apply: the adapter of its kind decides. */
 function changeOrder(change: MergeChange): number {
   return adapterFor(change.kind).order(change.action)
@@ -195,7 +201,12 @@ export async function planBranchMerge(
     const marker = adapterFor(entry.change.kind).collision?.(entry.result, entry.change.logicalId, intoEntities) ?? null
     if (marker && !entry.change.conflicts.includes(marker)) entry.change.conflicts.push(marker)
   }
-  work.sort((a, b) => changeOrder(a.change) - changeOrder(b.change) || a.change.label.localeCompare(b.change.label))
+  work.sort(
+    (a, b) =>
+      changeOrder(a.change) - changeOrder(b.change) ||
+      ACTION_ORDER[a.change.action] - ACTION_ORDER[b.change.action] ||
+      a.change.label.localeCompare(b.change.label),
+  )
   const changes = work.map((entry) => entry.change)
   return {
     plan: {
