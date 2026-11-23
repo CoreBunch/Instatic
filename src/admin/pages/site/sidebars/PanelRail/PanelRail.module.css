@@ -59,7 +59,7 @@
 
 .railLabel {
     writing-mode: vertical-rl;
-    transform: rotate(180deg);
+    text-transform: uppercase;
     max-inline-size: 10em;
     overflow: hidden;
     text-overflow: ellipsis;
