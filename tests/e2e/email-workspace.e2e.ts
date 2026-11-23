@@ -17,7 +17,7 @@ test.use({ storageState: ANONYMOUS_STATE })
 test('owner sets up outgoing email and edits a template (ADMIN-013)', async ({ page }) => {
   await login(page)
   await page.goto('/admin/email')
-  await expect(page.getByRole('heading', { name: 'Email', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Connectors', level: 1 })).toBeVisible()
 
   // ── Templates: a test send is captured, with nothing set up ──────────────
   await page.getByTestId('email-nav-templates').click()
@@ -33,12 +33,14 @@ test('owner sets up outgoing email and edits a template (ADMIN-013)', async ({ p
   await expect(testDialog).toBeHidden()
 
   await page.getByTestId('email-nav-activity').click()
-  const activity = page.getByRole('list', { name: 'Email activity' })
+  const activity = page.getByRole('table', { name: 'Email activity' })
   await expect(activity.getByText('reader@example.com')).toBeVisible()
-  // The newest email is selected; its details show how it left and, on a development server, the message.
+  await activity.getByRole('button', { name: /reader@example.com/ }).first().click()
   const details = page.getByRole('article', { name: 'Email details' })
   await expect(details.getByText('Captured, not sent')).toBeVisible()
   await expect(details.getByText('outgoing email works')).toBeVisible()
+  await details.getByRole('button', { name: 'Close details' }).click()
+  await expect(details).toBeHidden()
   // A search with no match says so and offers the way back.
   await page.getByLabel('Search recipient or subject').fill('nobody-by-this-name')
   await expect(page.getByText('No email matches these filters')).toBeVisible()

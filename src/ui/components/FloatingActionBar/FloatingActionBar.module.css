@@ -90,7 +90,7 @@
 .sep {
     width: 1px;
     height: 18px;
-    background: var(--border-muted);
+    background: var(--divider);
     flex-shrink: 0;
 }
 

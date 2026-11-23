@@ -22,9 +22,6 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: var(--space-px);
-  overflow: hidden;
-  border-radius: var(--card-radius);
-  background: var(--bg-surface);
 }
 
 .tile {
@@ -33,6 +30,7 @@
   gap: var(--space-3xs);
   min-width: 0;
   padding: var(--space-2xl);
+  border-radius: var(--card-radius);
   background: var(--bg-surface-2);
 }
 
@@ -138,21 +136,25 @@
 }
 
 /* ── Filters ─────────────────────────────────────────────────────────────── */
-.filters {
+.filterSelect {
+  flex: 0 1 136px;
+  min-width: 0;
+}
+
+.timeColumn { width: 12%; }
+.footer, .retention {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+.footer {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-l);
 }
+.retention { margin: var(--space-s) 0 0; }
 
-.search {
-  flex: 1 1 240px;
-  min-width: 200px;
-}
-
-.filterSelect {
-  flex: 0 1 190px;
-  min-width: 150px;
+@container (max-width: 460px) {
+  .timeColumn { display: none; }
 }
 
 /* ── Captured message ───────────────────────────────────────────────────── */
@@ -183,4 +185,13 @@
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 620px) {
+  .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tile[data-wide="true"] { grid-column: 1 / -1; }
+}
+
+@container (max-width: 400px) {
+  .filterSelect { flex: 1 1 120px; }
 }

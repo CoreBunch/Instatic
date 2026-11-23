@@ -35,7 +35,7 @@
 .toolbar {
     display: flex;
     flex-direction: column;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
     flex-shrink: 0;
 }
 
@@ -204,7 +204,7 @@
     height: 36px;
     background: var(--bg-surface);
     border: 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
     border-radius: 0;
     outline: none;
     appearance: none;
@@ -344,7 +344,7 @@
     padding: 0;
     background: var(--bg-surface-2);
     border: 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
     border-radius: 0;
     outline: none;
     appearance: none;
@@ -490,7 +490,7 @@
 .cell {
     padding: 0 var(--space-xl);
     height: 48px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
     display: flex;
     align-items: center;
     min-width: 0;
@@ -591,7 +591,7 @@
 .actionsCell {
     padding: 0 var(--space-s);
     height: 48px;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
     background-image: none;
     display: flex;
     align-items: center;

@@ -23,7 +23,7 @@
     align-items: center;
     gap: var(--space-m);
     padding: var(--space-m) 0;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--divider);
     font-size: var(--text-m);
     color: var(--text);
 }

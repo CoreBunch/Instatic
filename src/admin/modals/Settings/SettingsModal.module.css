@@ -160,7 +160,7 @@
   display: grid;
   gap: var(--space-s);
   padding-top: var(--space-2xl);
-  border-top: 1px solid var(--overlay-10);
+  border-top: 1px solid var(--divider);
 }
 
 /* Sits on the footer's close Button. Keeps the row reading as a quiet hint
@@ -446,7 +446,7 @@
 
   .rail {
     padding: var(--space-l);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
   }
 
   .brand {

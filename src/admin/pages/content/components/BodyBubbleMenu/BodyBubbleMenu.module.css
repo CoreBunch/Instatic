@@ -14,7 +14,7 @@
     width: 1px;
     height: 16px;
     margin: 0 var(--space-3xs);
-    background: var(--border);
+    background: var(--divider);
 }
 
 .blockTypeButton {

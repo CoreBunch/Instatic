@@ -53,7 +53,7 @@
     align-items: end;
     gap: var(--space-3xl);
     padding-bottom: var(--space-5xl);
-    border-bottom: 1px solid var(--overlay-10);
+    border-bottom: 1px solid var(--divider);
 }
 
 .titleGroup {

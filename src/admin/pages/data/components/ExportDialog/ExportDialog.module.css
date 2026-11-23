@@ -27,7 +27,7 @@
     padding: var(--space-xl) var(--space-m);
     overflow-y: auto;
     background: var(--bg-surface-2);
-    border-right: 1px solid var(--border);
+    border-right: 1px solid var(--divider);
 }
 
 .navLead {

@@ -22,7 +22,7 @@
     margin: calc(var(--space-2xl) * -1) calc(var(--space-2xl) * -1) 0;
     padding: var(--space-l) var(--space-2xl);
     background: var(--bg-surface);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
 }
 
 .selectionControls {

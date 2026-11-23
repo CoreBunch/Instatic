@@ -36,7 +36,7 @@
 
 /* Hairline divider between sizes. */
 .typeSpecimen:not(:last-child) {
-    border-bottom: 1px solid var(--overlay-5);
+    border-bottom: 1px solid var(--divider);
 }
 
 /* Base step is a padded, rounded highlight chip (overlay, not a surface tone,

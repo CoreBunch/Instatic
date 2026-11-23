@@ -26,7 +26,7 @@
     grid-template-columns: minmax(0, 1fr) 110px;
     gap: 0;
     padding: var(--space-l);
-    border-bottom: 1px solid var(--overlay-10);
+    border-bottom: 1px solid var(--divider);
 }
 
 /* ── Calendar pane ───────────────────────────────────────────────── */
@@ -37,7 +37,7 @@
     gap: var(--space-s);
     min-width: 0;
     padding-right: var(--space-l);
-    border-right: 1px solid var(--overlay-10);
+    border-right: 1px solid var(--divider);
 }
 
 .monthHeader {

@@ -27,6 +27,7 @@ import { UsersTab } from './tabs/UsersTab'
 import { useUsersPageData } from './hooks/useUsersPageData'
 import { tabLabel } from './utils/format'
 import type { Tab as UsersPageTab } from './types'
+import directory from '@admin/shared/Directory/Directory.module.css'
 import styles from './UsersPage.module.css'
 
 export function UsersPage() {
@@ -87,7 +88,7 @@ export function UsersPage() {
   return (
     <Tabs value={activeTab} onChange={setTab}>
       <AdminPageLayout workspace="users" mode="workspace">
-        <div className={styles.body}>
+        <div className={directory.workspace}>
           {tabs}
           {data.error && <p className={styles.error} role="alert">{data.error}</p>}
 

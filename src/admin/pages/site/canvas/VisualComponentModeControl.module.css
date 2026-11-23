@@ -29,7 +29,7 @@
     width: 1px;
     align-self: stretch;
     margin: var(--space-4xs) 0;
-    background: var(--border);
+    background: var(--divider);
 }
 
 .modeLabel {
