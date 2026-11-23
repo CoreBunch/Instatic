@@ -15,6 +15,10 @@
     color: var(--text);
 }
 
+.shell:has(> footer) {
+    height: 100dvh;
+}
+
 .body {
     flex: 1;
     min-height: 0;
