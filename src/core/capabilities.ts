@@ -2,7 +2,7 @@
  * Capability surface — THE single source of truth enumerating every
  * permission a CMS user can hold. Both the client and the server consume
  * this list: `server/auth/capabilities.ts` imports it (no parallel list),
- * and `src/admin/pages/users/utils/capabilities.ts` attaches the picker
+ * and `src/admin/shared/CapabilityPicker/` attaches the picker
  * metadata (label / description / group). The `CoreCapability` type below
  * is derived from this array via `typeof … [number]`, so adding a string
  * here flows everywhere automatically. The `capability-picker-coverage.test.ts`

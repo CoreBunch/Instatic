@@ -1,3 +1,4 @@
+import { SERVICE_CAPABILITIES } from '../../src/core/serviceAccounts'
 import { expect, test } from '@playwright/test'
 import { spawn, execFile } from 'node:child_process'
 import { createInterface } from 'node:readline'
@@ -15,22 +16,34 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
   await page.getByTestId('ai-nav-service').click()
   await page.getByRole('button', { name: 'Create service account' }).click()
   await page.getByLabel('Account name').fill('Launch editor')
-  await page.getByRole('checkbox', { name: /create branches/i }).check()
-  await page.getByRole('checkbox', { name: /edit site content/i }).check()
-  const settings = page.getByRole('button', { name: 'Media and settings' })
-  await settings.click()
-  await expect(page.getByRole('checkbox', { name: /manage email/i })).not.toBeChecked()
-  await settings.click()
-  await page.getByRole('button', { name: 'Create account', exact: true }).click()
+  const form = page.getByRole('dialog', { name: 'Create service account' })
+  const checked = form.getByRole('checkbox', { checked: true })
+  await form.getByRole('button', { name: 'Select all capabilities', exact: true }).click()
+  await expect(checked).toHaveCount(SERVICE_CAPABILITIES.length)
+  await form.getByRole('button', { name: 'Clear all capabilities', exact: true }).click()
+  await expect(checked).toHaveCount(0)
+  await expect(form.getByRole('button', { name: 'Create account', exact: true })).toBeDisabled()
+  await form.getByRole('button', { name: 'Select all Email capabilities', exact: true }).click()
+  await expect(checked).toHaveCount(1)
+  await expect(form.getByRole('checkbox', { name: /manage email/i })).toBeChecked()
+  await form.getByRole('button', { name: 'Clear Email capabilities', exact: true }).click()
+  await form.getByRole('checkbox', { name: /view site/i }).check()
+  await form.getByRole('checkbox', { name: /create branches/i }).check()
+  await form.getByRole('checkbox', { name: /edit site content/i }).check()
+  await form.getByRole('button', { name: 'Create account', exact: true }).click()
   await completeStepUp(page)
-  await expect(page.locator('pre')).toHaveCount(0)
-  await page.getByRole('button', { name: 'View prompt' }).click()
-  const handoff = page.locator('pre').filter({ hasText: 'instatic connect' })
-  await expect(handoff).toContainText('ask me for approval')
+  const details = page.getByRole('article', { name: 'Account details' })
+  await expect(details.getByRole('button', { name: 'Revoke access' })).toBeVisible()
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: baseURL! })
-  await page.getByRole('dialog', { name: 'Agent prompt' }).getByRole('button', { name: 'Copy agent prompt' }).click()
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(await handoff.innerText())
-  const id = /--account (svc_[a-f0-9-]+)/.exec(await handoff.innerText())![1]
+  const copyPrompt = async () => {
+    await page.evaluate(() => navigator.clipboard.writeText(''))
+    await details.getByRole('button', { name: 'Copy agent prompt' }).click()
+    return page.evaluate(() => navigator.clipboard.readText())
+  }
+  const handoff = await copyPrompt()
+  expect(handoff).toContain('ask me for approval')
+  await expect(page.getByRole('dialog', { name: 'Agent prompt' })).toHaveCount(0)
+  const id = /--account (svc_[a-f0-9-]+)/.exec(handoff)![1]
 
   // Exercise the shipped CLI in a separate process. Only the OS keyring is
   // replaced so Linux CI needs no desktop keychain and no real keys are written.
@@ -42,7 +55,7 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
     set: async ({ value }) => Bun.write(${JSON.stringify(key)}, value, { mode: 0o600 }),
     get: async () => Bun.file(${JSON.stringify(key)}).text(),
   }`)
-  const download = /(https?:\/\/[^'\s]+\.tgz)/.exec(await handoff.innerText())![1]
+  const download = /(https?:\/\/[^'\s]+\.tgz)/.exec(handoff)![1]
   const tar = await page.request.get(download)
   expect(tar.ok()).toBe(true)
   const packageFile = join(scratch, 'cli.tgz')
@@ -72,8 +85,10 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
     expect(await finished).toBe(0)
     await expect(page).toHaveURL(new RegExp('/admin/ai\\?service-account=' + id))
     await expect(page.getByRole('article', { name: 'Account details' })).toContainText('Connected')
+    expect(await copyPrompt()).toBe(handoff)
     const context = JSON.parse((await run('whoami')).stdout)
     expect(context.account).toBe(id)
+    expect(context.capabilities.sort()).toEqual(['site.branches.create', 'site.content.edit', 'site.read'])
     expect((await run('api', 'lookup', 'fork')).stdout).toContain('branches')
     const fixture = 'hero-' + Date.now()
     const { site, seq } = await (await page.request.get('/admin/api/cms/site')).json()

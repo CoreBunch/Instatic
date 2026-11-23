@@ -420,7 +420,7 @@ export async function handleSubscribersRoutes(req: Request, db: DbClient): Promi
 1. Append the literal to `CORE_CAPABILITIES` in `src/core/capabilities.ts` (`@core/capabilities`). The `CoreCapability` type updates automatically; the server picks it up via import.
 2. If it belongs to the Owner / Admin / Client default sets, add it to the matching entry in `SYSTEM_ROLES` inside `server/auth/capabilities.ts`. Owner + Admin force-sync on next boot.
 3. Use `requireCapability(req, db, 'your.new.capability')` in the handler that needs it.
-4. Add a `CAPABILITY_META` entry + `CAPABILITY_GROUPS` section in `src/admin/pages/users/utils/capabilities.ts` so the role-edit dialog renders a checkbox. The `capability-picker-coverage.test.ts` gate fails until you do.
+4. Add a `CAPABILITY_META` entry + `CAPABILITY_GROUPS` section in `src/admin/shared/CapabilityPicker/` so the role-edit dialog renders a checkbox. The `capability-picker-coverage.test.ts` gate fails until you do.
 5. Existing custom roles will NOT have the new capability until users grant it through the Roles admin page.
 
 ### Gate a sensitive action

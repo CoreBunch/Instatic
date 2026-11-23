@@ -14,7 +14,6 @@ import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { cn } from '@ui/cn'
 import { Alert } from '@ui/components/Alert'
 import { Button } from '@ui/components/Button'
-import { Code } from '@ui/components/Code'
 import { DataTable, DataTableHead, DataTableBody, DataTableRow, DataTableHeader, DataTableCell } from '@ui/components/DataTable'
 import { Dialog } from '@ui/components/Dialog'
 import { EmptyState } from '@ui/components/EmptyState'
@@ -79,7 +78,7 @@ export function ServiceAccountsTab({ initialAccount }: { initialAccount?: string
   const pairing = new URLSearchParams(useLocation().search).get('pairing')
   const [id, setId] = useState(pairing ? '' : initialAccount ?? '')
   const selectedRow = useRef<HTMLButtonElement>(null)
-  const [dialog, setDialog] = useState<'create' | 'prompt' | 'revoke' | null>(null)
+  const [dialog, setDialog] = useState<'create' | 'revoke' | null>(null)
   const [busy, setBusy] = useState(false)
   const account = overview.data?.accounts.find(a => a.id === id)
   const origin = overview.data?.origin
@@ -92,8 +91,7 @@ export function ServiceAccountsTab({ initialAccount }: { initialAccount?: string
       await navigator.clipboard.writeText(prompt)
       pushToast({ kind: 'success', title: 'Agent prompt copied' })
     } catch (err) {
-      setDialog('prompt')
-      report('Select and copy the agent prompt', err)
+      report('Could not copy the prompt. Allow clipboard access and try again.', err)
     }
   }
   async function revoke() {
@@ -142,22 +140,14 @@ export function ServiceAccountsTab({ initialAccount }: { initialAccount?: string
       heading={<div className={directory.identityText}><Heading level={3}>{account.label}</Heading></div>}
       status={<AccountStatus account={account} />}>
       <AccountFacts account={account} />
-      {active && <>
-        {prompt && !account.connected && <div className={styles.group}>
-          <Text variant="muted" size="sm">Paste the prompt into your agent, then approve its connection in your browser.</Text>
-          <div className={styles.actions}>
-            <Button variant="primary" onClick={copy}><CopySolidIcon size={14} />Copy agent prompt</Button>
-            <Button variant="ghost" onClick={() => setDialog('prompt')}>View prompt</Button>
-          </div>
-        </div>}
-        <div className={styles.group}>
-          {account.connected && initialAccount === account.id && <Text variant="muted">Return to your agent to start working.</Text>}
-          <div className={styles.actions}>
-            {account.connected && prompt && <Button variant="secondary" size="sm" onClick={() => setDialog('prompt')}>Reconnect CLI</Button>}
-            <Button variant="ghost" size="sm" dangerHover onClick={() => setDialog('revoke')}>Revoke access</Button>
-          </div>
+      {active && <div className={styles.group}>
+        {!account.connected && prompt && <Text variant="muted" size="sm">Paste the prompt into your agent, then approve its connection in your browser.</Text>}
+        {account.connected && initialAccount === account.id && <Text variant="muted">Return to your agent to start working.</Text>}
+        <div className={styles.actions}>
+          {prompt && <Button variant={account.connected ? 'secondary' : 'primary'} onClick={copy}><CopySolidIcon size={14} />Copy agent prompt</Button>}
+          <Button variant="ghost" dangerHover onClick={() => setDialog('revoke')}>Revoke access</Button>
         </div>
-      </>}
+      </div>}
     </DirectoryInspector>}
     {dialog === 'create' && <CreateServiceAccountDialog onClose={() => setDialog(null)} onCreate={async grant => {
       try {
@@ -167,10 +157,6 @@ export function ServiceAccountsTab({ initialAccount }: { initialAccount?: string
         overview.refresh()
       } catch (err) { report('Could not create service account', err) }
     }} />}
-    {dialog === 'prompt' && prompt && <Dialog open size="lg" title="Agent prompt" onClose={() => setDialog(null)}
-      footer={<Button variant="primary" onClick={copy}><CopySolidIcon size={14} />Copy agent prompt</Button>}>
-      <Code className={styles.prompt}>{prompt}</Code>
-    </Dialog>}
     {dialog === 'revoke' && account && <Dialog open tone="danger" size="sm" title="Revoke access?" onClose={() => { if (!busy) setDialog(null) }}
       footer={<>
         <Button variant="secondary" disabled={busy} onClick={() => setDialog(null)}>Cancel</Button>

@@ -7,7 +7,6 @@
  */
 import type { ReactNode } from 'react'
 import type { CmsCurrentUser } from '@core/persistence'
-import type { CoreCapability } from '@core/capabilities'
 
 export type Tab = 'users' | 'members' | 'roles' | 'audit'
 export type UserDialogMode = 'create' | 'edit' | 'reset'
@@ -26,11 +25,6 @@ export interface RoleFormState {
   slug: string
   description: string
   capabilities: string[]
-}
-
-export interface CapabilityGroup {
-  title: string
-  capabilities: CoreCapability[]
 }
 
 export interface RowActionMenuItem {
