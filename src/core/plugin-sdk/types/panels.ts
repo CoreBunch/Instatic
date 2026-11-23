@@ -38,8 +38,6 @@ export interface PluginEditorPanel {
   id: string
   label: string
   iconName: string
-  /** Short caption displayed beneath the rail icon. */
-  railLabel?: string
   accent?: PluginEditorPanelAccent
   /** Optional keyboard shortcut hint shown in the rail tooltip. */
   shortcutLabel?: string

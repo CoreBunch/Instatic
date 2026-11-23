@@ -62,8 +62,6 @@ export interface DefinePluginEditorPanelConfig {
   id: string
   label: string
   iconName: string
-  /** Short caption displayed beneath the rail icon. */
-  railLabel?: string
   accent?: PluginEditorPanelAccent
   shortcutLabel?: string
   /**
@@ -101,7 +99,6 @@ export function definePluginPanel(
     label: config.label,
     iconName: config.iconName,
     accent: config.accent,
-    railLabel: config.railLabel,
     shortcutLabel: config.shortcutLabel,
     component: config.component,
   }

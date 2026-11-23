@@ -1450,7 +1450,7 @@ Risk levels:
 | `editor.store.write`        | Editor               | High      | Mutate editor store state through a host transaction                    |
 | `editor.fragments`          | Editor               | High      | Insert site fragments into the open document (may add classes, tokens, components, media and data tables) and apply themes (replace the site's design variables) |
 | `editor.canvas`             | Editor               | High      | Register canvas overlay React components                                |
-| `editor.panels`             | Editor               | Medium    | Register left-sidebar panels. Use `definePluginPanel({ id, label, iconName, railLabel?, accent? })` from the SDK — set `railLabel: 'PRO'` to display a short caption beneath the icon while keeping the full panel title. `accent` pins a specific rail tint; omit it to let the host derive one automatically from the panel identity. |
+| `editor.panels`             | Editor               | Medium    | Register left-sidebar panels. Use `definePluginPanel({ id, label, iconName, accent? })` from the SDK — `accent` pins a specific rail tint; omit it to let the host derive one automatically from the panel identity. |
 | `modules.register`          | Editor / manifest    | High      | Ship new modules to the canvas module library                           |
 | `loops.register`            | Editor / server / manifest | Medium | Register custom `base.loop` sources                                  |
 | `visualComponents.register` | Admin / manifest     | Medium    | Ship VCs / page templates / class / layout packs (via `pack/site.json`) |

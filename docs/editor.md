@@ -531,7 +531,7 @@ Canvas-internal values are not CSS tokens — they are raw integers intentionall
 
 ### Panel rail
 
-42px-wide vertical strip on the far left. Primary navigation panels sit in the top group; global workspace actions such as the AI assistant are pinned to the bottom group. Each button gets an automatic rail tint from its full panel identity, with repeats avoided inside the visible rail group, and opens a panel in the left sidebar. Implementation: `src/admin/pages/site/sidebars/PanelRail/PanelRail.module.css`.
+42px-wide vertical strip on the far left. A short divider separates installed plugin panels from the built-in panels when both groups are present. Primary navigation panels sit in the top group; global workspace actions such as the AI assistant are pinned to the bottom group. Each button gets an automatic rail tint from its full panel identity, with repeats avoided inside the visible rail group, and opens a panel in the left sidebar. Implementation: `src/admin/pages/site/sidebars/PanelRail/PanelRail.module.css`.
 
 In portrait viewports up to 760px wide, the Site, Content, Data and Media workspaces place the docked rail panel below the canvas. Closing it gives the canvas the full workspace height. Returning to a wider viewport restores the saved sidebar width.
 

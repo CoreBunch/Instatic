@@ -28,7 +28,6 @@ interface RailItem {
   iconName: string
   accent: RailAccent
   open: boolean
-  railLabel?: string
   detached?: boolean
   disabled?: boolean
   onToggle: () => void
@@ -209,7 +208,6 @@ export function PanelRail({
           toggleActivePluginPanel(panel.id)
         },
         shortcutLabel: panel.shortcutLabel,
-        railLabel: panel.railLabel,
       }))
     : []
 
@@ -247,9 +245,6 @@ export function PanelRail({
 function RailButton({ item }: { item: RailItem }) {
   const RailIcon = item.icon
   const action = item.open ? 'Close' : 'Open'
-  const panelName = item.railLabel && item.railLabel !== item.label
-    ? `${item.railLabel} ${item.label}`
-    : item.label
   const style = {
     '--rail-icon-tint': railTintVar(item.accent),
   } as CSSProperties
@@ -263,22 +258,22 @@ function RailButton({ item }: { item: RailItem }) {
     <Button
       variant="ghost"
       size="md"
-      iconOnly={!item.railLabel}
+      iconOnly
       pressed={item.open && !item.detached}
-      aria-label={`${action} ${panelName} panel`}
+      aria-label={`${action} ${item.label} panel`}
       disabled={item.disabled}
       tooltip={title}
+      tooltipOpenOnFocus={!item.open}
       data-testid={`panel-rail-${item.id}`}
       data-icon={item.iconName}
       data-accent={item.accent}
       data-detached={item.detached ? 'true' : undefined}
       style={style}
       onClick={item.onToggle}
-      className={cn(styles.railButton, item.railLabel && styles.labeledButton, item.detached && styles.railButtonDetached)}
+      className={cn(styles.railButton, item.detached && styles.railButtonDetached)}
     >
       <span className={styles.activeIndicator} aria-hidden="true" />
       <RailIcon size={16} className={styles.railIcon} />
-      {item.railLabel && <span className={styles.railLabel}>{item.railLabel}</span>}
     </Button>
   )
 }

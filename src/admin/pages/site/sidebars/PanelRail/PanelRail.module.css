@@ -12,12 +12,7 @@
     padding: var(--space-s) var(--space-2xs);
 }
 
-.rail:has(.railLabel) {
-    padding-inline: var(--space-4xs);
-}
-
 .primaryStack {
-    align-self: stretch;
     display: flex;
     flex: 1 1 auto;
     min-height: 0;
@@ -31,6 +26,13 @@
     flex-direction: column;
     gap: var(--space-3xs);
     align-items: center;
+}
+
+.itemGroup:not(:empty) + .itemGroup::before {
+    content: '';
+    width: 50%;
+    border-top: 1px solid var(--border-muted);
+    margin-bottom: var(--space-3xs);
 }
 
 .globalGroup {
@@ -50,27 +52,6 @@
     --rail-icon-active-bg: color-mix(in oklab, var(--rail-icon-tint) 16%, transparent);
     --rail-icon-hover-bg: color-mix(in oklab, var(--rail-icon-tint) 10%, transparent);
     --rail-icon-glow: color-mix(in oklab, var(--rail-icon-tint) 28%, transparent);
-}
-
-.railButton.labeledButton {
-    width: 100%;
-    min-height: 44px;
-    height: auto;
-    flex-direction: column;
-    gap: var(--space-3xs);
-    padding: var(--space-xs) 0;
-    background: var(--bg-surface-2);
-    color: var(--text);
-}
-
-.railLabel {
-    max-inline-size: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font-size: var(--text-xs);
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    line-height: 1.2;
 }
 
 .railButton.railButton:hover {
