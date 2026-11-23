@@ -68,6 +68,7 @@ Raw HTML is editable source text. Serialization preserves complete HTML blocks a
 | Category | Examples |
 |----------|---------|
 | Inline marks | `**bold**`, `*italic*`, `` `code` ``, `~~strike~~`, `[link](url)` |
+| Line breaks | Shift+Enter is saved as inline `<br>`, which also works in headings and table cells; `\` or two spaces before a newline read as a break too |
 | Headings | `## H2`, `### H3`, `#### H4` (`# H1` normalised to `## H2` — H1 is reserved for the title) |
 | Lists | `- ` / `* ` bullets, `1. ` ordered, nested via 2-space indents |
 | Block quote | `> ` |

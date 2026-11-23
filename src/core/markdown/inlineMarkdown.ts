@@ -23,7 +23,11 @@ function collectInlineRuns(nodes: JSONNode[], runs: InlineRun[]): void {
     if (node.type === 'text') {
       runs.push({ text: node.text ?? '', marks: node.marks ?? [] })
     } else if (node.type === 'hardBreak') {
-      runs.push({ text: '\n', marks: [] })
+      // Written as inline `<br>`, not as markdown's `\` + newline: that
+      // form cannot end a paragraph or sit in a heading or table cell, and
+      // the line after it turns into a list or heading when it starts with
+      // `-` or `#`. The parser reads `<br>` back as a hardBreak node.
+      runs.push({ text: '<br>', marks: [] })
     }
     // Other inline node types (none today) would slot in here.
   }

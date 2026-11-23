@@ -248,3 +248,101 @@ it('keeps publisher sanitization effective after an HTML editing round-trip', ()
   expect(published).not.toContain('javascript:')
   expect(published).not.toContain('<script')
 })
+
+describe('line breaks survive save and reload (#687, point B)', () => {
+  const text = (value: string, marks?: JSONNode['marks']): JSONNode =>
+    marks ? { type: 'text', text: value, marks } : { type: 'text', text: value }
+  const br: JSONNode = { type: 'hardBreak' }
+  const paragraph = (...content: JSONNode[]): JSONNode => ({ type: 'paragraph', content })
+  const doc = (...content: JSONNode[]): JSONNode => ({ type: 'doc', content })
+  const cell = (type: string, ...content: JSONNode[]): JSONNode => ({ type, content: [paragraph(...content)] })
+
+  it.each([
+    {
+      where: 'between two lines',
+      input: doc(paragraph(text('L1'), br, text('L2'))),
+      markdown: 'L1<br>L2',
+      html: '<p>L1<br>L2</p>',
+    },
+    {
+      where: 'twice in a row',
+      input: doc(paragraph(text('L1'), br, br, text('L2'))),
+      markdown: 'L1<br><br>L2',
+      html: '<p>L1<br><br>L2</p>',
+    },
+    {
+      where: 'at the end of a paragraph',
+      input: doc(paragraph(text('L1'), br), paragraph(text('Next'))),
+      markdown: 'L1<br>\n\nNext',
+      html: '<p>L1<br></p>',
+    },
+    {
+      where: 'alone in a paragraph',
+      input: doc(paragraph(text('A')), paragraph(br), paragraph(text('B'))),
+      markdown: 'A\n\n<br>\n\nB',
+      html: '<br>',
+    },
+    {
+      where: 'before a line that starts like a list item',
+      input: doc(paragraph(text('Price:'), br, text('- 20%'))),
+      markdown: 'Price:<br>- 20%',
+      html: '<p>Price:<br>- 20%</p>',
+    },
+    {
+      where: 'between bold runs',
+      input: doc(paragraph(text('B1', [{ type: 'bold' }]), br, text('B2', [{ type: 'bold' }]))),
+      markdown: '**B1**<br>**B2**',
+      html: '<p><strong>B1</strong><br><strong>B2</strong></p>',
+    },
+    {
+      where: 'in a heading',
+      input: doc({ type: 'heading', attrs: { level: 2 }, content: [text('H1'), br, text('H2')] }),
+      markdown: '## H1<br>H2',
+      html: '<h2>H1<br>H2</h2>',
+    },
+    {
+      where: 'in a list item',
+      input: doc({ type: 'bulletList', content: [{ type: 'listItem', content: [paragraph(text('L1'), br, text('L2'))] }] }),
+      markdown: '- L1<br>L2',
+      html: '<li>L1<br>L2</li>',
+    },
+    {
+      where: 'in a blockquote',
+      input: doc({ type: 'blockquote', content: [paragraph(text('Q1'), br, text('Q2'))] }),
+      markdown: '> Q1<br>Q2',
+      html: '<p>Q1<br>Q2</p>',
+    },
+    {
+      where: 'in a table cell',
+      input: doc({
+        type: 'table',
+        content: [
+          { type: 'tableRow', content: [cell('tableHeader', text('A'))] },
+          { type: 'tableRow', content: [cell('tableCell', text('x'), br, text('y'))] },
+        ],
+      }),
+      markdown: '| A |\n| --- |\n| x<br>y |',
+      html: '<td>x<br>y</td>',
+    },
+  ])('keeps a hard break $where', ({ input, markdown, html }) => {
+    const serialised = proseMirrorDocToMarkdown(input)
+    expect(serialised).toBe(markdown)
+    expect(markdownToProseMirrorDoc(serialised)).toEqual(input)
+    expect(renderMarkdownToHtml(serialised)).toContain(html)
+  })
+
+  it('reads the markdown hard break forms as a hard break', () => {
+    const expected = doc(paragraph(text('L1'), br, text('L2')))
+    expect(markdownToProseMirrorDoc('L1\\\nL2')).toEqual(expected)
+    expect(markdownToProseMirrorDoc('L1  \nL2')).toEqual(expected)
+  })
+
+  it('keeps a <br> written inside inline HTML as it was', () => {
+    const source = 'Before <span class="a_b">one<br>two</span> after.'
+    let current = source
+    for (let save = 0; save < 3; save++) {
+      current = proseMirrorDocToMarkdown(markdownToProseMirrorDoc(current))
+      expect(current).toBe(source)
+    }
+  })
+})
