@@ -35,6 +35,16 @@
     --segment-radius: var(--radius-pill);
 }
 
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--space-l);
+    color: var(--text-muted);
+    font-size: var(--text-s);
+    font-variant-numeric: tabular-nums;
+}
+
 .search {
     flex: 1 1 240px;
     min-width: 0;

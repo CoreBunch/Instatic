@@ -40,12 +40,6 @@ export interface RowActionMenuItem {
   onSelect: () => void
 }
 
-export interface UsersPageLoadAccess {
-  canManageUsers: boolean
-  canReadRoleOptions: boolean
-  canReadAudit: boolean
-}
-
 export const emptyUserForm: UserFormState = {
   email: '',
   displayName: '',

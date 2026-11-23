@@ -1,3 +1,4 @@
+import { DIRECTORY_PAGE_SIZE, directoryPageOffset } from '@core/users/directoryPagination'
 import { createHash } from 'node:crypto'
 import { nanoid } from 'nanoid'
 import { placeholder, type DbClient } from '../db/client'
@@ -245,12 +246,24 @@ export function toPublicUser(user: AuthUser): CmsUser {
   }
 }
 
-export async function listUsers(db: DbClient): Promise<CmsUser[]> {
-  const rows = await queryUsers(
-    db,
-    'where users.deleted_at is null order by users.created_at asc',
+export async function listUsers(db: DbClient, search: string, requestedOffset: number) {
+  let where = 'where users.deleted_at is null'
+  const values: string[] = []
+  if (search.trim()) {
+    const pattern = `%${search.trim().toLowerCase().replace(/[!%_]/g, '!$&')}%`
+    values.push(pattern, pattern)
+    where += ` and (users.email_normalized like ${placeholder(db.dialect, 1)} escape '!'
+      or lower(users.display_name) like ${placeholder(db.dialect, 2)} escape '!')`
+  }
+  const { rows: counts } = await db.unsafe<{ total: number }>(`select count(*) as total from users ${where}`, values)
+  const matching = Number(counts[0].total)
+  const offset = directoryPageOffset(requestedOffset, matching)
+  const rows = await queryUsers(db,
+    `${where} order by users.created_at asc, users.id asc
+     limit ${placeholder(db.dialect, values.length + 1)} offset ${placeholder(db.dialect, values.length + 2)}`,
+    [...values, DIRECTORY_PAGE_SIZE, offset],
   )
-  return rows.map((row) => toPublicUser(rowToUser(row)))
+  return { users: rows.map((row) => toPublicUser(rowToUser(row))), matching, offset }
 }
 
 export async function findUserById(db: DbClient, userId: string): Promise<AuthUser | null> {
