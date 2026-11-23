@@ -171,6 +171,41 @@ describe('sign-in for apps', () => {
       expect(location.searchParams.get('next')).toMatch(/^\/approve-app\?request=imem_rq_/)
     })
 
+    it('resumes the same approval after an emailed sign-in, then waits for an explicit decision', async () => {
+      await saveMemberSettings(t.db, {
+        ...DEFAULT_MEMBER_SETTINGS,
+        pages: await publishMemberPages(t.db, { login: '/sign-in', appSignIn: '/approve-app', magic: '/email-link', afterLogin: '/account' }),
+      })
+      const start = await call(await authorizeUrl())
+      const signIn = new URL(start.headers.get('location')!, ORIGIN)
+      const marker = start.headers.get('set-cookie')!.split(';')[0]!
+      const headers = { origin: ORIGIN, cookie: marker, 'content-type': 'application/json' }
+      const request = await call('/_instatic/members/link/request', {
+        method: 'POST', headers: { ...headers, referer: signIn.href }, body: JSON.stringify({ email: 'ada@example.com' }),
+      })
+      expect(await request.json()).toEqual({ ok: true, code: 'check_email' })
+      await flushMemberMail()
+      const { rows } = await t.db<{ body_text: string }>`select body_text from mail_outbox where kind = 'member.magic'`
+      const token = rows[0]?.body_text.match(/token=([A-Za-z0-9_-]+)/)?.[1]
+      expect(token).toBeTruthy()
+      const confirmed = await call('/_instatic/members/link/confirm', {
+        method: 'POST', headers, body: JSON.stringify({ token }),
+      })
+      const result = await confirmed.json()
+      expect(result.appRedirect).toBe(signIn.searchParams.get('next'))
+      const requestId = new URL(result.appRedirect, ORIGIN).searchParams.get('request')!
+      cookie = confirmed.headers.get('set-cookie')!.split(';')[0]!
+      expect((await answer('approve', requestId)).status).toBe(400)
+      cookie += `; ${marker}`
+      const decision = await answer('approve', requestId)
+      const callback = new URL((await decision.json()).appRedirect)
+      expect(callback.searchParams.get('state')).toBe('app-state')
+      expect((await tokenRequest({
+        grant_type: 'authorization_code', code: callback.searchParams.get('code')!,
+        redirect_uri: LISTENING, code_verifier: VERIFIER,
+      })).status).toBe(200)
+    })
+
     it('answers in the browser, not at the app, when the app or its address is not registered', async () => {
       const unknownApp = await call(await authorizeUrl({ client_id: 'imem_app_nope' }), { headers: { cookie } })
       const otherHost = await call(await authorizeUrl({ redirect_uri: 'https://evil.example/callback' }), { headers: { cookie } })

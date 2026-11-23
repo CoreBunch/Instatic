@@ -32,7 +32,7 @@ import { listConnectedMemberApps } from '@core/loops'
 import { MAIL_ADDRESS_PATTERN } from '@core/mail'
 import { MIN_PASSWORD_LENGTH } from '@core/utils/passwordPolicy'
 import { hashPassword, hashSessionToken, verifyPassword } from '../auth/tokens'
-import { revokeAllMemberAppGrants } from './apps/store'
+import { findPendingMemberAppRequest, revokeAllMemberAppGrants } from './apps/store'
 import { memberLimits } from './limits'
 import { discardQueuedMailForMember } from '../mail/delivery'
 import { emitMemberHook } from './hooks'
@@ -106,8 +106,8 @@ export type MemberOutcome =
        */
       landing?: string
       /**
-       * An app sign-in was answered: the app's own address to send the browser
-       * to, already checked against the addresses registered for that app.
+       * The site's approval page for a resumed app sign-in, or the registered
+       * callback after the member has answered the request.
        */
       appRedirect?: string
     }
@@ -164,18 +164,19 @@ function getDummyHash(): Promise<string> {
   return dummyHash
 }
 
-async function startSession(ctx: MemberActionContext, member: MemberRecord): Promise<MemberOutcome> {
+async function startSession(ctx: MemberActionContext, member: MemberRecord, appRequestId?: string): Promise<MemberOutcome> {
   const session = await createMemberSession(ctx.db, member.id, ctx)
   await markMemberLoggedIn(ctx.db, member.id)
   emitMemberHook('member.signedIn', { memberId: member.id, email: member.email })
   const fresh = (await findMemberById(ctx.db, member.id)) ?? member
-  const landing = (await getMemberPagePaths(ctx.db)).afterLogin
+  const { afterLogin: landing, appSignIn } = await getMemberPagePaths(ctx.db)
   return {
     ok: true,
     code: 'signed_in',
     session,
     member: await toCurrentMember(ctx.db, fresh),
     ...(landing ? { landing } : {}),
+    ...(appRequestId && appSignIn ? { appRedirect: `${appSignIn}?request=${encodeURIComponent(appRequestId)}` } : {}),
   }
 }
 
@@ -409,6 +410,7 @@ async function requestLink(
   ctx: MemberActionContext,
   input: { email: string; ip: string },
   kind: 'magic' | 'reset',
+  next?: string | null,
 ): Promise<MemberOutcome> {
   const pages = await getMemberPagePaths(ctx.db)
   const noPage = linkPageMissing(pages, kind)
@@ -424,7 +426,17 @@ async function requestLink(
   const member = await findMemberByEmail(ctx.db, input.email)
   if (!member || member.status !== 'active') return outcome
 
-  const { token } = await issueMemberToken(ctx.db, member.id, kind)
+  // Carry only a pending app request for this site's assigned approval page.
+  // The approval itself still requires the marker set in the initiating browser.
+  let appRequestId: string | undefined
+  if (kind === 'magic' && next && pages.appSignIn) {
+    const target = new URL(next, 'https://site.invalid')
+    const id = target.searchParams.get('request')
+    if (target.pathname === pages.appSignIn && id && await findPendingMemberAppRequest(ctx.db, id)) {
+      appRequestId = id
+    }
+  }
+  const { token } = await issueMemberToken(ctx.db, member.id, kind, appRequestId ? { appRequestId } : {})
   sendLink(ctx, kind, member.email, token, pages)
   await recordMemberEvent(
     ctx.db,
@@ -435,8 +447,8 @@ async function requestLink(
   return outcome
 }
 
-export function requestSignInLink(ctx: MemberActionContext, input: { email: string; ip: string }) {
-  return requestLink(ctx, input, 'magic')
+export function requestSignInLink(ctx: MemberActionContext, input: { email: string; ip: string; next?: string | null }) {
+  return requestLink(ctx, input, 'magic', input.next)
 }
 
 export function requestPasswordReset(ctx: MemberActionContext, input: { email: string; ip: string }) {
@@ -456,7 +468,7 @@ export async function confirmSignInLink(
   if (!member || member.status !== 'active') return fail('invalid_token')
   await markMemberVerified(ctx.db, member.id)
   await recordMemberEvent(ctx.db, member.id, 'login', ctx, { via: 'link' })
-  return startSession(ctx, member)
+  return startSession(ctx, member, consumed.payload.appRequestId)
 }
 
 /**

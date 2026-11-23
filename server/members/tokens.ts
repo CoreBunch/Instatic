@@ -35,6 +35,7 @@ export const TOKEN_LIFETIME_MS: Record<MemberTokenKind, number> = {
  */
 const TokenPayloadSchema = Type.Object({
   email: Type.Optional(Type.String()),
+  appRequestId: Type.Optional(Type.String()),
   passwordHash: Type.Optional(Type.String()),
   nonceHash: Type.Optional(Type.String()),
   profile: Type.Optional(MemberProfileSchema),

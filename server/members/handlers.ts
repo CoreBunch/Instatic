@@ -282,7 +282,7 @@ function buildResponse(req: Request, fields: Fields, outcome: MemberOutcome): Re
   const back = refererPath(req) ?? '/'
   let location: string
   if (outcome.ok && outcome.appRedirect) {
-    // The one answer that leaves the site: back to the app that asked.
+    // Resume app approval or return the member's decision to the registered app.
     location = outcome.appRedirect
   } else if (outcome.ok) {
     const chosen = safeRedirectPath(fields._success) ?? safeRedirectPath(outcome.landing)
@@ -342,8 +342,13 @@ async function runAction(
       return respond(req, fields, await logIn(ctx, { email: field('email'), password: field('password'), ip }))
     case 'logout':
       return respond(req, fields, await logOut(ctx, await resolveSignedInMember(db, req)))
-    case 'link/request':
-      return respond(req, fields, await requestSignInLink(ctx, { email: field('email'), ip }))
+    case 'link/request': {
+      const from = refererPath(req)
+      const next = from ? new URL(from, req.url).searchParams.get('next') : null
+      return respond(req, fields, await requestSignInLink(ctx, {
+        email: field('email'), ip, next: safeRedirectPath(fields.next ?? next),
+      }))
+    }
     case 'link/confirm':
       return respond(req, fields, await confirmSignInLink(ctx, { token: field('token'), ip }))
     case 'password/forgot':

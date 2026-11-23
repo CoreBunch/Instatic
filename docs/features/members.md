@@ -85,7 +85,7 @@ Migration `039_member_app_devices` adds `device_jkt` and `device_name` to `membe
 | `verify` | `token` | confirmation link; signs in |
 | `login` | `email`, `password` | |
 | `logout` | | signed in; a form with only a submit button |
-| `link/request` | `email` | email a sign-in link |
+| `link/request` | `email`, optional `next` | email a sign-in link. When the sign-in page was opened for a pending app request, its token remembers the request ID. Confirming the link resumes the assigned approval page in the same browser. |
 | `link/confirm` | `token` | signs in; also confirms the address |
 | `password/forgot` | `email` | |
 | `password/reset` | `token`, `password` | ends every session |

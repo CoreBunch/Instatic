@@ -99,11 +99,17 @@ export const FORM_RUNTIME_JS = `(() => {
     setBusy(form, true);
     setState(form, 'pending', 'Sending...');
     try {
-      const response = await fetch(form.getAttribute('action') || '', {
+      const action = form.getAttribute('action') || '';
+      const values = memberValues(form, submitter);
+      if (action === '/_instatic/members/link/request') {
+        const next = new URLSearchParams(window.location.search).get('next');
+        if (next) values.next = next;
+      }
+      const response = await fetch(action, {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'accept': 'application/json', 'content-type': 'application/json' },
-        body: JSON.stringify(memberValues(form, submitter)),
+        body: JSON.stringify(values),
       });
       const body = await readJson(response);
       if (!response.ok || !body.ok) {
@@ -112,8 +118,8 @@ export const FORM_RUNTIME_JS = `(() => {
         setState(form, 'error', typeof error.message === 'string' && error.message ? error.message : 'Something went wrong. Try again.', field);
         return;
       }
-      // An approved or refused app: the answer goes to the app's own address,
-      // which the server checked against the ones registered for it.
+      // The server chooses the next step of an app sign-in: site approval
+      // after an email link, or the registered callback after a decision.
       if (typeof body.appRedirect === 'string' && body.appRedirect) {
         window.location.assign(body.appRedirect);
         return;
