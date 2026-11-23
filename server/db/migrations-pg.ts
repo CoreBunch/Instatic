@@ -1859,4 +1859,22 @@ export const pgMigrations: Migration[] = [
         on media_assets (content_hash);
     `,
   },
+  {
+    id: '041_service_accounts',
+    sql: `
+      create table service_accounts (
+        id text primary key references users(id),
+        owner_id text not null references users(id),
+        label text not null,
+        capabilities_json jsonb not null,
+        expires_at text not null,
+        revoked_at text,
+        token_hash text unique,
+        code_hash text unique,
+        code_challenge text,
+        code_expires_at text
+      );
+      create index service_accounts_owner_idx on service_accounts(owner_id);
+    `,
+  },
 ]

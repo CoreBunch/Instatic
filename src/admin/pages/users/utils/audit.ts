@@ -200,6 +200,12 @@ export function auditTitle(
       return `AI chat in ${aiScope} completed`
     case 'ai.chat.failed':
       return `AI chat in ${aiScope} failed`
+    case 'service_account.created':
+      return 'Service account created'
+    case 'service_account.authorized':
+      return 'CLI connection authorized'
+    case 'service_account.revoked':
+      return 'Service account revoked'
     case 'ai.mcp_connector.created':
       return `MCP connector was created`
     case 'ai.mcp_connector.revoked':

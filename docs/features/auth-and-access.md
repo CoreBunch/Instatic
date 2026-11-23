@@ -2,7 +2,7 @@
 
 The full authentication and authorization surface — login, sessions, MFA, capabilities, roles, lockout, step-up, CSRF defense, CORS.
 
-Every state-changing CMS request goes through one auth funnel: parse the session cookie, look up the user, check the required capability. There's no per-handler bespoke auth code — the helpers in `server/auth/authz.ts` are the only auth surface a handler should call.
+Admin requests resolve the session cookie and check the required capability. Supported routes can also resolve a [service account](service-accounts.md) from a scoped CLI credential and apply the same target-specific permission checks. There's no per-handler bespoke auth code — the helpers in `server/auth/authz.ts` are the only auth surface a handler should call.
 
 ---
 

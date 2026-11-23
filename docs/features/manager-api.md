@@ -122,8 +122,7 @@ check.
 transfer) that has not been applied yet and removes what was staged for it.
 Live data is not touched. `404 no-pending-restore` when nothing is staged.
 
-`revokeSessions` deletes browser sessions and MCP OAuth codes and tokens from
-the restored copy. A snapshot predates every sign-out and revocation made
+`revokeSessions` clears browser sessions, MCP OAuth codes and tokens, and paired CLI credentials and pending approvals from the restored copy. Service account definitions remain available for pairing. A snapshot predates every sign-out and revocation made
 since it was taken, so restoring it unchanged would make those credentials
 valid again; with the default, everyone signs in again after a restore.
 
@@ -233,7 +232,7 @@ Body `{ "restart"?: boolean, "revokeSessions"?: boolean }`, both default
    (`422 bad-database`), and re-checks its `schema_migrations` against known
    ids (`409 schema-newer`);
 3. with `revokeSessions`, deletes the credentials this server issued from the
-   staged database: browser sessions and MCP OAuth codes and tokens;
+   staged database, including browser sessions, MCP OAuth codes and tokens, and CLI credentials and approvals;
 4. writes the pending-restore marker (see Apply);
 5. responds `202 { "staged": true, "restarting": true }` and exits.
 

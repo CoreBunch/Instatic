@@ -18,16 +18,18 @@ import { useCurrentAdminUser } from '@admin/sessionContext'
 import { ProvidersTab } from './tabs/ProvidersTab'
 import { DefaultsTab } from './tabs/DefaultsTab'
 import { AuditTab } from './tabs/AuditTab'
+import { ServiceAccountsTab, ServiceConsent } from './tabs/ServiceAccountsTab'
 import { McpTab } from './tabs/McpTab'
 import { McpOAuthAuthorizePage } from './McpOAuthAuthorizePage'
 import directory from '@admin/shared/Directory/Directory.module.css'
 
-type Section = 'providers' | 'defaults' | 'mcp' | 'audit'
+type Section = 'providers' | 'defaults' | 'mcp' | 'service' | 'audit'
 
 const SECTION_LABELS: Record<Section, string> = {
   providers: 'Providers',
   defaults: 'Defaults',
   mcp: 'MCP connections',
+  service: 'Service accounts',
   audit: 'Audit',
 }
 
@@ -39,13 +41,15 @@ export function AiPage() {
   const canReadAudit = unrestricted || hasCapability(currentUser, 'ai.audit.read')
 
   const availableSections: Section[] = []
-  if (canManage) availableSections.push('providers', 'defaults', 'mcp')
+  if (canManage) availableSections.push('providers', 'defaults', 'mcp', 'service')
   if (canReadAudit) availableSections.push('audit')
 
   const [section, setSection] = useState<Section>('providers')
   const activeSection = availableSections.includes(section)
     ? section
     : availableSections[0] ?? 'providers'
+
+  if (location.pathname === '/admin/ai/cli/authorize') return <ServiceConsent />
 
   if (location.pathname === '/admin/ai/oauth/authorize') {
     return <McpOAuthAuthorizePage />
@@ -64,6 +68,7 @@ export function AiPage() {
             <TabPanel value="providers"><ProvidersTab onNavigateToDefaults={() => setSection('defaults')} /></TabPanel>
             <TabPanel value="defaults"><DefaultsTab onNavigateToProviders={() => setSection('providers')} /></TabPanel>
             <TabPanel value="mcp"><McpTab /></TabPanel>
+            <TabPanel value="service"><ServiceAccountsTab /></TabPanel>
           </>}
           {canReadAudit && <TabPanel value="audit"><AuditTab /></TabPanel>}
         </div>

@@ -31,6 +31,9 @@ import { jsonResponse } from '../../http'
 import { isStateChangingMethod, originAllowed } from '../../auth/security'
 import { resolveBranchScope } from '../../branches/scope'
 import type { CmsHandlerOptions } from './shared'
+import { tryAuthorizeServiceRequest } from '../../serviceAccounts/access'
+import { handleServiceAccounts } from '../../serviceAccounts/management'
+import { handleDraftPage } from '../../serviceAccounts/draftPage'
 import { handleBranchesRoutes } from './branches'
 import { handleSetupRoutes } from './setup'
 import { handleAuthRoutes } from './auth'
@@ -91,6 +94,12 @@ export async function handleCmsRequest(
   // anonymous caller never learns whether a branch exists either way:
   // `resolveBranchScope` answers an unknown id with a 401 when there is no
   // session.)
+  const authorized = await tryAuthorizeServiceRequest(req, db)
+  if (authorized instanceof Response) return authorized
+  if (authorized) req = authorized
+  const serviceResponse = await handleServiceAccounts(req, db)
+  if (serviceResponse) return serviceResponse
+
   const accountResponse =
     (await handleSetupRoutes(req, db))
     ?? (await handleMeRoutes(req, db, options))
@@ -117,6 +126,7 @@ export async function handleCmsRequest(
 
   const response =
     (await handleBranchesRoutes(req, db, options))
+    ?? (await handleDraftPage(req, db, scope))
     ?? (await handleSiteRoutes(req, db, scope))
     // The transactional whole-document save — must run before the pages/
     // components/layouts GET handlers only for tidiness; paths are distinct.

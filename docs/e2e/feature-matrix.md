@@ -373,6 +373,9 @@ CONTENT-011 note: `content-html-roundtrip.e2e.ts` creates and publishes a Posts 
 | AI-010 | P2 | ✅ | Tool Bridge | Keep the workspace MCP bridge stream readable in a real browser | Logged in | Open the Site editor, observe `/admin/api/ai/editor-bridge` | The bridge responds 200 as `text/event-stream` with no-transform caching and the client holds the stream open without parse errors | proxy reframing, buffered body, client teardown loop |
 | AI-011 | P1 | ✅ | Tool Bridge | Keep MCP calls on the first open editor | Logged in with an MCP token | Create a page over MCP, hold its reply, open and focus another Site tab, then close the owner | The create succeeds once, the owner serves the next read, and the waiting tab serves a call after the owner closes | interrupted edit, duplicate create, wrong editor |
 | AI-012 | P2 | ✅ | MCP consent | Review permissions with authorization controls in reach | Signed in with a registered OAuth client | Scroll to the last permission on desktop and mobile | Footer stays at the viewport bottom and reflects bulk and individual selections | Empty selection, wrapped controls |
+| AI-013 | P1 | ✅ | Service accounts | Authorize a CLI and edit a branch | Signed-in administrator and local Bun | Create a service account, approve the CLI, edit and capture the branch | The CLI changes the hero only on its branch and loses access when revoked | OS keyring integration varies by platform |
+
+AI-013 note: `service-account-cli.e2e.ts` downloads the shipped package, pairs through its loopback listener, reads the operation guide, edits and screenshots a page, and revokes the credential. The test substitutes a disposable credential store.
 
 AI-012 note: `mcp-consent.e2e.ts` opens a local client request at two viewport sizes, clears the selection, and enables approval by checking the final permission.
 

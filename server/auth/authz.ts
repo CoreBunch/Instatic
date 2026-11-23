@@ -1,3 +1,4 @@
+import { servicePrincipal } from './servicePrincipal'
 import type { DbClient } from '../db/client'
 import { SESSION_COOKIE_NAME, hashSessionToken } from './tokens'
 import { roleHasCapability, type CoreCapability } from './capabilities'
@@ -42,6 +43,8 @@ export async function requireAuthenticatedUser(
   req: Request,
   db: DbClient,
 ): Promise<AuthUser | Response> {
+  const actor = servicePrincipal(req)
+  if (actor) return actor
   const idHash = await getSessionHash(req)
   const user = idHash ? await findUserBySessionHash(db, idHash) : null
   if (!user) {
@@ -132,6 +135,7 @@ export async function requireStepUp(
   user: AuthUser,
   options: RequireStepUpOptions = {},
 ): Promise<Response | null> {
+  if (servicePrincipal(req)) return jsonResponse({ error: 'This operation requires human step-up authorization' }, { status: 403 })
   if ((options.policy ?? 'user') === 'user' && user.stepUpAuthMode === 'disabled') {
     return null
   }

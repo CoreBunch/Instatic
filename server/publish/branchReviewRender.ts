@@ -33,6 +33,7 @@ export async function renderBranchReviewPage(
   branchId: string,
   side: ReviewRenderSide,
   rowId: string,
+  viewport: { width: number; height: number } = REVIEW_VIEWPORT,
 ): Promise<string | null> {
   const scope: BranchScope = side === 'main' ? MAIN_SCOPE : { branchId }
   const site = await getDraftSiteDocument(db, scope)
@@ -63,5 +64,5 @@ export async function renderBranchReviewPage(
   })
   // Viewport units against a desktop screen, not against the document-tall
   // frame: the same scanner the canvas frames use.
-  return resolveViewportUnitsInHtml(rendered.html, REVIEW_VIEWPORT)
+  return resolveViewportUnitsInHtml(rendered.html, viewport)
 }
