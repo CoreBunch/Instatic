@@ -1,16 +1,7 @@
 import { Type, type Static } from '../utils/typeboxHelpers'
-import type { CoreCapability } from '../capabilities'
+import { DELEGABLE_CAPABILITIES } from '../capabilities'
 
-// Delegable capabilities for the CMS resource groups that accept service credentials.
-export const SERVICE_CAPABILITIES = [
-  'site.read', 'site.branches.create', 'site.structure.edit', 'site.content.edit',
-  'ai.providers.manage', 'ai.chat', 'site.style.edit', 'site.branches.manage', 'mail.manage', 'plugins.read', 'plugins.configure',
-  'content.create', 'content.edit.own', 'content.edit.any', 'content.manage',
-  'content.publish.own', 'content.publish.any', 'data.system.tables.read', 'data.custom.tables.read',
-  'data.system.tables.manage', 'data.custom.tables.manage', 'media.read', 'media.write', 'media.replace', 'media.delete',
-] as const satisfies readonly CoreCapability[]
-
-export const ServiceCapabilitySchema = Type.Union(SERVICE_CAPABILITIES.map(c => Type.Literal(c)))
+export const ServiceCapabilitySchema = Type.Union(DELEGABLE_CAPABILITIES.map(c => Type.Literal(c)))
 export const ServiceAccountInputSchema = Type.Object({
   label: Type.String({ minLength: 1, maxLength: 100 }),
   capabilities: Type.Array(ServiceCapabilitySchema, { minItems: 1, uniqueItems: true }),

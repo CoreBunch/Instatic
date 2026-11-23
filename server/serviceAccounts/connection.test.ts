@@ -76,3 +76,52 @@ test('CLI approval grants an expiring, revocable identity that can fork and edit
     expect((await exchange(pending.code, verifier)).status).toBe(401)
   } finally { await h.cleanup() }
 })
+
+test('CMS operations use role permissions and the confirmation window of the paired device', async () => {
+  const h = await createCapabilityTestHarness()
+  const base = '/admin/api/cms/'
+  const accounts = base + 'service-accounts'
+  try {
+    const cookie = await h.setupOwner()
+    const input = { label: 'Plugin installer', ttlHours: 2, capabilities: ['plugins.install', 'dashboard.read', 'users.manage'] }
+    const create = (capabilities: string[]) => h.cms(accounts, { method: 'POST', cookie, json: { ...input, capabilities } })
+    expect((await create(['roles.manage'])).status).toBe(400)
+    const { id } = await (await create(input.capabilities)).json()
+    const verifier = 'k'.repeat(64)
+    const challenge = await pkceChallengeForVerifier(verifier)
+    const approve = async () => (await (await h.cms(accounts + '/' + id + '/approve', {
+      method: 'POST', cookie, json: { challenge },
+    })).json()).code
+    const exchange = async (code: string) => {
+      const exchanged = await h.cms(accounts + '/' + id + '/exchange', { method: 'POST', json: { code, verifier } })
+      expect(exchanged.status).toBe(200)
+      return { Authorization: 'Bearer ' + (await exchanged.json()).token }
+    }
+    const first = await exchange(await approve())
+    const manifest = { id: 'fixture.cli', name: 'Fixture', version: '1.0.0', apiVersion: 1, permissions: [] }
+    const install = (headers: HeadersInit) => h.cms(base + 'plugins', { method: 'POST', headers, json: { manifest } })
+    expect((await install(first)).status).toBe(201)
+    expect((await h.cms(base + 'dashboard/domain', { headers: first })).status).toBe(200)
+    expect((await h.cms(base + 'dashboard/plugins', { headers: first })).status).toBe(403)
+    expect((await h.cms(base + 'plugins', { headers: first })).status).toBe(403)
+    expect((await h.cms(base + 'roles', { method: 'POST', headers: first })).status).toBe(403)
+    expect((await h.cms(accounts, { headers: first })).status).toBe(403)
+    expect((await h.cms(base + 'users/' + id, { method: 'DELETE', headers: first })).status).toBe(404)
+    const publisher = await h.createRoleUser({ name: 'Publisher', slug: 'publisher', capabilities: ['pages.publish'] })
+    const target = await findUserByEmail(h.db, publisher.email)
+    expect(target).toBeTruthy()
+    expect((await h.cms(base + 'users/' + target!.id, {
+      method: 'PATCH', headers: first, json: { email: 'changed@example.test' },
+    })).status).toBe(403)
+
+    await h.db`update service_accounts set token_step_up_expires_at = ${new Date(0).toISOString()} where id = ${id}`
+    const nextApproval = await approve()
+    const stale = await install(first)
+    expect(stale.status).toBe(401)
+    expect(await stale.json()).toEqual({ error: 'step_up_required' })
+    expect((await h.cms(base + 'dashboard/domain', { headers: first })).status).toBe(200)
+    const second = await exchange(nextApproval)
+    expect((await install(first)).status).toBe(401)
+    expect((await install(second)).status).toBe(201)
+  } finally { await h.cleanup() }
+})

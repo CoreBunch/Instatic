@@ -10,6 +10,7 @@ const { positionals, values } = parseArgs({
   args: Bun.argv.slice(2), allowPositionals: true,
   options: {
     account: { type: 'string' }, branch: { type: 'string' }, file: { type: 'string' }, upload: { type: 'string' },
+    field: { type: 'string', multiple: true }, raw: { type: 'string' },
     json: { type: 'string' }, out: { type: 'string' }, viewport: { type: 'string' },
     'no-open': { type: 'boolean' }, help: { type: 'boolean' }, version: { type: 'boolean' },
   },
@@ -24,11 +25,12 @@ const help = `Instatic CLI
   instatic api lookup [SEARCH]                Search the site's operation guide
   instatic api describe METHOD PATH          Inspect one documented operation and its input
   instatic api METHOD PATH [--branch ID]      Call a CMS endpoint
-    --json '{"name":"review"}' | --file changes.json | --upload asset.png
+    --json '{"name":"review"}' | --file changes.json | --upload FILE [--field NAME=VALUE] | --raw FILE
+    --out FILE saves the response bytes
   instatic screenshot PAGE_ID --branch ID --out hero.png [--viewport 1280x800]
   instatic forget                             Remove this machine's saved credential
 
-Pass --account ID or set INSTATIC_ACCOUNT for each command. API results are JSON.
+Pass --account ID or set INSTATIC_ACCOUNT for each command.
 Use a branch ID explicitly for site-document writes. Re-read the page after a conflict.`
 const endpoint = '/admin/api/cms/'
 const credentialSchema = Type.Object({ origin: Type.String(), token: Type.String({ pattern: '^icli_at_[A-Za-z0-9_-]{43}$' }) })
@@ -50,7 +52,13 @@ function siteOrigin(input: string) {
 }
 async function request(url: URL, options: RequestInit = {}) {
   const response = await fetch(url, { ...options, redirect: 'error', signal: AbortSignal.timeout(90000) })
-  if (!response.ok) throw new Error(`CMS returned ${response.status}: ${(await response.text()).slice(0, 1800)}`)
+  if (!response.ok) {
+    const detail = (await response.text()).slice(0, 1800)
+    if (response.status === 401 && detail.includes('"step_up_required"')) {
+      throw new Error('This operation needs fresh approval. Run instatic connect again and approve it in the browser.')
+    }
+    throw new Error(`CMS returned ${response.status}: ${detail}`)
+  }
   return response
 }
 function apiUrl(origin: string, path: string) {
@@ -190,11 +198,19 @@ async function main() {
   const url = apiUrl(origin, path)
   if (url.pathname === endpoint + 'site-document' && !values.branch) throw new Error('Pass --branch explicitly for a draft write')
   if (values.branch) headers.set('X-Instatic-Branch', values.branch)
-  if ([values.file, values.json, values.upload].filter(v => v !== undefined).length > 1) throw new Error('Choose one request body')
-  let body: string | FormData | undefined
+  if ([values.file, values.json, values.upload, values.raw].filter(v => v !== undefined).length > 1) throw new Error('Choose one request body')
+  if (values.field && !values.upload) throw new Error('Use --field with --upload')
+  let body: string | FormData | Blob | undefined
   if (values.upload) {
     body = new FormData()
     body.append('file', Bun.file(values.upload), basename(values.upload))
+    for (const field of values.field ?? []) {
+      const split = field.indexOf('=')
+      if (split <= 0) throw new Error('Use --field NAME=VALUE')
+      body.append(field.slice(0, split), field.slice(split + 1))
+    }
+  } else if (values.raw) {
+    body = Bun.file(values.raw)
   } else {
     body = values.file ? await Bun.file(values.file).text() : values.json
     if (body !== undefined) {
@@ -203,6 +219,8 @@ async function main() {
     }
   }
   const response = await request(url, { method: verb.toUpperCase(), headers, body })
-  output(await response.text())
+  if (values.out) await Bun.write(values.out, response)
+  else if (response.headers.get('content-type')?.startsWith('text/event-stream')) await Bun.write(Bun.stdout, response)
+  else output(await response.text())
 }
 main().catch((err: unknown) => { console.error(err instanceof Error ? err.message : String(err)); process.exitCode = 1 })

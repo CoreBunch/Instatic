@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react'
-import { SERVICE_CAPABILITIES } from '@core/serviceAccounts'
-import type { CoreCapability } from '@core/capabilities'
+import { OWNER_ONLY_CAPABILITY_SET, type CoreCapability } from '@core/capabilities'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
 import { hasCapability } from '@admin/access'
 import { CAPABILITY_GROUPS, CapabilityPicker } from '@admin/shared/CapabilityPicker'
@@ -23,12 +22,11 @@ export function CreateServiceAccountDialog({ onClose, onCreate }: {
   onCreate: (grant: Grant) => Promise<void>
 }) {
   const user = useAuthenticatedAdminUser()
-  const allowed = new Set<CoreCapability>(SERVICE_CAPABILITIES.filter(cap => hasCapability(user, cap)))
   const groups = CAPABILITY_GROUPS.map(group => ({
     title: group.title,
-    capabilities: group.capabilities.filter(cap => allowed.has(cap)),
+    capabilities: group.capabilities.filter(cap => hasCapability(user, cap)),
   })).filter(group => group.capabilities.length)
-  const [selected, setSelected] = useState<Set<CoreCapability>>(() => new Set(allowed.has('site.read') ? ['site.read'] : []))
+  const [selected, setSelected] = useState<Set<CoreCapability>>(() => new Set(hasCapability(user, 'site.read') ? ['site.read'] : []))
   const [label, setLabel] = useState('')
   const [ttl, setTtl] = useState('8')
   const [busy, setBusy] = useState(false)
@@ -58,7 +56,7 @@ export function CreateServiceAccountDialog({ onClose, onCreate }: {
       </div>
       <div className={styles.group}>
         <Text variant="muted" size="sm">Permissions apply across the site, including main.</Text>
-        <CapabilityPicker title="Permissions" groups={groups} selected={selected} onChange={setSelected} />
+        <CapabilityPicker title="Permissions" groups={groups} disabledCapabilities={OWNER_ONLY_CAPABILITY_SET} selected={selected} onChange={setSelected} />
       </div>
     </form>
   </Dialog>

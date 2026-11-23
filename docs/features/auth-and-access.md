@@ -2,7 +2,7 @@
 
 The full authentication and authorization surface — login, sessions, MFA, capabilities, roles, lockout, step-up, CSRF defense, CORS.
 
-Admin requests resolve the session cookie and check the required capability. Supported routes can also resolve a [service account](service-accounts.md) from a scoped CLI credential and apply the same target-specific permission checks. There's no per-handler bespoke auth code — the helpers in `server/auth/authz.ts` are the only auth surface a handler should call.
+Admin requests resolve the session cookie and check the required capability. Operational CMS and AI routes also resolve a [service account](service-accounts.md) from a scoped CLI credential. The same capability, ownership and step-up rules apply. Browser approval binds a fresh confirmation window to the paired device. There's no per-handler bespoke auth code — the helpers in `server/auth/authz.ts` are the only auth surface a handler should call.
 
 ---
 
@@ -182,7 +182,7 @@ Four system roles, defined in `SYSTEM_ROLES`:
 | Client  | `client`  | `dashboard.read`, `site.read`, `site.content.edit`, `media.read`, `data.custom.tables.read` | Editable    |
 | Member  | `member`  | (none)                                                                       | Editable    |
 
-`listRoles(db)` returns the built-ins in rank order (`owner`, `admin`, `client`, `member`), followed by custom roles alphabetized by name. Custom roles can be created via `roles.manage` (Owner-only). Roles are persisted in the `roles` table with `capabilities_json: CoreCapability[]`.
+`listRoles(db)` returns the built-ins in rank order (`owner`, `admin`, `client`, `member`), followed by custom roles alphabetized by name. Changing another user’s login email or password requires the actor to hold every capability of that account. Custom roles can be created via `roles.manage` (Owner-only). Roles are persisted in the `roles` table with `capabilities_json: CoreCapability[]`.
 
 Role assignment follows a strict delegation rule: an actor may assign only a role whose effective capabilities are a subset of the actor's own capabilities. This applies to both user creation and role changes, including self-assignment. `roles.manage` is additionally reserved for the Owner role: role mutations reject it, persisted non-Owner roles are stripped on read as a runtime fail-safe, and migration `025_remove_non_owner_role_management` removes legacy invalid grants.
 

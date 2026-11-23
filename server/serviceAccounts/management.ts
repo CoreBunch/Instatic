@@ -1,6 +1,6 @@
 import { ApproveServiceSchema, ExchangeServiceSchema, ServiceAccountInputSchema } from '@core/serviceAccounts'
 import type { DbClient } from '../db/client'
-import { requireCapability, requireStepUp, capabilitiesUserCannotGrant } from '../auth/authz'
+import { requireCapability, requireStepUp, browserStepUpExpiresAt, capabilitiesUserCannotGrant } from '../auth/authz'
 import { jsonResponse, badRequest, readValidatedBody, methodNotAllowed } from '../http'
 import { oauthIssuerOrigin } from '../oauth/protocol'
 import { createAuditEvent } from '../repositories/audit'
@@ -51,10 +51,12 @@ export async function handleServiceAccounts(req: Request, db: DbClient): Promise
     if (!issuer) return badRequest('Configure PUBLIC_ORIGIN to connect a CLI')
     const body = await readValidatedBody(req, ApproveServiceSchema)
     if (!body) return badRequest('Invalid CLI challenge')
-    const step = await requireStepUp(req, db, user, { policy: 'always' })
-    if (step) return step
+    const confirmedUntil = await browserStepUpExpiresAt(req, db)
+    if (!confirmedUntil || confirmedUntil.getTime() <= Date.now()) {
+      return jsonResponse({ error: 'step_up_required' }, { status: 401 })
+    }
     return db.transaction(async tx => {
-      const code = await issueCode(tx, id, user.id, body.challenge)
+      const code = await issueCode(tx, id, user.id, body.challenge, confirmedUntil)
       if (!code) return jsonResponse({ error: 'Connector expired, revoked or unavailable' }, { status: 403 })
       await createAuditEvent(tx, { actorUserId: user.id, action: 'service_account.authorized', targetType: 'service_account', targetId: id })
       return Response.json({ code }, { headers: { 'Cache-Control': 'no-store' } })

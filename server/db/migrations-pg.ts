@@ -1877,4 +1877,11 @@ export const pgMigrations: Migration[] = [
       create index service_accounts_owner_idx on service_accounts(owner_id);
     `,
   },
+  {
+    id: '042_service_account_step_up',
+    sql: `
+      alter table service_accounts add column pending_step_up_expires_at text;
+      alter table service_accounts add column token_step_up_expires_at text;
+    `,
+  },
 ]

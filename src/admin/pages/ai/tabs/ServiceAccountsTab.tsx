@@ -49,7 +49,7 @@ function agentPrompt(origin: string, account: string, filename: string) {
   const quote = (s: string) => "'" + s.replaceAll("'", "'\\''") + "'"
   return [
     'Check whether the Instatic CLI is installed with instatic --version.',
-    'If it is missing, ask me for approval before installing it with:',
+    'If it is missing or older than ' + filename.slice('instatic-cli-'.length, -'.tgz'.length) + ', ask me for approval before installing this version:',
     'bun add --global ' + quote(origin + base + '/' + filename),
     'Then run this command and wait for me to approve the connection in my browser:',
     'instatic connect ' + quote(origin) + ' --account ' + account,

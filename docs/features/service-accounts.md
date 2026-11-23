@@ -38,9 +38,21 @@ Open the returned PNG in the agent’s image viewer to inspect the result. Captu
 
 ## Permissions and lifecycle
 
-- A connector receives individual role capabilities supported by the CLI. **Select all** grants the available capabilities you currently hold. The connector’s scope is installation-wide. A branch ID selects a draft. A connector with site-edit capabilities can also target main. The CLI requires an explicit branch for a site-document save.
+- A connector receives grants from the same capability list as a custom role. Role management is reserved for the installation owner. **Select all** grants the available capabilities you currently hold. The connector’s scope is installation-wide. A branch ID selects a draft. A connector with site-edit capabilities can also target main. The CLI requires an explicit branch for a site-document save.
 - The CMS resolves a distinct actor for each connector. Content ownership, branch ownership and existing mutation audit records identify that actor. It has no interactive login. The creating administrator owns management and approval of its connection.
 - Every authenticated call checks the connector’s expiry and revocation, its creator’s current account status and connector-management permission, and the intersection of the selected capabilities with the creator’s current capabilities. The target handler enforces its own row, branch, role and write-diff policies.
-- The CMS accepts CLI credentials on branch, page, site, component, layout, data, media, plugin and mail APIs. The AI provider, model and defaults routes also support them. Personal security, connector management, and actions requiring a human step-up remain personal-session operations. Global writes carrying a branch header are refused for mail, media, plugins and AI settings.
-- `api lookup` searches a permission-filtered guide to common operations. `api describe METHOD PATH` provides details for a listed entry, including a request schema where available. `api METHOD PATH` also accepts other routes in the supported resource groups, including their query parameters. Use `--json` or `--file` for JSON and `--upload` for a multipart file.
+- The CLI can call operational HTTP endpoints under `/admin/api/cms/` and `/admin/api/ai/`, including plugin installation, user administration, exports and publishing. Each handler applies its normal capability and ownership checks. Login, personal security, connector issuance and browser workspace callbacks require a browser session. Omit `--branch` for installation-wide changes such as plugin installation.
+- For sensitive actions, the CMS applies the sponsor’s step-up policy. When you approve a CLI connection, its credential inherits the remaining password-confirmation window from that browser approval. When a command requires fresh confirmation, run the same `instatic connect` command and approve again. Ordinary reads can continue until the connector expires or is revoked.
+- `api lookup` searches a permission-filtered guide to common operations. `api describe METHOD PATH` provides details for a listed entry, including a request schema where available. `api METHOD PATH` also accepts any operational API route, including routes absent from the guide and routes with query parameters. Use `--json` or `--file` for JSON, `--upload` with optional repeated `--field NAME=VALUE` for multipart requests, `--raw FILE` for a binary request, and `--out FILE` for binary output.
 - **Revoke access** invalidates future requests and pending approvals. It also works when the CLI machine has been lost. `instatic forget` clears the credential on the current machine. The manager’s default restore and transfer settings also clear issued CLI credentials and pending approvals. Reconnect the account on the restored installation.
+
+## Install a plugin
+
+Grant **Install or uninstall plugins**. Inspect the package, review its requested permissions, then supply the permissions you approve. For a package whose only declared permission is `cms.routes`, the commands are:
+
+```sh
+instatic api POST plugins/inspect-package --upload plugin.zip
+instatic api POST plugins/package --upload plugin.zip --field 'grantedPermissions=["cms.routes"]'
+```
+
+The CMS checks the grants against the manifest. Enabling, disabling or restarting an installed plugin uses the separate **plugin lifecycle** permission.

@@ -44,7 +44,7 @@ export async function requireAuthenticatedUser(
   db: DbClient,
 ): Promise<AuthUser | Response> {
   const actor = servicePrincipal(req)
-  if (actor) return actor
+  if (actor) return actor.user
   const idHash = await getSessionHash(req)
   const user = idHash ? await findUserBySessionHash(db, idHash) : null
   if (!user) {
@@ -135,17 +135,18 @@ export async function requireStepUp(
   user: AuthUser,
   options: RequireStepUpOptions = {},
 ): Promise<Response | null> {
-  if (servicePrincipal(req)) return jsonResponse({ error: 'This operation requires human step-up authorization' }, { status: 403 })
-  if ((options.policy ?? 'user') === 'user' && user.stepUpAuthMode === 'disabled') {
-    return null
-  }
-  const idHash = await getSessionHash(req)
-  if (!idHash) {
-    return jsonResponse({ error: 'step_up_required' }, { status: 401 })
-  }
-  const expiresAt = await getSessionStepUpExpiresAt(db, idHash)
-  if (!expiresAt || expiresAt.getTime() <= Date.now()) {
+  if ((options.policy ?? 'user') === 'user' && user.stepUpAuthMode === 'disabled') return null
+  const principal = servicePrincipal(req)
+  const confirmedUntil = principal
+    ? principal.stepUpExpiresAt && new Date(principal.stepUpExpiresAt)
+    : await browserStepUpExpiresAt(req, db)
+  if (!confirmedUntil || !(confirmedUntil.getTime() > Date.now())) {
     return jsonResponse({ error: 'step_up_required' }, { status: 401 })
   }
   return null
+}
+
+export async function browserStepUpExpiresAt(req: Request, db: DbClient): Promise<Date | null> {
+  const hash = await getSessionHash(req)
+  return hash ? getSessionStepUpExpiresAt(db, hash) : null
 }

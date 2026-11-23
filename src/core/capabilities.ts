@@ -96,3 +96,9 @@ export type CoreCapability = typeof CORE_CAPABILITIES[number]
  * gives the server and role editor one shared source of truth.
  */
 export const OWNER_ONLY_CAPABILITIES = ['roles.manage'] as const satisfies readonly CoreCapability[]
+
+export const OWNER_ONLY_CAPABILITY_SET: ReadonlySet<CoreCapability> = new Set<CoreCapability>(OWNER_ONLY_CAPABILITIES)
+export function isDelegableCapability(capability: CoreCapability): boolean {
+  return !OWNER_ONLY_CAPABILITY_SET.has(capability)
+}
+export const DELEGABLE_CAPABILITIES = CORE_CAPABILITIES.filter(isDelegableCapability)

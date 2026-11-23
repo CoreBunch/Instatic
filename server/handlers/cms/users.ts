@@ -189,6 +189,12 @@ async function handleUserPatch(
     return jsonResponse({ error: 'Only the owner can modify the owner account' }, { status: 403 })
   }
 
+  // Managing a login must respect the same grant ceiling as assigning its role.
+  if ((body.email !== undefined || body.password !== undefined) &&
+      capabilitiesUserCannotGrant(actor, currentUser.capabilities).length) {
+    return jsonResponse({ error: 'Cannot change login credentials for a more privileged account' }, { status: 403 })
+  }
+
   const ownerRoleError = rejectsOwnerRoleAssignment(body.roleId)
   if (ownerRoleError) return ownerRoleError
   if (body.roleId !== undefined) {

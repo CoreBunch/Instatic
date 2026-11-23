@@ -512,6 +512,7 @@ export async function softDeleteUser(db: DbClient, userId: string): Promise<bool
         updated_at = ${now}
     where id = ${userId}
       and deleted_at is null
+      and not exists (select 1 from service_accounts sa where sa.id = users.id)
   `
   return result.rowCount > 0
 }
