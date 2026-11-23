@@ -140,7 +140,7 @@ export function ServiceAccountsTab({ initialAccount }: { initialAccount?: string
       heading={<div className={directory.identityText}><Heading level={3}>{account.label}</Heading></div>}
       status={<AccountStatus account={account} />}>
       <AccountFacts account={account} />
-      {active && <div className={styles.group}>
+      {active && <div className={styles.stack}>
         {!account.connected && prompt && <Text variant="muted" size="sm">Paste the prompt into your agent, then approve its connection in your browser.</Text>}
         {account.connected && initialAccount === account.id && <Text variant="muted">Return to your agent to start working.</Text>}
         <div className={styles.actions}>
