@@ -47,6 +47,26 @@
     --rail-icon-glow: color-mix(in oklab, var(--rail-icon-tint) 28%, transparent);
 }
 
+.railButton.labeledButton {
+    width: var(--control-size);
+    height: auto;
+    flex-direction: column;
+    gap: var(--space-2xs);
+    padding: var(--space-s) 0;
+    background: var(--bg-surface-2);
+    color: var(--text);
+}
+
+.railLabel {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    max-inline-size: 10em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: var(--text-xs);
+    line-height: 1;
+}
+
 .railButton.railButton:hover {
     background: var(--rail-icon-hover-bg);
 }

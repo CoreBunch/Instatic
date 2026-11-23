@@ -44,6 +44,7 @@ import { GitBranchSolidIcon } from 'pixel-art-icons/icons/git-branch-solid'
 import { CircleDotSolidIcon } from 'pixel-art-icons/icons/circle-dot-solid'
 import { ContainerSolidIcon } from 'pixel-art-icons/icons/container-solid'
 import { BoxSolidIcon } from 'pixel-art-icons/icons/box-solid'
+import { FilesStack2SolidIcon } from 'pixel-art-icons/icons/files-stack-2-solid'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
 import { AiBoxSolidIcon } from 'pixel-art-icons/icons/ai-box-solid'
 import { SparklesSolidIcon } from 'pixel-art-icons/icons/sparkles-solid'
@@ -109,6 +110,7 @@ const ICON_MAP: Record<string, IconComponent> = {
   'circle-dot-solid': CircleDotSolidIcon,
   'container-solid': ContainerSolidIcon,
   'box-solid': BoxSolidIcon,
+  'files-stack-2-solid': FilesStack2SolidIcon,
   'box-stack-solid': BoxStackSolidIcon,
   'ai-box-solid': AiBoxSolidIcon,
   'sparkles-solid': SparklesSolidIcon,

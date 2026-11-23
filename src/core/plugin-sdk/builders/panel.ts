@@ -62,6 +62,8 @@ export interface DefinePluginEditorPanelConfig {
   id: string
   label: string
   iconName: string
+  /** Display the panel name vertically beneath its rail icon. */
+  showRailLabel?: boolean
   accent?: PluginEditorPanelAccent
   shortcutLabel?: string
   /**
@@ -99,6 +101,7 @@ export function definePluginPanel(
     label: config.label,
     iconName: config.iconName,
     accent: config.accent,
+    showRailLabel: config.showRailLabel,
     shortcutLabel: config.shortcutLabel,
     component: config.component,
   }

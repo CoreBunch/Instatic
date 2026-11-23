@@ -28,6 +28,7 @@ interface RailItem {
   iconName: string
   accent: RailAccent
   open: boolean
+  showRailLabel?: boolean
   detached?: boolean
   disabled?: boolean
   onToggle: () => void
@@ -208,6 +209,7 @@ export function PanelRail({
           toggleActivePluginPanel(panel.id)
         },
         shortcutLabel: panel.shortcutLabel,
+        showRailLabel: panel.showRailLabel,
       }))
     : []
 
@@ -258,7 +260,7 @@ function RailButton({ item }: { item: RailItem }) {
     <Button
       variant="ghost"
       size="md"
-      iconOnly
+      iconOnly={!item.showRailLabel}
       pressed={item.open && !item.detached}
       aria-label={`${action} ${item.label} panel`}
       disabled={item.disabled}
@@ -269,10 +271,11 @@ function RailButton({ item }: { item: RailItem }) {
       data-detached={item.detached ? 'true' : undefined}
       style={style}
       onClick={item.onToggle}
-      className={cn(styles.railButton, item.detached && styles.railButtonDetached)}
+      className={cn(styles.railButton, item.showRailLabel && styles.labeledButton, item.detached && styles.railButtonDetached)}
     >
       <span className={styles.activeIndicator} aria-hidden="true" />
       <RailIcon size={16} className={styles.railIcon} />
+      {item.showRailLabel && <span className={styles.railLabel}>{item.label}</span>}
     </Button>
   )
 }
