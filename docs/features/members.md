@@ -206,7 +206,7 @@ A node that uses a member binding or a show-when rule is different for every vis
 
 **Users → Site members** (`src/admin/pages/users/tabs/MembersTab.tsx`) sits beside Admin users, Roles and Audit. A user with `members.read` or `members.manage` can open the Users page for this tab alone (`canAccessUsersWorkspace`).
 
-Admin users and Site members share the searchable `AccountDirectory` in `src/admin/pages/users/components/`. Selecting a row opens its inspector beside the list, or in a drawer on narrow screens. The row stays highlighted while its inspector is open. Member access tags and account facts appear first. Expand sessions, connected apps or activity for details. Account actions appear directly in the inspector. Deleting a user or member asks for confirmation.
+Admin users and Site members share the searchable `AccountDirectory` in `src/admin/pages/users/components/`. Both directories search on the server and show 50 matching accounts per page. The centered footer has Previous, the visible range and total, and Next. Changing a search or member filter returns to the first page. Selecting a row opens its inspector beside the list, or in a drawer on narrow screens. The row stays highlighted while its inspector is open. Member access tags and account facts appear first. Expand sessions, connected apps or activity for details. Account actions appear directly in the inspector. Deleting a user or member asks for confirmation.
 
 The API is `server/handlers/cms/members.ts` under `/admin/api/cms/members`. It decides who may call and audits the call; every query on the member tables stays in `server/members/admin.ts` (the split is gated by `members-admin-split.test.ts`).
 

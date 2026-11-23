@@ -21,14 +21,14 @@
     min-width: 150px;
 }
 
-.sectionHeading, .listFooter, .disclosure span {
+.sectionHeading, .disclosure span {
     display: flex;
     align-items: center;
     gap: var(--space-s);
 }
 
 .sectionHeading { justify-content: space-between; }
-.listFooter, .disclosure span { color: var(--text-subtle); font-size: var(--text-xs); }
+.disclosure span { color: var(--text-subtle); font-size: var(--text-xs); }
 .disclosures { display: grid; gap: var(--space-s); }
 .disclosures .disclosure {
     margin-inline: calc(-1 * var(--space-l));

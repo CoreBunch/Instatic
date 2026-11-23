@@ -123,7 +123,7 @@ Several independent loads gated by different flags, or a load that must NOT re-r
 
 Examples:
 
-- `useUsersPageData` (`src/admin/pages/users/hooks/useUsersPageData.ts`) — loads users, roles, and audit events in parallel; `loading` flips false only after the first round-trip and never re-raises on `refresh()`. Also shares a single `error` channel for both load and mutation failures.
+- `useUsersPageData` (`src/admin/pages/users/hooks/useUsersPageData.ts`) — loads role options for the Users workspace and allows optimistic role updates; `loading` flips false only after the first round-trip and never re-raises on `refresh()`. Also shares a single `error` channel for both load and mutation failures.
 - `useContentWorkspace`, `useDataWorkspace`, `useMediaWorkspace`, `usePluginsWorkspace` — workspace orchestrators with per-fetch granular state.
 
 ### Module-level cached loads

@@ -40,6 +40,8 @@ server/auth/
 
 Handler endpoints: `server/handlers/cms/auth.ts`, `server/handlers/cms/me.ts`, `server/handlers/cms/setup.ts`, `server/handlers/cms/users.ts`, `server/handlers/cms/roles.ts`.
 
+The Admin users directory reads `GET /admin/api/cms/users?q=&offset=`. The response contains up to 50 `users`, the filtered total `matching`, and the starting `offset`. Search matches the display name or email. Results use creation order with the user ID as a tie-breaker.
+
 ---
 
 ## The session lifecycle

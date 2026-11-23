@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { DIRECTORY_PAGE_SIZE } from '@core/users/directoryPagination'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { Button } from '@ui/components/Button'
 import { DataTable, DataTableBody, DataTableCell, DataTableHead, DataTableHeader, DataTableRow } from '@ui/components/DataTable'
@@ -45,13 +46,31 @@ interface DirectoryProps {
   toolbar: ReactNode
   empty: ReactNode
   loading?: boolean
-  footer?: ReactNode
+  pagination: { offset: number; matching: number; busy: boolean; goTo: (offset: number) => void } | null
   children: ReactNode
 }
 
-export function AccountDirectory({ kind, accounts, selectedId, onSelect, toolbar, empty, loading, footer, children }: DirectoryProps) {
+export function AccountDirectory({ kind, accounts, selectedId, onSelect, toolbar, empty, loading, pagination, children }: DirectoryProps) {
   const selected = accounts.find((account) => account.id === selectedId)
   const panelId = useId()
+  const listStart = useRef<HTMLDivElement>(null)
+  const pagingFrom = useRef<number | null>(null)
+  const offset = pagination?.offset
+  useEffect(() => {
+    if (pagingFrom.current !== null && offset !== pagingFrom.current) {
+      pagingFrom.current = null
+      listStart.current?.querySelector<HTMLButtonElement>('tbody button')?.focus({ preventScroll: true })
+      listStart.current?.scrollIntoView({ block: 'start' })
+    }
+  }, [offset])
+
+  function turnPage(nextOffset: number) {
+    if (!pagination) return
+    pagingFrom.current = pagination.offset
+    onSelect(null)
+    pagination.goTo(nextOffset)
+  }
+
   const selectedRow = useRef<HTMLButtonElement | null>(null)
   const closeButton = useRef<HTMLButtonElement | null>(null)
   const [narrow, setNarrow] = useState(() => window.matchMedia?.(NARROW_DIRECTORY_QUERY).matches ?? false)
@@ -94,7 +113,7 @@ export function AccountDirectory({ kind, accounts, selectedId, onSelect, toolbar
 
   return (
     <div className={styles.directory} data-split={Boolean(selected) && !narrow}>
-      <div className={styles.list}>
+      <div className={styles.list} ref={listStart}>
         <div className={styles.toolbar}>{toolbar}</div>
         {loading ? <SkeletonRows ariaLabel="Loading accounts" count={3} rowHeight={48} /> : accounts.length === 0 ? empty : (
           <DataTable aria-label={staff ? 'Users' : 'Site members'} className={styles.table} density="compact">
@@ -124,7 +143,21 @@ export function AccountDirectory({ kind, accounts, selectedId, onSelect, toolbar
             </DataTableBody>
           </DataTable>
         )}
-        {footer}
+        {pagination && pagination.matching > 0 && (
+          <nav className={styles.pagination} aria-label={staff ? 'Admin users pagination' : 'Site members pagination'}>
+            <Button variant="secondary" size="sm" disabled={pagination.busy || pagination.offset === 0}
+              onClick={() => turnPage(pagination.offset - DIRECTORY_PAGE_SIZE)}>
+              Previous
+            </Button>
+            <span role="status">
+              {(pagination.offset + 1).toLocaleString()}–{(pagination.offset + accounts.length).toLocaleString()} of {pagination.matching.toLocaleString()}
+            </span>
+            <Button variant="secondary" size="sm" disabled={pagination.busy || pagination.offset + accounts.length >= pagination.matching}
+              onClick={() => turnPage(pagination.offset + DIRECTORY_PAGE_SIZE)}>
+              Next
+            </Button>
+          </nav>
+        )}
       </div>
       {inspector && (narrow
         ? <Dialog open title={panelLabel} onClose={close} className={styles.drawer} bodyClassName={styles.drawerBody}>{inspector}</Dialog>

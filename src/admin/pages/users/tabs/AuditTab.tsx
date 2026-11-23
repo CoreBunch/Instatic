@@ -6,10 +6,7 @@
  * publishes). Each row is rendered into a sentence-case title + optional
  * detail badges + actor attribution + timestamp.
  *
- * The actor / target labels are looked up against the *current* users and
- * roles maps, falling back to the snapshot label captured at write time
- * when the related row no longer exists. That's why this tab consumes
- * `users` and `roles` even though it doesn't mutate them.
+ * The API resolves actor and target labels across the whole directory.
  */
 import {
   DataTable,
@@ -23,14 +20,15 @@ import { Skeleton } from '@ui/components/Skeleton'
 import { Badge } from '../components/Badge'
 import { auditActor, auditDetails, auditTitle } from '../utils/audit'
 import { formatDateTime } from '../utils/format'
-import type { UsersPageData } from '../hooks/useUsersPageData'
+import { listCmsAuditEvents, type CmsRole } from '@core/persistence'
+import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import styles from '../UsersPage.module.css'
 import { EmptyState } from '@ui/components/EmptyState'
 import { ListBoxSolidIcon } from 'pixel-art-icons/icons/list-box-solid'
 
-export function AuditTab({ data }: { data: UsersPageData }) {
-  const { users, roles, events } = data
-  const usersById = new Map(users.map((user) => [user.id, user]))
+export function AuditTab({ roles }: { roles: CmsRole[] }) {
+  const audit = useAsyncResource(() => listCmsAuditEvents(), [], { fallbackError: 'Could not load audit events' })
+  const events = audit.data ?? []
   const rolesById = new Map(roles.map((role) => [role.id, role]))
 
   return (
@@ -41,7 +39,8 @@ export function AuditTab({ data }: { data: UsersPageData }) {
           <p>Security and access changes across the admin area.</p>
         </div>
       </div>
-      {data.loading ? (
+      {audit.error && <p className={styles.error} role="alert">{audit.error}</p>}
+      {audit.loading ? (
         <DataTable aria-label="Loading audit events" density="compact" aria-busy="true">
           <DataTableHead>
             <DataTableRow>
@@ -76,10 +75,10 @@ export function AuditTab({ data }: { data: UsersPageData }) {
             {events.map((event) => (
               <DataTableRow key={event.id}>
                 <DataTableCell>
-                  <strong className={styles.auditTitle}>{auditTitle(event, usersById, rolesById)}</strong>
+                  <strong className={styles.auditTitle}>{auditTitle(event, rolesById)}</strong>
                 </DataTableCell>
                 <DataTableCell>
-                  <span className={styles.secondaryText}>{auditActor(event, usersById)}</span>
+                  <span className={styles.secondaryText}>{auditActor(event)}</span>
                 </DataTableCell>
                 <DataTableCell>
                   <div className={styles.auditDetails}>

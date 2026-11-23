@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import type { CmsAuditEvent, CmsCurrentUser, CmsRole } from '@core/persistence'
+import type { CmsAuditEvent, CmsRole } from '@core/persistence'
 import { auditTitle } from '@users/utils/audit'
 
 const now = '2026-06-23T12:00:00.000Z'
@@ -15,30 +15,7 @@ const memberRole: CmsRole = {
   updatedAt: now,
 }
 
-const testUser: CmsCurrentUser = {
-  id: 'user_1',
-  email: 'test@example.com',
-  displayName: 'Test User',
-  status: 'active',
-  role: memberRole,
-  capabilities: [],
-  lastLoginAt: null,
-  failedLoginCount: 0,
-  lockedUntil: null,
-  passwordUpdatedAt: null,
-  mfaEnabled: false,
-  mfaEnabledAt: null,
-  mfaRecoveryCodesRemaining: 0,
-  stepUpAuthMode: 'required',
-  stepUpWindowMinutes: 15,
-  avatarMediaId: null,
-  avatarUrl: null,
-  gravatarHash: '',
-  createdAt: now,
-  updatedAt: now,
-}
-
-const usersById = new Map([[testUser.id, testUser]])
+const testUser = { id: 'user_1', email: 'test@example.com' }
 const rolesById = new Map([[memberRole.id, memberRole]])
 
 function auditEvent(overrides: Partial<CmsAuditEvent>): CmsAuditEvent {
@@ -67,6 +44,7 @@ describe('audit event formatting', () => {
           action: 'login.locked',
           targetType: 'user',
           targetId: testUser.id,
+          targetLabel: 'Test User',
           metadata: { email: testUser.email },
         }),
         expected: 'Test User was locked',
@@ -155,14 +133,14 @@ describe('audit event formatting', () => {
     ]
 
     for (const { event, expected } of cases) {
-      expect(auditTitle(event, usersById, rolesById)).toBe(expected)
-      expect(auditTitle(event, usersById, rolesById)).not.toBe(event.action)
+      expect(auditTitle(event, rolesById)).toBe(expected)
+      expect(auditTitle(event, rolesById)).not.toBe(event.action)
     }
   })
 
   it('humanizes unknown future action ids instead of rendering the raw dotted id', () => {
     const event = auditEvent({ action: 'plugin.future.action' })
 
-    expect(auditTitle(event, usersById, rolesById)).toBe('Plugin future action')
+    expect(auditTitle(event, rolesById)).toBe('Plugin future action')
   })
 })

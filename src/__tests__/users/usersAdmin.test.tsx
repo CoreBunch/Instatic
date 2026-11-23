@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import type { ReactNode } from 'react'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from '@admin/lib/routing'
 import { UsersPage } from '@users/UsersPage'
 import { AdminSessionProvider } from '@admin/session'
@@ -251,7 +251,12 @@ beforeEach(() => {
   setupEditorState()
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
-    if (url === '/admin/api/cms/users' && init?.method === 'GET') return json({ users })
+    if (url.startsWith('/admin/api/cms/users?q=')) {
+      const query = new URL(url, 'http://localhost').searchParams.get('q')!.toLowerCase()
+      const matches = users.filter((user) => user.email.toLowerCase().includes(query))
+      return json({ users: matches, offset: 0, matching: matches.length })
+    }
+    if (url === '/admin/api/cms/users' && init?.method === 'GET') return json({ users, offset: 0, matching: users.length })
     if (url === '/admin/api/cms/roles' && init?.method === 'GET') return json({ roles })
     if (url === '/admin/api/cms/audit' && init?.method === 'GET') return json({ events: auditEvents })
     const ambient = ambientFetchFallback(url)
@@ -271,7 +276,7 @@ describe('UsersPage', () => {
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       calls.push(`${init?.method ?? 'GET'} ${url}`)
-      if (url === '/admin/api/cms/users' && init?.method === 'GET') return json({ users })
+      if (url === '/admin/api/cms/users' && init?.method === 'GET') return json({ users, offset: 0, matching: users.length })
       if (url === '/admin/api/cms/roles' && init?.method === 'GET') return json({ roles })
       if (url === '/admin/api/cms/audit' && init?.method === 'GET') return json({ events: auditEvents })
       const ambient = ambientFetchFallback(url)
@@ -300,7 +305,7 @@ describe('UsersPage', () => {
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       calls.push(`${init?.method ?? 'GET'} ${url}`)
-      if (url === '/admin/api/cms/users' && init?.method === 'GET') return json({ users })
+      if (url === '/admin/api/cms/users' && init?.method === 'GET') return json({ users, offset: 0, matching: users.length })
       if (url === '/admin/api/cms/roles' && init?.method === 'GET') return json({ roles })
       if (url === '/admin/api/cms/audit' && init?.method === 'GET') return json({ events: auditEvents })
       const ambient = ambientFetchFallback(url)
@@ -329,7 +334,7 @@ describe('UsersPage', () => {
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       calls.push(`${init?.method ?? 'GET'} ${url}`)
-      if (url === '/admin/api/cms/users' && init?.method === 'GET') return json({ users })
+      if (url === '/admin/api/cms/users' && init?.method === 'GET') return json({ users, offset: 0, matching: users.length })
       if (url === '/admin/api/cms/roles' && init?.method === 'GET') return json({ roles })
       if (url === '/admin/api/cms/audit' && init?.method === 'GET') return json({ events: auditEvents })
       const ambient = ambientFetchFallback(url)
@@ -427,7 +432,7 @@ describe('UsersPage', () => {
 
     const search = screen.getByLabelText('Search name or email')
     fireEvent.change(search, { target: { value: 'TEST@' } })
-    expect(screen.queryByLabelText('User hello@davidbabinec.com')).toBeNull()
+    await waitFor(() => expect(screen.queryByLabelText('User hello@davidbabinec.com')).toBeNull())
     const userRow = screen.getByLabelText('User test@test.com')
     expect(within(userRow).getByText('Active')).toBeDefined()
     expect(within(userRow).getByText('Member')).toBeDefined()
