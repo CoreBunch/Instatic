@@ -6,10 +6,12 @@
  * The list is on the left with search and filters above it; the selected
  * member's details and actions are on the right.
  */
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useDebouncedValue } from '@admin/lib/useDebouncedValue'
+import { useDirectoryPage } from '../hooks/useDirectoryPage'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { AccountDirectory } from '../components/AccountDirectory'
-import directory from '../components/AccountDirectory.module.css'
+import directory from '@admin/shared/Directory/Directory.module.css'
 import { useConfirmAction, useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { memberDataFilename, memberPageIsLive } from '@core/members'
@@ -74,14 +76,7 @@ function isStepUpCancelled(err: unknown): boolean {
   return err instanceof Error && err.message === StepUpCancelledMessage
 }
 
-export function MembersTab({
-  canManage,
-  onChanged,
-}: {
-  canManage: boolean
-  /** Called after any change, so the Audit tab next door shows it. */
-  onChanged: () => void
-}) {
+export function MembersTab({ canManage }: { canManage: boolean }) {
   const { runStepUp } = useStepUp()
   const confirmDelete = useConfirmDelete()
   const confirmAction = useConfirmAction()
@@ -89,11 +84,8 @@ export function MembersTab({
   const [status, setStatus] = useState<StatusFilter>('all')
   const [tag, setTag] = useState(ALL_TAGS)
   const [searchInput, setSearchInput] = useState('')
-  const [search, setSearch] = useState('')
+  const search = useDebouncedValue(searchInput.trim(), SEARCH_DELAY_MS)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  // Pages read with "Show more", kept only while the filters they were read for still apply.
-  const [more, setMore] = useState<{ key: string; members: MemberListItem[]; nextOffset: number | null } | null>(null)
-  const [loadingMore, setLoadingMore] = useState(false)
   const [busy, setBusy] = useState(false)
   const [dialog, setDialog] = useState<'invite' | 'settings' | 'apps' | null>(null)
   // A link the admin asked for, shown once so they can pass it on.
@@ -101,27 +93,18 @@ export function MembersTab({
   // A change to the selected member answers with the member as it now stands.
   const [changed, setChanged] = useState<MemberDetail | null>(null)
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => setSearch(searchInput), SEARCH_DELAY_MS)
-    return () => window.clearTimeout(timer)
-  }, [searchInput])
-
   const query: CmsMemberListQuery = {
     search,
     status: status === 'all' ? null : status,
     tag: tag === ALL_TAGS ? null : tag,
   }
-  const queryKey = JSON.stringify(query)
-  const list = useAsyncResource((signal) => listCmsMembers(query, signal), [queryKey], {
-    fallbackError: 'Could not load the members.',
-  })
+  const list = useDirectoryPage(JSON.stringify(query),
+    (offset, signal) => listCmsMembers({ ...query, offset }, signal), 'Could not load the members.')
   const settings = useAsyncResource((signal) => getCmsMemberSettings(signal), [], {
     fallbackError: 'Could not load the member settings.',
   })
 
-  const extra = more?.key === queryKey ? more : null
-  const members = list.data ? [...list.data.members, ...(extra?.members ?? [])] : []
-  const nextOffset = extra ? extra.nextOffset : (list.data?.nextOffset ?? null)
+  const members = list.data?.members ?? []
   const selected = members.find((member) => member.id === selectedId) ?? null
   const filtered = status !== 'all' || tag !== ALL_TAGS || search.trim() !== ''
 
@@ -153,7 +136,6 @@ export function MembersTab({
     setStatus('all')
     setTag(ALL_TAGS)
     setSearchInput('')
-    setSearch('')
   }
 
   // A download changes nothing on screen: no busy state, list refresh or collapse.
@@ -172,9 +154,7 @@ export function MembersTab({
     try {
       const result = await change()
       setChanged(result ?? null)
-      setMore(null)
       list.refresh()
-      onChanged()
       if (done) pushToast({ kind: 'success', title: done })
       return true
     } catch (err) {
@@ -187,20 +167,6 @@ export function MembersTab({
     }
   }
 
-  async function showMore() {
-    if (nextOffset === null) return
-    setLoadingMore(true)
-    try {
-      const next = await listCmsMembers({ ...query, offset: nextOffset })
-      setMore({ key: queryKey, members: [...(extra?.members ?? []), ...next.members], nextOffset: next.nextOffset })
-    } catch (err) {
-      console.error('[MembersTab] loading more members failed:', err)
-      pushToast({ kind: 'error', title: 'Could not load more members', body: getErrorMessage(err, 'Unknown member error') })
-    } finally {
-      setLoadingMore(false)
-    }
-  }
-
   async function invite(email: string, tags: string[], delivery: 'email' | 'link') {
     let created: { email: string; link: string } | null = null
     const ok = await run(async () => {
@@ -208,6 +174,7 @@ export function MembersTab({
       const result = delivery === 'link'
         ? await runStepUp(() => inviteCmsMember(email, tags, delivery))
         : await inviteCmsMember(email, tags, delivery)
+      if (result.outcome !== 'resent') list.goTo(0)
       setSelectedId(result.member.id)
       if (result.link) {
         created = { email: result.member.email, link: result.link }
@@ -272,10 +239,7 @@ export function MembersTab({
   return (
     <section className={styles.section} aria-labelledby="members-title">
       <div className={styles.sectionHeader}>
-        <div>
-          <h1 id="members-title">Site members</h1>
-          <p>People who can sign in to your published site.</p>
-        </div>
+        <h1 id="members-title">Site members</h1>
         <div className={memberStyles.headerActions}>
           <Button
             type="button"
@@ -375,6 +339,7 @@ export function MembersTab({
               />
             </div>
           )}
+          {filtered && members.length > 0 && <Button variant="ghost" size="xs" onClick={clearFilters}>Clear filters</Button>}
         </>}
         empty={list.data && (
           <EmptyState
@@ -393,13 +358,7 @@ export function MembersTab({
             }
           />
         )}
-        footer={list.data && members.length > 0 && (
-          <div className={memberStyles.listFooter}>
-            <span>{members.length < list.data.matching && `${members.length} of `}{list.data.matching.toLocaleString()} {list.data.matching === 1 ? 'member' : 'members'}</span>
-            {filtered && <Button variant="ghost" size="xs" onClick={clearFilters}>Clear filters</Button>}
-            {nextOffset !== null && <Button variant="secondary" size="sm" onClick={() => void showMore()} busy={loadingMore}>Show more</Button>}
-          </div>
-        )}
+        pagination={list.pagination}
       >
         {selected && detail ? <MemberDetailPanel
           key={selected.id}
@@ -438,7 +397,6 @@ export function MembersTab({
           canManage={canManage}
           approvalPageLive={memberPageIsLive('appSignIn', settings.data.settings.pages, settings.data.pageOptions)}
           onClose={() => setDialog(null)}
-          onChanged={onChanged}
         />
       )}
     </section>

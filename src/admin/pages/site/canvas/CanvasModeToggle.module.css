@@ -163,7 +163,7 @@
     width: 1px;
     height: 16px;
     margin: 0 var(--space-4xs);
-    background: var(--border-muted);
+    background: var(--divider);
 }
 
 /* Inline breakpoint icon row — only rendered in preview mode. Sits flush in

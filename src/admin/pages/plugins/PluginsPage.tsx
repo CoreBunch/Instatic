@@ -50,7 +50,6 @@ export function PluginsPage() {
       workspace="plugins"
       title="Plugins"
       titleId="plugins-title"
-      description="Install admin extensions and control what they add to the CMS."
       actions={canInstall ? (
         <>
           <Button

@@ -44,11 +44,10 @@ export function ConnectorSetupPanel({
   onCreated: (connector: MailConnector) => void
 }) {
   return (
-    <article className={ws.providerSetup} aria-labelledby="connector-setup-title">
-      <header className={ws.providerSetupHeader}>
+    <article className={styles.connectorSetup} aria-labelledby="connector-setup-title">
+      <header className={styles.setupHeading}>
         <ConnectorMark logo={spec.logo} size="lg" />
         <div>
-          <span className={ws.detailEyebrow}>Add connector</span>
           <h2 id="connector-setup-title">Connect {spec.label}</h2>
           <p>{spec.description}</p>
         </div>

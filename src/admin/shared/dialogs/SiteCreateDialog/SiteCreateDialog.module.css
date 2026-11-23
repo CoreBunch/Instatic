@@ -49,7 +49,7 @@
     margin: 0;
     padding: var(--space-xl) 0 0;
     border: 0;
-    border-top: 1px solid var(--overlay-10);
+    border-top: 1px solid var(--divider);
 }
 
 .groupTitle {

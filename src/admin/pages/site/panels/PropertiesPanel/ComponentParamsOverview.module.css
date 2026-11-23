@@ -12,7 +12,7 @@
   align-items: center;
   gap: var(--space-xs);
   padding: var(--space-s) var(--space-l);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--divider);
 }
 
 .kicker {
@@ -45,7 +45,7 @@
 .paramItem {
   display: flex;
   align-items: center;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--divider);
 }
 
 .paramItem:last-child {

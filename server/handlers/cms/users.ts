@@ -118,8 +118,9 @@ function rejectsShortPassword(password: string | undefined): Response | null {
 // Per-route handlers
 // ---------------------------------------------------------------------------
 
-async function handleListUsers(_req: Request, db: DbClient): Promise<Response> {
-  return jsonResponse({ users: await listUsers(db) })
+async function handleListUsers(req: Request, db: DbClient): Promise<Response> {
+  const query = new URL(req.url).searchParams
+  return jsonResponse(await listUsers(db, query.get('q') ?? '', Number(query.get('offset'))))
 }
 
 async function handleCreateUser(

@@ -15,12 +15,15 @@ import { useEffect, useEffectEvent, useState, type FormEvent } from 'react'
 import { consumePendingAction } from '@admin/spotlight/pendingAction'
 import { Button } from '@ui/components/Button'
 import { SearchBar } from '@ui/components/SearchBar'
+import { useDebouncedValue } from '@admin/lib/useDebouncedValue'
+import { useDirectoryPage } from '../hooks/useDirectoryPage'
 import { AccountDirectory } from '../components/AccountDirectory'
-import directory from '../components/AccountDirectory.module.css'
+import directory from '@admin/shared/Directory/Directory.module.css'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import {
+  listCmsUsers,
   createCmsUser,
   deleteCmsUser,
   updateCmsUser,
@@ -59,7 +62,6 @@ async function saveUser(
   editingUserId: string | null,
   userForm: UserFormState,
   runStepUp: <T>(action: () => Promise<T>) => Promise<T>,
-  setUsers: (updater: (current: CmsCurrentUser[]) => CmsCurrentUser[]) => void,
   closeDialog: () => void,
   refresh: () => void,
   setBusy: (busy: boolean) => void,
@@ -73,22 +75,20 @@ async function saveUser(
       await runStepUp(() => updateCmsUser(editingUserId, { password: userForm.password }))
     } else if (dialogMode === 'edit') {
       if (!editingUserId) throw new Error('No user selected')
-      const user = await runStepUp(() => updateCmsUser(editingUserId, {
+      await runStepUp(() => updateCmsUser(editingUserId, {
         email: userForm.email,
         displayName: userForm.displayName,
         roleId: userForm.roleId,
         status: userForm.status,
         ...(userForm.password ? { password: userForm.password } : {}),
       }))
-      setUsers((current) => current.map((candidate) => candidate.id === user.id ? user : candidate))
     } else {
-      const user = await runStepUp(() => createCmsUser({
+      await runStepUp(() => createCmsUser({
         email: userForm.email,
         displayName: userForm.displayName,
         password: userForm.password,
         roleId: userForm.roleId,
       }))
-      setUsers((current) => [...current, user])
     }
     closeDialog()
     void refresh()
@@ -104,7 +104,6 @@ async function toggleUserStatus(
   userId: string,
   currentStatus: string,
   runStepUp: <T>(action: () => Promise<T>) => Promise<T>,
-  setUsers: (updater: (current: CmsCurrentUser[]) => CmsCurrentUser[]) => void,
   refresh: () => void,
   setBusy: (busy: boolean) => void,
   setError: (error: string | null) => void,
@@ -112,10 +111,9 @@ async function toggleUserStatus(
   setBusy(true)
   setError(null)
   try {
-    const updated = await runStepUp(() => updateCmsUser(userId, {
+    await runStepUp(() => updateCmsUser(userId, {
       status: currentStatus === 'active' ? 'suspended' : 'active',
     }))
-    setUsers((current) => current.map((candidate) => candidate.id === updated.id ? updated : candidate))
     void refresh()
   } catch (err) {
     if (err instanceof Error && err.message === StepUpCancelledMessage) return
@@ -128,7 +126,6 @@ async function toggleUserStatus(
 async function deleteUser(
   userId: string,
   runStepUp: <T>(action: () => Promise<T>) => Promise<T>,
-  setUsers: (updater: (current: CmsCurrentUser[]) => CmsCurrentUser[]) => void,
   refresh: () => void,
   setBusy: (busy: boolean) => void,
   setError: (error: string | null) => void,
@@ -137,7 +134,6 @@ async function deleteUser(
   setError(null)
   try {
     await runStepUp(() => deleteCmsUser(userId))
-    setUsers((current) => current.filter((candidate) => candidate.id !== userId))
     void refresh()
   } catch (err) {
     if (err instanceof Error && err.message === StepUpCancelledMessage) return
@@ -148,7 +144,7 @@ async function deleteUser(
 }
 
 export function UsersTab({ data, canManageUsers }: UsersTabProps) {
-  const { users, roles, defaultAssignableRoleId, setUsers, setError, refresh, error } = data
+  const { roles, defaultAssignableRoleId, setError, error } = data
   const { runStepUp } = useStepUp()
   const confirmDelete = useConfirmDelete()
   const [busy, setBusy] = useState(false)
@@ -161,10 +157,11 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
 
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const query = search.trim().toLowerCase()
-  const visible = users.filter((user) => [user.displayName, user.email].some((value) => value.toLowerCase().includes(query)))
-  const selected = visible.find((user) => user.id === selectedId)
-  const accounts = visible.map((user) => ({
+  const query = useDebouncedValue(search.trim(), 250)
+  const list = useDirectoryPage(query, (offset, signal) => listCmsUsers({ offset, search: query, signal }), 'Could not load users')
+  const users = list.data?.users ?? []
+  const selected = users.find((user) => user.id === selectedId)
+  const accounts = users.map((user) => ({
     id: user.id,
     name: userDisplayLabel(user),
     email: user.email,
@@ -249,12 +246,12 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
       setError('Password must be at least 12 characters')
       return
     }
-    await saveUser(dialogMode, editingUserId, userForm, runStepUp, setUsers, closeDialog, refresh, setBusy, setError)
+    await saveUser(dialogMode, editingUserId, userForm, runStepUp, closeDialog, list.refresh, setBusy, setError)
   }
 
   async function toggleStatus(user: CmsCurrentUser) {
     if (!canManageUsers || isOwnerUser(user)) return
-    await toggleUserStatus(user.id, user.status, runStepUp, setUsers, refresh, setBusy, setError)
+    await toggleUserStatus(user.id, user.status, runStepUp, list.refresh, setBusy, setError)
   }
 
   function remove(user: CmsCurrentUser) {
@@ -264,17 +261,14 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
       description: 'This user will lose access to the CMS and their current sessions will end.',
       confirmLabel: 'Delete user',
       alwaysConfirm: true,
-      commit: () => void deleteUser(user.id, runStepUp, setUsers, refresh, setBusy, setError),
+      commit: () => void deleteUser(user.id, runStepUp, list.refresh, setBusy, setError),
     })
   }
 
   return (
     <section className={styles.section} aria-labelledby="all-users-title">
       <div className={styles.sectionHeader}>
-        <div>
-          <h1 id="all-users-title">Admin users</h1>
-          <p>People who can sign in to the CMS.</p>
-        </div>
+        <h1 id="all-users-title">Admin users</h1>
         {canManageUsers && (
           <Button type="button" variant="primary" size="md" onClick={openCreate}>
             <PlusIcon size={14} aria-hidden="true" />
@@ -282,12 +276,14 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
           </Button>
         )}
       </div>
+      {list.error && <p className={styles.error} role="alert">{list.error}</p>}
       <AccountDirectory
         kind="User"
         accounts={accounts}
         selectedId={selectedId}
         onSelect={setSelectedId}
-        loading={data.loading}
+        loading={list.loading && !list.data}
+        pagination={list.pagination}
         toolbar={<SearchBar className={directory.search} value={search} onValueChange={setSearch} onClear={() => setSearch('')}
           placeholder="Search name or email" aria-label="Search name or email" />}
         empty={<EmptyState variant="centered" icon={<UsersSolidIcon size={28} />}

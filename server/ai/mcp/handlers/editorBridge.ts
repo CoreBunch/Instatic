@@ -12,7 +12,7 @@
  */
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
 import type { CoreCapability } from '@core/capabilities'
-import { jsonResponse } from '../../../http'
+import { badRequest, jsonResponse, readValidatedBody } from '../../../http'
 import {
   requireAuthenticatedUser,
   userHasAnyCapability,
@@ -22,10 +22,12 @@ import type { DbClient } from '../../../db/client'
 import { resolveBranchScope } from '../../../branches/scope'
 import {
   createEditorBridgeStream,
+  renewEditorBridge,
   type EditorBridgeScope,
 } from '../editorBridge'
 
 const PATH = '/admin/api/ai/editor-bridge'
+const RenewalSchema = Type.Object({ bridgeId: Type.String({ minLength: 1 }) })
 const EditorBridgeScopeSchema = Type.Union([
   Type.Literal('site'),
   Type.Literal('content'),
@@ -52,16 +54,17 @@ export function tryHandleAiEditorBridge(
 }
 
 async function handle(req: Request, db: DbClient): Promise<Response> {
-  if (req.method !== 'GET') {
+  if (req.method !== 'GET' && req.method !== 'POST') {
     return jsonResponse({ error: 'Method not allowed' }, { status: 405 })
   }
 
   const userOrResponse = await requireAuthenticatedUser(req, db)
   if (userOrResponse instanceof Response) return userOrResponse
 
+  const query = new URL(req.url).searchParams
   const scopeResult = safeParseValue(
     EditorBridgeScopeSchema,
-    new URL(req.url).searchParams.get('scope'),
+    query.get('scope'),
   )
   if (!scopeResult.ok) {
     return jsonResponse(
@@ -80,12 +83,22 @@ async function handle(req: Request, db: DbClient): Promise<Response> {
     return jsonResponse({ error: 'Forbidden' }, { status: 403 })
   }
 
+  if (req.method === 'POST') {
+    const body = await readValidatedBody(req, RenewalSchema)
+    if (!body) return badRequest('Invalid bridge renewal.')
+    if (!renewEditorBridge(userOrResponse.id, scope, body.bridgeId)) {
+      return jsonResponse({ error: 'Workspace bridge closed.' }, { status: 404 })
+    }
+    return jsonResponse({ ok: true })
+  }
+
   // The workspace's branch (the tab's header): browser tools act in it, so
   // the ownership pre-check on a content tool must read the row there.
   const branch = await resolveBranchScope(req, db)
   if (branch instanceof Response) return branch
 
   const stream = createEditorBridgeStream(userOrResponse.id, scope, req.signal, { branchId: branch.branchId })
+  if (!stream) return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } })
   return new Response(stream, {
     status: 200,
     headers: {

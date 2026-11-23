@@ -134,14 +134,11 @@ export function MemberAppsDialog({
   canManage,
   approvalPageLive,
   onClose,
-  onChanged,
 }: {
   canManage: boolean
   /** Whether Member settings names a published "Approve an app" page. */
   approvalPageLive: boolean
   onClose: () => void
-  /** Called after an app is added or removed, so the Audit tab shows it. */
-  onChanged: () => void
 }) {
   const { runStepUp } = useStepUp()
   const registry = useAsyncResource((signal) => listCmsMemberApps(signal), [], { fallbackError: 'Could not load the apps.' })
@@ -164,7 +161,6 @@ export function MemberAppsDialog({
     try {
       await runStepUp(action)
       registry.refresh()
-      onChanged()
       pushToast({ kind: 'success', title: done })
       return true
     } catch (err) {

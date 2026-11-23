@@ -41,7 +41,7 @@
     align-items: center;
     gap: var(--space-s);
     padding: var(--space-m) var(--space-2xl);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
     font-size: var(--text-s);
     font-weight: 600;
     color: var(--text);
@@ -69,7 +69,7 @@
 .subtleHint {
     padding: var(--space-m) var(--space-2xl);
     margin: 0;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--divider);
     font-size: var(--text-xs);
     line-height: 1.45;
     color: var(--text-subtle);
@@ -111,7 +111,7 @@
     content: '';
     flex: 1;
     height: 1px;
-    background: var(--border);
+    background: var(--divider);
 }
 
 .fieldGroupHeaderText {

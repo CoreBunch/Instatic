@@ -14,14 +14,14 @@ import { useCurrentAdminUser } from '@admin/sessionContext'
 import { ContentModeToggle } from '@admin/pages/content/components/ContentModeToggle/ContentModeToggle'
 import { TiptapBodyEditor, type TiptapBodyEditorHandle } from '@admin/pages/content/TiptapBodyEditor'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
-import { SettingsListSection } from '@admin/shared/SettingsWorkspace/SettingsListSection'
+import { TemplateNavigation } from './TemplateNavigation'
+import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
 import ws from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
 import { Button } from '@ui/components/Button'
 import { ContextMenu, ContextMenuItem } from '@ui/components/ContextMenu'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { pushToast } from '@ui/components/Toast'
-import { ArrowRightIcon } from 'pixel-art-icons/icons/arrow-right'
 import { BracesIcon } from 'pixel-art-icons/icons/braces'
 import { FileTextSolidIcon } from 'pixel-art-icons/icons/file-text-solid'
 import { SendSolidIcon } from 'pixel-art-icons/icons/send-solid'
@@ -60,55 +60,14 @@ export function TemplatesTab({ initialKey }: { initialKey: string | null }) {
 
   const templates = (data ?? []).map((template) => updated[template.key] ?? template)
   const selected = templates.find((template) => template.key === selectedKey) ?? templates[0]
-  const groups = [...new Set(templates.map((template) => template.group))]
 
   return (
-    <section className={ws.settingsWorkspace} aria-labelledby="templates-heading">
-      <aside className={ws.settingsBrowser} aria-label="Template browser">
-        <div className={ws.settingsBrowserHeader}>
-          <h2 id="templates-heading">Templates</h2>
-        </div>
-        {error && <p role="alert" className={ws.settingsBrowserError}>{error}</p>}
-        {loading && templates.length === 0 && <p className={ws.settingsBrowserEmpty}>Loading templates…</p>}
-
-        <div className={ws.settingsBrowserSections}>
-          {groups.map((group) => (
-            <SettingsListSection key={group} label={group}>
-              {templates.filter((template) => template.group === group).map((template) => {
-                const active = selected?.key === template.key
-                return (
-                  <Button
-                    key={template.key}
-                    type="button"
-                    variant="ghost"
-                    size="md"
-                    fullWidth
-                    active={active}
-                    align="start"
-                    className={ws.settingsListItem}
-                    onClick={() => setSelectedKey(template.key)}
-                    aria-current={active ? 'true' : undefined}
-                  >
-                    <span className={ws.providerMark} data-size="sm" aria-hidden="true">
-                      <FileTextSolidIcon size={14} />
-                    </span>
-                    <span className={ws.settingsListIdentity}>
-                      <span className={ws.settingsListLabel}>{template.label}</span>
-                      {template.customised && (
-                        <span className={ws.settingsListMeta}>{template.wordingProblem ? 'Not used' : 'Edited'}</span>
-                      )}
-                    </span>
-                    {!active && <ArrowRightIcon size={13} aria-hidden="true" />}
-                  </Button>
-                )
-              })}
-            </SettingsListSection>
-          ))}
-        </div>
-      </aside>
-
-      <div className={ws.settingsDetailCanvas}>
-        {selected && (
+    <WorkspaceSection title="Templates">
+      {error && <p role="alert" className={ws.errorAlert}>{error}</p>}
+      {loading && templates.length === 0 && <p className={ws.emptyState}>Loading templates…</p>}
+      {selected && (
+        <div className={styles.templatesLayout}>
+          <TemplateNavigation templates={templates} selectedKey={selected.key} onSelect={setSelectedKey} />
           <TemplateEditor
             key={`${selected.key}:${selected.customised}:${selected.subject.length}:${selected.body.length}`}
             template={selected}
@@ -117,9 +76,9 @@ export function TemplatesTab({ initialKey }: { initialKey: string | null }) {
               refresh()
             }}
           />
-        )}
-      </div>
-    </section>
+        </div>
+      )}
+    </WorkspaceSection>
   )
 }
 
@@ -251,7 +210,7 @@ function TemplateEditor({
   )
 
   return (
-    <article className={ws.credentialDetail} aria-labelledby="template-detail-title">
+    <article className={styles.templateEditor} aria-labelledby="template-detail-title">
       <header className={ws.credentialDetailHeader}>
         <div className={ws.credentialDetailIdentity}>
           <span className={ws.providerMark} data-size="lg" aria-hidden="true">

@@ -25,7 +25,7 @@
     align-items: center;
     gap: var(--space-s);
     padding: var(--space-xs) var(--space-2xs) var(--space-s) var(--space-s);
-    border-bottom: 1px solid var(--overlay-10);
+    border-bottom: 1px solid var(--divider);
     color: var(--text-subtle);
 }
 
@@ -70,7 +70,7 @@
 .branchRows {
     margin-inline-start: var(--space-m);
     padding-inline-start: var(--space-4xs);
-    border-inline-start: 1px solid var(--overlay-10);
+    border-inline-start: 1px solid var(--divider);
 }
 
 .treeRows.collapsedBranch {

@@ -43,7 +43,7 @@ async function addOllamaCredential(
   await page.getByLabel('Base URL').fill(baseUrl)
   await page.getByRole('button', { name: 'Connect Ollama' }).click()
 
-  // Success lands the new credential in the browser sidebar list.
+  // Success lands the new credential in the credential list.
   await expect(
     page.getByRole('button', { name: new RegExp(escapeRegExp(label)) }),
   ).toBeVisible({ timeout: 20_000 })
@@ -184,10 +184,10 @@ test.describe('AI settings', () => {
     const label = `E2E Ollama ${suffix}`
 
     await page.goto('/admin/ai')
-    await expect(page.getByRole('heading', { name: 'AI', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Providers', level: 1 })).toBeVisible()
     await expect(page.getByTestId('ai-nav-providers')).toHaveAttribute(
-      'aria-current',
-      'page',
+      'aria-selected',
+      'true',
     )
 
     await test.step('create an Ollama base URL credential', async () => {
@@ -217,7 +217,7 @@ test.describe('AI settings', () => {
     const label = `E2E Defaults Ollama ${suffix}`
 
     await page.goto('/admin/ai')
-    await expect(page.getByRole('heading', { name: 'AI', exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Providers', level: 1 })).toBeVisible()
 
     await test.step('create a credential for the defaults picker', async () => {
       await addOfflineOllamaCredential(page, label)
@@ -244,7 +244,7 @@ test.describe('AI settings', () => {
 
     await test.step('reload and verify the saved default resolves', async () => {
       await page.reload()
-      await expect(page.getByRole('heading', { name: 'AI', exact: true })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Providers', level: 1 })).toBeVisible()
       await page.getByTestId('ai-nav-defaults').click()
       await page.getByRole('button', { name: /^Data\b/ }).click()
       await expect(page.getByRole('button', { name: 'Model for Data' })).toContainText(
@@ -274,7 +274,7 @@ test.describe('AI settings', () => {
     try {
       await test.step('create a live local credential for chat', async () => {
         await page.goto('/admin/ai')
-        await expect(page.getByRole('heading', { name: 'AI', exact: true })).toBeVisible()
+        await expect(page.getByRole('heading', { name: 'Providers', level: 1 })).toBeVisible()
         await addOllamaCredential(page, label, fakeOllama.baseUrl)
         await expect(page.getByRole('heading', { name: label })).toBeVisible({ timeout: 20_000 })
         await expect.poll(() => fakeOllama.requests.tags).toBeGreaterThan(0)
@@ -356,7 +356,7 @@ test.describe('AI settings', () => {
     try {
       await test.step('create a live local credential for the tool loop', async () => {
         await page.goto('/admin/ai')
-        await expect(page.getByRole('heading', { name: 'AI', exact: true })).toBeVisible()
+        await expect(page.getByRole('heading', { name: 'Providers', level: 1 })).toBeVisible()
         await addOllamaCredential(page, label, fakeOllama.baseUrl)
         await expect(page.getByRole('heading', { name: label })).toBeVisible({ timeout: 20_000 })
         await expect.poll(() => fakeOllama.requests.tags).toBeGreaterThan(0)
@@ -435,7 +435,7 @@ test.describe('AI settings', () => {
     try {
       await test.step('create a live local credential for the conversation', async () => {
         await page.goto('/admin/ai')
-        await expect(page.getByRole('heading', { name: 'AI', exact: true })).toBeVisible()
+        await expect(page.getByRole('heading', { name: 'Providers', level: 1 })).toBeVisible()
         await addOllamaCredential(page, label, fakeOllama.baseUrl)
         await expect(page.getByRole('heading', { name: label })).toBeVisible({ timeout: 20_000 })
         await expect.poll(() => fakeOllama.requests.tags).toBeGreaterThan(0)

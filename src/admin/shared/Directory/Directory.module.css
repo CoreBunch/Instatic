@@ -1,3 +1,11 @@
+.workspace {
+    display: grid;
+    gap: var(--space-6xl);
+    max-width: 1220px;
+    margin-inline: auto;
+    min-width: 0;
+}
+
 .directory, .list, .inspector, .section {
     display: grid;
     min-width: 0;
@@ -10,8 +18,10 @@
     gap: var(--space-4xl);
 }
 
-.directory[data-split="true"] {
-    grid-template-columns: minmax(0, 1fr) minmax(320px, 32%);
+@media (min-width: 901px) {
+    .directory[data-split="true"] {
+        grid-template-columns: minmax(0, 1fr) minmax(320px, 32%);
+    }
 }
 
 .list {
@@ -33,6 +43,16 @@
     --input-radius: calc(var(--control-height) / 2);
     --segment-track-radius: var(--input-radius);
     --segment-radius: var(--radius-pill);
+}
+
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: var(--space-l);
+    color: var(--text-muted);
+    font-size: var(--text-s);
+    font-variant-numeric: tabular-nums;
 }
 
 .search {
@@ -166,7 +186,9 @@
 }
 
 .status[data-status="pending"]::before { background: var(--warning); }
-.status[data-status="suspended"]::before { background: var(--danger); }
+.status[data-tone="neutral"]::before { background: var(--text-subtle); }
+.status[data-tone="warning"]::before { background: var(--warning); }
+.status[data-tone="danger"]::before, .status[data-status="suspended"]::before { background: var(--danger); }
 
 .inspector {
     position: sticky;

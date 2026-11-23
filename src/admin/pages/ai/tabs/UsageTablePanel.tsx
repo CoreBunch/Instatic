@@ -12,6 +12,7 @@
 
 import type { ReactNode } from 'react'
 import { cn } from '@ui/cn'
+import audit from '@admin/shared/AuditTable/AuditTable.module.css'
 import styles from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
 
 export type UsageTableColumn<TRow> = {
@@ -46,39 +47,41 @@ export function UsageTablePanel<TRow>({
         <h3 className={styles.auditPanelTitle}>{title}</h3>
         <span className={styles.auditPanelHint}>{hint}</span>
       </div>
-      <table className={styles.auditTable}>
-        <thead>
-          <tr>
-            {columns.map((col) => (
-              <th key={col.header} className={col.numeric ? styles.numeric : undefined}>
-                {col.header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
+      <div className={styles.auditTableScroll}>
+        <table className={cn(audit.table, styles.auditTable)}>
+          <thead>
             <tr>
-              <td colSpan={columns.length} className={styles.auditEmptyRow}>
-                {emptyLabel}
-              </td>
+              {columns.map((col) => (
+                <th key={col.header} className={col.numeric ? styles.numeric : undefined}>
+                  {col.header}
+                </th>
+              ))}
             </tr>
-          ) : (
-            rows.map((row) => (
-              <tr key={rowKey(row)}>
-                {columns.map((col) => (
-                  <td
-                    key={col.header}
-                    className={cn(col.numeric && styles.numeric, col.cellClassName) || undefined}
-                  >
-                    {col.cell(row)}
-                  </td>
-                ))}
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className={styles.auditEmptyRow}>
+                  {emptyLabel}
+                </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : (
+              rows.map((row) => (
+                <tr key={rowKey(row)}>
+                  {columns.map((col) => (
+                    <td
+                      key={col.header}
+                      className={cn(col.numeric && styles.numeric, col.cellClassName) || undefined}
+                    >
+                      {col.cell(row)}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

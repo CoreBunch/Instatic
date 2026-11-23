@@ -1,3 +1,4 @@
+import { BRANCH_HEADER } from '@core/branches'
 import { reconcileSiteExplorerOrganization, type SiteDocument, type SiteShell } from '@core/page-tree'
 import type {
   IPersistenceAdapter,
@@ -110,7 +111,10 @@ export class CmsAdapter implements IPersistenceAdapter {
     const res = await this.fetchImpl(`${this.basePath}/site-document`, {
       method: 'PUT',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(opts.branchId ? { [BRANCH_HEADER]: opts.branchId } : {}),
+      },
       body: JSON.stringify(body),
     })
     if (res.status === 409) {

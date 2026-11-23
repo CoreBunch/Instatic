@@ -1,15 +1,4 @@
-/**
- * Audit-event labelling helpers.
- *
- * The CMS persists audit events with raw IDs (`actorUserId`, `targetId`) and
- * a small `metadata` bag. The Users → Audit tab needs to enrich these with
- * the *current* display name of the related user/role, falling back to the
- * snapshot label captured at write time when the related row no longer
- * exists. These helpers do that enrichment, plus the per-action
- * sentence-case title rendering.
- */
 import type { CmsAuditEvent, CmsCurrentUser, CmsRole } from '@core/persistence'
-import { userDisplayLabel } from '@core/users/displayName'
 import { statusLabel } from './format'
 
 function metadataString(metadata: Record<string, unknown>, key: string): string | null {
@@ -46,23 +35,8 @@ function aiScopeLabel(event: CmsAuditEvent): string {
   return metadataString(event.metadata, 'scope') ?? event.targetId ?? 'scope'
 }
 
-function auditUserLabel(
-  userId: string | null,
-  usersById: Map<string, CmsCurrentUser>,
-  fallback: string | null,
-): string | null {
-  if (!userId) return fallback
-  const user = usersById.get(userId)
-  return user ? userDisplayLabel(user) : fallback ?? userId
-}
-
-export function auditActor(event: CmsAuditEvent, usersById: Map<string, CmsCurrentUser>): string {
-  if (!event.actorUserId) return 'by system'
-  return `by ${auditUserLabel(event.actorUserId, usersById, event.actorLabel)}`
-}
-
-function auditTargetUser(event: CmsAuditEvent, usersById: Map<string, CmsCurrentUser>): string {
-  return auditUserLabel(event.targetId, usersById, event.targetLabel) ?? 'Unknown user'
+export function auditActor(event: CmsAuditEvent): string {
+  return event.actorUserId ? `by ${event.actorLabel ?? event.actorUserId}` : 'by system'
 }
 
 function roleName(
@@ -85,10 +59,9 @@ function auditTargetRole(event: CmsAuditEvent, rolesById: Map<string, CmsRole>):
 
 export function auditTitle(
   event: CmsAuditEvent,
-  usersById: Map<string, CmsCurrentUser>,
   rolesById: Map<string, CmsRole>,
 ): string {
-  const targetUser = auditTargetUser(event, usersById)
+  const targetUser = event.targetLabel ?? event.targetId ?? 'Unknown user'
   const role = auditTargetRole(event, rolesById)
   const email = metadataString(event.metadata, 'email')
   const member = email ?? 'unknown'
@@ -100,7 +73,7 @@ export function auditTitle(
 
   switch (event.action) {
     case 'login.success':
-      return `${event.actorUserId ? auditUserLabel(event.actorUserId, usersById, event.actorLabel) : email ?? 'User'} logged in`
+      return `${event.actorUserId ? (event.actorLabel ?? event.actorUserId) : email ?? 'User'} logged in`
     case 'login.failure':
       return `Failed login for ${email ?? targetUser}`
     case 'login.locked':
@@ -110,7 +83,7 @@ export function auditTitle(
     case 'login.rate_limited':
       return email ? `Login rate limit hit for ${email}` : 'Login rate limit hit'
     case 'logout':
-      return `${event.actorUserId ? auditUserLabel(event.actorUserId, usersById, event.actorLabel) : 'User'} logged out`
+      return `${event.actorUserId ? (event.actorLabel ?? event.actorUserId) : 'User'} logged out`
     case 'user.create':
       return `${targetUser} was created`
     case 'user.update':

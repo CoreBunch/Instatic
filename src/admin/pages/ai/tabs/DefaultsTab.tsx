@@ -4,7 +4,6 @@ import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { Button } from '@ui/components/Button'
 import { pushToast } from '@ui/components/Toast'
 import { ModelPicker, type ModelChoice } from '@admin/ai/ModelPicker'
-import { ArrowRightIcon } from 'pixel-art-icons/icons/arrow-right'
 import { CloseIcon } from 'pixel-art-icons/icons/close'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
@@ -20,7 +19,9 @@ import {
   listDefaults,
   setDefault,
 } from '../../../ai/api'
-import { SettingsListSection } from '@admin/shared/SettingsWorkspace/SettingsListSection'
+import { WorkspaceChoice, WorkspaceChoices } from '@admin/shared/SettingsWorkspace/WorkspaceChoices'
+import layout from '@admin/shared/SettingsWorkspace/WorkspaceSection.module.css'
+import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
 import { ProviderMark } from '../ProviderMark'
 import styles from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
 
@@ -109,49 +110,28 @@ export function DefaultsTab({
   }
 
   return (
-    <section className={styles.settingsWorkspace} aria-labelledby="defaults-heading">
-      <aside className={styles.settingsBrowser} aria-label="Default model settings">
-        <div className={styles.settingsBrowserHeader}>
-          <h2 id="defaults-heading">Defaults</h2>
-        </div>
+    <WorkspaceSection title="Defaults">
+      <WorkspaceChoices title="Model routing">
+        {SCOPES.map((scope) => {
+          const meta = SCOPE_META[scope]
+          const Icon = meta.icon
+          const active = selectedScope === scope
+          return (
+            <WorkspaceChoice
+              key={scope}
+              icon={<span className={styles.settingsItemIcon} aria-hidden="true">
+                <Icon size={16} />
+              </span>}
+              label={meta.label}
+              description={defaults[scope]?.modelId ?? 'Not configured'}
+              active={active}
+              onSelect={() => setSelectedScope(scope)}
+            />
+          )
+        })}
+      </WorkspaceChoices>
 
-        <div className={styles.settingsBrowserSections}>
-          <SettingsListSection label="Model routing">
-            {SCOPES.map((scope) => {
-              const meta = SCOPE_META[scope]
-              const Icon = meta.icon
-              const active = selectedScope === scope
-              return (
-                <Button
-                  key={scope}
-                  type="button"
-                  variant="ghost"
-                  size="md"
-                  fullWidth
-                  active={active}
-                  align="start"
-                  className={styles.settingsListItem}
-                  onClick={() => setSelectedScope(scope)}
-                  aria-current={active ? 'true' : undefined}
-                >
-                  <span className={styles.settingsItemIcon} aria-hidden="true">
-                    <Icon size={16} />
-                  </span>
-                  <span className={styles.settingsListIdentity}>
-                    <span className={styles.settingsListLabel}>{meta.label}</span>
-                    <span className={styles.settingsListMeta}>
-                      {defaults[scope]?.modelId ?? 'Not configured'}
-                    </span>
-                  </span>
-                  {!active && <ArrowRightIcon size={13} aria-hidden="true" />}
-                </Button>
-              )
-            })}
-          </SettingsListSection>
-        </div>
-      </aside>
-
-      <div className={styles.settingsDetailCanvas}>
+      <div className={layout.detailCard}>
         {loading ? (
           <div className={styles.emptyState}>Loading defaults…</div>
         ) : error ? (
@@ -170,7 +150,7 @@ export function DefaultsTab({
           />
         )}
       </div>
-    </section>
+    </WorkspaceSection>
   )
 }
 
@@ -217,7 +197,6 @@ function ScopeDetail({
           <Icon size={22} />
         </span>
         <div className={styles.settingsDetailIdentity}>
-          <span className={styles.detailEyebrow}>Model routing</span>
           <h2 id="default-scope-title">{meta.label}</h2>
           <p>{meta.description}</p>
         </div>

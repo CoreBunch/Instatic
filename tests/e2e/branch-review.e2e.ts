@@ -130,7 +130,7 @@ test('owner prepares a branch and an editor without merge rights', async ({ page
     body: { email: EDITOR.email, displayName: EDITOR.name, password: EDITOR.password, roleId },
   })
   if (user.status !== 201) {
-    const users = await api<{ users: Array<{ id: string; email: string }> }>(page, '/admin/api/cms/users')
+    const users = await api<{ users: Array<{ id: string; email: string }> }>(page, `/admin/api/cms/users?q=${encodeURIComponent(EDITOR.email)}`)
     const existing = users.body.users.find((entry) => entry.email === EDITOR.email)
     expect(existing, `user create answered ${user.status}: ${JSON.stringify(user.body)}`).toBeDefined()
     const patched = await api(page, `/admin/api/cms/users/${existing!.id}`, { method: 'PATCH', body: { roleId } })

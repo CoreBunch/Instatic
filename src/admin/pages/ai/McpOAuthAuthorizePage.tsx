@@ -3,7 +3,7 @@ import { AdminPageLayout } from '@admin/layouts/AdminPageLayout'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useLocation, useNavigate } from '@admin/lib/routing'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
-import { CapabilityPicker } from '@admin/shared/CapabilityPicker'
+import { CapabilityGroups, CapabilitySelectionSummary } from '@admin/shared/CapabilityPicker'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { Button } from '@ui/components/Button'
 import { pushToast } from '@ui/components/Toast'
@@ -63,11 +63,34 @@ export function McpOAuthAuthorizePage() {
   return (
     <AdminPageLayout
       workspace="ai"
-      title="Authorize MCP connection"
-      titleId="mcp-oauth-title"
-      description="Review the client and choose exactly what it may do in this Instatic instance."
+      mode="workspace"
+      footer={data && (
+        <footer className={styles.footer} aria-label="Connection authorization">
+          <div className={styles.footerContent}>
+            <CapabilitySelectionSummary groups={groups} selected={selected} onChange={setSelected} />
+            <div className={styles.actions}>
+              <Button type="button" variant="secondary" size="sm" onClick={() => void decide('deny')} disabled={busy}>
+                <span>Deny</span>
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                onClick={() => void decide('approve')}
+                disabled={busy || selected.size === 0}
+              >
+                <span>{busy ? 'Authorizing…' : 'Authorize connection'}</span>
+              </Button>
+            </div>
+          </div>
+        </footer>
+      )}
     >
       <div className={styles.pageBody}>
+        <header className={styles.heading}>
+          <h1>Authorize MCP connection</h1>
+          <p>Review the client and choose what it can access.</p>
+        </header>
         {loading && <div className={styles.stateCard}>Loading authorization request…</div>}
         {error && (
           <div className={styles.stateCard} role="alert">
@@ -85,7 +108,7 @@ export function McpOAuthAuthorizePage() {
                 <span className={styles.eyebrow}>Requesting client</span>
                 <h2 id="oauth-client-name">{data.clientName}</h2>
                 <p>
-                  After approval, Instatic sends a one-time authorization code to this registered callback:
+                  After approval, Instatic sends a one-time authorization code to this registered callback.
                 </p>
               </div>
               <code>{data.callbackUrl}</code>
@@ -93,36 +116,20 @@ export function McpOAuthAuthorizePage() {
                 Client names are self-declared. Approve only if you started this connection and
                 recognize the callback address above.
               </p>
-              <p className={styles.expiryNote}>
+              <p>
                 The connection expires after {data.grantExpiresInDays} days and can be disconnected at any time.
               </p>
             </section>
 
-            <section className={styles.permissionsCard} aria-labelledby="oauth-permissions-title">
+            <section className={styles.permissions} aria-labelledby="oauth-permissions-title">
               <div>
-                <span className={styles.eyebrow}>Permissions</span>
-                <h2 id="oauth-permissions-title">Choose allowed capabilities</h2>
+                <h2 id="oauth-permissions-title">Permissions</h2>
                 <p>
                   Read access is selected by default. Writes and publishing stay off until you explicitly enable them.
                 </p>
               </div>
-              <CapabilityPicker groups={groups} selected={selected} onChange={setSelected} />
+              <CapabilityGroups groups={groups} selected={selected} onChange={setSelected} />
             </section>
-
-            <div className={styles.actions}>
-              <Button type="button" variant="secondary" size="sm" onClick={() => void decide('deny')} disabled={busy}>
-                <span>Deny</span>
-              </Button>
-              <Button
-                type="button"
-                variant="primary"
-                size="sm"
-                onClick={() => void decide('approve')}
-                disabled={busy || selected.size === 0}
-              >
-                <span>{busy ? 'Authorizing…' : 'Authorize connection'}</span>
-              </Button>
-            </div>
           </>
         )}
       </div>

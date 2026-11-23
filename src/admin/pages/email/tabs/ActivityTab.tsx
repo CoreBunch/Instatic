@@ -1,16 +1,21 @@
 /**
  * Activity: what happened to every email the site tried to send.
  *
- * Top to bottom: the period's numbers and its volume chart, then the filters,
- * then the log itself as a list with the selected email's details beside it.
+ * The directory opens a delivery inspector on selection. The optional overview
+ * shows the period's numbers and volume chart.
  * The numbers describe the whole period; the filters only narrow the list.
  */
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
+import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
 import ws from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
-import { RangeTabs } from '@ui/components/RangeTabs'
+import { SegmentedControl } from '@ui/components/SegmentedControl'
+import { DataTable, DataTableHead, DataTableHeader, DataTableRow, DataTableCell, DataTableBody } from '@ui/components/DataTable'
+import { DirectoryInspector } from '@admin/shared/Directory/DirectoryInspector'
+import directory from '@admin/shared/Directory/Directory.module.css'
+import { ChartSolidIcon } from 'pixel-art-icons/icons/chart-solid'
 import { SearchBar } from '@ui/components/SearchBar'
 import { Select } from '@ui/components/Select'
 import { pushToast } from '@ui/components/Toast'
@@ -30,11 +35,11 @@ import { MailSolidIcon } from 'pixel-art-icons/icons/mail-solid'
 
 type StatusFilter = 'all' | MailActivityStatus
 
-const PERIOD_OPTIONS: ReadonlyArray<{ value: MailActivityPeriod; label: string }> = [
-  { value: '24h', label: '24 hours' },
-  { value: '7d', label: '7 days' },
-  { value: '30d', label: '30 days' },
-  { value: 'all', label: 'All' },
+const PERIOD_OPTIONS: Array<{ value: MailActivityPeriod; label: string }> = [
+  { value: '24h', label: 'Last 24 hours' },
+  { value: '7d', label: 'Last 7 days' },
+  { value: '30d', label: 'Last 30 days' },
+  { value: 'all', label: 'All time' },
 ]
 
 const PERIOD_PHRASE: Record<MailActivityPeriod, string> = {
@@ -114,6 +119,10 @@ export function ActivityTab({
   onOpenConnectors: () => void
   onOpenTemplate: (key: string) => void
 }) {
+  const panelId = useId()
+  const overviewId = useId()
+  const selectedRow = useRef<HTMLButtonElement>(null)
+  const [overviewOpen, setOverviewOpen] = useState(false)
   const [period, setPeriod] = useState<MailActivityPeriod>('30d')
   const [status, setStatus] = useState<StatusFilter>('all')
   const [kind, setKind] = useState(ALL)
@@ -121,8 +130,8 @@ export function ActivityTab({
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  // Pages read with "Show more", kept only while the filters they were read for still apply.
-  const [more, setMore] = useState<{ key: string; entries: MailActivityEntry[]; nextCursor: string | null } | null>(null)
+  // A refreshed first page can have a different cursor even with identical filters.
+  const [more, setMore] = useState<{ firstPage: MailActivityResponse; entries: MailActivityEntry[]; nextCursor: string | null } | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
 
   useEffect(() => {
@@ -138,16 +147,17 @@ export function ActivityTab({
     search,
   }
   const queryKey = JSON.stringify(query)
-  const { data, loading, error, refresh } = useAsyncResource(
-    (signal) => getCmsMailActivity(query, signal),
+  const { data: result, loading, error, refresh } = useAsyncResource(
+    async (signal) => ({ key: queryKey, period, firstPage: await getCmsMailActivity(query, signal) }),
     [queryKey],
     { fallbackError: 'Could not load the activity.' },
   )
 
-  const extra = more?.key === queryKey ? more : null
+  const data = result?.firstPage
+  const extra = more?.firstPage === data ? more : null
   const entries = data ? [...data.entries, ...(extra?.entries ?? [])] : []
   const nextCursor = extra ? extra.nextCursor : (data?.nextCursor ?? null)
-  const selected = entries.find((entry) => entry.id === selectedId) ?? entries[0] ?? null
+  const selected = entries.find((entry) => entry.id === selectedId) ?? null
   const filtered = status !== 'all' || kind !== ALL || connector !== ALL || search.trim() !== ''
 
   function clearFilters() {
@@ -164,11 +174,11 @@ export function ActivityTab({
   }
 
   async function showMore() {
-    if (!nextCursor) return
+    if (!nextCursor || !data || result.key !== queryKey || loading || loadingMore) return
     setLoadingMore(true)
     try {
       const next = await getCmsMailActivity({ ...query, before: nextCursor })
-      setMore({ key: queryKey, entries: [...(extra?.entries ?? []), ...next.entries], nextCursor: next.nextCursor })
+      setMore({ firstPage: data, entries: [...(extra?.entries ?? []), ...next.entries], nextCursor: next.nextCursor })
     } catch (err) {
       console.error('[ActivityTab] loading more activity failed:', err)
       pushToast({ kind: 'error', title: 'Could not load more emails', body: getErrorMessage(err, 'Unknown activity error') })
@@ -178,160 +188,157 @@ export function ActivityTab({
   }
 
   return (
-    <section className={ws.section} aria-labelledby="email-activity-heading">
-      <div className={ws.sectionHeader}>
-        <div>
-          <h2 id="email-activity-heading">Activity</h2>
-          <p>Every email the site tried to send: who it went to, how it left, and what happened.</p>
+    <WorkspaceSection title="Email activity" actions={
+        <div className={styles.headerActions}>
+          <Select aria-label="Period" fieldSize="sm" value={period} options={PERIOD_OPTIONS}
+            onChange={(event) => {
+              const option = PERIOD_OPTIONS.find(({ value }) => value === event.currentTarget.value)
+              if (option) setPeriod(option.value)
+            }}
+          />
+          <Button variant="secondary" size="sm" aria-expanded={overviewOpen} aria-controls={overviewId}
+            onClick={() => setOverviewOpen(!overviewOpen)}>
+            <ChartSolidIcon size={14} aria-hidden="true" /> Overview
+          </Button>
+          <Button variant="ghost" size="sm" onClick={reload} tooltip="Refresh" aria-label="Refresh activity" iconOnly>
+            <ReloadIcon size={14} aria-hidden="true" />
+          </Button>
         </div>
-        <div>
-          <div className={styles.headerActions}>
-            <RangeTabs<MailActivityPeriod> value={period} options={PERIOD_OPTIONS} onChange={setPeriod} ariaLabel="Period" />
-            <Button type="button" variant="ghost" size="sm" onClick={reload} tooltip="Refresh" aria-label="Refresh activity" iconOnly>
-              <ReloadIcon size={14} aria-hidden="true" />
-            </Button>
-          </div>
-        </div>
-      </div>
+    }>
 
       {error && <p role="alert" className={ws.errorAlert}>{error}</p>}
       {loading && !data && <div className={ws.emptyState}>Loading…</div>}
 
       {data && (
         <>
-          <Summary data={data} period={period} capturing={capturing} onShowFailed={() => setStatus('failed')} onShowWaiting={() => setStatus('queued')} />
-
-          <div className={styles.filters}>
-            <SearchBar
-              className={styles.search}
-              value={searchInput}
-              onValueChange={setSearchInput}
-              onClear={() => setSearchInput('')}
-              placeholder="Search recipient or subject"
-              aria-label="Search recipient or subject"
-            />
-            <RangeTabs<StatusFilter>
-              value={status}
-              options={[
-                { value: 'all', label: 'All' },
-                ...(data.totals.queued > 0 || status === 'queued'
-                  ? [{ value: 'queued' as const, label: `Waiting ${data.totals.queued.toLocaleString()}` }]
-                  : []),
-                { value: 'sent', label: `Sent ${data.totals.sent.toLocaleString()}` },
-                { value: 'failed', label: `Failed ${data.totals.failed.toLocaleString()}` },
-                ...(data.totals.captured > 0 || status === 'captured'
-                  ? [{ value: 'captured' as const, label: `Captured ${data.totals.captured.toLocaleString()}` }]
-                  : []),
-              ]}
-              onChange={setStatus}
-              ariaLabel="Filter by status"
-            />
-            <div className={styles.filterSelect}>
-              <Select
-                aria-label="Filter by template"
-                fieldSize="sm"
-                value={kind}
-                options={[
-                  { value: ALL, label: 'All templates' },
-                  ...data.kinds.map((facet) => ({ value: facet.value, label: `${facet.label} (${facet.count})`, textValue: facet.label })),
-                ]}
-                onChange={(event) => setKind(event.currentTarget.value)}
-              />
-            </div>
-            {data.connectors.length > 0 && (
-              <div className={styles.filterSelect}>
-                <Select
-                  aria-label="Filter by connector"
-                  fieldSize="sm"
-                  value={connector}
-                  options={[
-                    { value: ALL, label: 'All connectors' },
-                    ...data.connectors.map((facet) => ({ value: facet.value, label: `${facet.label} (${facet.count})`, textValue: facet.label })),
-                  ]}
-                  onChange={(event) => setConnector(event.currentTarget.value)}
-                />
-              </div>
-            )}
+          <div id={overviewId} hidden={!overviewOpen}>
+            <Summary data={data} period={result.period} capturing={capturing} onShowFailed={() => setStatus('failed')} onShowWaiting={() => setStatus('queued')} />
+            <p className={styles.retention}>The log keeps the newest {data.retention.toLocaleString()} emails.</p>
           </div>
-
-          {entries.length === 0 ? (
-            <EmptyState
-              variant="centered"
-              icon={<MailSolidIcon size={28} />}
-              title={filtered ? 'No email matches these filters' : `No email ${PERIOD_PHRASE[period]}`}
-              description={
-                filtered
-                  ? 'Try another search, or clear the filters to see everything in this period.'
-                  : 'Emails appear here the moment the site tries to send them.'
-              }
-              action={filtered ? <Button type="button" variant="secondary" size="sm" onClick={clearFilters}>Clear filters</Button> : undefined}
-            />
-          ) : (
-            <div className={ld.split}>
-              <div className={ld.list}>
-                <div className={ld.listHeader}>
-                  <span>
-                    {filtered
-                      ? `${plural(data.matching, 'email')} match`
-                      : `${plural(data.matching, 'email')} ${PERIOD_PHRASE[period]}`}
-                  </span>
-                  {filtered && (
-                    <Button type="button" variant="ghost" size="xs" onClick={clearFilters}>Clear filters</Button>
-                  )}
+          <div className={directory.directory} data-split={Boolean(selected)}>
+            <div className={directory.list}>
+              <div className={directory.toolbar}>
+                <SearchBar
+                  className={directory.search}
+                  value={searchInput}
+                  onValueChange={setSearchInput}
+                  onClear={() => setSearchInput('')}
+                  placeholder="Search recipient or subject"
+                  aria-label="Search recipient or subject"
+                />
+                <SegmentedControl<StatusFilter>
+                  size="sm"
+                  value={status}
+                  options={[
+                    { value: 'all', label: `All ${Object.values(data.totals).reduce((sum, count) => sum + count, 0).toLocaleString()}` },
+                    ...(data.totals.queued > 0 || status === 'queued'
+                      ? [{ value: 'queued' as const, label: `Waiting ${data.totals.queued.toLocaleString()}` }]
+                      : []),
+                    { value: 'sent', label: `Sent ${data.totals.sent.toLocaleString()}` },
+                    { value: 'failed', label: `Failed ${data.totals.failed.toLocaleString()}` },
+                    ...(data.totals.captured > 0 || status === 'captured'
+                      ? [{ value: 'captured' as const, label: `Captured ${data.totals.captured.toLocaleString()}` }]
+                      : []),
+                  ]}
+                  onChange={setStatus}
+                  aria-label="Filter by status"
+                />
+                <div className={styles.filterSelect}>
+                  <Select
+                    aria-label="Filter by template"
+                    fieldSize="sm"
+                    value={kind}
+                    options={[
+                      { value: ALL, label: 'All templates' },
+                      ...data.kinds.map((facet) => ({ value: facet.value, label: `${facet.label} (${facet.count})`, textValue: facet.label })),
+                    ]}
+                    onChange={(event) => setKind(event.currentTarget.value)}
+                  />
                 </div>
-                <ul className={ld.rows} aria-label="Email activity">
-                  {entries.map((entry) => {
-                    const active = selected?.id === entry.id
-                    return (
-                      <li key={entry.id}>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="md"
-                          fullWidth
-                          align="start"
-                          active={active}
-                          aria-current={active ? 'true' : undefined}
-                          className={ld.row}
-                          onClick={() => setSelectedId(entry.id)}
-                        >
-                          <span className={ld.dot} data-tone={toneOf(entry)} aria-hidden="true" />
-                          <span className={ld.rowMain}>
-                            <span className={ld.rowSubject}>{entry.subject}</span>
-                            <span className={ld.rowMeta}>
-                              <span className={styles.srOnly}>{STATUS_SHORT[entry.status]}. </span>
-                              {entry.to} · {entry.kindLabel}
-                            </span>
-                          </span>
-                          <time className={ld.rowTime} dateTime={entry.createdAt} title={formatFull(entry.createdAt)}>
-                            {formatRelativeTimeAgo(Date.parse(entry.createdAt))}
-                          </time>
-                        </Button>
-                      </li>
-                    )
-                  })}
-                </ul>
-                <div className={ld.listFooter}>
-                  {nextCursor ? (
-                    <Button type="button" variant="secondary" size="sm" onClick={showMore} busy={loadingMore}>
-                      Show more
-                    </Button>
-                  ) : (
-                    <span>
-                      End of the list. The log keeps the newest {data.retention.toLocaleString()} emails.
-                    </span>
-                  )}
-                </div>
+                {data.connectors.length > 0 && (
+                  <div className={styles.filterSelect}>
+                    <Select
+                      aria-label="Filter by connector"
+                      fieldSize="sm"
+                      value={connector}
+                      options={[
+                        { value: ALL, label: 'All connectors' },
+                        ...data.connectors.map((facet) => ({ value: facet.value, label: `${facet.label} (${facet.count})`, textValue: facet.label })),
+                      ]}
+                      onChange={(event) => setConnector(event.currentTarget.value)}
+                    />
+                  </div>
+                )}
               </div>
 
-              {selected && (
-                <Detail entry={selected} onOpenConnectors={onOpenConnectors} onOpenTemplate={onOpenTemplate} />
+              {entries.length === 0 ? (
+                <EmptyState
+                  variant="centered"
+                  icon={<MailSolidIcon size={28} />}
+                  title={filtered ? 'No email matches these filters' : `No email ${PERIOD_PHRASE[period]}`}
+                  description={
+                    filtered
+                      ? 'Try another search, or clear the filters to see everything in this period.'
+                      : 'Emails appear here the moment the site tries to send them.'
+                  }
+                  action={filtered ? <Button type="button" variant="secondary" size="sm" onClick={clearFilters}>Clear filters</Button> : undefined}
+                />
+              ) : (
+                <>
+                  <DataTable className={directory.table} density="compact" aria-label="Email activity">
+                    <DataTableHead><DataTableRow>
+                      <DataTableHeader>Email</DataTableHeader>
+                      <DataTableHeader className={directory.accessColumn}>Template</DataTableHeader>
+                      <DataTableHeader className={directory.statusColumn}>Status</DataTableHeader>
+                      <DataTableHeader className={styles.timeColumn}>Time</DataTableHeader>
+                    </DataTableRow></DataTableHead>
+                    <DataTableBody>
+                      {entries.map((entry) => {
+                        const active = selected?.id === entry.id
+                        return (
+                          <DataTableRow key={entry.id} aria-current={active || undefined}>
+                            <DataTableCell>
+                              <Button variant="ghost" align="start" className={directory.select}
+                                ref={active ? selectedRow : undefined} aria-expanded={active} aria-controls={active ? panelId : undefined}
+                                onClick={() => setSelectedId(entry.id)}>
+                                <span className={directory.identity}>
+                                  <span className={directory.initials}><MailSolidIcon size={16} aria-hidden="true" /></span>
+                                  <span className={directory.identityText}><strong>{entry.subject}</strong><small>{entry.to}</small></span>
+                                </span>
+                              </Button>
+                            </DataTableCell>
+                            <DataTableCell className={directory.accessColumn}>{entry.kindLabel}</DataTableCell>
+                            <DataTableCell className={directory.statusColumn}>
+                              <span className={directory.status} data-tone={toneOf(entry) ?? 'neutral'}>
+                                {entry.status === 'queued' && entry.error ? statusLabel(entry) : STATUS_SHORT[entry.status]}
+                              </span>
+                            </DataTableCell>
+                            <DataTableCell className={styles.timeColumn}>
+                              <time dateTime={entry.createdAt}>{formatRelativeTimeAgo(Date.parse(entry.createdAt))}</time>
+                            </DataTableCell>
+                          </DataTableRow>
+                        )
+                      })}
+                    </DataTableBody>
+                  </DataTable>
+                  <div className={styles.footer}>
+                    <span>{plural(data.matching, 'email')} {PERIOD_PHRASE[result.period]}</span>
+                    {filtered && <Button variant="ghost" size="xs" onClick={clearFilters}>Clear filters</Button>}
+                    {nextCursor && <Button variant="secondary" size="sm" onClick={showMore} disabled={loading || result.key !== queryKey} busy={loadingMore}>Show more</Button>}
+                  </div>
+                </>
               )}
             </div>
-          )}
+            {selected && (
+              <Detail key={selected.id} panelId={panelId} entry={selected} onClose={() => {
+                setSelectedId(null)
+                selectedRow.current?.focus({ preventScroll: true })
+              }} onOpenConnectors={onOpenConnectors} onOpenTemplate={onOpenTemplate} />
+            )}
+          </div>
         </>
       )}
-    </section>
+    </WorkspaceSection>
   )
 }
 
@@ -456,10 +463,14 @@ function Summary({
 }
 
 function Detail({
+  panelId,
+  onClose,
   entry,
   onOpenConnectors,
   onOpenTemplate,
 }: {
+  panelId: string
+  onClose: () => void
   entry: MailActivityEntry
   onOpenConnectors: () => void
   onOpenTemplate: (key: string) => void
@@ -475,18 +486,13 @@ function Detail({
   }
 
   return (
-    <article className={ld.detail} aria-label="Email details">
-      <header className={ld.detailHeader}>
-        <span className={ld.statusBadge} data-tone={toneOf(entry)}>
-          <span className={ld.dot} data-tone={toneOf(entry)} aria-hidden="true" />
-          {statusLabel(entry)}
-        </span>
+    <DirectoryInspector id={panelId} label="Email details" onClose={onClose}
+      heading={<div className={directory.identityText}>
         <h3>{entry.subject}</h3>
-        <p>
-          <time dateTime={entry.createdAt}>{formatFull(entry.createdAt)}</time>
-        </p>
-      </header>
-
+        <small><time dateTime={entry.createdAt}>{formatFull(entry.createdAt)}</time></small>
+      </div>}
+      status={<span className={directory.status} data-tone={toneOf(entry) ?? 'neutral'}>{statusLabel(entry)}</span>}
+    >
       {entry.status === 'failed' && (
         <div className={ld.notice} data-tone="danger" role="status">
           <strong>{entry.error ?? 'Delivery failed'}</strong>
@@ -530,8 +536,7 @@ function Detail({
       )}
       {entry.status === 'sent' && (
         <p className={ld.notice}>
-          {entry.connectorLabel ?? 'The connector'} accepted this email. Whether it reached the inbox (bounces, spam
-          filtering) is recorded by the provider, not here.
+          {entry.connectorLabel ?? 'The connector'} accepted this email. Check the provider’s delivery log for inbox delivery or bounces.
         </p>
       )}
       {entry.status === 'captured' && (
@@ -600,6 +605,6 @@ function Detail({
           <pre>{entry.body}</pre>
         </section>
       )}
-    </article>
+    </DirectoryInspector>
   )
 }

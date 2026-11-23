@@ -54,7 +54,7 @@ Instatic implements the MCP authorization-server surface directly:
 | `/.well-known/oauth-protected-resource/_instatic/mcp` | Path-aware protected-resource discovery alias. |
 | `/.well-known/oauth-authorization-server` | Authorization-server metadata. |
 | `/_instatic/oauth/register` | Dynamic client registration for public clients. |
-| `/admin/ai/oauth/authorize` | Signed-in consent screen. |
+| `/admin/ai/oauth/authorize` | Signed-in consent screen. The client details and permission groups scroll above a persistent footer with the selection count, bulk toggle, and authorization decisions. |
 | `/_instatic/oauth/token` | Form-encoded authorization-code and refresh-token exchange. |
 
 The issuer, the `resource` value, and every URL in these documents come from the configured public origin (`PUBLIC_ORIGIN`, auto-detected from `RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN` on Render and Railway), never from the inbound `Host` header. Remote OAuth connectors therefore require `PUBLIC_ORIGIN`. Without it, both discovery endpoints answer `503` with `{ "error": "MCP OAuth needs PUBLIC_ORIGIN to be configured for this deployment." }`, the token endpoint answers `503` with `temporarily_unavailable`, the `401` challenge on `/_instatic/mcp` carries `scope="mcp"` but no `resource_metadata`, and OAuth access tokens do not authenticate. Personal access tokens keep working. Requests addressed to a loopback host (`localhost`, `127.0.0.1`, `::1`) are exempt and use their own origin so local development keeps working; the server warns at boot when no public origin is configured.
@@ -160,9 +160,11 @@ The MCP files under `server/ai/mcp/`:
 | `contentAuthorization.ts` | Before a document tool is relayed to the browser, resolves the target row through `server/auth/dataAccess.ts` with the connection's own identity and capabilities (table family plus own-vs-any ownership), so the owner's admin cookie cannot widen the delegated grant. |
 | `transports/http.ts` | Authenticated, Origin-validated `createMcpHandler` entry for MCP 2026-07-28 plus the stateless 2025 fallback. |
 | `server.ts` / `registry.ts` | Low-level SDK server, TypeBox input schemas, catalog deduplication, and capability filtering. |
-| `editorBridge.ts` | Per-user, per-scope live workspace bridge. Tool requests are delivered **serially** (the next is pushed only once the previous settles, matching the editor's one-at-a-time execution), so each call's 90s timeout measures the editor's actual work, not time queued behind slower calls. The stream carries an **idle lease** (120s, re-armed by every relayed tool request and never expiring while a call is pending) so an active batch is never cut mid-flight; only quiet streams recycle. The workspace's reconnect loop (`useMcpWorkspaceBridge`) reopens a recycled healthy stream immediately off the stream-end network event — deliberately timer-free, because hidden webviews (backgrounded browser tabs) clamp timers to minutes while network events still fire — and a tab becoming visible short-circuits any pending retry delay. |
+| `editorBridge.ts` | Per-user, per-scope live workspace bridge. Tool requests are delivered **serially** (the next is pushed only once the previous settles, matching the editor's one-at-a-time execution), so each call's 90s timeout measures the editor's actual work, not time queued behind slower calls. After 60 seconds of inactivity the server asks the owning tab to renew its 120-second lease. The reply keeps the same stream and branch registered. Pending tools keep the lease alive. An unresponsive owner eventually releases the workspace even when a proxy hides its disconnect. |
 | `tools/publishTool.ts` | Explicit canonical full-site publish with MCP audit metadata. |
 | `tools/uploadMediaTool.ts` | Server-resolved image upload (`media_upload`) — inline base64 or SSRF-guarded `sourceUrl` download, through the shared media pipeline. |
+
+The first ready tab owns its user's Site or Content bridge until the workspace closes or loses its connection. Other tabs receive an empty 204 and retry after 15 seconds or when they become visible. Opening or focusing another tab leaves both in-flight and subsequent calls on the owner. Once it disconnects, the first waiting tab to retry takes over.
 
 ## Tool execution model
 

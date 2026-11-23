@@ -22,7 +22,9 @@ import {
   testCredential,
 } from '../../../ai/api'
 import { ProviderMark } from '../ProviderMark'
-import { SettingsListSection } from '@admin/shared/SettingsWorkspace/SettingsListSection'
+import { WorkspaceChoice, WorkspaceChoices } from '@admin/shared/SettingsWorkspace/WorkspaceChoices'
+import layout from '@admin/shared/SettingsWorkspace/WorkspaceSection.module.css'
+import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
 import {
   PROVIDER_SPECS,
   getProviderSpec,
@@ -135,86 +137,55 @@ export function ProvidersTab({
   }
 
   return (
-    <section className={styles.settingsWorkspace} aria-labelledby="providers-heading">
-      <aside className={styles.settingsBrowser} aria-label="Provider browser">
-        <div className={styles.settingsBrowserHeader}>
-          <h2 id="providers-heading">Providers</h2>
-        </div>
-
-        {error && <p role="alert" className={styles.settingsBrowserError}>{error}</p>}
-
-        <div className={styles.settingsBrowserSections}>
-          {(loading || credentials.length > 0) && (
-            <SettingsListSection label="Credentials">
-              {loading && credentials.length === 0 ? (
-                <p className={styles.settingsBrowserEmpty}>Loading credentials…</p>
-              ) : (
-                credentials.map((credential) => {
-                  const provider = getProviderSpec(credential.providerId)
-                  const testResult = testResults[credential.id]
-                  const healthy = credential.keyFingerprintCurrent && testResult?.ok !== false
-                  const active = effectiveSelection.kind === 'credential'
-                    && effectiveSelection.id === credential.id
-                  return (
-                    <Button
-                      key={credential.id}
-                      type="button"
-                      variant="ghost"
-                      size="md"
-                      fullWidth
-                      active={active}
-                      align="start"
-                      className={styles.settingsListItem}
-                      onClick={() => setSelection({ kind: 'credential', id: credential.id })}
-                      aria-current={active ? 'true' : undefined}
-                    >
-                      <ProviderMark providerId={credential.providerId} size="sm" />
-                      <span className={styles.settingsListIdentity}>
-                        <span className={styles.settingsListLabel}>{credential.displayLabel}</span>
-                        <span className={styles.settingsListMeta}>
-                          <span className={healthy ? styles.healthDot : styles.warningDot} />
-                          {healthy ? provider.label : 'Needs attention'}
-                        </span>
-                      </span>
-                      {!active && <ArrowRightIcon size={13} aria-hidden="true" />}
-                    </Button>
-                  )
-                })
-              )}
-            </SettingsListSection>
-          )}
-
-          <SettingsListSection label="Add provider">
-            {PROVIDER_SPECS.map((provider) => {
-              const active = effectiveSelection.kind === 'provider'
-                && effectiveSelection.providerId === provider.id
+    <WorkspaceSection title="Providers">
+      {error && <p role="alert" className={styles.errorAlert}>{error}</p>}
+      {(loading || credentials.length > 0) && (
+        <WorkspaceChoices title="Credentials">
+          {loading && credentials.length === 0 ? (
+            <p className={styles.settingsBrowserEmpty}>Loading credentials…</p>
+          ) : (
+            credentials.map((credential) => {
+              const provider = getProviderSpec(credential.providerId)
+              const testResult = testResults[credential.id]
+              const healthy = credential.keyFingerprintCurrent && testResult?.ok !== false
+              const active = effectiveSelection.kind === 'credential'
+                && effectiveSelection.id === credential.id
               return (
-                <Button
-                  key={provider.id}
-                  type="button"
-                  variant="ghost"
-                  size="md"
-                  fullWidth
+                <WorkspaceChoice
+                  key={credential.id}
+                  icon={<ProviderMark providerId={credential.providerId} size="sm" />}
+                  label={credential.displayLabel}
+                  description={<>
+                    <span className={healthy ? styles.healthDot : styles.warningDot} />
+                    {healthy ? provider.label : 'Needs attention'}
+                  </>}
                   active={active}
-                  align="start"
-                  className={styles.settingsListItem}
-                  onClick={() => setSelection({ kind: 'provider', providerId: provider.id })}
-                  aria-current={active ? 'true' : undefined}
-                >
-                  <ProviderMark providerId={provider.id} size="sm" />
-                  <span className={styles.settingsListIdentity}>
-                    <span className={styles.settingsListLabel}>{provider.label}</span>
-                    <span className={styles.settingsListMeta}>{provider.shortLabel}</span>
-                  </span>
-                  {!active && <ArrowRightIcon size={13} aria-hidden="true" />}
-                </Button>
+                  onSelect={() => setSelection({ kind: 'credential', id: credential.id })}
+                />
               )
-            })}
-          </SettingsListSection>
-        </div>
-      </aside>
+            })
+          )}
+        </WorkspaceChoices>
+      )}
 
-      <div className={styles.settingsDetailCanvas}>
+      <WorkspaceChoices title="Add provider">
+        {PROVIDER_SPECS.map((provider) => {
+          const active = effectiveSelection.kind === 'provider'
+            && effectiveSelection.providerId === provider.id
+          return (
+            <WorkspaceChoice
+              key={provider.id}
+              icon={<ProviderMark providerId={provider.id} size="sm" />}
+              label={provider.label}
+              description={provider.shortLabel}
+              active={active}
+              onSelect={() => setSelection({ kind: 'provider', providerId: provider.id })}
+            />
+          )
+        })}
+      </WorkspaceChoices>
+
+      <div className={layout.detailCard}>
         {selectedCredential ? (
           <CredentialDetail
             key={selectedCredential.id}
@@ -270,7 +241,7 @@ export function ProvidersTab({
           </p>
         </Dialog>
       )}
-    </section>
+    </WorkspaceSection>
   )
 }
 
@@ -482,7 +453,6 @@ function ProviderSetupPanel({
       <header className={styles.providerSetupHeader}>
         <ProviderMark providerId={provider.id} size="lg" />
         <div>
-          <span className={styles.detailEyebrow}>Add provider</span>
           <h2 id="provider-setup-title">Connect {provider.label}</h2>
           <p>{provider.description}</p>
         </div>

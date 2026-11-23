@@ -371,9 +371,13 @@ test.describe('media', () => {
     await page.getByTestId('media-folder-row-trash').click()
     await expect(page.getByRole('button', { name: `Open ${replacementFilename}` })).toBeVisible()
     await openAssetMenu(page.getByRole('button', { name: `Open ${replacementFilename}` }), page)
+    // Purging cannot be undone, so the Trash menu asks before it happens.
+    await page.getByRole('menu', { name: 'Media item options' }).getByRole('menuitem', { name: 'Delete' }).click()
+    const purgeConfirm = page.getByRole('alertdialog', { name: `Delete "${replacementFilename}" permanently?` })
+    await expect(purgeConfirm).toBeVisible()
     await Promise.all([
       waitForMediaDelete(page),
-      page.getByRole('menu', { name: 'Media item options' }).getByRole('menuitem', { name: 'Delete' }).click(),
+      purgeConfirm.getByRole('button', { name: 'Delete permanently' }).click(),
     ])
     await expect(page.getByRole('button', { name: `Open ${replacementFilename}` })).toHaveCount(0)
     await expect(page.getByText('Trash is empty')).toBeVisible()

@@ -1,6 +1,112 @@
-/* Email workspace: the few pieces the shared settings-workspace styles do
-   not cover (delivery status tile, template editor and preview, activity
-   row details). */
+.templateEditor, .deliveryStatus {
+  display: grid;
+  align-content: start;
+  gap: var(--space-l);
+  min-width: 0;
+}
+
+.defaultsEmpty h2 {
+  margin: 0;
+  color: var(--text-bright);
+  font-size: var(--text-l);
+  font-weight: 600;
+}
+
+.defaultsForm, .defaultsEmpty {
+  min-width: 0;
+  padding: var(--space-4xl);
+  border-radius: var(--card-radius);
+  background: var(--bg-surface-2);
+}
+
+.connectorSetup {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.65fr);
+  gap: var(--space-7xl);
+  align-items: start;
+}
+
+.setupHeading {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-l);
+}
+
+.setupHeading h2 {
+  margin: 0;
+  color: var(--text-bright);
+  font-size: var(--text-2xl);
+}
+
+.setupHeading p, .defaultsEmpty p {
+  margin: var(--space-xs) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-s);
+  line-height: 1.5;
+}
+
+.templatesLayout {
+  display: grid;
+  grid-template-columns: clamp(204px, 21%, 256px) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-5xl);
+}
+
+.templateSidebar {
+  position: sticky;
+  top: var(--space-l);
+  display: grid;
+  align-content: start;
+  gap: var(--space-3xl);
+  max-height: calc(100dvh - 100px);
+  overflow-y: auto;
+  padding: var(--space-2xl);
+  border-radius: var(--card-radius);
+  background: var(--bg-surface-2);
+}
+
+.templateSidebar .templateRow {
+  justify-content: space-between;
+  height: auto;
+  min-height: var(--control-height);
+  gap: var(--space-s);
+  padding: var(--space-xs) var(--space-s);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+
+.templateRow small {
+  flex: none;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
+.templatePicker { display: none; }
+.templateEditor { gap: var(--space-2xl); }
+.templateEditor > header { flex-wrap: wrap; }
+
+.defaultsLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 32%);
+  align-items: start;
+  gap: var(--space-4xl);
+}
+
+.defaultsForm, .defaultsEmpty {
+  display: grid;
+  gap: var(--space-2xl);
+}
+
+.defaultsEmpty { justify-items: start; }
+.defaultsEmpty p { margin: 0; }
+
+@media (max-width: 760px) {
+  .defaultsLayout, .connectorSetup { grid-template-columns: minmax(0, 1fr); }
+  .templatesLayout { grid-template-columns: minmax(0, 1fr); }
+  .templateSidebar { display: none; }
+  .templatePicker { display: block; }
+}
 
 /* ── Delivery mode tile (Defaults) ───────────────────────────────────────── */
 .modeTile {
@@ -59,15 +165,18 @@
   color: var(--warning-text);
 }
 
-.actionHint {
-  font-size: var(--text-s);
-  color: var(--text-subtle);
+.defaultsActions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--space-m);
 }
 
 /* ── Template editor ─────────────────────────────────────────────────────── */
 .headerActions {
   display: flex;
-  flex-shrink: 0;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-s);
 }

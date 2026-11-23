@@ -84,7 +84,7 @@
         right: 0;
         width: auto;
         height: var(--portrait-dock-height);
-        border-top: 1px solid var(--border);
+        border-top: 1px solid var(--divider);
     }
 
     .sidebar[data-expanded="false"] > .panelSlot:not(.panelSlotFloating),

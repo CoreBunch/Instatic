@@ -114,6 +114,7 @@ Everything lives in the shared toolbar (`src/admin/pages/site/toolbar/Toolbar.ts
 - **Manage dialog** (`ManageBranchesDialog`) — search by name or id, open, rename inline, delete, create.
 - **Update dialog** (`UpdateBranchDialog`) — the update plan grouped by Site / Tables / entries per table, `New` / `Changed` / `Removed` badges, a two-way choice per conflict. Merging has no dialog: it happens on the review page (below).
 - **Delete** always confirms (`DeleteBranchDialog`) and steps up.
+- **Settings outside the Site editor** reloads its cached site document when the tab switches branches. Each queued settings save explicitly addresses the branch where the edit was made.
 - **Publish controls** on a branch: the site Publish button, the Content and Data publish groups, the data grid's row menu and bulk bar, and the Content settings status select all disable with `BRANCH_PUBLISH_REASON` inline. The Spotlight `editor.publish` command hides on a branch.
 - **Spotlight**: group `branches` — *Switch branch…*, *Create branch…*, *Switch to main*, *Manage branches…*; typing a branch name lists *Switch to <name>*.
 - **Branch gone**: a `404 { code: 'branch_not_found' }` on any request drops the tab back to main with a toast (`registerApiErrorListener` in `@core/http`).

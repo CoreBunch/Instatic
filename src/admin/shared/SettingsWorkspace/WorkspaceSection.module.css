@@ -1,0 +1,70 @@
+.section { display: grid; gap: var(--space-4xl); min-width: 0; }
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-xl);
+}
+.sectionHeader h1 {
+  margin: 0;
+  color: var(--text-bright);
+  font-size: var(--text-5xl);
+  line-height: 1.25;
+}
+
+.choiceGroup {
+  display: grid;
+  align-content: start;
+  gap: var(--space-l);
+  min-width: 0;
+}
+
+.choiceGroup h2 {
+  margin: 0;
+  color: var(--text-bright);
+  font-size: var(--text-l);
+  font-weight: 600;
+}
+
+.choiceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 1fr));
+  gap: var(--space-px);
+}
+
+.choiceGrid .choice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-m);
+  height: auto;
+  padding: var(--space-l);
+  border-radius: var(--card-radius);
+  background: var(--bg-surface-2);
+}
+
+.choiceMeta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  color: var(--text-muted);
+  font-size: var(--text-s);
+  font-weight: 400;
+  white-space: normal;
+}
+
+.choiceGrid .choice:hover { background: var(--bg-surface-3); }
+.choiceGrid .choice[data-active="true"] { background: var(--bg-surface-4); }
+
+.detailCard {
+  min-width: 0;
+  padding: var(--space-4xl);
+  border-radius: var(--card-radius);
+  background: var(--bg-surface-2);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .choiceGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
