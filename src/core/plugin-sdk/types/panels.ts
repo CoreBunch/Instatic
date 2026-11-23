@@ -38,7 +38,7 @@ export interface PluginEditorPanel {
   id: string
   label: string
   iconName: string
-  /** Display the panel name vertically beneath its rail icon. */
+  /** Display the panel name as a caption beneath its rail icon. */
   showRailLabel?: boolean
   accent?: PluginEditorPanelAccent
   /** Optional keyboard shortcut hint shown in the rail tooltip. */
