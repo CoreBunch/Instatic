@@ -147,8 +147,27 @@ test('an app signs a member in and reads their access (MEMBER-005)', async ({ pa
         await expect(visitor).toHaveURL(new RegExp(`/${prefix}account$`))
       })
 
-      await test.step('the member approves the app on the owner\'s page', async () => {
+      await test.step('an email opened in another browser still works in the app browser', async () => {
+        await context.clearCookies()
         await visitor.goto(authorize.toString())
+        const form = visitor.locator('form').filter({ has: visitor.getByRole('button', { name: 'Email me a link' }) })
+        await form.getByLabel('Email').fill(email)
+        await form.getByRole('button', { name: 'Email me a link' }).click()
+        const link = await emailedLink(email)
+        const mailBrowser = await browser.newContext()
+        try {
+          const mailTab = await mailBrowser.newPage()
+          await mailTab.goto(link)
+          await mailTab.getByRole('button', { name: 'Sign in', exact: true }).click()
+          await expect(mailTab.getByRole('alert').filter({ hasText: 'same browser and profile' })).toBeVisible()
+        } finally {
+          await mailBrowser.close()
+        }
+        await visitor.goto(link)
+        await visitor.getByRole('button', { name: 'Sign in', exact: true }).click()
+      })
+
+      await test.step('the member approves the app on the owner\'s page', async () => {
         await expect(visitor).toHaveURL(new RegExp(`/${prefix}approve-app\\?request=`))
         // The page names the app from the stored request.
         await expect(visitor.getByRole('heading', { name: `Sign in to E2E app ${suffix}?` })).toBeVisible()
