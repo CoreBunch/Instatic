@@ -28,6 +28,11 @@ export const MembersInviteArgsSchema = Type.Tuple([
 /** Same shape as an invitation: the address, and tags granted when they are not already. */
 export const MembersEnsureArgsSchema = MembersInviteArgsSchema
 
+export const MembersSendSignInLinkArgsSchema = Type.Tuple([
+  MemberIdSchema,
+  Type.String({ minLength: 1, maxLength: 200 }),
+])
+
 export const MembersEmailStatusArgsSchema = Type.Tuple([])
 
 /** Where the plugin left off (null from the start) and how many ids to return. */

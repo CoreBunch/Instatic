@@ -17,6 +17,7 @@ import { configuredPublicOrigin } from '../../../auth/security'
 import { getMailDefaults } from '../../../mail/defaults'
 import { mailDeliveryMode } from '../../../mail/send'
 import { ensureMember, inviteMember } from '../../../members/admin'
+import { queuePluginMemberSignIn } from '../../../members/pluginSignIn'
 import { memberEmailBlockers } from '../../../members/mail'
 import { createAuditEvent } from '../../../repositories/audit'
 import {
@@ -147,6 +148,17 @@ export async function handleMembersDeletedSince(
     ? Buffer.from(`${last.deletedAt}${CURSOR_SEPARATOR}${last.id}`, 'utf8').toString('base64url')
     : cursor
   replyApiOk(msg.pluginId, msg.correlationId, { ids: page.map((row) => row.id), nextCursor })
+}
+
+export async function handleMembersSendSignInLink(
+  msg: ApiCallFor<'cms.members.sendSignInLink'>,
+  entry: HostPluginRecord,
+  db: DbClient,
+): Promise<void> {
+  assertHostPluginPermission(entry, 'mail.send')
+  const [memberId, reference] = msg.args
+  await queuePluginMemberSignIn(db, entry.manifest.id, entry.manifest.name, memberId, reference)
+  replyApiOk(msg.pluginId, msg.correlationId)
 }
 
 /** Whether the site can email members links it starts itself, and if not, why. */

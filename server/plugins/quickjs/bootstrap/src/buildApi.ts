@@ -530,6 +530,11 @@ globalThis.__buildApi = function buildApi() {
           assertPermission('members.read')
           return call('cms.members.ensure', [input])
         },
+        sendSignInLink: function (memberId: string, reference: string) {
+          assertTargetPermission('cms.members.sendSignInLink')
+          assertPermission('mail.send')
+          return call('cms.members.sendSignInLink', [memberId, reference])
+        },
         // api.cms.members.emailStatus() → { canEmail, reasons }
         emailStatus: function () {
           assertTargetPermission('cms.members.emailStatus')

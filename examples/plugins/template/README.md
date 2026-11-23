@@ -245,6 +245,10 @@ await api.cms.media.upsert({
 
 The path is package-relative. Plugins cannot read arbitrary host filesystem paths through this API.
 
+## Sending a member a sign-in email
+
+With `members.write` and `mail.send`, a plugin can call `api.cms.members.sendSignInLink(memberId, reference)`. Use a stable reference, such as the ID of an enrollment in a course. If the plugin retries the call for the same enrollment and member, the original link stays valid. Instatic sends the email directly to the member.
+
 ## Further reading
 
 - [Plugin system docs](../../../docs/features/plugin-system.md)

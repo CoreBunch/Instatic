@@ -76,6 +76,7 @@ import { handleMailSend, handleMailSendExternal, handleSitePublicUrl } from './h
 import { handleRateLimitTake } from './handlers/rateLimit'
 import {
   handleMembersDeletedSince,
+  handleMembersSendSignInLink,
   handleMembersEmailStatus,
   handleMembersEnsure,
   handleMembersExportProvider,
@@ -152,6 +153,7 @@ const apiHandlers = {
   'cms.members.get': handleMembersGet,
   'cms.members.invite': handleMembersInvite,
   'cms.members.ensure': handleMembersEnsure,
+  'cms.members.sendSignInLink': handleMembersSendSignInLink,
   'cms.members.emailStatus': handleMembersEmailStatus,
   'cms.members.exportProvider': handleMembersExportProvider,
   'cms.members.deletedSince': handleMembersDeletedSince,

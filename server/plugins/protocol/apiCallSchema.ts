@@ -58,6 +58,7 @@ import {
 } from './schemas/content'
 import { MailSendArgsSchema, MailSendExternalArgsSchema } from './schemas/mail'
 import {
+  MembersSendSignInLinkArgsSchema,
   MembersEmailStatusArgsSchema,
   MembersDeletedSinceArgsSchema,
   MembersEnsureArgsSchema,
@@ -176,6 +177,7 @@ export const ApiCallSchemas = {
   'cms.members.get': apiCallSchema('cms.members.get', MembersGetArgsSchema),
   'cms.members.invite': apiCallSchema('cms.members.invite', MembersInviteArgsSchema),
   'cms.members.ensure': apiCallSchema('cms.members.ensure', MembersEnsureArgsSchema),
+  'cms.members.sendSignInLink': apiCallSchema('cms.members.sendSignInLink', MembersSendSignInLinkArgsSchema),
   'cms.members.emailStatus': apiCallSchema('cms.members.emailStatus', MembersEmailStatusArgsSchema),
   'cms.members.exportProvider': apiCallSchema('cms.members.exportProvider', MembersExportProviderArgsSchema),
   'cms.members.deletedSince': apiCallSchema('cms.members.deletedSince', MembersDeletedSinceArgsSchema),
