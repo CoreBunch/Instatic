@@ -54,7 +54,7 @@ Instatic implements the MCP authorization-server surface directly:
 | `/.well-known/oauth-protected-resource/_instatic/mcp` | Path-aware protected-resource discovery alias. |
 | `/.well-known/oauth-authorization-server` | Authorization-server metadata. |
 | `/_instatic/oauth/register` | Dynamic client registration for public clients. |
-| `/admin/ai/oauth/authorize` | Signed-in consent screen. |
+| `/admin/ai/oauth/authorize` | Signed-in consent screen. The client details and permission groups scroll above a persistent footer with the selection count, bulk toggle, and authorization decisions. |
 | `/_instatic/oauth/token` | Form-encoded authorization-code and refresh-token exchange. |
 
 The issuer, the `resource` value, and every URL in these documents come from the configured public origin (`PUBLIC_ORIGIN`, auto-detected from `RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN` on Render and Railway), never from the inbound `Host` header. Remote OAuth connectors therefore require `PUBLIC_ORIGIN`. Without it, both discovery endpoints answer `503` with `{ "error": "MCP OAuth needs PUBLIC_ORIGIN to be configured for this deployment." }`, the token endpoint answers `503` with `temporarily_unavailable`, the `401` challenge on `/_instatic/mcp` carries `scope="mcp"` but no `resource_metadata`, and OAuth access tokens do not authenticate. Personal access tokens keep working. Requests addressed to a loopback host (`localhost`, `127.0.0.1`, `::1`) are exempt and use their own origin so local development keeps working; the server warns at boot when no public origin is configured.
