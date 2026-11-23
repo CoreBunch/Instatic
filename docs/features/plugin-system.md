@@ -691,7 +691,8 @@ api.cms.routes.member.post('/cancel', (ctx) => cancel(ctx.member.id))
 const member = await api.cms.members.get({ email })            // or { id }; null when there is none
 await api.cms.members.invite({ email, tags: ['pro'] })         // members.write (+ members.tags for tags)
 const { member, created, confirmed } = await api.cms.members.ensure({ email, tags: ['customer'] })  // members.write + members.read (+ members.tags)
-await api.cms.members.sendSignInLink(member.id, order.id)  // members.write + mail.send. Core queues its own template once per member and reference, without exposing the token.
+// Use a stable reference from the plugin so a retry preserves the first link.
+await api.cms.members.sendSignInLink(member.id, event.id)  // members.write + mail.send
 const { canEmail, reasons } = await api.cms.members.emailStatus()  // members.write
 api.cms.members.exportProvider(async (memberId) => ({ title: 'Orders', data: await ordersOf(memberId) }))  // members.read + "memberDataExport": true
 const { ids, nextCursor } = await api.cms.members.deletedSince(cursor, { limit: 100 })  // members.read

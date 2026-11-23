@@ -66,7 +66,7 @@ const PLUGIN_SOURCE = `
           return { result: await Promise.all(calls) }
         }
         if (action === 'signInLink') {
-          await api.cms.members.sendSignInLink(memberId, 'subscription-1')
+          await api.cms.members.sendSignInLink(memberId, 'enrollment-1')
           return { result: 'accepted' }
         }
         if (action === 'emailStatus') return { result: await api.cms.members.emailStatus() }
@@ -170,7 +170,7 @@ describe('site members for plugins', () => {
     expect((await call({ action: 'signInLink', memberId: 'member' })).error).toContain('mail.send')
   })
 
-  it('queues one core sign-in email when the same plugin purchase is fulfilled twice', async () => {
+  it('queues one sign-in email when a plugin retries the same member reference', async () => {
     expect((await install([...ALL, 'mail.send'])).status).toBe(201)
     configurePublicOrigins([ORIGIN])
     const ada = await member('ada@example.com')
