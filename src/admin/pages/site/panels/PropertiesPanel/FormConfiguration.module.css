@@ -1,0 +1,157 @@
+.summary {
+    display: grid;
+    gap: var(--space-3xs);
+    margin: 0;
+}
+
+.summary > div {
+    display: grid;
+    gap: var(--space-3xs);
+    padding: var(--space-s) var(--space-m);
+    border-radius: var(--radius);
+    background: var(--bg-surface-2);
+}
+
+.summary dt, .choiceLabel small, .content p {
+    color: var(--text-muted);
+    font-size: var(--text-s);
+    line-height: 1.4;
+}
+
+.summary dt {
+    font-size: var(--text-xs);
+}
+
+.summary dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-size: var(--text-s);
+    font-weight: 600;
+}
+
+.preview {
+    border-top: 1px solid var(--divider);
+    padding-top: var(--space-m);
+}
+
+.title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-s);
+}
+
+.title code {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    border-left: 1px solid var(--divider);
+    margin-left: var(--space-s);
+    padding-left: var(--space-m);
+    font: 500 var(--text-s) var(--font-mono);
+    color: var(--text-muted);
+}
+
+div.dialogBody {
+    padding: 0;
+}
+
+.layout {
+    display: grid;
+    grid-template-columns: minmax(10rem, 26%) minmax(0, 1fr);
+    min-height: 20rem;
+}
+
+.navigation {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    padding: var(--space-l);
+    border-right: 1px solid var(--divider);
+}
+
+.navigation button {
+    border-radius: var(--radius);
+    gap: var(--space-s);
+}
+
+.content {
+    display: grid;
+    align-content: start;
+    gap: var(--space-l);
+    min-width: 0;
+    padding: var(--space-5xl);
+}
+
+.content h3, .content h4, .content p {
+    margin: 0;
+}
+
+.content h3 {
+    font-size: var(--text-2xl);
+}
+
+.content h4 {
+    padding-top: var(--space-m);
+    border-top: 1px solid var(--divider);
+    font-size: var(--text-s);
+}
+
+.choice {
+    padding-block: var(--space-3xl);
+    border-bottom: 1px solid var(--divider);
+}
+
+.choice:first-child { padding-top: 0; }
+.choice:last-child { border-bottom: 0; }
+
+.choiceLabel {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-m);
+    cursor: pointer;
+    font-size: var(--text-xl);
+}
+
+.choiceLabel input[type='radio'] {
+    appearance: auto;
+    accent-color: var(--text);
+    width: 1em;
+    height: 1em;
+    min-height: 0;
+    padding: 0;
+    margin: 0.2em 0 0;
+    flex: none;
+}
+
+.choiceLabel input:focus-visible {
+    outline: 2px solid var(--text);
+    outline-offset: 2px;
+}
+
+.choiceLabel span, .detail {
+    display: grid;
+    gap: var(--space-3xs);
+}
+
+.detail {
+    margin-inline-start: calc(1em + var(--space-m));
+    padding-top: var(--space-m);
+    gap: var(--space-m);
+}
+
+/* Leave the form summary visible beside the dialog on desktop. */
+@media (min-width: 1100px) {
+    .dialog { margin-inline-end: min(28vw, calc(100vw - 900px)); }
+}
+
+@media (max-width: 640px) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .navigation {
+        flex-direction: row;
+        flex-wrap: wrap;
+        border-right: 0;
+        border-bottom: 1px solid var(--divider);
+        padding: var(--space-s);
+    }
+    .content { padding: var(--space-l); }
+    .detail { margin-inline-start: 0; }
+}

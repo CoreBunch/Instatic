@@ -38,7 +38,8 @@ import { ParamPromotableRow } from './ParamPromotableRow'
 import { FormSettingsPanel } from './FormSettingsPanel'
 import { isFormSettingsModule } from './formSettingsAnalysis'
 
-const PROMOTED_FORM_PROPERTY_KEYS = new Set(['mode', 'formId', 'targetTableId', 'memberAction'])
+const FORM_DIALOG_KEYS = new Set(['action', 'method', 'successBehavior', 'successMessage', 'redirectUrl', 'honeypotName', 'minSubmitSeconds'])
+const FORM_SETUP_KEYS = new Set(['mode', 'formId', 'targetTableId', 'memberAction'])
 
 interface ModuleTabContentArgs {
   selectedNode: PageNode | null
@@ -97,64 +98,71 @@ export function renderModuleTabContent(args: ModuleTabContentArgs): React.ReactN
     selectedNodeId !== null &&
     isFormSettingsModule(selectedNode.moduleId)
 
+  const formSelected = showFormSettings && selectedNode.moduleId === 'base.form'
+  const renderControl = (key: string, control: PropertyControl) => {
+    if (control.condition && !evaluateCondition(control.condition, resolvedPropsForBreakpoint)) {
+      return null
+    }
+
+    if (inVisualComponent && activeDocument?.kind === 'visualComponent' && selectedNodeId) {
+      return (
+        <ParamPromotableRow
+          key={key}
+          vcId={activeDocument.vcId}
+          nodeId={selectedNodeId}
+          propKey={key}
+          control={control}
+          value={resolvedPropsForBreakpoint[key]}
+          isOverride={overrideKeys.has(key)}
+          onChange={updateModuleProp}
+        />
+      )
+    }
+
+    return (
+      <PropertyControlRenderer
+        key={key}
+        propKey={key}
+        control={control}
+        value={resolvedPropsForBreakpoint[key]}
+        onChange={updateModuleProp}
+        isOverride={overrideKeys.has(key)}
+        dynamicBinding={dynamicBindingsEnabled && selectedNodeId ? {
+          binding: selectedNode.dynamicBindings?.[key],
+          onSet: (binding) => onSetDynamicBinding(key, binding),
+          onClear: () => onClearDynamicBinding(key),
+          availableFields: enclosingLoopSource?.fields,
+          sourceLabel: enclosingLoopSource?.label,
+          loopTableId: enclosingLoopTableId,
+        } : undefined}
+      />
+    )
+  }
+
+  const dialogControls: Record<string, React.ReactNode> = {}
+  const sidebarControls: React.ReactNode[] = []
+  for (const [key, control] of Object.entries(definition.schema)) {
+    if (control.hidden || (formSelected && FORM_SETUP_KEYS.has(key))) continue
+    if (formSelected && FORM_DIALOG_KEYS.has(key)) {
+      dialogControls[key] = renderControl(key, { ...control, layout: 'stacked' })
+    } else {
+      sidebarControls.push(renderControl(key, control))
+    }
+  }
+
   return (
     <>
       {showFormSettings && (
         <FormSettingsPanel
+          key={selectedNodeId}
           page={activePage}
           nodeId={selectedNodeId}
           onPatchProps={patchModuleProps}
+          dialogControls={dialogControls}
+          resolvedProps={resolvedPropsForBreakpoint}
         />
       )}
-
-      {Object.entries(definition.schema).map(([key, control]: [string, PropertyControl]) => {
-        // Hidden controls carry a type for the engine (escaping dispatch) but
-        // render no editor surface — e.g. base.outlet.html, a publisher-filled
-        // binding target the author never edits.
-        if (control.hidden) return null
-        if (isPromotedFormProperty(selectedNode, key)) return null
-        if (control.condition && !evaluateCondition(control.condition, resolvedPropsForBreakpoint)) {
-          return null
-        }
-
-        if (inVisualComponent && activeDocument?.kind === 'visualComponent' && selectedNodeId) {
-          return (
-            <ParamPromotableRow
-              key={key}
-              vcId={activeDocument.vcId}
-              nodeId={selectedNodeId}
-              propKey={key}
-              control={control}
-              value={resolvedPropsForBreakpoint[key]}
-              isOverride={overrideKeys.has(key)}
-              onChange={updateModuleProp}
-            />
-          )
-        }
-
-        return (
-          <PropertyControlRenderer
-            key={key}
-            propKey={key}
-            control={control}
-            value={resolvedPropsForBreakpoint[key]}
-            onChange={updateModuleProp}
-            isOverride={overrideKeys.has(key)}
-            dynamicBinding={dynamicBindingsEnabled && selectedNodeId ? {
-              binding: selectedNode.dynamicBindings?.[key],
-              onSet: (binding) => onSetDynamicBinding(key, binding),
-              onClear: () => onClearDynamicBinding(key),
-              availableFields: enclosingLoopSource?.fields,
-              sourceLabel: enclosingLoopSource?.label,
-              loopTableId: enclosingLoopTableId,
-            } : undefined}
-          />
-        )
-      })}
+      {sidebarControls}
     </>
   )
-}
-
-function isPromotedFormProperty(selectedNode: PageNode, key: string): boolean {
-  return selectedNode.moduleId === 'base.form' && PROMOTED_FORM_PROPERTY_KEYS.has(key)
 }

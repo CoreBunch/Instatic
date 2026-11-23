@@ -220,7 +220,7 @@ export const FormModule: ModuleDefinition<FormProps> = {
       { label: 'Show message', value: 'message' },
       { label: 'Redirect', value: 'redirect' },
     ] },
-    successMessage: { type: 'text', label: 'Success message', condition: { field: 'successBehavior', eq: 'message' } },
+    successMessage: { type: 'textarea', label: 'Success message', condition: { field: 'successBehavior', eq: 'message' } },
     redirectUrl: { type: 'url', label: 'Redirect URL', condition: { field: 'successBehavior', eq: 'redirect' } },
     honeypotName: { type: 'text', label: 'Honeypot field', condition: { field: 'mode', eq: 'cms' } },
     minSubmitSeconds: { type: 'number', label: 'Minimum fill seconds', condition: { field: 'mode', eq: 'cms' } },

@@ -177,7 +177,7 @@ Everything rendered behind a rule is sent `Cache-Control: private, no-store`.
 
 Four primitives; none of them needs custom code.
 
-**Member forms.** `base.form` has a third mode, `member`, with a `memberAction` prop. The catalogue is `MEMBER_FORM_ACTIONS` in `src/core/members/formActions.ts`: one entry per action with its endpoint path, fields, whether it needs an emailed token and whether it needs a signed-in member. The form setup panel offers the action and an "Add …" button that inserts the missing labelled inputs, messages and submit button (`memberFormFragment`).
+**Member forms.** `base.form` has a third mode, `member`, with a `memberAction` prop. The catalogue is `MEMBER_FORM_ACTIONS` in `src/core/members/formActions.ts`: one entry per action with its endpoint path, fields, whether it needs an emailed token and whether it needs a signed-in member. Under **Edit form settings → Destination → Member action**, the dialog offers the action and an "Add …" button that inserts the missing labelled inputs, messages and submit button (`memberFormFragment`).
 
 - Published, it is a real `<form method="post" action="/_instatic/members/<action>">`, so it works with scripts off (the endpoint answers a form post with a redirect). An unknown action falls back to `login`, never to another path (`memberFormActionPath`).
 - With scripts on, the form runtime (`formRuntimeJs.ts`, one script for CMS and member forms) submits in place as JSON. An error about one field marks that control `aria-invalid` and goes to a `base.form-message` with `kind: error` and `fieldName` set to that field, or to the form's general error message.
