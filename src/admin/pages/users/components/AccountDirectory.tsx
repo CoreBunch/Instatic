@@ -149,9 +149,9 @@ export function AccountDirectory({ kind, accounts, selectedId, onSelect, toolbar
               onClick={() => turnPage(pagination.offset - DIRECTORY_PAGE_SIZE)}>
               Previous
             </Button>
-            <span role="status">
+            <output>
               {(pagination.offset + 1).toLocaleString()}–{(pagination.offset + accounts.length).toLocaleString()} of {pagination.matching.toLocaleString()}
-            </span>
+            </output>
             <Button variant="secondary" size="sm" disabled={pagination.busy || pagination.offset + accounts.length >= pagination.matching}
               onClick={() => turnPage(pagination.offset + DIRECTORY_PAGE_SIZE)}>
               Next
