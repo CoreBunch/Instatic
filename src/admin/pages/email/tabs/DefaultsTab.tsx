@@ -1,7 +1,7 @@
 /** Defaults: which connector the site sends through, and who its email is from. */
 import { useId, useState } from 'react'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
-import { EmailSection } from '../EmailSection'
+import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
 import ws from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
@@ -94,7 +94,7 @@ export function DefaultsTab({
   }
 
   return (
-    <EmailSection title="Defaults" description="Choose the sending connector and the address recipients see.">
+    <WorkspaceSection title="Defaults">
       <div className={styles.defaultsLayout}>
         {overview.connectors.length === 0 ? (
           <div className={styles.defaultsEmpty}>
@@ -176,6 +176,6 @@ export function DefaultsTab({
           )}
         </aside>
       </div>
-    </EmailSection>
+    </WorkspaceSection>
   )
 }

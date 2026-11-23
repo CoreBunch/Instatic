@@ -7,7 +7,7 @@
  */
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
-import { EmailSection } from '../EmailSection'
+import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
 import ws from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
 import { Button } from '@ui/components/Button'
 import { EmptyState } from '@ui/components/EmptyState'
@@ -188,7 +188,7 @@ export function ActivityTab({
   }
 
   return (
-    <EmailSection title="Email activity" description="Delivery history for outgoing email." actions={
+    <WorkspaceSection title="Email activity" actions={
         <div className={styles.headerActions}>
           <Select aria-label="Period" fieldSize="sm" value={period} options={PERIOD_OPTIONS}
             onChange={(event) => {
@@ -338,7 +338,7 @@ export function ActivityTab({
           </div>
         </>
       )}
-    </EmailSection>
+    </WorkspaceSection>
   )
 }
 

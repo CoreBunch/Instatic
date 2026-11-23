@@ -129,7 +129,7 @@ src/admin/pages/site/panels/AgentPanel/
 └── index.ts                — barrel export
 
 src/admin/pages/ai/
-├── AiPage.tsx              — /admin/ai workspace; three tabs gated by ai.providers.manage + ai.audit.read
+├── AiPage.tsx              — /admin/ai workspace; four tabs gated by ai.providers.manage + ai.audit.read
 ├── ProviderMark.module.css     (provider logos; layout styles live in @admin/shared/SettingsWorkspace)
 └── tabs/
     ├── ProvidersTab.tsx    — CRUD for ai_credentials rows (provider-derived API key or endpoint credential shape)
@@ -137,6 +137,8 @@ src/admin/pages/ai/
     ├── AuditTab.tsx        — usage audit view: totals strip, by-model/user/scope tables, daily bar chart
     └── UsageTablePanel.tsx — shared table scaffolding (title + hint header, numeric-aligned columns, empty row)
 ```
+
+The AI workspace shares its top tabs, title-only page headers, and centered content width with Users and Email. Providers, Defaults, and MCP connections use the same selectable cards as Email connectors. Audit groups usage totals in individually rounded cards.
 
 Shared AI number and spend formatting lives in `src/admin/ai/usageFormat.ts`, so
 the Audit workspace and compact composer usage detail use identical labels.
@@ -846,7 +848,7 @@ unblocks deletion of the credential that had been protected by the default FK.
   - `server/ai/audit/store.ts` — `getUsageTotals`, `getUsageByUser`, `getUsageByScope`, `getUsageByModel`, `getUsageByDay` (usage rollup queries)
   - `server/ai/handlers/audit.ts` — `GET /admin/api/ai/audit` handler
   - `server/time.ts` — `resolveTimeZone` + `localDayKeyFactory` (shared timezone day-bucketing utilities)
-  - `src/admin/pages/ai/AiPage.tsx` — `/admin/ai` workspace (Providers / Defaults / Audit tabs)
+  - `src/admin/pages/ai/AiPage.tsx` — `/admin/ai` workspace (Providers / Defaults / MCP connections / Audit tabs)
   - `src/admin/pages/ai/tabs/AuditTab.tsx` — usage audit view (totals strip, tables, daily bar chart)
   - `src/admin/pages/ai/tabs/UsageTablePanel.tsx` — shared table scaffolding for audit rollups
   - `src/admin/ai/usageFormat.ts` — shared `formatNumber` / `formatCost` helpers

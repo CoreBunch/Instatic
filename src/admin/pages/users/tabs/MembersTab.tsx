@@ -239,10 +239,7 @@ export function MembersTab({ canManage }: { canManage: boolean }) {
   return (
     <section className={styles.section} aria-labelledby="members-title">
       <div className={styles.sectionHeader}>
-        <div>
-          <h1 id="members-title">Site members</h1>
-          <p>People who can sign in to your published site.</p>
-        </div>
+        <h1 id="members-title">Site members</h1>
         <div className={memberStyles.headerActions}>
           <Button
             type="button"

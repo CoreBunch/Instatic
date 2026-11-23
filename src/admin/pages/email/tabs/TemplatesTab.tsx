@@ -15,7 +15,7 @@ import { ContentModeToggle } from '@admin/pages/content/components/ContentModeTo
 import { TiptapBodyEditor, type TiptapBodyEditorHandle } from '@admin/pages/content/TiptapBodyEditor'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { TemplateNavigation } from './TemplateNavigation'
-import { EmailSection } from '../EmailSection'
+import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
 import ws from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
 import { Button } from '@ui/components/Button'
 import { ContextMenu, ContextMenuItem } from '@ui/components/ContextMenu'
@@ -62,7 +62,7 @@ export function TemplatesTab({ initialKey }: { initialKey: string | null }) {
   const selected = templates.find((template) => template.key === selectedKey) ?? templates[0]
 
   return (
-    <EmailSection title="Templates" description="Edit and preview the emails your site sends.">
+    <WorkspaceSection title="Templates">
       {error && <p role="alert" className={ws.errorAlert}>{error}</p>}
       {loading && templates.length === 0 && <p className={ws.emptyState}>Loading templates…</p>}
       {selected && (
@@ -78,7 +78,7 @@ export function TemplatesTab({ initialKey }: { initialKey: string | null }) {
           />
         </div>
       )}
-    </EmailSection>
+    </WorkspaceSection>
   )
 }
 

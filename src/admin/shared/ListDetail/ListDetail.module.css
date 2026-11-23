@@ -30,7 +30,7 @@
 
 .facts {
   display: grid;
-  gap: var(--space-px);
+  gap: var(--space-m);
   margin: 0;
 }
 
@@ -39,12 +39,6 @@
   grid-template-columns: 130px minmax(0, 1fr);
   align-items: baseline;
   gap: var(--space-l);
-  padding: var(--space-s) 0;
-  border-bottom: 1px solid var(--divider);
-}
-
-.facts > div:last-child {
-  border-bottom: 0;
 }
 
 .facts dt {

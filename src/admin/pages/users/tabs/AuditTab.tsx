@@ -22,6 +22,7 @@ import { auditActor, auditDetails, auditTitle } from '../utils/audit'
 import { formatDateTime } from '../utils/format'
 import { listCmsAuditEvents, type CmsRole } from '@core/persistence'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
+import auditTable from '@admin/shared/AuditTable/AuditTable.module.css'
 import styles from '../UsersPage.module.css'
 import { EmptyState } from '@ui/components/EmptyState'
 import { ListBoxSolidIcon } from 'pixel-art-icons/icons/list-box-solid'
@@ -34,14 +35,11 @@ export function AuditTab({ roles }: { roles: CmsRole[] }) {
   return (
     <section className={styles.section} aria-labelledby="audit-events-title">
       <div className={styles.sectionHeader}>
-        <div>
-          <h1 id="audit-events-title">Audit Events</h1>
-          <p>Security and access changes across the admin area.</p>
-        </div>
+        <h1 id="audit-events-title">Audit Events</h1>
       </div>
       {audit.error && <p className={styles.error} role="alert">{audit.error}</p>}
       {audit.loading ? (
-        <DataTable aria-label="Loading audit events" density="compact" aria-busy="true">
+        <DataTable className={auditTable.table} aria-label="Loading audit events" density="compact" aria-busy="true">
           <DataTableHead>
             <DataTableRow>
               <DataTableHeader scope="col">Event</DataTableHeader>
@@ -62,7 +60,7 @@ export function AuditTab({ roles }: { roles: CmsRole[] }) {
           </DataTableBody>
         </DataTable>
       ) : events.length > 0 ? (
-        <DataTable aria-label="Audit events" density="compact">
+        <DataTable className={auditTable.table} aria-label="Audit events" density="compact">
           <DataTableHead>
             <DataTableRow>
               <DataTableHeader scope="col">Event</DataTableHeader>
