@@ -8,9 +8,9 @@
  * failed lookup degrades to the plain confirmation instead of blocking a
  * delete or swallowing one.
  *
- * Each surface that offers the delete owns its own dialog, so each has to be
- * wired separately — and a test per surface is the only thing that catches one
- * being left behind. The bulk window is a third such surface; its permanent
+ * The viewer and the canvas menu share one confirmation (`useConfirmMediaPurge`),
+ * which does the lookup; a test per surface still catches one that stops
+ * routing through it. The bulk window is a third such surface; its permanent
  * delete arrives with #500, and its wiring belongs in whichever of the two
  * lands second.
  */
