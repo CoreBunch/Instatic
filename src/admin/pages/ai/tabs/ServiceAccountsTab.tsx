@@ -91,7 +91,7 @@ export function ServiceAccountsTab() {
       setDialog(null)
       overview.refresh()
     } catch (err) { report('Could not update service account', err) }
-    finally { setBusy(false) }
+    setBusy(false)
   }
   async function copy() {
     try {
@@ -127,8 +127,8 @@ export function ServiceAccountsTab() {
         <Button variant="primary" disabled={busy || (dialog === 'create' && (!label.trim() || !selected.size))} onClick={submit}>
           {dialog === 'create' ? 'Create account' : 'Revoke access'}</Button></>}>
       {dialog === 'create' ? <div className={styles.providerSetupForm}>
-        <label>Account name<Input value={label} maxLength={100} placeholder="Launch editor" onChange={e => setLabel(e.currentTarget.value)} /></label>
-        <label>Expires after<Select value={ttl} options={expiryOptions} onChange={e => setTtl(e.currentTarget.value)} /></label>
+        <label htmlFor="service-account-name">Account name<Input id="service-account-name" value={label} maxLength={100} placeholder="Launch editor" onChange={e => setLabel(e.currentTarget.value)} /></label>
+        <label htmlFor="service-account-expiry">Expires after<Select id="service-account-expiry" value={ttl} options={expiryOptions} onChange={e => setTtl(e.currentTarget.value)} /></label>
         <p>These permissions apply across the installation, including main and any branches the account can access.</p>
         <CapabilityPicker groups={groups} selected={selected} onChange={setSelected} />
       </div> : <p>The CLI for {account?.label} will lose access immediately.</p>}
@@ -161,7 +161,7 @@ export function ServiceConsent() {
       }))
       returnToCli({ code })
     } catch (err) { report('Could not authorize this CLI', err) }
-    finally { setBusy(false) }
+    setBusy(false)
   }
   return <AdminPageLayout workspace="ai" mode="workspace"><div className={consent.pageBody}>
     <header className={consent.heading}><h1>Connect Instatic CLI</h1></header>
