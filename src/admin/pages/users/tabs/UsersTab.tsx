@@ -268,10 +268,7 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
   return (
     <section className={styles.section} aria-labelledby="all-users-title">
       <div className={styles.sectionHeader}>
-        <div>
-          <h1 id="all-users-title">Admin users</h1>
-          <p>People who can sign in to the CMS.</p>
-        </div>
+        <h1 id="all-users-title">Admin users</h1>
         {canManageUsers && (
           <Button type="button" variant="primary" size="md" onClick={openCreate}>
             <PlusIcon size={14} aria-hidden="true" />

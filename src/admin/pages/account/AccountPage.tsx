@@ -73,7 +73,6 @@ export function AccountPage() {
         workspace="account"
         title="Account"
         titleId="account-title"
-        description="Manage your profile, devices, security, and sign-in activity."
         tabs={tabs}
       >
         <div className={styles.body}>

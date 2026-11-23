@@ -10,21 +10,17 @@
  */
 
 import { useState } from 'react'
-import { Button } from '@ui/components/Button'
+import { Tabs, TabList, Tab, TabPanel } from '@ui/components/Tabs'
 import { AdminPageLayout } from '@admin/layouts/AdminPageLayout'
 import { useLocation } from '@admin/lib/routing'
 import { hasCapability } from '@admin/access'
 import { useCurrentAdminUser } from '@admin/sessionContext'
-import { DatabaseSolidIcon } from 'pixel-art-icons/icons/database-solid'
-import { Settings2SolidIcon } from 'pixel-art-icons/icons/settings-2-solid'
-import { LinkIcon } from 'pixel-art-icons/icons/link'
-import { ChartSolidIcon } from 'pixel-art-icons/icons/chart-solid'
 import { ProvidersTab } from './tabs/ProvidersTab'
 import { DefaultsTab } from './tabs/DefaultsTab'
 import { AuditTab } from './tabs/AuditTab'
 import { McpTab } from './tabs/McpTab'
 import { McpOAuthAuthorizePage } from './McpOAuthAuthorizePage'
-import styles from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
+import directory from '@admin/shared/Directory/Directory.module.css'
 
 type Section = 'providers' | 'defaults' | 'mcp' | 'audit'
 
@@ -34,13 +30,6 @@ const SECTION_LABELS: Record<Section, string> = {
   mcp: 'MCP connections',
   audit: 'Audit',
 }
-
-const SECTION_ICONS = {
-  providers: DatabaseSolidIcon,
-  defaults: Settings2SolidIcon,
-  mcp: LinkIcon,
-  audit: ChartSolidIcon,
-} satisfies Record<Section, typeof DatabaseSolidIcon>
 
 export function AiPage() {
   const location = useLocation()
@@ -64,50 +53,21 @@ export function AiPage() {
 
   return (
     <AdminPageLayout workspace="ai" mode="workspace">
-      <div className={styles.workspace}>
-        <aside className={styles.workspaceSidebar} aria-label="AI workspace">
-          <div className={styles.workspaceIdentity}>
-            <h1 id="ai-title">AI</h1>
-            <p>Models, defaults, connections, and usage.</p>
-          </div>
-
-          <nav className={styles.workspaceNavigation} aria-label="AI settings">
-            {availableSections.map((item) => {
-              const Icon = SECTION_ICONS[item]
-              return (
-                <Button
-                  key={item}
-                  type="button"
-                  variant={activeSection === item ? 'secondary' : 'ghost'}
-                  size="md"
-                  align="start"
-                  fullWidth
-                  active={activeSection === item}
-                  onClick={() => setSection(item)}
-                  aria-current={activeSection === item ? 'page' : undefined}
-                  data-testid={`ai-nav-${item}`}
-                  className={styles.workspaceNavigationButton}
-                >
-                  <Icon size={16} aria-hidden="true" />
-                  <span>{SECTION_LABELS[item]}</span>
-                </Button>
-              )
-            })}
-          </nav>
-
-        </aside>
-
-        <div className={styles.workspaceContent} aria-labelledby="ai-title">
-          {activeSection === 'providers' && (
-            <ProvidersTab onNavigateToDefaults={() => setSection('defaults')} />
-          )}
-          {activeSection === 'defaults' && (
-            <DefaultsTab onNavigateToProviders={() => setSection('providers')} />
-          )}
-          {activeSection === 'mcp' && <McpTab />}
-          {activeSection === 'audit' && <AuditTab />}
+      <Tabs value={activeSection} onChange={setSection}>
+        <div className={directory.workspace}>
+          <TabList ariaLabel="AI settings">
+            {availableSections.map((item) => (
+              <Tab key={item} value={item} testId={`ai-nav-${item}`}>{SECTION_LABELS[item]}</Tab>
+            ))}
+          </TabList>
+          {canManage && <>
+            <TabPanel value="providers"><ProvidersTab onNavigateToDefaults={() => setSection('defaults')} /></TabPanel>
+            <TabPanel value="defaults"><DefaultsTab onNavigateToProviders={() => setSection('providers')} /></TabPanel>
+            <TabPanel value="mcp"><McpTab /></TabPanel>
+          </>}
+          {canReadAudit && <TabPanel value="audit"><AuditTab /></TabPanel>}
         </div>
-      </div>
+      </Tabs>
     </AdminPageLayout>
   )
 }

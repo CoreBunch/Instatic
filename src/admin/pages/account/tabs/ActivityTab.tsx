@@ -34,6 +34,7 @@ import {
   type CmsLoginActivityEvent,
   type CmsLoginActivityResult,
 } from '@core/persistence'
+import auditTable from '@admin/shared/AuditTable/AuditTable.module.css'
 import styles from '../AccountPage.module.css'
 import { EmptyState } from '@ui/components/EmptyState'
 import { LockSolidIcon } from 'pixel-art-icons/icons/lock-solid'
@@ -137,7 +138,7 @@ export function ActivityTab() {
           description="Sign-ins to your account appear here."
         />
       ) : (
-        <DataTable aria-label="Login activity" density="compact">
+        <DataTable className={auditTable.table} aria-label="Login activity" density="compact">
           <DataTableHead>
             <DataTableRow>
               <DataTableHeader scope="col">When</DataTableHeader>

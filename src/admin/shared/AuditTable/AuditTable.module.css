@@ -1,0 +1,12 @@
+/* Use space between records and reserve a hairline for the column headings. */
+.table[data-density] {
+  border-spacing: 0;
+}
+
+.table thead th {
+  border-bottom: 1px solid var(--overlay-5);
+}
+
+.table tbody td {
+  background: transparent;
+}

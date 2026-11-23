@@ -1,9 +1,8 @@
 import { useId, type ReactNode } from 'react'
-import styles from './EmailPage.module.css'
+import styles from './WorkspaceSection.module.css'
 
-export function EmailSection({ title, description, actions, children }: {
+export function WorkspaceSection({ title, actions, children }: {
   title: string
-  description: string
   actions?: ReactNode
   children: ReactNode
 }) {
@@ -11,10 +10,7 @@ export function EmailSection({ title, description, actions, children }: {
   return (
     <section className={styles.section} aria-labelledby={headingId}>
       <header className={styles.sectionHeader}>
-        <div>
-          <h1 id={headingId}>{title}</h1>
-          <p>{description}</p>
-        </div>
+        <h1 id={headingId}>{title}</h1>
         {actions}
       </header>
       {children}
