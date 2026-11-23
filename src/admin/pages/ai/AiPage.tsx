@@ -44,7 +44,8 @@ export function AiPage() {
   if (canManage) availableSections.push('providers', 'defaults', 'mcp', 'service')
   if (canReadAudit) availableSections.push('audit')
 
-  const [section, setSection] = useState<Section>('providers')
+  const initialAccount = new URLSearchParams(location.search).get('service-account')
+  const [section, setSection] = useState<Section>(initialAccount ? 'service' : 'providers')
   const activeSection = availableSections.includes(section)
     ? section
     : availableSections[0] ?? 'providers'
@@ -68,7 +69,7 @@ export function AiPage() {
             <TabPanel value="providers"><ProvidersTab onNavigateToDefaults={() => setSection('defaults')} /></TabPanel>
             <TabPanel value="defaults"><DefaultsTab onNavigateToProviders={() => setSection('providers')} /></TabPanel>
             <TabPanel value="mcp"><McpTab /></TabPanel>
-            <TabPanel value="service"><ServiceAccountsTab /></TabPanel>
+            <TabPanel value="service"><ServiceAccountsTab initialAccount={initialAccount} /></TabPanel>
           </>}
           {canReadAudit && <TabPanel value="audit"><AuditTab /></TabPanel>}
         </div>

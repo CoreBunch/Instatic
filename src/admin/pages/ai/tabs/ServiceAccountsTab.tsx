@@ -1,34 +1,33 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
+import { CopySolidIcon } from 'pixel-art-icons/icons/copy-solid'
 import { apiRequest } from '@core/http'
-import { Type } from '@core/utils/typeboxHelpers'
-import type { CoreCapability } from '@core/capabilities'
-import { SERVICE_CAPABILITIES, ServiceOverviewSchema, ServiceCodeSchema, type ServiceAccount } from '@core/serviceAccounts'
+import { ServiceOverviewSchema, ServiceCodeSchema, type ServiceAccount } from '@core/serviceAccounts'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { useAsyncResource } from '@admin/lib/useAsyncResource'
-import { useLocation } from '@admin/lib/routing'
-import { useAuthenticatedAdminUser } from '@admin/sessionContext'
-import { hasCapability } from '@admin/access'
+import { Type } from '@core/utils/typeboxHelpers'
 import { AdminPageLayout } from '@admin/layouts/AdminPageLayout'
-import { CapabilityPicker, capabilityLabel } from '@admin/shared/CapabilityPicker'
+import { useLocation } from '@admin/lib/routing'
+import { useAsyncResource } from '@admin/lib/useAsyncResource'
+import { capabilityLabel } from '@admin/shared/CapabilityPicker'
+import { DirectoryInspector } from '@admin/shared/Directory/DirectoryInspector'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
-import { WorkspaceChoice, WorkspaceChoices } from '@admin/shared/SettingsWorkspace/WorkspaceChoices'
-import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
+import { cn } from '@ui/cn'
+import { Alert } from '@ui/components/Alert'
 import { Button } from '@ui/components/Button'
+import { Code } from '@ui/components/Code'
+import { DataTable, DataTableHead, DataTableBody, DataTableRow, DataTableHeader, DataTableCell } from '@ui/components/DataTable'
 import { Dialog } from '@ui/components/Dialog'
-import { Input } from '@ui/components/Input'
-import { Select } from '@ui/components/Select'
+import { EmptyState } from '@ui/components/EmptyState'
+import { Heading } from '@ui/components/Heading'
+import { Text } from '@ui/components/Text'
 import { pushToast } from '@ui/components/Toast'
-import styles from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
+import { CreateServiceAccountDialog } from './CreateServiceAccountDialog'
+import styles from './ServiceAccounts.module.css'
+import directory from '@admin/shared/Directory/Directory.module.css'
 import layout from '@admin/shared/SettingsWorkspace/WorkspaceSection.module.css'
-import consent from '../McpOAuthAuthorizePage.module.css'
 
 const base = '/admin/api/cms/service-accounts'
 const IdSchema = Type.Object({ id: Type.String() })
-const expiryOptions = [
-  { value: '1', label: '1 hour' }, { value: '8', label: '8 hours' }, { value: '24', label: '1 day' },
-  { value: '168', label: '7 days' }, { value: '720', label: '30 days' },
-]
 function status(account: ServiceAccount) {
   if (account.revoked) return 'Revoked'
   if (account.expired) return 'Expired'
@@ -59,81 +58,127 @@ function agentPrompt(origin: string, account: string, filename: string) {
   ].join('\n')
 }
 
-export function ServiceAccountsTab() {
+const expires = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+const inspectorId = 'service-account-inspector'
+
+function AccountStatus({ account }: { account: ServiceAccount }) {
+  const inactive = account.revoked || account.expired
+  return <span className={directory.status} data-tone={inactive ? 'neutral' : account.connected ? undefined : 'warning'}>{status(account)}</span>
+}
+
+function AccountFacts({ account }: { account: ServiceAccount }) {
+  return <dl className={directory.facts}>
+    <div><dt>Expires</dt><dd><time dateTime={account.expiresAt}>{expires.format(new Date(account.expiresAt))}</time></dd></div>
+    <div><dt>Permissions</dt><dd>{account.capabilities.map(capabilityLabel).join(', ')}</dd></div>
+  </dl>
+}
+
+export function ServiceAccountsTab({ initialAccount }: { initialAccount?: string | null }) {
   const overview = useOverview()
-  const user = useAuthenticatedAdminUser()
   const { runStepUp } = useStepUp()
-  const [id, setId] = useState('')
-  const [dialog, setDialog] = useState<'create' | 'revoke' | null>(null)
-  const [label, setLabel] = useState('')
-  const [ttl, setTtl] = useState('8')
-  const allowed = SERVICE_CAPABILITIES.filter(c => hasCapability(user, c))
-  const [selected, setSelected] = useState<Set<CoreCapability>>(() => new Set(allowed.filter(c => c === 'site.read')))
+  const pairing = new URLSearchParams(useLocation().search).get('pairing')
+  const [id, setId] = useState(pairing ? '' : initialAccount ?? '')
+  const selectedRow = useRef<HTMLButtonElement>(null)
+  const [dialog, setDialog] = useState<'create' | 'prompt' | 'revoke' | null>(null)
   const [busy, setBusy] = useState(false)
-  const account = overview.data?.accounts.find(a => a.id === id) ?? overview.data?.accounts[0]
+  const account = overview.data?.accounts.find(a => a.id === id)
   const origin = overview.data?.origin
   const prompt = account && origin && overview.data ? agentPrompt(origin, account.id, overview.data.cliFilename) : ''
-  const groups = [
-    { title: 'Site and branches', capabilities: allowed.filter(c => c.startsWith('site.')) },
-    { title: 'Content and tables', capabilities: allowed.filter(c => c.startsWith('data.') || c.startsWith('content.')) },
-    { title: 'Media and settings', capabilities: allowed.filter(c => !/^(data|content|site)\./.test(c)) },
-  ].filter(g => g.capabilities.length)
+  const active = account && !account.revoked && !account.expired
+  const create = <Button variant="primary" disabled={!origin} onClick={() => setDialog('create')}>Create service account</Button>
 
-  async function submit() {
-    setBusy(true)
-    try {
-      if (dialog === 'create') {
-        const result = await runStepUp(() => apiRequest(base, { method: 'POST', schema: IdSchema,
-          body: { label: label.trim(), ttlHours: Number(ttl), capabilities: [...selected] } }))
-        setId(result.id)
-        setLabel('')
-      } else if (account) await apiRequest(base + '/' + account.id, { method: 'DELETE' })
-      setDialog(null)
-      overview.refresh()
-    } catch (err) { report('Could not update service account', err) }
-    setBusy(false)
-  }
   async function copy() {
     try {
       await navigator.clipboard.writeText(prompt)
       pushToast({ kind: 'success', title: 'Agent prompt copied' })
-    } catch (err) { report('Select and copy the prompt below', err) }
+    } catch (err) {
+      setDialog('prompt')
+      report('Select and copy the agent prompt', err)
+    }
   }
-  return <WorkspaceSection title="Service accounts" actions={<Button variant="primary" disabled={!origin} onClick={() => {
-      setLabel(''); setTtl('8'); setSelected(new Set(allowed.filter(c => c === 'site.read'))); setDialog('create')
-    }}>Create service account</Button>}>
-    {overview.error && <p role="alert">{overview.error}</p>}
-    {overview.loading && <p role="status">Loading service accounts…</p>}
-    {overview.data && !origin && <p>Set PUBLIC_ORIGIN to the HTTPS address of this installation to enable CLI connections.</p>}
-    {overview.data?.accounts.length ? <WorkspaceChoices title="Your connectors">
-      {overview.data.accounts.map(a => <WorkspaceChoice key={a.id} icon={<CodeIcon size={18} />} active={account?.id === a.id}
-        label={a.label} description={status(a)} onSelect={() => setId(a.id)} />)}
-    </WorkspaceChoices> : overview.data && <p>Give an external agent access to the CMS with selected permissions and an expiry.</p>}
-    {account && <section className={layout.detailCard}>
-      <h3>{account.label}</h3>
-      <p>{status(account)} · Expires {new Date(account.expiresAt).toLocaleString()}</p>
-      <p>{account.capabilities.map(capabilityLabel).join(' · ')}</p>
-      {!account.revoked && !account.expired && <>
-        <h4>Agent handoff</h4><pre className={styles.promptText}>{prompt}</pre>
-        <div className={styles.settingsDetailActions}>
-          <Button variant="primary" onClick={copy}>Copy agent prompt</Button>
-          <Button variant="secondary" onClick={() => setDialog('revoke')}>Revoke access</Button>
+  async function revoke() {
+    if (!account) return
+    setBusy(true)
+    try {
+      await apiRequest(base + '/' + account.id, { method: 'DELETE' })
+      setDialog(null)
+      overview.refresh()
+    } catch (err) { report('Could not revoke service account', err) }
+    setBusy(false)
+  }
+  return <div className={directory.directory} data-split={Boolean(account)}>
+    <div className={directory.list}>
+      {pairing === 'failed' && <Alert tone="danger">The CLI could not finish connecting. Check the terminal and run the connection command again.</Alert>}
+      {pairing === 'declined' && <Text variant="muted">CLI connection request declined.</Text>}
+      {overview.error && <Alert tone="danger">{overview.error}</Alert>}
+      {overview.loading && !overview.data && <div role="status"><Text variant="muted">Loading service accounts…</Text></div>}
+      {overview.data && !origin && <Alert tone="warning">Set PUBLIC_ORIGIN to the HTTPS address of this installation to enable CLI connections.</Alert>}
+      {overview.data && (overview.data.accounts.length ? <>
+        <div className={directory.toolbar}>{create}</div>
+        <DataTable aria-label="Service accounts" className={directory.table} density="compact">
+          <DataTableHead><DataTableRow>
+            <DataTableHeader>Account</DataTableHeader>
+            <DataTableHeader className={directory.accessColumn}>Permissions</DataTableHeader>
+            <DataTableHeader className={directory.statusColumn}>Status</DataTableHeader>
+            <DataTableHeader className={directory.loginColumn}>Expires</DataTableHeader>
+          </DataTableRow></DataTableHead>
+          <DataTableBody>{overview.data.accounts.map(a => <DataTableRow key={a.id} aria-current={id === a.id}>
+            <DataTableCell><Button className={directory.select} variant="ghost" aria-controls={id === a.id ? inspectorId : undefined}
+              aria-expanded={id === a.id} ref={id === a.id ? selectedRow : undefined} onClick={() => setId(a.id)}>
+              <span className={directory.identityText}><strong>{a.label}</strong></span>
+            </Button></DataTableCell>
+            <DataTableCell className={directory.accessColumn}>{a.capabilities.length}</DataTableCell>
+            <DataTableCell className={directory.statusColumn}><AccountStatus account={a} /></DataTableCell>
+            <DataTableCell className={directory.loginColumn}>{expires.format(new Date(a.expiresAt))}</DataTableCell>
+          </DataTableRow>)}</DataTableBody>
+        </DataTable>
+      </> : <EmptyState variant="centered" icon={<CodeIcon size={22} />} title="Connect an external agent"
+        description="Choose what the agent can do and when its access expires." action={create} />)}
+    </div>
+    {account && <DirectoryInspector key={account.id} id={inspectorId} label="Account details" onClose={() => {
+      selectedRow.current?.focus({ preventScroll: true })
+      setId('')
+    }}
+      heading={<div className={directory.identityText}><Heading level={3}>{account.label}</Heading></div>}
+      status={<AccountStatus account={account} />}>
+      <AccountFacts account={account} />
+      {active && <>
+        {prompt && !account.connected && <div className={styles.group}>
+          <Text variant="muted" size="sm">Paste the prompt into your agent, then approve its connection in your browser.</Text>
+          <div className={styles.actions}>
+            <Button variant="primary" onClick={copy}><CopySolidIcon size={14} />Copy agent prompt</Button>
+            <Button variant="ghost" onClick={() => setDialog('prompt')}>View prompt</Button>
+          </div>
+        </div>}
+        <div className={styles.group}>
+          {account.connected && initialAccount === account.id && <Text variant="muted">Return to your agent to start working.</Text>}
+          <div className={styles.actions}>
+            {account.connected && prompt && <Button variant="secondary" size="sm" onClick={() => setDialog('prompt')}>Reconnect CLI</Button>}
+            <Button variant="ghost" size="sm" dangerHover onClick={() => setDialog('revoke')}>Revoke access</Button>
+          </div>
         </div>
       </>}
-    </section>}
-    {dialog && <Dialog open onClose={() => { if (!busy) setDialog(null) }} title={dialog === 'create' ? 'Create service account' : 'Revoke access?'}
-      size={dialog === 'create' ? 'xl' : 'sm'} footer={<>
-        <Button variant="secondary" disabled={busy} onClick={() => setDialog(null)}>Cancel</Button>
-        <Button variant="primary" disabled={busy || (dialog === 'create' && (!label.trim() || !selected.size))} onClick={submit}>
-          {dialog === 'create' ? 'Create account' : 'Revoke access'}</Button></>}>
-      {dialog === 'create' ? <div className={styles.providerSetupForm}>
-        <label htmlFor="service-account-name">Account name<Input id="service-account-name" value={label} maxLength={100} placeholder="Launch editor" onChange={e => setLabel(e.currentTarget.value)} /></label>
-        <label htmlFor="service-account-expiry">Expires after<Select id="service-account-expiry" value={ttl} options={expiryOptions} onChange={e => setTtl(e.currentTarget.value)} /></label>
-        <p>These permissions apply across the installation, including main and any branches the account can access.</p>
-        <CapabilityPicker groups={groups} selected={selected} onChange={setSelected} />
-      </div> : <p>The CLI for {account?.label} will lose access immediately.</p>}
+    </DirectoryInspector>}
+    {dialog === 'create' && <CreateServiceAccountDialog onClose={() => setDialog(null)} onCreate={async grant => {
+      try {
+        const result = await runStepUp(() => apiRequest(base, { method: 'POST', schema: IdSchema, body: grant }))
+        setId(result.id)
+        setDialog(null)
+        overview.refresh()
+      } catch (err) { report('Could not create service account', err) }
+    }} />}
+    {dialog === 'prompt' && prompt && <Dialog open size="lg" title="Agent prompt" onClose={() => setDialog(null)}
+      footer={<Button variant="primary" onClick={copy}><CopySolidIcon size={14} />Copy agent prompt</Button>}>
+      <Code className={styles.prompt}>{prompt}</Code>
     </Dialog>}
-  </WorkspaceSection>
+    {dialog === 'revoke' && account && <Dialog open tone="danger" size="sm" title="Revoke access?" onClose={() => { if (!busy) setDialog(null) }}
+      footer={<>
+        <Button variant="secondary" disabled={busy} onClick={() => setDialog(null)}>Cancel</Button>
+        <Button variant="destructive" disabled={busy} onClick={revoke}>Revoke access</Button>
+      </>}>
+      <Text>The CLI for <strong>{account.label}</strong> will lose access immediately.</Text>
+    </Dialog>}
+  </div>
 }
 
 export function ServiceConsent() {
@@ -163,14 +208,25 @@ export function ServiceConsent() {
     } catch (err) { report('Could not authorize this CLI', err) }
     setBusy(false)
   }
-  return <AdminPageLayout workspace="ai" mode="workspace"><div className={consent.pageBody}>
-    <header className={consent.heading}><h1>Connect Instatic CLI</h1></header>
-    {overview.loading ? <p>Loading account…</p> : valid ? <section className={consent.clientCard}>
-      <h2>{account.label}</h2><p>Approve the request from your CLI on this machine. Match code <strong>{state.slice(0, 8)}</strong> with the terminal.</p>
-      <p>Expires {new Date(account.expiresAt).toLocaleString()}</p><p>{account.capabilities.map(capabilityLabel).join(' · ')}</p>
-      {account.connected && <p>Connecting this device replaces the previous CLI credential.</p>}
-      <div className={consent.actions}><Button variant="secondary" disabled={busy} onClick={() => returnToCli({ error: 'access_denied' })}>Cancel</Button>
-        <Button variant="primary" disabled={busy} onClick={approve}>Authorize CLI</Button></div>
-    </section> : <p role="alert">{overview.error ?? 'This request is invalid, expired, or belongs to another administrator.'}</p>}
-  </div></AdminPageLayout>
+
+  return <AdminPageLayout workspace="ai" mode="workspace">
+    <section className={cn(styles.consent, styles.stack, layout.detailCard)} aria-label="Connect Instatic CLI">
+      {overview.loading && !overview.data ? <Text variant="muted">Loading account…</Text> : valid ? <>
+        <header className={directory.identityText}>
+          <Text variant="muted" size="sm">CLI connection request</Text>
+          <Heading level={3}>{account.label}</Heading>
+        </header>
+        <div className={styles.group}>
+          <Text variant="muted">Match this code with the one in your terminal.</Text>
+          <Text variant="mono" size="lg">{state.slice(0, 8)}</Text>
+        </div>
+        <AccountFacts account={account} />
+        {account.connected && <Alert tone="warning">Approving replaces the current CLI connection.</Alert>}
+        <div className={styles.actions}>
+          <Button variant="primary" disabled={busy} onClick={approve}>Authorize CLI</Button>
+          <Button variant="secondary" disabled={busy} onClick={() => returnToCli({ error: 'access_denied' })}>Cancel</Button>
+        </div>
+      </> : <Alert tone="warning">{overview.error ?? 'This request is invalid, expired, or belongs to another administrator.'}</Alert>}
+    </section>
+  </AdminPageLayout>
 }

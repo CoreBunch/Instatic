@@ -63,22 +63,31 @@ async function connect(origin: string, account: string) {
   const verifier = randomBytes(32).toString('base64url')
   const challenge = createHash('sha256').update(verifier).digest('base64url')
   const approval = Promise.withResolvers<string>()
+  const paired = Promise.withResolvers<boolean>()
+  function returnToAccount(outcome?: 'declined' | 'failed') {
+    const url = new URL('/admin/ai', origin)
+    url.searchParams.set('service-account', account)
+    if (outcome) url.searchParams.set('pairing', outcome)
+    return new Response(null, { status: 303, headers: {
+      Location: url.href, 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer',
+    } })
+  }
   const listener = Bun.serve({
     hostname: '127.0.0.1', port: 0,
-    fetch(req) {
+    async fetch(req, server) {
       const url = new URL(req.url)
       if (req.method !== 'GET' || url.hostname !== '127.0.0.1' || url.pathname !== '/callback' ||
         url.searchParams.get('state') !== state) return new Response('Invalid callback', { status: 400 })
       if (url.searchParams.get('error') === 'access_denied') {
         approval.reject(new Error('Connection declined'))
-        return new Response('Connection declined. You can close this tab.')
+        return returnToAccount('declined')
       }
       const code = url.searchParams.get('code')
       if (!code?.startsWith('icli_code_')) return new Response('Invalid approval', { status: 400 })
+      server.timeout(req, 0) // The OS credential store may ask the user to unlock it.
       approval.resolve(code)
-      return new Response('Instatic received your approval. Return to your agent.', {
-        headers: { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' },
-      })
+      // Show the account after the CLI has stored its credential.
+      return returnToAccount(await paired.promise ? undefined : 'failed')
     },
   })
   const timer = setTimeout(() => approval.reject(new Error('Connection timed out. Run connect again.')), 300000)
@@ -97,8 +106,10 @@ async function connect(origin: string, account: string) {
     })
     const { token } = checked(Type.Pick(credentialSchema, ['token']), await response.json())
     await Bun.secrets.set({ service: 'Instatic CLI', name: account, value: JSON.stringify({ origin, token }) })
+    paired.resolve(true)
     output('Connected. Run instatic whoami --account ' + account)
   } finally {
+    paired.resolve(false)
     clearTimeout(timer)
     await listener.stop()
   }
