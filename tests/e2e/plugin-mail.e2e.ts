@@ -99,9 +99,10 @@ test('a plugin\'s email templates are listed, reworded and sent (ADMIN-016)', as
     await test.step('the templates are listed under the plugin and one is reworded', async () => {
       await page.goto('/admin/email')
       await page.getByTestId('email-nav-templates').click()
-      await expect(page.getByText(pluginName, { exact: true })).toBeVisible()
-      await page.getByRole('button', { name: 'Ticket reply' }).click()
-      await page.getByRole('button', { name: 'New ticket' }).click()
+      const sidebar = page.getByRole('complementary', { name: 'Available templates' })
+      await expect(sidebar.getByRole('heading', { name: pluginName })).toBeVisible()
+      await sidebar.getByRole('button', { name: 'Ticket reply' }).click()
+      await sidebar.getByRole('button', { name: 'New ticket' }).click()
       const template = page.getByRole('article')
       await expect(template.getByRole('heading', { name: 'New ticket', exact: true })).toBeVisible()
       await page.screenshot({ path: process.env.E2E_EVIDENCE_PATH ?? '.tmp/evidence/plugin-mail-templates.png' })
@@ -115,7 +116,7 @@ test('a plugin\'s email templates are listed, reworded and sent (ADMIN-016)', as
       expect(saved.ok(), await saved.text()).toBe(true)
       await page.reload()
       await page.getByTestId('email-nav-templates').click()
-      await expect(page.getByRole('button', { name: /New ticket.*Edited/ })).toBeVisible()
+      await expect(sidebar.getByRole('button', { name: /New ticket.*Edited/ })).toBeVisible()
     })
 
     await test.step('the plugin sends it, and Activity shows the owner\'s wording', async () => {
@@ -129,8 +130,9 @@ test('a plugin\'s email templates are listed, reworded and sent (ADMIN-016)', as
       }, { timeout: 20_000 }).toBe('captured')
 
       await page.getByTestId('email-nav-activity').click()
-      const activity = page.getByRole('list', { name: 'Email activity' })
+      const activity = page.getByRole('table', { name: 'Email activity' })
       await expect(activity.getByText(`support-${suffix}@example.com`)).toBeVisible()
+      await activity.getByRole('button', { name: new RegExp(`support-${suffix}`) }).first().click()
       const details = page.getByRole('article', { name: 'Email details' })
       await expect(details.getByRole('heading', { name: 'Desk: Cannot publish' })).toBeVisible()
       await expect(details.getByText('Our own words about')).toBeVisible()
@@ -145,9 +147,12 @@ test('a plugin\'s email templates are listed, reworded and sent (ADMIN-016)', as
     await page.reload()
     await page.getByTestId('email-nav-templates').click()
     await expect(page.getByRole('article').getByRole('heading', { name: 'Test email', exact: true })).toBeVisible()
-    await expect(page.getByText(pluginName, { exact: true })).toHaveCount(0)
+    const sidebar = page.getByRole('complementary', { name: 'Available templates' })
+    await expect(sidebar).toBeVisible()
+    await expect(sidebar.getByRole('heading', { name: pluginName })).toHaveCount(0)
     // The log still says who sent the email.
     await page.getByTestId('email-nav-activity').click()
+    await page.getByRole('button', { name: new RegExp(`support-${suffix}`) }).first().click()
     await expect(page.getByRole('article', { name: 'Email details' }).getByText(pluginName, { exact: true })).toBeVisible()
   })
 })

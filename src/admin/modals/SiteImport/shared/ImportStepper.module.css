@@ -8,7 +8,7 @@
   padding: var(--space-l) var(--space-2xl);
   list-style: none;
   background: var(--bg-surface-2);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--divider);
 }
 .stepperItem {
   display: inline-flex;

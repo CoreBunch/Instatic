@@ -230,7 +230,7 @@
     display: grid;
     gap: var(--space-s);
     padding-top: var(--space-2xl);
-    border-top: 1px solid var(--overlay-10);
+    border-top: 1px solid var(--divider);
 }
 
 .shortcutHint {

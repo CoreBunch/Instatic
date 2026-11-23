@@ -15,7 +15,7 @@
 
 .actionBar {
   padding: var(--space-xl);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--divider);
   display: flex;
   flex-direction: column;
   gap: var(--space-m);

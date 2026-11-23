@@ -113,7 +113,7 @@
 /* ── Input bar ───────────────────────────────────────────────────────────── */
 .inputBar {
   padding: var(--space-l);
-  border-top: 1px solid var(--overlay-10);
+  border-top: 1px solid var(--divider);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;

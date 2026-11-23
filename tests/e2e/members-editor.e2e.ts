@@ -169,7 +169,7 @@ test.describe('member pages in the editor', () => {
         // The confirmation email was produced (captured on this development server).
         await page.goto('/admin/email')
         await page.getByTestId('email-nav-activity').click()
-        const activity = page.getByRole('list', { name: 'Email activity' })
+        const activity = page.getByRole('table', { name: 'Email activity' })
         await expect(activity.getByText(email).first()).toBeVisible()
 
         // The link in that email finishes the sign-up, in the browser that started it.
