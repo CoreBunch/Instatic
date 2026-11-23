@@ -100,19 +100,19 @@ export async function consumeMemberToken(
   return { memberId: row.member_id, payload: payload.ok ? payload.value : {} }
 }
 
-/** Is this token still usable? Read-only: for rendering the page a link opens. */
-export async function memberTokenIsLive(
+/** Inspect the continuation before spending a sign-in link in this browser. */
+export async function readLiveSignInPayload(
   db: DbClient,
   token: string,
-  kind: MemberTokenKind,
-): Promise<boolean> {
-  if (!/^[A-Za-z0-9_-]{20,100}$/.test(token)) return false
+): Promise<TokenPayload | null> {
+  if (!/^[A-Za-z0-9_-]{20,100}$/.test(token)) return null
   const idHash = await hashSessionToken(token)
-  const { rows } = await db<{ id_hash: string }>`
-    select id_hash from member_tokens
-     where id_hash = ${idHash} and kind = ${kind} and used_at is null and expires_at > ${nowIso()}
+  const { rows } = await db<{ payload_json: unknown }>`
+    select payload_json from member_tokens
+     where id_hash = ${idHash} and kind = 'magic' and used_at is null and expires_at > ${nowIso()}
   `
-  return rows.length > 0
+  const result = safeParseValue(TokenPayloadSchema, rows[0]?.payload_json)
+  return result.ok ? result.value : null
 }
 
 /** Withdraw every unused token of a member (password change, deletion). */

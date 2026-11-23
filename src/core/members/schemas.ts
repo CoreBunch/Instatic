@@ -257,6 +257,8 @@ export const MEMBER_ERROR_CODES = [
   'signup_closed',
   'invite_required',
   'invalid_token',
+  'app_browser_mismatch',
+  'app_request_closed',
   'weak_password',
   'email_taken',
   'reauth_required',

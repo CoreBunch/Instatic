@@ -188,6 +188,11 @@ describe('sign-in for apps', () => {
       const { rows } = await t.db<{ body_text: string }>`select body_text from mail_outbox where kind = 'member.magic'`
       const token = rows[0]?.body_text.match(/token=([A-Za-z0-9_-]+)/)?.[1]
       expect(token).toBeTruthy()
+      const otherBrowser = await call('/_instatic/members/link/confirm', {
+        method: 'POST', headers: { ...headers, cookie: '' }, body: JSON.stringify({ token }),
+      })
+      expect((await otherBrowser.json()).error.code).toBe('app_browser_mismatch')
+      expect(otherBrowser.headers.get('set-cookie')).toBeNull()
       const confirmed = await call('/_instatic/members/link/confirm', {
         method: 'POST', headers, body: JSON.stringify({ token }),
       })
@@ -305,7 +310,7 @@ describe('sign-in for apps', () => {
       const request = await startRequest()
       expect((await answer('approve', request)).status).toBe(200)
       expect((await answer('approve', request)).status).toBe(400)
-      expect((await answer('deny', request)).status).toBe(400)
+      expect((await (await answer('deny', request)).json()).error.code).toBe('app_request_closed')
     })
 
     it('counts only from the browser the app opened', async () => {
@@ -315,6 +320,7 @@ describe('sign-in for apps', () => {
       expect(otherBrowser.status).toBe(400)
       const wrongMarker = await answer('approve', request, { cookie: `${sessionOnly}; instatic_member_app=${'a'.repeat(32)}` })
       expect(wrongMarker.status).toBe(400)
+      expect((await wrongMarker.json()).error.code).toBe('app_browser_mismatch')
       expect((await answer('approve', request)).status).toBe(200)
     })
 

@@ -32,7 +32,7 @@ import { listConnectedMemberApps } from '@core/loops'
 import { MAIL_ADDRESS_PATTERN } from '@core/mail'
 import { MIN_PASSWORD_LENGTH } from '@core/utils/passwordPolicy'
 import { hashPassword, hashSessionToken, verifyPassword } from '../auth/tokens'
-import { findPendingMemberAppRequest, revokeAllMemberAppGrants } from './apps/store'
+import { appRequestProblem, findPendingMemberAppRequest, revokeAllMemberAppGrants } from './apps/store'
 import { memberLimits } from './limits'
 import { discardQueuedMailForMember } from '../mail/delivery'
 import { emitMemberHook } from './hooks'
@@ -64,7 +64,7 @@ import {
   revokeMemberSession,
   type MemberSession,
 } from './sessions'
-import { consumeMemberToken, issueMemberToken, withdrawMemberTokens } from './tokens'
+import { consumeMemberToken, issueMemberToken, readLiveSignInPayload, withdrawMemberTokens } from './tokens'
 
 // ─── Shapes ────────────────────────────────────────────────────────────────
 
@@ -458,10 +458,17 @@ export function requestPasswordReset(ctx: MemberActionContext, input: { email: s
 /** Open a sign-in link. Holding it proves the address, so it also confirms it. */
 export async function confirmSignInLink(
   ctx: MemberActionContext,
-  input: { token: string; ip: string },
+  input: { token: string; ip: string; browserMarker?: string | null },
 ): Promise<MemberOutcome> {
   const perIp = memberLimits.tokenPerIp.consume(input.ip)
   if (!perIp.ok) return limited(perIp.retryAfterMs)
+  const payload = await readLiveSignInPayload(ctx.db, input.token)
+  if (!payload) return fail('invalid_token')
+  if (payload.appRequestId) {
+    const request = await findPendingMemberAppRequest(ctx.db, payload.appRequestId)
+    const problem = await appRequestProblem(request, input.browserMarker ?? null)
+    if (problem) return fail(problem)
+  }
   const consumed = await consumeMemberToken(ctx.db, input.token, 'magic')
   if (!consumed) return fail('invalid_token')
   const member = await findMemberById(ctx.db, consumed.memberId)

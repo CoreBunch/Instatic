@@ -169,6 +169,7 @@ export async function createMemberAppRequest(
 }
 
 interface MemberAppRequestRow {
+  browser_hash: string
   app_id: string
   app_name: string
   redirect_uri: string
@@ -185,9 +186,9 @@ export async function findPendingMemberAppRequest(
   db: DbClient,
   requestId: string,
   now: Date = new Date(),
-): Promise<MemberAppRequest | null> {
+): Promise<(MemberAppRequest & { browserHash: string }) | null> {
   const { rows } = await db<MemberAppRequestRow>`
-    select r.app_id, a.name as app_name, r.redirect_uri, r.code_challenge, r.scope, r.resource, r.state,
+    select r.browser_hash, r.app_id, a.name as app_name, r.redirect_uri, r.code_challenge, r.scope, r.resource, r.state,
            r.device_jkt, r.device_name
       from member_app_requests r
       join member_apps a on a.id = r.app_id
@@ -202,6 +203,7 @@ export async function findPendingMemberAppRequest(
     ? {
         appId: row.app_id,
         appName: row.app_name,
+        browserHash: row.browser_hash,
         redirectUri: row.redirect_uri,
         codeChallenge: row.code_challenge,
         scope: row.scope,
@@ -213,27 +215,37 @@ export async function findPendingMemberAppRequest(
     : null
 }
 
+export async function appRequestProblem(
+  request: { browserHash: string } | null,
+  browserMarker: string | null,
+): Promise<'app_request_closed' | 'app_browser_mismatch' | null> {
+  if (!request) return 'app_request_closed'
+  if (!browserMarker || await hashOpaqueToken(browserMarker) !== request.browserHash) return 'app_browser_mismatch'
+  return null
+}
+
 /**
  * Answer a waiting request. An approval creates the grant and the one-time
- * code the app exchanges; a refusal only closes the request. Null when the
+ * code the app exchanges; a refusal only closes the request. Reports when the
  * request was already answered, has run out, or the answer comes from a
  * browser other than the one the app opened.
  */
 export async function decideMemberAppRequest(
   db: DbClient,
-  input: { requestId: string; browserMarker: string; memberId: string; approve: boolean },
+  input: { requestId: string; browserMarker: string | null; memberId: string; approve: boolean },
   now: Date = new Date(),
-): Promise<{ request: MemberAppRequest; code: string | null } | null> {
+): Promise<{ request: MemberAppRequest; code: string | null } | 'app_browser_mismatch' | 'app_request_closed'> {
   const idHash = await hashOpaqueToken(input.requestId)
-  const browserHash = await hashOpaqueToken(input.browserMarker)
   return db.transaction(async (tx) => {
     const request = await findPendingMemberAppRequest(tx, input.requestId, now)
-    if (!request) return null
+    if (!request) return 'app_request_closed'
+    const problem = await appRequestProblem(request, input.browserMarker)
+    if (problem) return problem
     const decided = await tx`
       update member_app_requests set decided_at = ${now.toISOString()}
-       where id_hash = ${idHash} and decided_at is null and browser_hash = ${browserHash}
+       where id_hash = ${idHash} and decided_at is null and browser_hash = ${request.browserHash}
     `
-    if (decided.rowCount !== 1) return null
+    if (decided.rowCount !== 1) return 'app_request_closed'
     if (!input.approve) return { request, code: null }
 
     const grantId = nanoid()

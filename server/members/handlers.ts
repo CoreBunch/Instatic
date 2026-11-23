@@ -204,6 +204,8 @@ const ERROR_MESSAGES: Record<MemberErrorCode, string> = {
   signup_closed: 'Sign-up is closed.',
   invite_required: 'You need an invitation to create an account.',
   invalid_token: 'This link has expired or was already used.',
+  app_browser_mismatch: 'Open this link in the same browser and profile where you started app sign-in. You can copy its address there.',
+  app_request_closed: 'This app request has ended. Start a new sign-in from the app.',
   weak_password: 'Choose a longer password.',
   email_taken: 'That email address is already in use.',
   reauth_required: 'Sign in again to make this change.',
@@ -350,7 +352,7 @@ async function runAction(
       }))
     }
     case 'link/confirm':
-      return respond(req, fields, await confirmSignInLink(ctx, { token: field('token'), ip }))
+      return respond(req, fields, await confirmSignInLink(ctx, { token: field('token'), ip, browserMarker: readAppRequestMarker(req) }))
     case 'password/forgot':
       return respond(req, fields, await requestPasswordReset(ctx, { email: field('email'), ip }))
     case 'password/reset':

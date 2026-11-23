@@ -24,7 +24,6 @@ export async function answerAppSignIn(
   if (input.decision !== 'allow' && input.decision !== 'deny') {
     return { ok: false, code: 'invalid_input', field: 'decision' }
   }
-  if (!input.requestId || !input.browserMarker) return { ok: false, code: 'invalid_token' }
   // What was on offer when the app asked may be gone by the time the member
   // answers: a plugin removed, or a scope taken off the app. An approval
   // counts only for what is still on offer now.
@@ -37,7 +36,7 @@ export async function answerAppSignIn(
   })
   // Answered already, run out, never issued, or opened in another browser:
   // there is no app to go back to.
-  if (!decided) return { ok: false, code: 'invalid_token' }
+  if (typeof decided === 'string') return { ok: false, code: decided }
 
   const { request, code } = decided
   const state = request.state ?? undefined
