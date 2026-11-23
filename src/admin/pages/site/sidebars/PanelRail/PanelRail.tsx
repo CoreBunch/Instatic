@@ -28,7 +28,7 @@ interface RailItem {
   iconName: string
   accent: RailAccent
   open: boolean
-  showRailLabel?: boolean
+  railLabel?: string
   detached?: boolean
   disabled?: boolean
   onToggle: () => void
@@ -209,7 +209,7 @@ export function PanelRail({
           toggleActivePluginPanel(panel.id)
         },
         shortcutLabel: panel.shortcutLabel,
-        showRailLabel: panel.showRailLabel,
+        railLabel: panel.railLabel,
       }))
     : []
 
@@ -247,6 +247,9 @@ export function PanelRail({
 function RailButton({ item }: { item: RailItem }) {
   const RailIcon = item.icon
   const action = item.open ? 'Close' : 'Open'
+  const panelName = item.railLabel && item.railLabel !== item.label
+    ? `${item.railLabel} ${item.label}`
+    : item.label
   const style = {
     '--rail-icon-tint': railTintVar(item.accent),
   } as CSSProperties
@@ -260,9 +263,9 @@ function RailButton({ item }: { item: RailItem }) {
     <Button
       variant="ghost"
       size="md"
-      iconOnly={!item.showRailLabel}
+      iconOnly={!item.railLabel}
       pressed={item.open && !item.detached}
-      aria-label={`${action} ${item.label} panel`}
+      aria-label={`${action} ${panelName} panel`}
       disabled={item.disabled}
       tooltip={title}
       data-testid={`panel-rail-${item.id}`}
@@ -271,11 +274,11 @@ function RailButton({ item }: { item: RailItem }) {
       data-detached={item.detached ? 'true' : undefined}
       style={style}
       onClick={item.onToggle}
-      className={cn(styles.railButton, item.showRailLabel && styles.labeledButton, item.detached && styles.railButtonDetached)}
+      className={cn(styles.railButton, item.railLabel && styles.labeledButton, item.detached && styles.railButtonDetached)}
     >
       <span className={styles.activeIndicator} aria-hidden="true" />
       <RailIcon size={16} className={styles.railIcon} />
-      {item.showRailLabel && <span className={styles.railLabel}>{item.label}</span>}
+      {item.railLabel && <span className={styles.railLabel}>{item.railLabel}</span>}
     </Button>
   )
 }

@@ -51,14 +51,14 @@ describe('definePluginPanel SDK builder', () => {
       label: 'Review',
       iconName: 'box-stack',
       accent: 'mint',
-      showRailLabel: true,
+      railLabel: 'PRO',
       component: NoopPanel,
     })
     expect(panel.id).toBe('acme.workflow.review')
     expect(panel.label).toBe('Review')
     expect(panel.iconName).toBe('box-stack')
     expect(panel.accent).toBe('mint')
-    expect(panel.showRailLabel).toBe(true)
+    expect(panel.railLabel).toBe('PRO')
     expect(panel.component).toBe(NoopPanel)
   })
 

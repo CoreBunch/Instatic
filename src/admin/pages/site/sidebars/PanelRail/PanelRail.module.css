@@ -67,8 +67,9 @@
     max-inline-size: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: var(--text-2xs);
-    font-weight: 600;
+    font-size: var(--text-xs);
+    font-weight: 700;
+    letter-spacing: 0.04em;
     line-height: 1.2;
 }
 

@@ -1,6 +1,6 @@
 # Template Plugin
 
-For a named launcher in the Site editor, set `showRailLabel: true` on an `editor.panels.register` descriptor. The dock displays its `label` beneath its icon.
+For a named launcher in the Site editor, set `railLabel: 'PRO'` on an `editor.panels.register` descriptor. The dock displays this short caption beneath the icon. The panel heading uses `label`.
 
 Minimal raw-zip starter plugin for Instatic. Use this when you want to inspect the runtime `plugin.json` shape directly; new TypeScript-authored plugins should usually start with `bun instatic-plugin init`.
 
