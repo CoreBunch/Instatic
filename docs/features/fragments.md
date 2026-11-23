@@ -77,6 +77,7 @@ SiteFragment = {
   nodes: Record<string, PageNode>,
   page?: { title, slug },                       // kind 'page'
   component?: { id, name },                     // kind 'component'
+  optionalClassIds?: string[],                    // offer these shared classes in the editor
   styleRules: StyleRule[],                      // classes + ambient rules (framework utilities by name only)
   conditions: ConditionDef[],
   components: VisualComponent[],                // closure, nested refs included
@@ -109,6 +110,7 @@ Every id is a SOURCE id. `media[].path` is the exact string the content uses (`/
 | Nodes | The selected subtrees, deep-copied. A component selection becomes one `base.visual-component-ref` with its slot instances. |
 | Components | Every referenced Visual Component, transitively. Their trees feed every later step. |
 | Classes | Every class a carried node or component uses. `framework:*` utilities carry only name + generated metadata; scoped module-style and regular rules carry whole. |
+| Optional classes | Pass shared rule IDs in `options.optionalClassIds` to carry their styles and dependencies. Insertion adds or reuses these classes in the destination and preserves the node’s original class assignments. |
 | Ambient rules | Every ambient rule whose selector names a carried class (`extractCssSelectorClasses`), and every `@keyframes` block a carried `animation` uses. |
 | Outside dependencies | Rules that style the selection through a class only its ANCESTORS have (a page wrapper, the body's class), when the rightmost compound could match inside the selection. Reported, not carried. |
 | Conditions | Non-viewport `contextStyles` keys of carried rules. |

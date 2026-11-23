@@ -21,6 +21,12 @@ function expectParseError(value: unknown, path: RegExp): void {
 }
 
 describe('parseSiteFragment', () => {
+  it('requires optional classes to resolve to shared class rules', () => {
+    for (const id of ['absent', 'cls-scoped', 'cls-hero-hover']) {
+      expect(() => parseSiteFragment({ ...fragment, optionalClassIds: [id] })).toThrow('optionalClassIds')
+    }
+  })
+
   it('accepts what extractFragment writes', () => {
     expect(parseSiteFragment(JSON.parse(JSON.stringify(fragment)))).toEqual(fragment)
   })
