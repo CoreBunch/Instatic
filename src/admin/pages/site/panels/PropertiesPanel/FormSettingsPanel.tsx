@@ -34,6 +34,8 @@ import styles from './FormSettingsPanel.module.css'
 type FormPreviewState = 'default' | 'submitting' | 'success' | 'error'
 type FormTableOption = Pick<DataTable, 'id' | 'name' | 'kind' | 'system'>
 
+const EMPTY_FIELDS: Record<string, never> = {}
+
 interface FormDialogProperties {
   dialogControls?: Record<string, ReactNode>
   resolvedProps?: Record<string, unknown>
@@ -176,8 +178,8 @@ export function FormSettingsPanel({
 
 export function FormSettingsPanelView({
   analysis,
-  dialogControls = {},
-  resolvedProps = analysis.node?.props ?? {},
+  dialogControls = EMPTY_FIELDS,
+  resolvedProps,
   tables,
   tablesLoading,
   tablesError,
@@ -242,7 +244,7 @@ export function FormSettingsPanelView({
           form={analysis.form}
           tableName={analysis.table?.name ?? tables.find((table) => table.id === analysis.form?.targetTableId)?.name}
           tableLoading={loading || tablesLoading}
-          resolvedProps={resolvedProps}
+          resolvedProps={resolvedProps ?? analysis.node?.props ?? EMPTY_FIELDS}
           controls={dialogControls}
           onModeChange={(mode) => onPatchProps({ mode })}
           previewState={previewState}
