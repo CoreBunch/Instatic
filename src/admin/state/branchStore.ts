@@ -18,6 +18,7 @@
  */
 import { create } from 'zustand'
 import {
+  BRANCH_HEADER,
   MAIN_BRANCH_ID,
   type ApplyMergeBody,
   type CreateBranchBody,
@@ -36,7 +37,7 @@ import {
   undoCmsBranchMerge,
 } from '@core/persistence'
 import { pushToast } from '@ui/components/Toast'
-import { BRANCH_HEADER, currentBranchId, rememberBranchId } from './activeBranch'
+import { currentBranchId, rememberBranchId } from './activeBranch'
 
 const BRANCH_NOT_FOUND_CODE = 'branch_not_found'
 

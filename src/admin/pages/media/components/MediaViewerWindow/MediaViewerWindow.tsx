@@ -27,6 +27,7 @@
 import { useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@ui/components/Button'
+import { useConfirmMediaPurge } from '../../hooks/useConfirmMediaPurge'
 import { Input, Textarea } from '@ui/components/Input'
 import { canDeleteMedia, canReplaceMedia, canWriteMedia } from '@admin/access'
 import { useCurrentAdminUser } from '@admin/sessionContext'
@@ -101,6 +102,7 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
   const currentUser = useCurrentAdminUser()
   const { asset } = editor
   const [replaceOpen, setReplaceOpen] = useState(false)
+  const confirmPurge = useConfirmMediaPurge(editor.purgeAsset)
   const bucket = bucketForMime(asset.mimeType)
   const canWrite = canWriteMedia(currentUser)
   const canReplace = canReplaceMedia(currentUser)
@@ -328,7 +330,7 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => void editor.purgeAsset(asset.id)}
+                    onClick={() => confirmPurge(asset)}
                   >
                     <TrashSolidIcon size={13} />
                     <span>Delete permanently</span>
@@ -348,6 +350,7 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
           onReplace={(file) => editor.replaceAssetFile(asset.id, file)}
         />
       )}
+
     </aside>,
     document.body,
   )

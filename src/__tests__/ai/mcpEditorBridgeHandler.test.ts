@@ -31,6 +31,25 @@ describe('MCP editor bridge handler', () => {
     expect(invalid.status).toBe(400)
   })
 
+  it('lets a waiting tab reclaim the workspace once the active stream closes', async () => {
+    const { cookie } = await harness.createRoleUser({
+      name: 'Site Reader', slug: 'mcp-site-standby', capabilities: ['site.read'],
+    })
+    const path = BASE + '?scope=site'
+    const first = await harness.ai(path, { cookie })
+    try {
+      expect(first.status).toBe(200)
+      const waiting = await harness.ai(path, { cookie })
+      expect(waiting.status).toBe(204)
+      expect(waiting.body).toBeNull()
+    } finally {
+      await first.body?.cancel()
+    }
+    const next = await harness.ai(path, { cookie })
+    expect(next.status).toBe(200)
+    await next.body?.cancel()
+  })
+
   it('gates each bridge scope by access to its matching workspace', async () => {
     const siteUser = await harness.createRoleUser({
       name: 'Site Reader',

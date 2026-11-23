@@ -118,8 +118,8 @@ describe('mcp server', () => {
     const userId = 'u1-scoped-workspaces'
     const siteCtrl = new AbortController()
     const contentCtrl = new AbortController()
-    const siteReader = createEditorBridgeStream(userId, 'site', siteCtrl.signal).getReader()
-    const contentReader = createEditorBridgeStream(userId, 'content', contentCtrl.signal).getReader()
+    const siteReader = createEditorBridgeStream(userId, 'site', siteCtrl.signal)!.getReader()
+    const contentReader = createEditorBridgeStream(userId, 'content', contentCtrl.signal)!.getReader()
     const [siteReady, contentReady] = await Promise.all([
       readUntil(siteReader, (event) => event.type === 'bridgeReady'),
       readUntil(contentReader, (event) => event.type === 'bridgeReady'),
@@ -172,7 +172,7 @@ describe('mcp server', () => {
   it('returns an MCP tool error when the live editor bridge disconnects mid-call', async () => {
     const userId = 'u1-disconnected-workspace'
     const controller = new AbortController()
-    const reader = createEditorBridgeStream(userId, 'site', controller.signal).getReader()
+    const reader = createEditorBridgeStream(userId, 'site', controller.signal)!.getReader()
     await readUntil(reader, (event) => event.type === 'bridgeReady')
     const client = await connectClient(
       db,
@@ -208,7 +208,7 @@ describe('mcp server', () => {
     }, 'u2')
 
     const ctrl = new AbortController()
-    const reader = createEditorBridgeStream('u1', 'content', ctrl.signal).getReader()
+    const reader = createEditorBridgeStream('u1', 'content', ctrl.signal)!.getReader()
     const ready = await readUntil(reader, (event) => event.type === 'bridgeReady')
     const client = await connectClient(db, [
       'ai.chat',

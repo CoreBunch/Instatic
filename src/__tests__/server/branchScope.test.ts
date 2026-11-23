@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { createTestDb, type TestDb } from '../helpers/createTestDb'
+import { BRANCH_HEADER } from '@core/branches'
 import {
-  BRANCH_HEADER,
   BRANCH_NOT_FOUND_CODE,
   MAIN_SCOPE,
   resolveBranchScope,
