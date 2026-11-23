@@ -47,7 +47,7 @@ const LOOP_ENDPOINT_BASE_URL = '/_instatic/loop/'
 // Request schema
 // ---------------------------------------------------------------------------
 
-const PreviewBodySchema = Type.Object({
+export const PreviewBodySchema = Type.Object({
   /**
    * Override the entry's persisted cells with the draft state the
    * editor holds in memory. When omitted (or partial), the persisted

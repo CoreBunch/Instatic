@@ -1,6 +1,6 @@
 {
   "name": "@instatic/cli",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Scoped command-line access to an Instatic CMS installation",
   "license": "MIT",
   "type": "module",

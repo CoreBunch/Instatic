@@ -45,7 +45,7 @@ import {
 } from './shared'
 import { runRouteTable, type Route, type RouteParams } from './routeTable'
 
-const UserCreateBodySchema = Type.Object({
+export const UserCreateBodySchema = Type.Object({
   email: Type.String(),
   displayName: Type.Optional(Type.String()),
   password: Type.String(),
@@ -53,7 +53,7 @@ const UserCreateBodySchema = Type.Object({
   status: Type.Optional(UserStatusSchema),
 })
 
-const UserPatchBodySchema = Type.Partial(Type.Object({
+export const UserPatchBodySchema = Type.Partial(Type.Object({
   email: Type.String(),
   displayName: Type.String(),
   password: Type.String(),
@@ -329,7 +329,7 @@ async function handleUserDelete(
 const USERS_PATH = `${CMS_API_PREFIX}/users`
 const USER_ITEM_PATTERN = /^\/admin\/api\/cms\/users\/([^/]+)$/
 
-const USERS_ROUTES: readonly Route<[AuthUser]>[] = [
+export const USERS_ROUTES: readonly Route<[AuthUser]>[] = [
   { method: 'GET', pattern: USERS_PATH, handler: handleListUsers },
   { method: 'POST', pattern: USERS_PATH, handler: handleCreateUser },
   {

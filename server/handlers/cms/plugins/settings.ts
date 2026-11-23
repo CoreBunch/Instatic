@@ -29,6 +29,8 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 import { requestAuditContext } from '../shared'
 import { pluginNotFound, projectSecretSettings } from './shared'
 
+export const PluginSettingsBodySchema = Type.Object({ settings: Type.Optional(Type.Unknown()) })
+
 export async function handlePluginSettings(
   req: Request,
   db: DbClient,
@@ -59,7 +61,6 @@ export async function handlePluginSettings(
   }
 
   if (req.method === 'PUT') {
-    const PluginSettingsBodySchema = Type.Object({ settings: Type.Optional(Type.Unknown()) })
     const body = await readValidatedBody(req, PluginSettingsBodySchema)
     if (!body) return badRequest('Invalid request body')
     let cleaned: PluginSettingsValues

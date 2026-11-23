@@ -2,7 +2,7 @@ import type { DbClient } from '../db/client'
 import { jsonResponse } from '../http'
 import { resolveServiceActor } from './store'
 import { bindServicePrincipal } from '../auth/servicePrincipal'
-import { operations } from './catalog'
+import { availableOperations, describeOperation } from './catalog'
 
 // Browser identity, consent and workspace callbacks are not CMS operations.
 const browserOnlyCms = new Set(['setup', 'login', 'logout', 'auth', 'me', 'service-accounts'])
@@ -29,15 +29,15 @@ async function authorize(req: Request, db: DbClient, token: string): Promise<Req
     return jsonResponse({ error: 'This write is installation-wide. Omit the branch to target the installation explicitly.' }, { status: 400 })
   }
   if (pathname === '/admin/api/cms/cli-context' && req.method === 'GET') {
-    const available = operations.filter(op => op.any.some(c => actor.capabilities.includes(c)))
+    const available = availableOperations(actor.capabilities)
     const describe = new URL(req.url).searchParams.get('describe')
     if (describe) {
       const operation = available.find(op => op.method + ' ' + op.path === describe)
-      return operation ? jsonResponse(operation) : jsonResponse({ error: 'Unknown or unavailable operation' }, { status: 404 })
+      return operation ? jsonResponse(describeOperation(operation)) : jsonResponse({ error: 'Unknown or unavailable operation' }, { status: 404 })
     }
     return jsonResponse({
       account: actor.id, name: actor.displayName, scope: 'installation', expiresAt: grant.expiresAt, capabilities: actor.capabilities,
-      operations: available.map(({ method, path, summary, example }) => ({ method, path, summary, example })),
+      operations: available.map(({ method, path, summary, permissions }) => ({ method, path, summary, permissions })),
     })
   }
   return bindServicePrincipal(req, grant)

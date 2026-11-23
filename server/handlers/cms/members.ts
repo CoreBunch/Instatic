@@ -393,7 +393,7 @@ const MEMBER_APP = new RegExp(`^${MEMBERS_PREFIX}/(?<id>[^/]+)/apps/(?<grantId>[
 const action = (name: string) => new RegExp(`^${MEMBERS_PREFIX}/(?<id>[^/]+)/${name}$`)
 
 // The fixed paths come first: `invite`, `settings` and `apps` would otherwise match `:id`.
-const ROUTES: Route<[]>[] = [
+export const MEMBER_ROUTES: Route<[]>[] = [
   { method: 'GET', pattern: MEMBERS_PREFIX, handler: handleList },
   { method: 'POST', pattern: `${MEMBERS_PREFIX}/invite`, handler: handleInvite },
   { method: 'GET', pattern: `${MEMBERS_PREFIX}/settings`, handler: handleGetSettings },
@@ -413,5 +413,5 @@ const ROUTES: Route<[]>[] = [
 ]
 
 export function handleMembersRoutes(req: Request, db: DbClient): Promise<Response | null> {
-  return runRouteTable(req, db, ROUTES)
+  return runRouteTable(req, db, MEMBER_ROUTES)
 }

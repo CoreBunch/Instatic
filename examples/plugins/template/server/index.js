@@ -21,7 +21,7 @@ export function activate(api) {
     ok: true,
     plugin: api.plugin.id,
     version: api.plugin.version,
-  }))
+  }), { summary: 'Read the running plugin version', input: 'No parameters or request body.' })
 
   // Letting an app a site member signed in to call a member route.
   // In plugin.json, declare the scope and request the permissions:

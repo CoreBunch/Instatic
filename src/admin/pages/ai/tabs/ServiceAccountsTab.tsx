@@ -53,7 +53,7 @@ function agentPrompt(origin: string, account: string, filename: string) {
     'bun add --global ' + quote(origin + base + '/' + filename),
     'Then run this command and wait for me to approve the connection in my browser:',
     'instatic connect ' + quote(origin) + ' --account ' + account,
-    'Use --account ' + account + ' on subsequent commands. Run instatic whoami and instatic api lookup to discover permissions and operations. For branch edits, pass --branch on reads and writes, verify your changes, and report the result here.',
+    'Use --account ' + account + ' on subsequent commands. Run instatic whoami to check your permissions. Use instatic api lookup to find an operation, then instatic api describe METHOD PATH with the returned method and path to see its inputs and command. For branch edits, pass --branch on reads and writes, verify your changes, and report the result here.',
   ].join('\n')
 }
 

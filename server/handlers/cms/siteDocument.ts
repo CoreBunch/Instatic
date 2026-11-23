@@ -93,7 +93,7 @@ import { CMS_API_PREFIX } from './shared'
 import { ForbiddenSiteChangeError, validateSiteWriteDiff } from '../../writePolicy/siteDiff'
 import { validatePageWriteDiff } from '../../writePolicy/pageDiff'
 
-const SITE_WRITE_CAPABILITIES = [
+export const SITE_WRITE_CAPABILITIES = [
   'site.structure.edit',
   'site.content.edit',
   'site.style.edit',

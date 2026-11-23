@@ -56,7 +56,7 @@ async function handlePreview(req: Request, db: DbClient): Promise<Response> {
   return jsonResponse({ items: preview.items }, NO_STORE)
 }
 
-const LOOP_SOURCE_ROUTES: readonly Route<[]>[] = [
+export const LOOP_SOURCE_ROUTES: readonly Route<[]>[] = [
   { method: 'GET', pattern: LOOP_SOURCES_PATH, handler: handleList },
   { method: 'POST', pattern: `${LOOP_SOURCES_PATH}/preview`, handler: handlePreview },
 ]

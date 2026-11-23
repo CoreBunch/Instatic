@@ -22,8 +22,8 @@ function output(text: string) {
 const help = `Instatic CLI
   instatic connect SITE --account ID          Authorize this machine in your browser
   instatic whoami                             Show the current grant
-  instatic api lookup [SEARCH]                Search the site's operation guide
-  instatic api describe METHOD PATH          Inspect one documented operation and its input
+  instatic api lookup [SEARCH]                Search all operations available to this account
+  instatic api describe METHOD PATH          Show path, query, request body and CLI usage
   instatic api METHOD PATH [--branch ID]      Call a CMS endpoint
     --json '{"name":"review"}' | --file changes.json | --upload FILE [--field NAME=VALUE] | --raw FILE
     --out FILE saves the response bytes
@@ -36,7 +36,7 @@ const endpoint = '/admin/api/cms/'
 const credentialSchema = Type.Object({ origin: Type.String(), token: Type.String({ pattern: '^icli_at_[A-Za-z0-9_-]{43}$' }) })
 const contextSchema = Type.Object({
   name: Type.String(), account: Type.String(), capabilities: Type.Array(Type.String()),
-  operations: Type.Array(Type.Object({ method: Type.String(), path: Type.String(), summary: Type.String() })),
+  operations: Type.Array(Type.Object({ method: Type.String(), path: Type.String(), summary: Type.String(), permissions: Type.Optional(Type.Array(Type.Array(Type.String()))) })),
 })
 
 function checked<S extends TSchema>(schema: S, value: unknown): Static<S> {
@@ -182,19 +182,24 @@ async function main() {
   if (command === 'api' && verb === 'describe') {
     if (!path || !positionals[3]) throw new Error('Use api describe METHOD PATH from the lookup results')
     const url = apiUrl(origin, 'cli-context')
-    url.searchParams.set('describe', path.toUpperCase() + ' ' + positionals[3])
+    const pathname = apiUrl(origin, positionals[3]).pathname
+    const template = pathname.startsWith(endpoint) ? pathname.slice(endpoint.length) : pathname
+    url.searchParams.set('describe', path.toUpperCase() + ' ' + template)
     output(await (await request(url, { headers })).text())
     return
   }
   if (command === 'whoami' || (command === 'api' && verb === 'lookup')) {
     const result = checked(contextSchema, await (await request(apiUrl(origin, 'cli-context'), { headers })).json())
     const words = positionals.slice(2).join(' ').toLowerCase().split(/\s+/).filter(Boolean)
-    output(JSON.stringify(command === 'whoami' ? { ...result, origin } : result.operations.filter(op =>
-      words.every(word => (op.path + ' ' + op.method + ' ' + op.summary).toLowerCase().includes(word))), null, 2))
+    output(JSON.stringify(command === 'whoami' ? { ...result, origin } : result.operations.filter(op => {
+      const pathname = op.path.startsWith('/') ? op.path : endpoint + op.path
+      const searchable = [op.method, pathname, op.summary, ...(op.permissions ?? []).flat()].join(' ').toLowerCase()
+      return words.every(word => searchable.includes(word))
+    }), null, 2))
     return
   }
   if (command === 'screenshot') return capture(origin, token, verb)
-  if (command !== 'api' || !verb || !path || !['GET','POST','PUT','PATCH','DELETE'].includes(verb.toUpperCase())) throw new Error(help)
+  if (command !== 'api' || !verb || !path || !['GET','HEAD','POST','PUT','PATCH','DELETE'].includes(verb.toUpperCase())) throw new Error(help)
   const url = apiUrl(origin, path)
   if (url.pathname === endpoint + 'site-document' && !values.branch) throw new Error('Pass --branch explicitly for a draft write')
   if (values.branch) headers.set('X-Instatic-Branch', values.branch)
@@ -219,7 +224,8 @@ async function main() {
     }
   }
   const response = await request(url, { method: verb.toUpperCase(), headers, body })
-  if (values.out) await Bun.write(values.out, response)
+  if (verb.toUpperCase() === 'HEAD') output(JSON.stringify(Object.fromEntries(response.headers), null, 2))
+  else if (values.out) await Bun.write(values.out, response)
   else if (response.headers.get('content-type')?.startsWith('text/event-stream')) await Bun.write(Bun.stdout, response)
   else output(await response.text())
 }

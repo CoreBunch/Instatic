@@ -48,6 +48,7 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
   }
   const handoff = await copyPrompt()
   expect(handoff).toContain('ask me for approval')
+  expect(handoff).toContain('instatic api describe METHOD PATH')
   await expect(page.getByRole('dialog', { name: 'Agent prompt' })).toHaveCount(0)
   const id = /--account (svc_[a-f0-9-]+)/.exec(handoff)![1]
 
@@ -95,22 +96,43 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
     const context = JSON.parse((await run('whoami')).stdout)
     expect(context.account).toBe(id)
     expect(context.capabilities.sort()).toEqual(['data.export', 'data.import', 'plugins.install', 'site.branches.create', 'site.content.edit', 'site.read'])
-    expect((await run('api', 'lookup', 'fork')).stdout).toContain('branches')
+    const [forkOperation] = JSON.parse((await run('api', 'lookup', 'fork')).stdout)
+    const forkContract = JSON.parse((await run('api', 'describe', forkOperation.method, forkOperation.path)).stdout)
+    expect(forkContract.bodySchema.required).toContain('name')
     expect((await run('api', 'lookup', 'plugins/package')).stdout).toContain('grantedPermissions')
     const pluginId = 'test.cli-' + Date.now()
-    const manifest = { id: pluginId, name: 'CLI plugin', apiVersion: 1, version: '1.0.0', permissions: ['cms.routes'] }
+    const manifest = { id: pluginId, name: 'CLI plugin', apiVersion: 1, version: '1.0.0', permissions: ['cms.routes'], entrypoints: { server: 'server.js' } }
     const zip = join(scratch, 'plugin.zip')
-    await writeFile(zip, zipSync({ 'plugin.json': strToU8(JSON.stringify(manifest)) }))
+    const server = `export function activate(api) {
+      api.cms.routes.get('/status', 'site.read', () => ({ ok: true }), { summary: 'Read plugin status', input: 'No query parameters or body.' })
+      api.cms.routes.get('/restricted', 'plugins.lifecycle', () => ({ ok: true }))
+    }`
+    await writeFile(zip, zipSync({ 'plugin.json': strToU8(JSON.stringify(manifest)), 'server.js': strToU8(server) }))
     const inspect = await run('api', 'POST', 'plugins/inspect-package', '--upload', zip)
     expect(JSON.parse(inspect.stdout).manifest.permissions).toEqual(manifest.permissions)
     await expect(run('api', 'POST', 'plugins/package', '--upload', zip)).rejects.toThrow(/permission grants/)
     const install = await run('api', 'POST', 'plugins/package', '--upload', zip, '--field', 'grantedPermissions=["cms.routes"]')
     expect(JSON.parse(install.stdout).plugin.id).toBe(pluginId)
+    const runtimePath = 'plugins/' + pluginId + '/runtime/status'
+    const discovered = JSON.parse((await run('api', 'lookup', pluginId)).stdout)
+    expect(discovered.map((op: { method: string }) => op.method).sort()).toEqual(['GET', 'HEAD'])
+    expect(discovered[0].path).toBe(runtimePath)
+    expect((await run('api', 'lookup', pluginId)).stdout).not.toContain('/restricted')
+    const runtime = JSON.parse((await run('api', 'describe', 'GET', runtimePath)).stdout)
+    expect(JSON.parse((await run('api', 'HEAD', runtimePath)).stdout)['content-type']).toContain('json')
+    expect(runtime.pluginInput).toBe('No query parameters or body.')
+    expect(JSON.parse((await run('api', 'GET', runtimePath)).stdout)).toEqual({ ok: true })
+    const preview = JSON.parse((await run('api', 'describe', 'GET', 'branches/:id/review/render')).stdout)
+    expect(preview.querySchema.required.sort()).toEqual(['row', 'side'])
+    const inputs = JSON.parse((await run('api', 'describe', 'POST', '/admin/api/cms/plugins/package')).stdout)
+    expect(inputs.multipart.grantedPermissions).toContain('JSON array')
+    await expect(run('api', 'describe', 'PATCH', 'plugins/:id')).rejects.toThrow(/404/)
     await page.goto('/admin/plugins')
     await expect(page.getByRole('heading', { name: manifest.name, exact: true })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath('cli-installed-plugin.png') })
     await expect(run('api', 'PATCH', 'plugins/' + pluginId, '--json', '{"enabled":false}')).rejects.toThrow(/403/)
     await run('api', 'DELETE', 'plugins/' + pluginId)
+    await expect(run('api', 'describe', 'GET', runtimePath)).rejects.toThrow(/404/)
     const bundle = join(scratch, 'export.zip')
     await run('api', 'GET', 'export', '--out', bundle)
     expect((await readFile(bundle)).subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4b, 0x03, 0x04]))
@@ -127,7 +149,7 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
     } })
     expect(seed.ok()).toBe(true)
     const branch = 'cli-review-' + Date.now()
-    const fork = await run('api', 'POST', 'branches', '--json', JSON.stringify({ name: branch }))
+    const fork = await run('api', forkContract.method, forkContract.path, '--json', JSON.stringify({ ...forkContract.example, name: branch }))
     expect(JSON.parse(fork.stdout).branch.createdByUserId).toBe(id)
     const rows = JSON.parse((await run('api', 'GET', 'pages', '--branch', branch)).stdout).rows
     expect(rows.some((row: { id: string }) => row.id === fixture)).toBe(true)
