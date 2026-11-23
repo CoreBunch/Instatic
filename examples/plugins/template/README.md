@@ -248,3 +248,5 @@ The path is package-relative. Plugins cannot read arbitrary host filesystem path
 ## Further reading
 
 - [Plugin system docs](../../../docs/features/plugin-system.md)
+
+A plugin that provisions paid members can call `api.cms.members.sendSignInLink(memberId, orderId)` after fulfillment. Grant `members.write` and `mail.send`. Reuse the order ID on retries so the CMS sends one sign-in email for that order.

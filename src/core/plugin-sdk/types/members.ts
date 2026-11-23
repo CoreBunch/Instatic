@@ -68,6 +68,8 @@ export interface ServerPluginMembersApi {
    * `tags` is given).
    */
   ensure: (input: { email: string; tags?: string[] }) => Promise<{ member: PluginMemberRecord; created: boolean; confirmed: boolean }>
+  /** Queue the site's own sign-in email once per member and reference. Requires members.write and mail.send. */
+  sendSignInLink: (memberId: string, reference: string) => Promise<void>
   /**
    * Whether the site can email members links it starts itself right now
    * (invitations, sign-in links, password resets), and if not, every reason.

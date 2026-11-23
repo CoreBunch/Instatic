@@ -53,11 +53,18 @@ export async function issueMemberToken(
   payload: TokenPayload = {},
   now = Date.now(),
 ): Promise<IssuedToken> {
+  const issued = await prepareMemberToken(memberId, kind, payload, now)
+  await db.transaction(issued.store)
+  return { token: issued.token, expiresAt: issued.expiresAt }
+}
+
+/** Prepare a link whose token can be committed in the same transaction as its email. */
+export async function prepareMemberToken(memberId: string, kind: MemberTokenKind, payload: TokenPayload = {}, now = Date.now()) {
   const token = createSessionToken()
   const idHash = await hashSessionToken(token)
   const createdAt = new Date(now).toISOString()
   const expiresAt = new Date(now + TOKEN_LIFETIME_MS[kind]).toISOString()
-  await db.transaction(async (tx) => {
+  async function store(tx: DbClient): Promise<void> {
     await tx`
       update member_tokens set used_at = ${createdAt}
        where member_id = ${memberId} and kind = ${kind} and used_at is null
@@ -66,8 +73,8 @@ export async function issueMemberToken(
       insert into member_tokens (id_hash, member_id, kind, payload_json, created_at, expires_at)
       values (${idHash}, ${memberId}, ${kind}, ${payload}, ${createdAt}, ${expiresAt})
     `
-  })
-  return { token, expiresAt }
+  }
+  return { token, expiresAt, store }
 }
 
 export interface ConsumedToken {

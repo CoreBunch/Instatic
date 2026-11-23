@@ -454,6 +454,7 @@ export async function confirmSignInLink(
   if (!consumed) return fail('invalid_token')
   const member = await findMemberById(ctx.db, consumed.memberId)
   if (!member || member.status !== 'active') return fail('invalid_token')
+  if (consumed.payload.email && consumed.payload.email !== member.email) return fail('invalid_token')
   await markMemberVerified(ctx.db, member.id)
   await recordMemberEvent(ctx.db, member.id, 'login', ctx, { via: 'link' })
   return startSession(ctx, member)

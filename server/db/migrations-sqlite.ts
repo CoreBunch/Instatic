@@ -1930,4 +1930,15 @@ export const sqliteMigrations: Migration[] = [
         on media_assets (content_hash);
     `,
   },
+  {
+    id: '041_plugin_member_sign_in_requests',
+    sql: `
+      create table plugin_member_sign_in_requests (
+        plugin_id text not null references installed_plugins(id) on delete cascade,
+        member_id text not null references members(id) on delete cascade,
+        reference text not null,
+        primary key (plugin_id, member_id, reference)
+      );
+    `,
+  },
 ]

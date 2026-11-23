@@ -115,6 +115,8 @@ export interface QueueTemplateMailInput {
   memberId?: string
   /** The sending plugin's install; its outcome is told to that install only. */
   installId?: string
+  /** Commit the action that produced this email with its queue entry. False means it was already accepted. */
+  acceptOnce?: (tx: DbClient) => Promise<boolean>
 }
 
 /**
@@ -151,6 +153,7 @@ export async function queueTemplateMail(
   if (!readyToSend(defaults)) {
     if (!captureAllowed(deps.env ?? process.env)) throw new MailNotConfiguredError()
     await db.transaction(async (tx) => {
+      if (input.acceptOnce && !(await input.acceptOnce(tx))) return
       if (limited) await reserveRecipientSlot(tx, limited, recipient)
       await recordMail(tx, { ...log, status: 'captured', body: mail.text, error: mail.note })
     })
@@ -165,6 +168,7 @@ export async function queueTemplateMail(
   const deliverBefore = input.deliverBefore ?? Date.now() + MAIL_DELIVERY_WINDOW_MS
   // One transaction: the log never shows a waiting email the queue does not hold.
   await db.transaction(async (tx) => {
+    if (input.acceptOnce && !(await input.acceptOnce(tx))) return
     if (limited) {
       await reserveRecipientSlot(tx, limited, recipient)
       await reserveBacklogSlot(tx, limited)

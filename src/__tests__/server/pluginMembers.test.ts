@@ -65,6 +65,10 @@ const PLUGIN_SOURCE = `
           for (let i = 0; i < 10; i++) calls.push(api.cms.members.ensure({ email: i % 2 ? email.toUpperCase() : email }))
           return { result: await Promise.all(calls) }
         }
+        if (action === 'signInLink') {
+          await api.cms.members.sendSignInLink(memberId, 'subscription-1')
+          return { result: 'accepted' }
+        }
         if (action === 'emailStatus') return { result: await api.cms.members.emailStatus() }
         if (action === 'grant') return { result: await api.cms.members.tags.grant(memberId, tag, expiresAt ? { expiresAt } : {}) ?? 'ok' }
         if (action === 'revoke') return { result: await api.cms.members.tags.revoke(memberId, tag) ?? 'ok' }
@@ -160,6 +164,28 @@ describe('site members for plugins', () => {
     (await (await visit(`${MOUNT}/call`, { method: 'POST', json: body })).json()) as { result?: unknown; error?: string }
   const heard = async () =>
     ((await (await visit(`${MOUNT}/heard`)).json()) as { heard: Array<Record<string, unknown>> }).heard
+
+  it('requires mail.send as well as members.write to send a sign-in link', async () => {
+    expect((await install(ALL)).status).toBe(201)
+    expect((await call({ action: 'signInLink', memberId: 'member' })).error).toContain('mail.send')
+  })
+
+  it('queues one core sign-in email when the same plugin purchase is fulfilled twice', async () => {
+    expect((await install([...ALL, 'mail.send'])).status).toBe(201)
+    configurePublicOrigins([ORIGIN])
+    const ada = await member('ada@example.com')
+    const request = { action: 'signInLink', memberId: ada.id }
+    expect((await call(request)).error).toBeDefined()
+    await saveMemberSettings(h.db, {
+      ...DEFAULT_MEMBER_SETTINGS,
+      pages: await publishMemberPages(h.db, { magic: '/sign-in-link' }),
+    })
+    for (const reply of await Promise.all([call(request), call(request)])) expect(reply.result).toBe('accepted')
+    const mail = await h.db<{ to_address: string }>`select to_address from mail_outbox where kind = 'member.magic'`
+    expect(mail.rows).toEqual([{ to_address: 'ada@example.com' }])
+    const tokens = await h.db`select id_hash from member_tokens where member_id = ${ada.id} and kind = 'magic'`
+    expect(tokens.rows).toHaveLength(1)
+  })
 
   describe('member routes', () => {
     it('reach the handler only for a signed-in member, with the member and without the session cookie', async () => {

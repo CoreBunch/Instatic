@@ -206,6 +206,7 @@ describe('plugin sandbox invariants', () => {
       'cms.members.exportProvider',
       'cms.members.get',
       'cms.members.invite',
+      'cms.members.sendSignInLink',
       'cms.members.tags.grant',
       'cms.members.tags.revoke',
       'cms.rateLimit.take',
