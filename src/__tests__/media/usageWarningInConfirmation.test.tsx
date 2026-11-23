@@ -18,6 +18,7 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MediaViewerWindow } from '@admin/pages/media/components/MediaViewerWindow/MediaViewerWindow'
+import { ConfirmDeleteProvider } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { AdminSessionContext } from '@admin/sessionContext'
 import type { CmsMediaUsageRef } from '@core/persistence/cmsMedia'
 
@@ -81,11 +82,13 @@ function renderViewer(lookupUsage: (ids: string[]) => Promise<CmsMediaUsageRef[]
   }
   render(
     <AdminSessionContext value={session as never}>
-      <MediaViewerWindow
-        editor={editor as unknown as Parameters<typeof MediaViewerWindow>[0]['editor']}
-        open
-        onClose={() => {}}
-      />
+      <ConfirmDeleteProvider>
+        <MediaViewerWindow
+          editor={editor as unknown as Parameters<typeof MediaViewerWindow>[0]['editor']}
+          open
+          onClose={() => {}}
+        />
+      </ConfirmDeleteProvider>
     </AdminSessionContext>,
   )
   return { asked }

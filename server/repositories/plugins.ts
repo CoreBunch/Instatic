@@ -167,6 +167,11 @@ export async function listInstalledPlugins(db: DbClient): Promise<InstalledPlugi
   return rows.map(mapInstalledPlugin)
 }
 
+/** The id of every installed plugin, enabled or not, readable manifest or not. */
+export async function listInstalledPluginIds(db: DbClient): Promise<string[]> {
+  return (await listInstalledPlugins(db)).map((result) => (result.kind === 'ok' ? result.plugin.id : result.id))
+}
+
 export async function getInstalledPlugin(db: DbClient, id: string): Promise<InstalledPluginResult | null> {
   const { rows } = await db<InstalledPluginRow>`
     select id, name, version, enabled, lifecycle_status, last_error,

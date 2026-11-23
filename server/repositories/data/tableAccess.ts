@@ -40,6 +40,20 @@ export async function listProtectedTables(db: DbClient): Promise<ProtectedTable[
     .filter((entry) => entry.rule.level !== 'public')
 }
 
+/**
+ * Slug → id of every live main-branch table. What an entry template's target
+ * (a list of table slugs) is resolved through when access rules are built.
+ */
+export async function listTableIdsBySlug(db: DbClient): Promise<Map<string, string>> {
+  const { rows } = await db<{ logical_id: string; slug: string }>`
+    select logical_id, slug
+      from data_tables
+     where branch_id = ${MAIN_BRANCH_ID}
+       and deleted_at is null
+  `
+  return new Map(rows.map((row) => [row.slug, row.logical_id]))
+}
+
 export async function getTableAccess(db: DbClient, tableId: string): Promise<AccessRule | null> {
   const { rows } = await db<{ access_json: unknown }>`
     select access_json from data_tables

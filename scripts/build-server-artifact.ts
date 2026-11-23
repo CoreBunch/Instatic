@@ -210,7 +210,8 @@ async function compileBinary(target: ArtifactTarget, outfile: string): Promise<v
   ]
 
   const result = await Bun.build({
-    entrypoints: [entryPath],
+    entrypoints: [entryPath, join(ROOT, 'server/plugins/pluginWorker.ts')],
+    define: { INSTATIC_COMPILED_PLUGIN_WORKER: JSON.stringify('./server/plugins/pluginWorker.js') },
     external,
     compile: { outfile, target: `bun-${target}` },
     plugins: serverArtifactPlugins(ROOT),

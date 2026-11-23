@@ -16,6 +16,7 @@
  */
 
 export const MAIN_BRANCH_ID = 'main'
+export const BRANCH_HEADER = 'X-Instatic-Branch'
 
 /** Logical id of the one site shell row every branch carries. */
 export const SITE_SHELL_LOGICAL_ID = 'default'

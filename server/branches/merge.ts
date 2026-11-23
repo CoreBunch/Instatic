@@ -30,6 +30,7 @@ import {
 } from '@core/branches'
 import type { DbClient } from '../db/client'
 import { MAIN_SCOPE, isMainScope, type BranchScope } from './scope'
+import { routeVisibilityChanged } from '../publish/tableAccess'
 import { contentHash } from './contentHash'
 import {
   adapterFor,
@@ -91,6 +92,12 @@ function scopesFor(branchId: string, direction: MergeDirection): { from: BranchS
   const branch: BranchScope = { branchId }
   return direction === 'merge' ? { from: branch, into: MAIN_SCOPE } : { from: MAIN_SCOPE, into: branch }
 }
+
+/**
+ * Within a kind, deletes go before updates and updates before creates, so a
+ * slug a deleted or renamed entity frees is free by the time another takes it.
+ */
+const ACTION_ORDER: Record<MergeChange['action'], number> = { delete: 0, update: 1, create: 2 }
 
 /** Where a change sits in an apply: the adapter of its kind decides. */
 function changeOrder(change: MergeChange): number {
@@ -194,7 +201,12 @@ export async function planBranchMerge(
     const marker = adapterFor(entry.change.kind).collision?.(entry.result, entry.change.logicalId, intoEntities) ?? null
     if (marker && !entry.change.conflicts.includes(marker)) entry.change.conflicts.push(marker)
   }
-  work.sort((a, b) => changeOrder(a.change) - changeOrder(b.change) || a.change.label.localeCompare(b.change.label))
+  work.sort(
+    (a, b) =>
+      changeOrder(a.change) - changeOrder(b.change) ||
+      ACTION_ORDER[a.change.action] - ACTION_ORDER[b.change.action] ||
+      a.change.label.localeCompare(b.change.label),
+  )
   const changes = work.map((entry) => entry.change)
   return {
     plan: {
@@ -258,6 +270,8 @@ export interface ApplyMergeInput {
   direction: MergeDirection
   resolutions: Readonly<Record<string, MergeResolution>>
   actorUserId: string | null
+  /** The uploads root, so a merge into main can drop baked pages. */
+  uploadsDir?: string
 }
 
 export interface ApplyMergeResult {
@@ -341,7 +355,12 @@ export async function applyBranchMerge(db: DbClient, input: ApplyMergeInput): Pr
     if (!merge) throw new Error('[branches] the merge transaction committed without a record')
     return { plan, into, intoNotices, merge }
   })
-  if (isMainScope(into)) await emitContentEvents(db, intoNotices, input.actorUserId)
+  if (isMainScope(into)) {
+    // A merge can move or delete entries, rename a table or move its route
+    // base on main: nothing baked or cached for the old shape may be served.
+    await routeVisibilityChanged(input.uploadsDir)
+    await emitContentEvents(db, intoNotices, input.actorUserId)
+  }
   return { plan, merge }
 }
 
@@ -365,6 +384,8 @@ export interface UndoMergeInput {
   branchId: string
   direction: MergeDirection
   actorUserId: string | null
+  /** The uploads root, so an undo on main can drop baked pages. */
+  uploadsDir?: string
 }
 
 export interface UndoMergeResult {
@@ -435,6 +456,11 @@ export async function undoBranchMerge(db: DbClient, input: UndoMergeInput): Prom
     if (mirrorOntoFrom) emitCollabNotices(from, fromNotices)
     return { merge: { ...record, undoneAt: new Date().toISOString() }, restoredCount: restored, intoNotices }
   })
-  if (isMainScope(into)) await emitContentEvents(db, intoNotices, input.actorUserId)
+  if (isMainScope(into)) {
+    // A merge can move or delete entries, rename a table or move its route
+    // base on main: nothing baked or cached for the old shape may be served.
+    await routeVisibilityChanged(input.uploadsDir)
+    await emitContentEvents(db, intoNotices, input.actorUserId)
+  }
   return { merge, restoredCount }
 }

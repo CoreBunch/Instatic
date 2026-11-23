@@ -6,11 +6,14 @@
  *   - The `cms.content.*` permission grant is enforced CENTRALLY in
  *     apiDispatch.ts (driven by `TARGET_PERMISSIONS`) before any handler runs,
  *     so every content target carries a `cms.content.*` permission in the map.
- *   - Every per-table handler (anything that takes a `tableSlug` arg) still
- *     calls `assertContentTableAccess` for the resolved table + mode — the
- *     per-table check the central permission gate cannot express. An entry
- *     matches by slug or via the `@own-created` marker (resolved against the
- *     table's `createdByPluginId`).
+ *   - Every handler still decides per table, with the mode NAMED, which the
+ *     central permission gate cannot express. One check,
+ *     `pluginHasContentTableAccess` (grant and mode), reached directly (answer
+ *     as if the table were not there, or leave it out of a list), through
+ *     `tableFor` (one refusal for a missing and a forbidden table) or, for
+ *     page trees, through `assertTreeReach`. An entry matches by slug or via the `@own-created`
+ *     marker (resolved against the table's `createdByPluginId`). There is no
+ *     mode-less "has any access" helper.
  *   - `cms.content.tables.create` records the creating plugin on the table
  *     row — the durable fact the `@own-created` marker resolves against.
  *
@@ -67,31 +70,34 @@ describe('plugin content handlers — access enforced', () => {
     }
   })
 
-  it('every per-table handler also calls assertContentTableAccess', async () => {
-    const source = await read('server/plugins/host/handlers/content.ts')
+  it('every content handler decides access per table, with the mode named', async () => {
+    const source = [
+      await read('server/plugins/host/handlers/content.ts'),
+      await read('server/plugins/host/handlers/contentTree.ts'),
+    ].join('\n')
     const handlers = extractContentHandlers(source)
+    expect(handlers.length).toBeGreaterThan(18)
+    // The mode-less helper is gone and stays gone.
+    expect(source).not.toContain('hasContentTableAccess(entry.manifest')
+    expect(await read('server/plugins/host/registry.ts')).not.toContain('export function hasContentTableAccess')
 
-    // Per-table handlers are everything whose first argv unpacks a
-    // tableSlug or operates on entries / tree of a specific table.
-    // Cross-table handlers (List on tables, search, republishAll) are
-    // intentionally allowlisted — their authorization model differs.
-    const crossTableAllowlist = new Set([
-      'handleContentTablesList',     // intersects with allowlist itself
-      'handleContentTablesCreate',   // gated by cms.content.tables.manage
-      'handleContentRepublishAll',   // operates on all published pages
-      'handleContentSearch',         // intersects with allowlist itself
-      'handleContentSnapshot',       // looks up table from rowId, then asserts
-      'handleContentTreeRead',       // looks up table from rowId, then asserts
-      'handleContentTreeMutate',     // looks up table from rowId, then asserts
-      'handleContentTreeReplace',    // looks up table from rowId, then asserts
+    // The two handlers with no table to decide for.
+    const noTable = new Set([
+      'handleContentTablesCreate',   // gated by cms.content.tables.manage; names a NEW table
+      'handleContentRepublishAll',   // re-renders published pages; audience decided per page
     ])
-
+    const MODE = `(?:\\[?'(?:read|write|publish|delete)')`
+    const decides = new RegExp(
+      `tableFor\\(\\w+, \\w+, \\w+, ${MODE}` +
+        `|pluginHasContentTableAccess\\(\\w+, \\w+, ${MODE}` +
+        `|assertTreeReach\\(\\w+, \\w+, \\w+, \\w+, ${MODE}`,
+    )
+    // One check, one place: the handlers do not carry a second one.
+    expect(source).not.toContain('assertContentTableAccess')
+    expect(await read('server/plugins/host/registry.ts')).not.toContain('export function assertContentTableAccess')
     for (const { name, body } of handlers) {
-      if (crossTableAllowlist.has(name)) continue
-      expect(
-        body.includes('assertContentTableAccess('),
-        `Per-table handler "${name}" must call assertContentTableAccess`,
-      ).toBe(true)
+      if (noTable.has(name)) continue
+      expect(decides.test(body), `Handler "${name}" must decide table access with a named mode`).toBe(true)
     }
   })
 

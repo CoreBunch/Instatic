@@ -9,17 +9,12 @@
  * These tests pin the confirmation itself rather than the wording: that the
  * mutation does NOT fire on the first click, that Cancel leaves the asset
  * alone, and that the second click is what commits.
- *
- * The dialog is local to the window on purpose. `useConfirmDelete` falls back
- * to running `commit()` immediately when no `ConfirmDeleteProvider` is mounted
- * (confirmDeleteHook.ts), and this window also renders from the dashboard
- * media widget, which mounts none — so routing through that hook would have
- * left one surface silently unguarded while looking covered everywhere.
  */
 
 import { afterEach, describe, expect, it } from 'bun:test'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { MediaViewerWindow } from '@admin/pages/media/components/MediaViewerWindow/MediaViewerWindow'
+import { ConfirmDeleteProvider } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { AdminSessionContext } from '@admin/sessionContext'
 
 afterEach(cleanup)
@@ -73,11 +68,13 @@ function renderViewer() {
   }
   render(
     <AdminSessionContext value={session as never}>
-      <MediaViewerWindow
-        editor={editor as unknown as Parameters<typeof MediaViewerWindow>[0]['editor']}
-        open
-        onClose={() => {}}
-      />
+      <ConfirmDeleteProvider>
+        <MediaViewerWindow
+          editor={editor as unknown as Parameters<typeof MediaViewerWindow>[0]['editor']}
+          open
+          onClose={() => {}}
+        />
+      </ConfirmDeleteProvider>
     </AdminSessionContext>,
   )
   return { purged }

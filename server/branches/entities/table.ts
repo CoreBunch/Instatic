@@ -16,6 +16,7 @@ import {
 import { parseContent } from '../contentHash'
 import { fieldChanges, schemaDiff } from '../changeDetail'
 import { MergeApplyError, type BranchEntityAdapter, type BranchEntityOf } from './adapter'
+import { isUniqueViolation } from '../../db/errors'
 
 const TableContentSchema = Type.Object({
   name: Type.String(),
@@ -104,7 +105,18 @@ export const tableAdapter: BranchEntityAdapter<'table', TableContent> = {
       updatedByUserId: ctx.actorUserId,
     }
     if (await getDataTable(tx, scope, target.logicalId)) {
-      await updateDataTable(tx, scope, target.logicalId, settings)
+      try {
+        await updateDataTable(tx, scope, target.logicalId, settings)
+      } catch (err) {
+        // Another table on this side holds the slug (two tables swapping
+        // slugs in one merge): a conflict the people merging resolve, not a
+        // server error. The whole merge transaction rolls back.
+        if (!isUniqueViolation(err)) throw err
+        throw new MergeApplyError(
+          target.key,
+          `The table "${target.label}" cannot take the slug "${content.slug}": another table on ${scope.branchId} uses it`,
+        )
+      }
       return
     }
     // A table this side had deleted comes back with the incoming settings.

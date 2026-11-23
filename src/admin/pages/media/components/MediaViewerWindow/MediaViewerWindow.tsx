@@ -27,7 +27,7 @@
 import { useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Button } from '@ui/components/Button'
-import { Dialog } from '@ui/components/Dialog'
+import { useConfirmMediaPurge } from '../../hooks/useConfirmMediaPurge'
 import { Input, Textarea } from '@ui/components/Input'
 import { canDeleteMedia, canReplaceMedia, canWriteMedia } from '@admin/access'
 import { useCurrentAdminUser } from '@admin/sessionContext'
@@ -44,8 +44,6 @@ import type {
   CmsMediaUsageRef,
   UpdateCmsMediaAssetInput,
 } from '@core/persistence/cmsMedia'
-import { resolveUsageWarning, type UsageWarning } from '../../utils/usageWarning'
-import { UsageWarningNotice } from '../UsageWarningNotice'
 import { bucketForMime } from '../../utils/filters'
 import { useDebouncedSave } from '../../hooks/useDebouncedSave'
 import { TagEditor } from '../TagEditor/TagEditor'
@@ -110,8 +108,7 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
   const currentUser = useCurrentAdminUser()
   const { asset } = editor
   const [replaceOpen, setReplaceOpen] = useState(false)
-  const [purgeConfirmOpen, setPurgeConfirmOpen] = useState(false)
-  const [purgeWarning, setPurgeWarning] = useState<UsageWarning | null>(null)
+  const confirmPurge = useConfirmMediaPurge(editor.purgeAsset, editor.lookupUsage)
   const bucket = bucketForMime(asset.mimeType)
   const canWrite = canWriteMedia(currentUser)
   const canReplace = canReplaceMedia(currentUser)
@@ -339,17 +336,7 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
                   <Button
                     variant="destructive"
                     size="sm"
-                    onClick={() => {
-                      // Look the usage up before the dialog appears, so the
-                      // warning is part of what the operator reads rather
-                      // than something that shows up after they decide.
-                      void (async () => {
-                        setPurgeWarning(
-                          await resolveUsageWarning(editor.lookupUsage, [asset.id]),
-                        )
-                        setPurgeConfirmOpen(true)
-                      })()
-                    }}
+                    onClick={() => confirmPurge(asset)}
                   >
                     <TrashSolidIcon size={13} />
                     <span>Delete permanently</span>
@@ -370,40 +357,6 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
         />
       )}
 
-      {/* Local dialog rather than the shared `useConfirmDelete`: that hook
-          falls back to running `commit()` immediately when no provider is
-          mounted, and this window is also rendered from the dashboard widget,
-          which has none. A confirmation that silently disappears on one
-          surface is worse than none, because it reads as covered. */}
-      <Dialog
-        open={purgeConfirmOpen}
-        onClose={() => setPurgeConfirmOpen(false)}
-        tone="danger"
-        eyebrow="Cannot be undone"
-        title={`Delete "${asset.filename}" permanently?`}
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setPurgeConfirmOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                setPurgeConfirmOpen(false)
-                void editor.purgeAsset(asset.id)
-              }}
-            >
-              Delete permanently
-            </Button>
-          </>
-        }
-      >
-        <p>
-          This removes the file and every generated size from disk. Any page
-          still referencing it will render a broken image.
-        </p>
-        <UsageWarningNotice warning={purgeWarning} />
-      </Dialog>
     </aside>,
     document.body,
   )

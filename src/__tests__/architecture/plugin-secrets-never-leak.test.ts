@@ -10,19 +10,38 @@
  *
  *   - Handler files must not import `resolvePluginSecretsForRuntime` — the
  *     decrypted-plaintext projection is reserved for the server-side
- *     runtime path (`server/plugins/settingsCache.ts` seeds the QuickJS
- *     worker mirror and the `settings.changed` hook payload). Handlers
+ *     runtime path (`server/plugins/settingsCache.ts` seeds the owning
+ *     plugin's QuickJS worker mirror, and nothing else). Handlers
  *     reach the runtime record only through `refreshPluginSettingsCache`,
  *     whose return value feeds the worker — never a response body.
  *
  *   - The browser-bound presentation goes through `projectSecretSettings` /
  *     `listPluginSecretStates`, which only expose presence (`'***'` / `''`)
  *     and the per-field key-fingerprint state.
+ *
+ * Two scans for the hook bus. They are tripwires for the obvious mistake,
+ * not a proof: what actually stops a leak to another plugin is the run-time
+ * check in `hookBus` (`emit` refuses an owner-only event, `emitTo` refuses a
+ * payload carrying anything but the event's listed keys) and the two-worker
+ * test in `server/pluginSettingsChangedOwnerOnly.test.ts`.
+ *
+ *   - No production file passes an owner-only event name
+ *     (`OWNER_ONLY_HOOK_EVENTS`) as a string literal to an `.emit(` call.
+ *
+ *   - A server file that calls one of the functions returning a plugin's
+ *     decrypted settings record names `hookBus` only to tear listeners down
+ *     (`reset`, `unregisterPlugin`), except `settingsSync.ts`, whose single
+ *     use is the value-free `settings.changed` to the owning plugin.
+ *
+ * Out of their reach, by construction: an event name built at run time, and
+ * a settings record handed as an argument to a module that never calls those
+ * functions itself and broadcasts it under a plugin-namespaced event.
  */
 
 import { describe, it, expect } from 'bun:test'
 import { readdirSync, readFileSync, statSync } from 'fs'
 import { join, extname, relative } from 'path'
+import { OWNER_ONLY_HOOK_EVENTS } from '@core/plugins/hookBus'
 
 const REPO_ROOT = join(import.meta.dir, '../../../')
 const HANDLERS_DIR = join(REPO_ROOT, 'server/handlers')
@@ -40,6 +59,26 @@ function listFilesRecursive(dir: string): string[] {
     else if (extname(full) === '.ts') out.push(full)
   }
   return out
+}
+
+/** Production TypeScript under `server/` and `src/`, tests excluded. */
+function listProductionSources(): string[] {
+  return [join(REPO_ROOT, 'server'), join(REPO_ROOT, 'src')]
+    .flatMap((dir) => listFilesRecursive(dir))
+    .filter((file) => !file.includes('__tests__'))
+}
+
+/** Names that hand out, or pass along, a plugin's decrypted settings record. */
+const RUNTIME_RECORD_ACCESSORS =
+  /\b(getCachedPluginSettings|primePluginSettingsCache|refreshPluginSettingsCache|persistAndSyncPluginSettings|resolvePluginSecretsForRuntime)\s*\(/
+
+/** The one place a holder of the runtime record may use the hook bus, and how. */
+const SETTINGS_SYNC = 'server/plugins/host/settingsSync.ts'
+const SANCTIONED_SETTINGS_EMIT = "hookBus.emitTo(pluginId, 'settings.changed', { pluginId })"
+
+/** Code with comments removed, so a mention in prose is not a finding. */
+function withoutComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
 }
 
 describe('plugin-secrets-never-leak gate', () => {
@@ -94,6 +133,41 @@ describe('plugin-secrets-never-leak gate', () => {
       }
     }
     expect(offenders).toEqual([])
+  })
+
+  it('no owner-only event name is passed to an emit call', () => {
+    const names = OWNER_ONLY_HOOK_EVENTS.map((name) => name.replaceAll('.', '\\.')).join('|')
+    const broadcast = new RegExp(`\\.emit\\(\\s*['"\`](?:${names})['"\`]`)
+    const offenders = listProductionSources()
+      .filter((file) => broadcast.test(withoutComments(readFileSync(file, 'utf8'))))
+      .map((file) => relative(REPO_ROOT, file).replaceAll('\\', '/'))
+    expect(offenders).toEqual([])
+  })
+
+  it('a file that reads decrypted plugin settings does not touch the hook bus', () => {
+    const findings: string[] = []
+    for (const file of listFilesRecursive(join(REPO_ROOT, 'server'))) {
+      const rel = relative(REPO_ROOT, file).replaceAll('\\', '/')
+      const code = withoutComments(readFileSync(file, 'utf8'))
+      if (!RUNTIME_RECORD_ACCESSORS.test(code)) continue
+      // Every line naming the bus, however it is reached (a cast, an alias
+      // assignment, a destructure), except the import itself.
+      const busLines = code
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => /\bhookBus\b/.test(line) && !line.startsWith('import '))
+      for (const line of busLines) {
+        if (rel === SETTINGS_SYNC && line === `await ${SANCTIONED_SETTINGS_EMIT}`) continue
+        // Tearing listeners down sends nothing.
+        if (/^hookBus\.(?:reset|unregisterPlugin)\([\w.]*\)$/.test(line)) continue
+        findings.push(`${rel} → ${line}`)
+      }
+    }
+    expect(findings).toEqual([])
+
+    // The sanctioned call is there, exactly once.
+    const syncCode = withoutComments(readFileSync(join(REPO_ROOT, SETTINGS_SYNC), 'utf8'))
+    expect(syncCode.split(SANCTIONED_SETTINGS_EMIT)).toHaveLength(2)
   })
 
   it('plugin handler responses funnel through the wire-safe secret projection', () => {

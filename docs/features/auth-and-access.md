@@ -304,7 +304,7 @@ From now on, login is two-step: password → `pending_mfa` session → TOTP code
 
 ### Rate-limiting
 
-`mfaRateLimit` — per-IP bucket (10 attempts / 10 minutes). The key is `clientIp(req) ?? 'unknown'`. `clientIp(req)` uses the socket peer by default and trusts `X-Forwarded-For` only when that peer matches `TRUSTED_PROXY_CIDRS`. Hitting the limit returns 429.
+`mfaRateLimit` — per-IP bucket (10 attempts / 10 minutes). The key is `clientIp(req) ?? 'unknown'`. `clientIp(req)` uses the socket peer by default and trusts `X-Forwarded-For` only when that peer matches `TRUSTED_PROXY_CIDRS`. It walks the header right to left and returns the nearest hop that is not a trusted proxy. Entries written as `host:port` or `[v6]:port` (Azure Application Gateway, IIS ARR) are read without the port; an entry that holds no address ends the walk at the nearest trusted hop, never past it. Hitting the limit returns 429.
 
 In addition, failed codes feed the per-account lockout counter (see [Lockout](#lockout)). A correct code submitted after the account is locked is still rejected — the lockout check runs before code verification.
 

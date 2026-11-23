@@ -11,9 +11,12 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { strToU8, zipSync } from 'fflate'
+import { parsePluginManifest } from '@core/plugins/manifest'
 import { MAIN_SCOPE } from '../../../server/branches/scope'
+import { installPlugin } from '../../../server/repositories/plugins'
+import { getDraftSite } from '../../../server/repositories/site'
 import { handleCmsRequest } from '../../../server/handlers/cms'
-import { createDataRow, getDataRow, listDataRows, softDeleteDataRow } from '../../../server/repositories/data'
+import { createDataRow, getDataRow, listDataRows, saveDataRowDraft, softDeleteDataRow } from '../../../server/repositories/data'
 import { createCapabilityTestHarness, type CapabilityTestHarness } from '../helpers/capabilityHarness'
 
 const ORIGIN = 'http://localhost'
@@ -50,14 +53,14 @@ describe('plugin pack re-sync', () => {
     await rm(uploadsDir, { recursive: true, force: true })
   })
 
-  async function install(): Promise<Response> {
+  async function install(pack: Record<string, unknown> = { pages: [packPage('From the pack')] }): Promise<Response> {
     const manifest = {
       id: PLUGIN_ID, name: 'Pages', version: '1.0.0', apiVersion: 1,
       permissions: ['visualComponents.register'], pack: { path: 'pack/site.json' },
     }
     const zipped = zipSync({
       'plugin.json': strToU8(JSON.stringify(manifest)),
-      'pack/site.json': strToU8(JSON.stringify({ pages: [packPage('From the pack')] })),
+      'pack/site.json': strToU8(JSON.stringify(pack)),
     })
     const formData = new FormData()
     formData.set('file', new File([zipped], 'plugin.zip', { type: 'application/zip' }))
@@ -112,5 +115,139 @@ describe('plugin pack re-sync', () => {
     expect((await resync()).status).toBe(200)
     expect((await resync()).status).toBe(200)
     expect(await livePackPages()).toHaveLength(1)
+  })
+
+  it('refuses a pack whose page slug is already taken, before writing any of it', async () => {
+    // The owner already has a page at the address the pack wants.
+    await createDataRow(h.db, MAIN_SCOPE, {
+      id: 'owner_welcome', tableId: 'pages', cells: { title: 'Owner welcome', slug: 'welcome-pack' }, slug: 'welcome-pack',
+    }, null)
+    const second = { ...packPage('Second page'), id: `${PLUGIN_ID}.second`, slug: 'second-pack' }
+    // The clashing page comes LAST: everything before it must not be written either.
+    await install({ pages: [second, packPage('From the pack')] })
+    const res = await resync()
+    expect(res.status).toBe(400)
+    const { error } = (await res.json()) as { error: string }
+    expect(error).toContain('slug "welcome-pack" is already used')
+    expect(error).not.toContain('UNIQUE')
+    expect(await getDataRow(h.db, MAIN_SCOPE, `${PLUGIN_ID}.second`)).toBeNull()
+    expect(await getDataRow(h.db, MAIN_SCOPE, PAGE_ID)).toBeNull()
+    expect((await getDataRow(h.db, MAIN_SCOPE, 'owner_welcome'))?.cells.title).toBe('Owner welcome')
+  })
+
+  describe('ids a pack may write', () => {
+    const tree = (id: string) => ({
+      rootNodeId: `${id}.root`,
+      nodes: { [`${id}.root`]: { id: `${id}.root`, moduleId: 'base.container', props: {}, breakpointOverrides: {}, children: [], classIds: [] } },
+    })
+
+    it('never the id of a page the owner made: the draft and its access rule stay', async () => {
+      const [home] = await listDataRows(h.db, MAIN_SCOPE, 'pages')
+      const access = { level: 'members', onDeny: 'hide' }
+      await saveDataRowDraft(h.db, MAIN_SCOPE, home!.id, {
+        cells: { ...home!.cells, title: 'Owner wording', access },
+        slug: home!.slug,
+      })
+      await install({ pages: [{ ...packPage('Pack wording'), id: home!.id, slug: home!.slug }] })
+      const res = await resync()
+      expect(res.status).toBe(400)
+      expect(((await res.json()) as { error: string }).error).toContain(`must be namespaced under the plugin id`)
+      const after = await getDataRow(h.db, MAIN_SCOPE, home!.id)
+      expect(after?.cells.title).toBe('Owner wording')
+      expect(after?.cells.access).toEqual(access)
+      expect(JSON.stringify(after?.cells)).not.toContain('Pack wording')
+    })
+
+    it('never the id of a component or a layout outside its namespace', async () => {
+      await createDataRow(h.db, MAIN_SCOPE, {
+        id: 'owner-card', tableId: 'components', cells: { name: 'Owner card', marker: 'owner made this' }, slug: 'owner-card',
+      }, null)
+      await createDataRow(h.db, MAIN_SCOPE, {
+        id: 'owner-hero', tableId: 'layouts', cells: { name: 'Owner hero', marker: 'owner made this' }, slug: 'owner-hero',
+      }, null)
+      const component = { id: 'owner-card', name: 'Pack card', params: [], classIds: [], createdAt: 1, tree: tree('owner-card') }
+      const layout = { id: 'owner-hero', name: 'Pack hero', classes: {}, createdAt: 1, ...tree('owner-hero') }
+
+      for (const pack of [{ visualComponents: [component] }, { layouts: [layout] }]) {
+        await install(pack)
+        const res = await resync()
+        expect(res.status).toBe(400)
+        expect(((await res.json()) as { error: string }).error).toContain('must be namespaced under the plugin id')
+      }
+      expect((await getDataRow(h.db, MAIN_SCOPE, 'owner-card'))?.cells.marker).toBe('owner made this')
+      expect((await getDataRow(h.db, MAIN_SCOPE, 'owner-hero'))?.cells.marker).toBe('owner made this')
+
+      // Under its own namespace the same content installs.
+      const own = { ...component, id: `${PLUGIN_ID}/card`, tree: tree(`${PLUGIN_ID}/card`) }
+      await install({ visualComponents: [own] })
+      expect((await resync()).status).toBe(200)
+      expect(await getDataRow(h.db, MAIN_SCOPE, `${PLUGIN_ID}/card`)).not.toBeNull()
+    })
+
+    it('never an id inside another installed plugin\'s namespace, though it starts with its own id', async () => {
+      expect((await install()).status).toBe(201)
+      // A nested pair from before such pairs were refused at install.
+      const nested = parsePluginManifest({ id: `${PLUGIN_ID}.pro`, name: 'Pro', version: '1.0.0', apiVersion: 1, permissions: [] })
+      await installPlugin(h.db, nested, [])
+      await install({ pages: [{ ...packPage('Pack wording'), id: `${PLUGIN_ID}.pro.home`, slug: 'pro-home' }] })
+      const res = await resync()
+      expect(res.status).toBe(400)
+      expect(((await res.json()) as { error: string }).error).toContain(`is in the namespace of plugin "${PLUGIN_ID}.pro"`)
+      expect(await getDataRow(h.db, MAIN_SCOPE, `${PLUGIN_ID}.pro.home`)).toBeNull()
+    })
+
+    it('never a class id inside another installed plugin\'s namespace', async () => {
+      expect((await install()).status).toBe(201)
+      const nested = parsePluginManifest({ id: `${PLUGIN_ID}.pro`, name: 'Pro', version: '1.0.0', apiVersion: 1, permissions: [] })
+      await installPlugin(h.db, nested, [])
+      const cls = {
+        id: `${PLUGIN_ID}.pro.cls`, name: 'acme-pro-cls', kind: 'class', selector: '.acme-pro-cls', order: 0,
+        styles: { color: 'red' },
+      }
+      await install({ classes: [cls] })
+      const res = await resync()
+      expect(res.status).toBe(400)
+      expect(((await res.json()) as { error: string }).error).toContain(`is in the namespace of plugin "${PLUGIN_ID}.pro"`)
+      expect(JSON.stringify(await getDraftSite(h.db, MAIN_SCOPE))).not.toContain(`${PLUGIN_ID}.pro.cls`)
+
+      // Its own namespace, either separator, still installs.
+      await install({ classes: [{ ...cls, id: `${PLUGIN_ID}/cls` }] })
+      expect((await resync()).status).toBe(200)
+      expect(JSON.stringify(await getDraftSite(h.db, MAIN_SCOPE))).toContain(`${PLUGIN_ID}/cls`)
+    })
+
+    it('never a slash-form id that names another plugin before the slash', async () => {
+      expect((await install()).status).toBe(201)
+      const nested = parsePluginManifest({ id: `${PLUGIN_ID}.pro`, name: 'Pro', version: '1.0.0', apiVersion: 1, permissions: [] })
+      await installPlugin(h.db, nested, [])
+      const cls = {
+        id: `${PLUGIN_ID}.pro/cls`, name: 'acme-pro-cls', kind: 'class', selector: '.acme-pro-cls', order: 0,
+        styles: { color: 'red' },
+      }
+      for (const pack of [
+        { pages: [{ ...packPage('Pack wording'), id: `${PLUGIN_ID}.pro/home`, slug: 'pro-home' }] },
+        { classes: [cls] },
+      ]) {
+        await install(pack)
+        const res = await resync()
+        expect(res.status).toBe(400)
+        expect(((await res.json()) as { error: string }).error).toContain('must be namespaced under the plugin id')
+      }
+      expect(await getDataRow(h.db, MAIN_SCOPE, `${PLUGIN_ID}.pro/home`)).toBeNull()
+      expect(JSON.stringify(await getDraftSite(h.db, MAIN_SCOPE))).not.toContain(`${PLUGIN_ID}.pro/cls`)
+    })
+
+    it('preserves the owner’s access rule and head settings when re-syncing a pack page', async () => {
+      expect((await install()).status).toBe(201)
+      const row = await getDataRow(h.db, MAIN_SCOPE, PAGE_ID)
+      const access = { level: 'members', onDeny: 'hide' }
+      const seo = { description: 'Set by the owner' }
+      await saveDataRowDraft(h.db, MAIN_SCOPE, PAGE_ID, { cells: { ...row!.cells, access, seo }, slug: row!.slug })
+      expect((await resync()).status).toBe(200)
+      const after = await getDataRow(h.db, MAIN_SCOPE, PAGE_ID)
+      expect(after?.cells.access).toEqual(access)
+      expect(after?.cells.seo).toEqual(seo)
+      expect(JSON.stringify(after?.cells.body)).toContain('From the pack')
+    })
   })
 })
