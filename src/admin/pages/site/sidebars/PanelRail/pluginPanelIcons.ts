@@ -15,6 +15,7 @@
  * editor bundle with the entire 4k-icon catalog.
  */
 import type { IconComponent } from 'pixel-art-icons/types'
+import { BookOpenSolidIcon } from 'pixel-art-icons/icons/book-open-solid'
 import { BoxSolidIcon } from 'pixel-art-icons/icons/box-solid'
 import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
 import { CircleAlertSolidIcon } from 'pixel-art-icons/icons/circle-alert-solid'
@@ -33,6 +34,7 @@ import { TextStartTIcon } from 'pixel-art-icons/icons/text-start-t'
  * directly from the icon catalog.
  */
 const PLUGIN_PANEL_ICONS: Record<string, IconComponent> = {
+  'book-open-solid': BookOpenSolidIcon,
   'box': BoxSolidIcon,
   'box-stack': BoxStackSolidIcon,
   'circle-alert': CircleAlertSolidIcon,

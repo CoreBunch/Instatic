@@ -236,6 +236,7 @@ class PluginRuntime {
    * the next time a getter is called.
    */
   private toolbarButtonsSnapshot: RegisteredPluginToolbarButton[] | null = null
+  private dockCommandsSnapshot: PluginCommand[] | null = null
   private panelsSnapshot: RegisteredPluginEditorPanel[] | null = null
   private canvasOverlaysSnapshot: RegisteredPluginCanvasOverlay[] | null = null
 
@@ -247,6 +248,7 @@ class PluginRuntime {
   }
 
   reset(): void {
+    this.dockCommandsSnapshot = null
     this.commands.clear()
     this.toolbarButtons.clear()
     this.panels.clear()
@@ -281,6 +283,7 @@ class PluginRuntime {
    * case (e.g. admin disabling a plugin from the Plugins page).
    */
   deactivatePlugin(pluginId: string): void {
+    this.dockCommandsSnapshot = null
     for (const [key, cmd] of this.commands) {
       if (cmd.pluginId === pluginId) this.commands.delete(key)
     }
@@ -334,6 +337,7 @@ class PluginRuntime {
   }
 
   registerCommand(pluginId: string, command: PluginCommand): void {
+    this.dockCommandsSnapshot = null
     this.commands.set(command.id, { ...command, pluginId })
     this.emit()
   }
@@ -362,6 +366,13 @@ class PluginRuntime {
    */
   getPluginCommands(): ReadonlyArray<PluginCommand & { pluginId: string }> {
     return [...this.commands.values()]
+  }
+
+  getSiteDockCommands(): readonly PluginCommand[] {
+    return this.dockCommandsSnapshot ??= [...this.commands.values()].filter(command =>
+      command.showInSiteDock && !command.destructive && !command.args?.length &&
+      (!command.workspaces || command.workspaces.includes('site') || command.workspaces.includes('any')),
+    )
   }
 
   /**

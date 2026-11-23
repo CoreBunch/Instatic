@@ -248,3 +248,5 @@ The path is package-relative. Plugins cannot read arbitrary host filesystem path
 ## Further reading
 
 - [Plugin system docs](../../../docs/features/plugin-system.md)
+
+Use `showInSiteDock: true` on a direct editor command to add its icon to the Site dock. The button runs the same command as Spotlight and leaves the active sidebar panel in place.
