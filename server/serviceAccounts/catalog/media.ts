@@ -11,7 +11,7 @@ export const mediaOperations = [
   op('POST', 'media', 'media.write', 'Upload an image, video or font', { multipart: { file: 'Required media file', altText: 'Optional text alternative' } }),
   op('POST', 'media/lookup', 'media.read', 'Resolve media references', { bodySchema: CmsMediaLookupRequestSchema }),
   op('PATCH', 'media/:id', 'media.write', 'Update asset metadata', { bodySchema: UpdateMediaMetadataBodySchema }),
-  op('DELETE', 'media/:id', 'media.delete', 'Trash an asset. Purge permanently removes a trashed asset and requires fresh approval.', { querySchema: Type.Object({ purge: Type.Optional(Type.Literal('1')) }) }),
+  op('DELETE', 'media/:id', 'media.delete', 'Trash an asset. Set purge=1 to permanently remove an already trashed asset.', { querySchema: Type.Object({ purge: Type.Optional(Type.Literal('1')) }) }),
   op('POST', 'media/:id/restore', 'media.write', 'Restore a trashed asset'),
   op('POST', 'media/:id/replace', 'media.replace', 'Replace the bytes of an asset', { multipart: { file: 'Required replacement media file' } }),
   op('POST', 'media/:id/folders', 'media.write', 'Add or remove the asset from folders by ID', { bodySchema: AssignFoldersBodySchema }),

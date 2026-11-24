@@ -26,7 +26,7 @@ async function authorize(req: Request, db: DbClient, token: string): Promise<Req
   if (!grant) return jsonResponse({ error: 'Service connection expired, revoked or unavailable' }, { status: 401 })
   const actor = grant.user
   if (req.headers.has('X-Instatic-Branch') && !['GET', 'HEAD'].includes(req.method) &&
-      (namespace === 'ai' || installationWrites.has(group))) {
+      (namespace === 'ai' ? group !== 'chat' : installationWrites.has(group))) {
     return jsonResponse({ error: 'This write is installation-wide. Omit the branch to target the installation explicitly.' }, { status: 400 })
   }
   if (pathname === '/admin/api/cms/cli-context' && req.method === 'GET') {

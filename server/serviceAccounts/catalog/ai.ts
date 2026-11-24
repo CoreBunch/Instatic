@@ -25,6 +25,6 @@ export const aiOperations = [
   op('PUT', base + 'conversations/:id', chat, 'Update your conversation', { bodySchema: UpdateConversation }),
   op('DELETE', base + 'conversations/:id', chat, 'Delete your conversation'),
   op('GET', base + 'conversations/:id/messages/:messageId/images/:index', chat, 'Download an image by its numeric index in your message', { outputFile: 'image.jpg' }),
-  op('POST', base + 'chat/:scope', chat, 'Send content to your conversation and stream the reply. ' + scope, { bodySchema: AiChatRequestBodySchema }),
+  op('POST', base + 'chat/:scope', chat, 'Send content to your conversation and stream the reply. Use --branch to select the draft that tools read. ' + scope, { bodySchema: AiChatRequestBodySchema }),
   op('GET', base + 'audit', 'ai.audit.read', 'Read AI usage totals', { querySchema: Type.Partial(Type.Object({ since: Type.String({ description: 'ISO timestamp' }), tz: Type.String({ description: 'IANA time zone' }) })) }),
 ]

@@ -10,9 +10,9 @@ test('CLI approval grants an expiring, revocable identity that can fork and edit
   try {
     const owner = await h.setupOwner()
     const sponsor = await h.createRoleUser({ name: 'Site agents', slug: 'site-agents',
-      capabilities: ['ai.providers.manage', 'site.branches.create', 'site.read', 'site.content.edit', 'site.structure.edit'] })
+      capabilities: ['ai.providers.manage', 'ai.chat', 'site.branches.create', 'site.read', 'site.content.edit', 'site.structure.edit'] })
     let cookie = await h.stepUp(sponsor.cookie)
-    const input = { label: 'Launch editor', ttlHours: 2, capabilities: ['site.read', 'site.content.edit', 'site.branches.create'] }
+    const input = { label: 'Launch editor', ttlHours: 2, capabilities: ['ai.chat', 'site.read', 'site.content.edit', 'site.branches.create'] }
     expect((await h.cms(path, { cookie, method: 'POST', json: { ...input, capabilities: ['mail.manage'] } })).status).toBe(403)
     const created = await h.cms(path, { cookie, method: 'POST', json: input })
     expect(created.status).toBe(201)
@@ -50,16 +50,27 @@ test('CLI approval grants an expiring, revocable identity that can fork and edit
       heading: { id: 'heading', moduleId: 'base.text', props: { text: 'April' }, breakpointOverrides: {}, children: [] },
     } }
     const save = await h.cms(base + 'site-document', { cookie: owner, method: 'PUT', json: {
-      site, shellBaseSeq: 0, baseSeqs: {}, mode: 'incremental', changedPages: [page], deletedPageIds: [],
+      site, shellBaseSeq: 0, baseSeqs: {}, mode: 'incremental', changedPages: [page,
+        { ...page, id: 'private', slug: 'private', access: { level: 'members', onDeny: 'login' } },
+        { ...page, id: 'hidden', slug: 'hidden', access: { level: 'tags', tags: ['pro'], onDeny: 'hide' } },
+      ], deletedPageIds: [],
       changedComponents: [], deletedComponentIds: [], changedLayouts: [], deletedLayoutIds: [],
     } })
     expect(save.status).toBe(200)
     const fork = await h.cms(base + 'branches', { method: 'POST', headers, json: { name: 'review' } })
     expect(fork.status).toBe(201)
     expect((await fork.json()).branch.createdByUserId).toBe(id)
+    const aiWrite = { headers: branch, method: 'POST', json: {} }
+    const unknownBranch = await h.ai('/admin/api/ai/chat/site', { ...aiWrite, headers: { ...headers, 'X-Instatic-Branch': 'missing' } })
+    expect(await unknownBranch.json()).toMatchObject({ code: 'branch_not_found' })
+    expect(await (await h.ai('/admin/api/ai/chat/site', aiWrite)).json()).toEqual({ error: 'Invalid request body.' })
+    expect(await (await h.ai('/admin/api/ai/conversations', aiWrite)).json()).toMatchObject({ error: expect.stringContaining('installation-wide') })
     const visitor = base + 'canvas/visitor?path=/launch'
     expect((await h.cms(visitor, { headers })).status).toBe(400)
     expect((await h.cms(visitor, { headers: branch })).status).toBe(200)
+    const visit = (path: string) => h.cms(base + 'canvas/visitor?path=' + path, { headers: branch })
+    expect((await visit('/private')).status).toBe(403)
+    expect((await visit('/hidden')).status).toBe(404)
     const other = await h.cms(base + 'branches', { method: 'POST', cookie: owner, json: { name: 'other-review' } })
     expect(other.status).toBe(201)
     expect((await h.cms(visitor, { headers: { ...headers, 'X-Instatic-Branch': 'other-review' } })).status).toBe(403)
@@ -212,7 +223,6 @@ test('CMS operations use role permissions throughout the lifetime of the paired 
       method: 'PATCH', headers: first, json: { email: 'changed@example.test' },
     })).status).toBe(403)
 
-    await h.db`update service_accounts set token_step_up_expires_at = ${new Date(0).toISOString()} where id = ${id}`
     const nextApproval = await approve()
     const repeat = await h.cms(base + 'plugins', { method: 'POST', headers: first, json: { manifest: { ...manifest, id: 'fixture.second' } } })
     expect(repeat.status).toBe(201)

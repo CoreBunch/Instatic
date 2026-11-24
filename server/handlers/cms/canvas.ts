@@ -44,7 +44,8 @@ async function visitBranch(db: DbClient, scope: BranchScope, user: AuthUser, url
   } catch { return badRequest('Invalid public site path') }
   if (target.origin !== url.origin || /^\/(admin|_instatic)(\/|$)/.test(target.pathname)) return badRequest('Expected a public site path')
   await runPublishFlush()
-  const page = await renderBranchPreview(db, scope.branchId, target)
+  const page = await renderBranchPreview(db, scope.branchId, target, 'signed-out')
+  if (page && !page.ok) return page
   return page ? jsonResponse({ html: await page.text() }, { headers: { 'Cache-Control': 'private, no-store' } }) : jsonResponse({ error: 'Branch route not found' }, { status: 404 })
 }
 

@@ -1898,4 +1898,12 @@ export const pgMigrations: Migration[] = [
       create index service_account_activity_account_idx on service_account_activity(account_id, occurred_at desc, id);
     `,
   },
+  {
+    id: '044_service_account_capability_arrays',
+    sql: `
+      update service_accounts
+         set capabilities_json = (capabilities_json #>> '{}')::jsonb
+       where jsonb_typeof(capabilities_json) = 'string';
+    `,
+  },
 ]

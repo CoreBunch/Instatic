@@ -6,12 +6,13 @@ import { createInterface } from 'node:readline'
 import { promisify } from 'node:util'
 import { join } from 'node:path'
 import { mkdir, writeFile, readFile, stat, chmod, symlink, unlink } from 'node:fs/promises'
+import { seedMemberSite } from './helpers/members'
 import { completeStepUp, login } from './helpers/auth'
 import { ANONYMOUS_STATE } from './helpers/constants'
 
 test.use({ storageState: ANONYMOUS_STATE })
 test('connect an external CLI, work on a branch, then revoke it (AI-013)', async ({ page, baseURL }, testInfo) => {
-  test.setTimeout(120000)
+  test.setTimeout(180000)
   await login(page)
   await page.goto('/admin/ai')
   await page.getByRole('tab', { name: 'CLI', exact: true }).click()
@@ -29,6 +30,7 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
   await expect(checked).toHaveCount(1)
   await expect(form.getByRole('checkbox', { name: /^manage email/i })).toBeChecked()
   await form.getByRole('button', { name: 'Clear Email capabilities', exact: true }).click()
+  await form.getByRole('checkbox', { name: /^view members/i }).check()
   await form.getByRole('checkbox', { name: /^view site/i }).check()
   await form.getByRole('checkbox', { name: /^create branches/i }).check()
   await form.getByRole('checkbox', { name: /^edit site content/i }).check()
@@ -115,7 +117,29 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
     expect(await copyPrompt()).toBe(handoff)
     const context = JSON.parse((await run('whoami')).stdout)
     expect(context.account).toBe(id)
-    expect(context.capabilities.sort()).toEqual(['data.custom.tables.read', 'data.export', 'data.import', 'plugins.install', 'site.branches.create', 'site.content.edit', 'site.read', 'site.structure.edit'])
+    expect(context.capabilities.sort()).toEqual(['data.custom.tables.read', 'data.export', 'data.import', 'members.read', 'plugins.install', 'site.branches.create', 'site.content.edit', 'site.read', 'site.structure.edit'])
+    await test.step('check the published member journey with the packaged CLI', async () => {
+      const members = await seedMemberSite(page, 'cli-member-' + Date.now() + '-')
+      const inbox = join(credentials, 'inbox')
+      await mkdir(inbox, { mode: 0o700 })
+      try {
+        const check = promisify(execFile)('bun', [...cli, 'check', 'membership', '--live', '--out', scratch], {
+          env: { ...options.env, INSTATIC_TEST_INBOX: inbox }, timeout: 60000,
+        })
+        const deliver = async () => {
+          for await (const line of createInterface({ input: check.child.stderr! })) {
+            const email = /^Test inbox: (instatic-check-[a-f0-9-]+@example\.invalid)$/.exec(line)?.[1]
+            if (email) await writeFile(join(inbox, email + '.url'), await members.emailedLink(email), { mode: 0o600 })
+          }
+        }
+        const [{ stdout }] = await Promise.all([check, deliver()])
+        expect(JSON.parse(stdout)).toMatchObject({ passed: true, paths: {
+          login: members.path('sign-in'), verify: members.path('welcome'), dashboard: members.path('account'),
+        }, screenshots: [join(scratch, 'after-signup.png'), join(scratch, 'dashboard.png')] })
+      } finally {
+        await members.remove()
+      }
+    })
     const [forkOperation] = JSON.parse((await run('api', 'lookup', 'fork')).stdout)
     const forkContract = JSON.parse((await run('api', 'describe', forkOperation.method, forkOperation.path)).stdout)
     expect(forkContract.bodySchema.required).toContain('name')
@@ -231,6 +255,12 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
         { expectHidden: 'Marsh walk' }, { clickLink: 'Fossil walk' }, { expectPath: detailPath }, { expectText: 'Fossil walk' }]))).stdout)
     expect(visit).toMatchObject({ path: detailPath, stepsPassed: 6, errors: [] })
     await expect(scoped('visit', '/no-such-' + fixture)).rejects.toThrow(/404/)
+    const protect = await page.request.put('/admin/api/cms/data/tables/' + table.id + '/access', {
+      data: { access: { level: 'members', onDeny: 'hide' } },
+    })
+    expect(protect.ok(), await protect.text()).toBe(true)
+    await expect(scoped('visit', detailPath)).rejects.toThrow(/404/)
+    await scoped('visit', '/' + fixture, '--json', JSON.stringify([{ expectHidden: 'Fossil walk' }]))
     const png = join(scratch, 'branch.png')
     await run('screenshot', fixture, '--branch', branch, '--viewport', '390x844', '--out', png)
     const image = await readFile(png)

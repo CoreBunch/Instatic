@@ -37,7 +37,7 @@ export async function createAccount(db: DbClient, owner: string, input: Static<t
   await createUser(db, { id, email: id + '@service.invalid', displayName: label, roleId: 'member',
     passwordHash: '!', status: 'suspended' })
   await db`insert into service_accounts (id, owner_id, label, capabilities_json, expires_at)
-    values (${id}, ${owner}, ${label}, ${JSON.stringify(input.capabilities)}, ${expiry})`
+    values (${id}, ${owner}, ${label}, ${input.capabilities}, ${expiry})`
   return id
 }
 
@@ -46,15 +46,14 @@ export async function renewExpiredAccount(db: DbClient, id: string, owner: strin
   const expiresAt = new Date(now.getTime() + ttlHours * 3600000).toISOString()
   // Keep the paired credential. An outstanding pairing code belongs to the old access window.
   const result = await db`update service_accounts set expires_at = ${expiresAt},
-    code_hash = null, code_challenge = null, code_expires_at = null, pending_step_up_expires_at = null
+    code_hash = null, code_challenge = null, code_expires_at = null
     where id = ${id} and owner_id = ${owner} and revoked_at is null and expires_at <= ${now.toISOString()}`
   return result.rowCount ? { expiresAt } : null
 }
 
 export async function revokeAccount(db: DbClient, id: string, owner: string) {
   const result = await db`update service_accounts set revoked_at = ${new Date().toISOString()}, token_hash = null,
-    code_hash = null, code_challenge = null, code_expires_at = null,
-    pending_step_up_expires_at = null, token_step_up_expires_at = null
+    code_hash = null, code_challenge = null, code_expires_at = null
     where id = ${id} and owner_id = ${owner} and revoked_at is null`
   return result.rowCount > 0
 }

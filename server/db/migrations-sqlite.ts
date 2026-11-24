@@ -1969,4 +1969,10 @@ export const sqliteMigrations: Migration[] = [
       create index service_account_activity_account_idx on service_account_activity(account_id, occurred_at desc, id);
     `,
   },
+  {
+    id: '044_service_account_capability_arrays',
+    sql: `
+      select 1; -- SQLite already stores these grants as JSON arrays.
+    `,
+  },
 ]
