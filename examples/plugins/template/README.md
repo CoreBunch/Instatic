@@ -248,3 +248,5 @@ The path is package-relative. Plugins cannot read arbitrary host filesystem path
 ## Further reading
 
 - [Plugin system docs](../../../docs/features/plugin-system.md)
+
+For optional signed package updates, see the signed plugin updates section in [the plugin system guide](../../../docs/features/plugin-system.md).

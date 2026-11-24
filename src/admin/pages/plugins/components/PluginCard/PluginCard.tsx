@@ -17,6 +17,7 @@ import { PowerIcon } from 'pixel-art-icons/icons/power'
 import { PowerOffIcon } from 'pixel-art-icons/icons/power-off'
 import { ReloadIcon } from 'pixel-art-icons/icons/reload'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
+import { PluginUpdate } from '../PluginUpdate'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
 import type { InstalledPlugin } from '@core/plugin-sdk'
 import { safeUrl } from '@core/plugin-sdk'
@@ -57,6 +58,7 @@ interface PluginCardLoadingProps {
   onOpenSchedules?: never
   onInstallPack?: never
   onRestart?: never
+  onReviewUpdate?: never
   onReinstall?: never
   onToggle?: never
   onRemove?: never
@@ -87,6 +89,7 @@ interface PluginCardDataProps {
   onOpenSchedules: (plugin: InstalledPlugin) => void
   onInstallPack: (plugin: InstalledPlugin) => void
   onRestart: (plugin: InstalledPlugin) => void
+  onReviewUpdate?: (file: File, expected: { id: string; version: string }) => Promise<void>
   onReinstall: () => void
   onToggle: (plugin: InstalledPlugin) => void
   onRemove: (plugin: InstalledPlugin) => void
@@ -181,6 +184,9 @@ export function PluginCard(props: PluginCardProps) {
         </div>
 
         <div className={styles.pluginActions}>
+          {canInstall && plugin.enabled && plugin.manifest.updatePublicKey && props.onReviewUpdate && (
+            <PluginUpdate key={plugin.id + plugin.version} plugin={plugin} onReview={props.onReviewUpdate} />
+          )}
           {canConfigure && status.status !== 'error' && plugin.manifest.settings && plugin.manifest.settings.length > 0 && (
             <Button
               variant="secondary"
