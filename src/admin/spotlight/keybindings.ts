@@ -142,7 +142,7 @@ export const KEYBINDINGS: ReadonlyArray<KeybindingDefinition> = [
     shortcut: { mac: '⌘⇧Z', win: 'Ctrl+Shift+Z' },
     ariaKeyshortcuts: isPlatformMac() ? 'Meta+Shift+Z' : 'Control+Shift+Z',
     match: (e) =>
-      (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && e.shiftKey,
+      (e.metaKey || e.ctrlKey) && ((e.shiftKey && e.key.toLowerCase() === 'z') || e.key === 'y'),
     scope: 'editor',
     ignoreInEditableField: true,
   },

@@ -57,7 +57,11 @@ interface LiveWidthOverride {
   width: number
 }
 
+export type PreviewScale = 'fit' | number
+
 interface CanvasLiveSurfaceProps {
+  /** A dock renders at the breakpoint's real width and scales the visible page. */
+  previewScale?: PreviewScale
   page: Page | null
   activeBreakpoint: Breakpoint | null
   templateContext?: TemplateRenderDataContext
@@ -77,6 +81,7 @@ interface ResizeDragState {
 }
 
 export function CanvasLiveSurface({
+  previewScale,
   page,
   activeBreakpoint,
   templateContext,
@@ -104,12 +109,23 @@ export function CanvasLiveSurface({
     return () => observer.disconnect()
   }, [])
 
+  const resizable = previewScale === undefined
   const naturalWidth = computeNaturalWidth(activeBreakpoint, containerWidth)
   const effectiveMaxWidth = naturalWidth ?? containerWidth ?? null
   const effectiveWidth =
-    activeBreakpoint && widthOverride?.breakpointId === activeBreakpoint.id
+    resizable && activeBreakpoint && widthOverride?.breakpointId === activeBreakpoint.id
       ? widthOverride.width
       : naturalWidth
+
+  const layoutWidth = (!resizable && activeBreakpoint ? activeBreakpoint.width : effectiveWidth)
+  const scale = previewScale === 'fit' && layoutWidth && containerWidth
+    ? Math.min(1, containerWidth / layoutWidth)
+    : typeof previewScale === 'number' ? previewScale : 1
+  const frameStyle = {
+    '--live-width': layoutWidth === null ? '100%' : layoutWidth * scale + 'px',
+    '--live-layout-width': layoutWidth === null ? '100%' : layoutWidth + 'px',
+    '--live-scale': scale,
+  } as CSSProperties
 
   // useCallback kept: react-hooks/refs escape hatch — dragRef.current is read/
   // written in event handlers; a plain render-scoped function trips the
@@ -148,19 +164,21 @@ export function CanvasLiveSurface({
   }
 
   return (
-    <div ref={surfaceRef} className={styles.surface} data-testid="canvas-live-surface">
+    <div ref={surfaceRef} className={styles.surface} data-scaled={resizable ? undefined : true} data-testid="canvas-live-surface">
       {page && activeBreakpoint && effectiveWidth !== null ? (
         <div
           className={styles.frame}
-          style={{ '--live-width': `${effectiveWidth}px` } as CSSProperties}
+          style={frameStyle}
         >
-          <LiveResizeHandle
-            side="left"
-            onPointerDown={handlePointerDown('left')}
-            onPointerMove={handlePointerMove}
-            onPointerUp={finishDrag}
-            onPointerCancel={finishDrag}
-          />
+          {resizable && (
+            <LiveResizeHandle
+              side="left"
+              onPointerDown={handlePointerDown('left')}
+              onPointerMove={handlePointerMove}
+              onPointerUp={finishDrag}
+              onPointerCancel={finishDrag}
+            />
+          )}
 
           <div
             ref={viewportRef}
@@ -188,17 +206,21 @@ export function CanvasLiveSurface({
             />
           </div>
 
-          <LiveResizeHandle
-            side="right"
-            onPointerDown={handlePointerDown('right')}
-            onPointerMove={handlePointerMove}
-            onPointerUp={finishDrag}
-            onPointerCancel={finishDrag}
-          />
+          {resizable && (
+            <LiveResizeHandle
+              side="right"
+              onPointerDown={handlePointerDown('right')}
+              onPointerMove={handlePointerMove}
+              onPointerUp={finishDrag}
+              onPointerCancel={finishDrag}
+            />
+          )}
 
-          <div className={styles.widthBadge} aria-hidden="true">
-            {Math.round(effectiveWidth)}px
-          </div>
+          {resizable && (
+            <div className={styles.widthBadge} aria-hidden="true">
+              {Math.round(effectiveWidth)}px
+            </div>
+          )}
         </div>
       ) : (
         // Same loading treatment as the design canvas: while the page (or the
@@ -207,9 +229,7 @@ export function CanvasLiveSurface({
         // empty state. CanvasTransformLayer does the equivalent per breakpoint.
         <div
           className={styles.frame}
-          style={{
-            '--live-width': effectiveWidth !== null ? `${effectiveWidth}px` : '100%',
-          } as CSSProperties}
+          style={frameStyle}
           data-testid="canvas-live-loading-frame"
         >
           <div className={styles.iframeViewport}>

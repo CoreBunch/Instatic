@@ -3,6 +3,14 @@ import { collabBranchId } from '@site/store/slices/site/collabBranch'
 import { isSameActiveDocument } from '@site/store/slices/uiSlice'
 import { useEditorStore } from '@site/store/store'
 
+/** A preview reads the current document once its branch's collection list is ready. */
+export function capturePreviewBranch(): () => void {
+  const branch = collabBranchId()
+  return () => {
+    if (collabBranchId() !== branch) throw new Error('The branch changed. Open the preview again.')
+  }
+}
+
 /** Pin an insert to the site and document open when the user started it. */
 export function captureFragmentTarget(): () => void {
   const state = useEditorStore.getState()
