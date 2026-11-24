@@ -57,7 +57,7 @@ Round-trip functions live in `src/core/markdown/markdownDocument.ts`:
 - `markdownToProseMirrorDoc(md)` — parse markdown → ProseMirror node tree
 - `proseMirrorDocToMarkdown(doc)` — serialize ProseMirror node tree → markdown
 
-The inline serializer (`src/core/markdown/inlineMarkdown.ts`) emits mark delimiters between text runs. Whitespace at the edge of a bold, italic or strike span is moved outside its delimiters (`**word** `, never `**word **`), since CommonMark ignores a delimiter next to whitespace.
+The inline serializer (`src/core/markdown/inlineMarkdown.ts`) emits mark delimiters between text runs. Whitespace at the edge of a bold, italic or strike span is moved outside its delimiters (`**word** `, never `**word **`), since CommonMark ignores a delimiter next to whitespace. A link URL that CommonMark cannot read back as a bare destination (whitespace, unbalanced parentheses, a backslash, or a leading `<`) is written between angle brackets (`[PDF](<https://e.com/a b.pdf>)`); every other URL is written bare.
 
 The serializer produces stable, idempotent output. Existing entries load with no migration; the grammar is a strict superset of what was stored before.
 
