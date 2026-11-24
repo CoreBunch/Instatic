@@ -11,7 +11,7 @@
  * queue also does not take a missing template for final while its plugin is
  * installed: see `attemptQueuedMail`.)
  *
- * The owner's edits live in `mail_templates` under the same keys. They
+ * Wording edits and disabled sending settings use the same template keys. They
  * survive disabling and upgrading; an edit of a template an upgrade no
  * longer declares is deleted, and all of them go with the plugin.
  */
@@ -64,7 +64,7 @@ export async function syncPluginMailTemplates(db: DbClient): Promise<void> {
     } else {
       unsetPluginMailTemplates(plugin.id)
     }
-    await deleteStaleTemplateEdits(db, plugin.manifest)
+    await deleteStaleTemplateSettings(db, plugin.manifest)
   }
   // Templates of plugins that are no longer installed at all.
   for (const definition of listMailTemplateDefinitions()) {
@@ -75,15 +75,19 @@ export async function syncPluginMailTemplates(db: DbClient): Promise<void> {
   }
 }
 
-/** An edit of a template its plugin no longer declares has nothing left to edit. */
-async function deleteStaleTemplateEdits(db: DbClient, manifest: Pick<PluginManifest, 'id' | 'name' | 'mail'>): Promise<void> {
+/** Forget settings for any template the plugin has dropped. */
+async function deleteStaleTemplateSettings(db: DbClient, manifest: Pick<PluginManifest, 'id' | 'name' | 'mail'>): Promise<void> {
   const prefix = pluginMailTemplatePrefix(manifest.id)
   const declared = new Set(pluginMailTemplateDefinitions(manifest).map((definition) => definition.key))
   const { rows } = await db<{ template_key: string }>`
     select template_key from mail_templates where substr(template_key, 1, ${prefix.length}) = ${prefix}
+    union
+    select template_key from disabled_mail_templates where substr(template_key, 1, ${prefix.length}) = ${prefix}
   `
   for (const row of rows) {
-    if (!declared.has(row.template_key)) await db`delete from mail_templates where template_key = ${row.template_key}`
+    if (declared.has(row.template_key)) continue
+    await db`delete from mail_templates where template_key = ${row.template_key}`
+    await db`delete from disabled_mail_templates where template_key = ${row.template_key}`
   }
 }
 
@@ -97,6 +101,7 @@ export async function removePluginMail(db: DbClient, pluginId: string): Promise<
   unsetPluginMailTemplates(pluginId)
   const prefix = pluginMailTemplatePrefix(pluginId)
   await db`delete from mail_templates where substr(template_key, 1, ${prefix.length}) = ${prefix}`
+  await db`delete from disabled_mail_templates where substr(template_key, 1, ${prefix.length}) = ${prefix}`
   await discardQueuedMail(
     db,
     'source',

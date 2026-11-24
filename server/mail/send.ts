@@ -47,6 +47,13 @@ export interface SiteMail extends OutgoingMail {
   note?: string
 }
 
+export class MailTemplateDisabledError extends Error {
+  constructor() {
+    super('Sending is turned off for this email template.')
+    this.name = 'MailTemplateDisabledError'
+  }
+}
+
 /** An email was asked for without a value its template's wording uses. */
 export class MailVariableMissingError extends Error {
   constructor(key: string, missing: readonly string[]) {
@@ -322,6 +329,7 @@ export async function buildTemplateMail(
 ): Promise<SiteMail> {
   const template = await getMailTemplate(db, input.key)
   if (!template) throw new Error(`unknown mail template "${input.key}"`)
+  if (!template.sendingEnabled) throw new MailTemplateDisabledError()
   const values = { ...(await siteMailVariables(db)), ...input.variables }
   let rendered = renderMailTemplate(template, values)
   // The owner's wording cannot be sent as written: a link that does not

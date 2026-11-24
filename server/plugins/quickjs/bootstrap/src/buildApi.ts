@@ -472,7 +472,7 @@ globalThis.__buildApi = function buildApi() {
       // recipient. `{ member }` needs mail.send; `{ address }` needs
       // mail.send.external.
       mail: {
-        // api.cms.mail.send({ template, to, variables?, reference? }) → 'queued' | 'captured'
+        // The host returns the delivery decision for this template.
         send: function (input: unknown) {
           const mail = (input && typeof input === 'object' ? input : {}) as {
             template?: unknown

@@ -107,6 +107,19 @@ test('a plugin\'s email templates are listed, reworded and sent (ADMIN-016)', as
       await expect(template.getByRole('heading', { name: 'New ticket', exact: true })).toBeVisible()
       await page.screenshot({ path: process.env.E2E_EVIDENCE_PATH ?? '.tmp/evidence/plugin-mail-templates.png' })
 
+      const sending = template.getByRole('switch', { name: 'Sending' })
+      await expect(sending).toBeChecked()
+      await sending.click()
+      await expect(sending).not.toBeChecked()
+      await expect(sidebar.getByRole('button', { name: /New ticket.*Sending off/ })).toBeVisible()
+      await expect(template.getByRole('button', { name: 'Send test' })).toBeDisabled()
+      const suppressed = await admin.post(`${PUBLIC_BASE_URL}/_instatic/plugins/${pluginId}/notify`, {
+        headers, data: { address: 'suppressed@example.com', subject: 'While off' },
+      })
+      expect(await suppressed.json()).toEqual({ status: 'disabled' })
+      await sending.click()
+      await expect(sending).toBeChecked()
+
       // Reworded through the same endpoint the editor saves to.
       await stepUp()
       const saved = await admin.put(`/admin/api/cms/mail/templates/${encodeURIComponent(`plugin.${pluginId}~ticket.opened`)}`, {

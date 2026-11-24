@@ -100,6 +100,16 @@ export async function saveCmsMailTemplate(key: string, input: MailTemplateInput)
   return body.template
 }
 
+export async function setCmsMailTemplateSending(key: string, sendingEnabled: boolean): Promise<MailTemplate> {
+  const body = await apiRequest(`${MAIL_PATH}/templates/${encodeURIComponent(key)}/sending`, {
+    method: 'PUT',
+    body: { sendingEnabled },
+    schema: MailTemplateResponseSchema,
+    fallbackMessage: 'Could not change template sending',
+  })
+  return body.template
+}
+
 export async function resetCmsMailTemplate(key: string): Promise<MailTemplate> {
   const body = await apiRequest(`${MAIL_PATH}/templates/${encodeURIComponent(key)}`, {
     method: 'DELETE',

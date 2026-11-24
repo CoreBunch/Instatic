@@ -1920,4 +1920,12 @@ export const pgMigrations: Migration[] = [
       );
     `,
   },
+  {
+    id: '046_disabled_mail_templates',
+    sql: `
+      create table disabled_mail_templates (
+        template_key text primary key
+      );
+    `,
+  },
 ]

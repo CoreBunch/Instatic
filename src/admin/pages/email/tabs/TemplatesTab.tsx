@@ -17,6 +17,7 @@ import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { TemplateNavigation } from './TemplateNavigation'
 import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
 import ws from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
+import { Switch } from '@ui/components/Switch'
 import { Button } from '@ui/components/Button'
 import { ContextMenu, ContextMenuItem } from '@ui/components/ContextMenu'
 import { Dialog } from '@ui/components/Dialog'
@@ -36,6 +37,7 @@ import {
   listCmsMailTemplates,
   resetCmsMailTemplate,
   saveCmsMailTemplate,
+  setCmsMailTemplateSending,
   testCmsMailTemplate,
 } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -105,7 +107,7 @@ function TemplateEditor({
   const [lastFocus, setLastFocus] = useState<'subject' | 'body'>('body')
   const [variableMenu, setVariableMenu] = useState<DOMRect | null>(null)
   const [testOpen, setTestOpen] = useState(false)
-  const [busy, setBusy] = useState<'save' | 'reset' | 'test' | null>(null)
+  const [busy, setBusy] = useState<'save' | 'reset' | 'test' | 'sending' | null>(null)
   const [testTo, setTestTo] = useState(user?.email ?? '')
 
   const mode = mounted.mode
@@ -146,6 +148,19 @@ function TemplateEditor({
       if (isCancelledStepUp(err)) return
       console.error('[TemplatesTab] save failed:', err)
       pushToast({ kind: 'error', title: 'Could not save the template', body: getErrorMessage(err, 'Unknown error') })
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function handleSending(sendingEnabled: boolean) {
+    setBusy('sending')
+    try {
+      onSaved(await runStepUp(() => setCmsMailTemplateSending(template.key, sendingEnabled)))
+    } catch (err) {
+      if (isCancelledStepUp(err)) return
+      console.error('[TemplatesTab] changing sending failed:', err)
+      pushToast({ kind: 'error', title: 'Could not change template sending', body: getErrorMessage(err, 'Unknown error') })
     } finally {
       setBusy(null)
     }
@@ -224,12 +239,15 @@ function TemplateEditor({
           </div>
         </div>
         <div className={styles.headerActions}>
+          <Switch className={styles.sendingSwitch} checked={template.sendingEnabled} onCheckedChange={handleSending} disabled={busy !== null}>
+            Sending
+          </Switch>
           {template.customised && (
             <Button type="button" variant="ghost" size="md" onClick={() => void handleReset()} disabled={busy !== null} busy={busy === 'reset'}>
               Reset to built-in
             </Button>
           )}
-          <Button type="button" variant="secondary" size="md" onClick={() => setTestOpen(true)} disabled={busy !== null}>
+          <Button type="button" variant="secondary" size="md" onClick={() => setTestOpen(true)} disabled={busy !== null || !template.sendingEnabled}>
             <SendSolidIcon size={14} aria-hidden="true" />
             <span>Send test</span>
           </Button>

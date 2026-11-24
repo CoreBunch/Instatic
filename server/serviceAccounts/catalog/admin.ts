@@ -1,5 +1,5 @@
 import { Type } from '@core/utils/typeboxHelpers'
-import { MailConnectorInputSchema, MailConnectorSecretInputSchema, MailDefaultsSchema, MailTemplateInputSchema, MailTestInputSchema } from '@core/mail'
+import { MailConnectorInputSchema, MailConnectorSecretInputSchema, MailDefaultsSchema, MailTemplateInputSchema, MailTemplateSendingSchema, MailTestInputSchema } from '@core/mail'
 import { CreateMemberAppBodySchema, MemberInviteInputSchema, MemberSettingsSchema, MemberTagInputSchema, MemberTagRemoveInputSchema } from '@core/members'
 import { UserCreateBodySchema, UserPatchBodySchema } from '../../handlers/cms/users'
 import { DASHBOARD_READERS } from '../../handlers/cms/dashboard'
@@ -44,6 +44,7 @@ export const adminOperations = [
   op('PUT', 'mail/defaults', mail, 'Set the default email connector and sender', { bodySchema: MailDefaultsSchema }),
   op('GET', 'mail/templates', mail, 'List effective email templates'),
   op('PUT', 'mail/templates/:key', mail, 'Save an email template', { bodySchema: MailTemplateInputSchema }),
+  op('PUT', 'mail/templates/:key/sending', mail, 'Turn sending on or off for an email template', { bodySchema: MailTemplateSendingSchema }),
   op('DELETE', 'mail/templates/:key', mail, 'Reset an email template'),
   op('POST', 'mail/templates/:key/test', mail, 'Send a test of an email template', { bodySchema: MailTestInputSchema }),
   op('GET', 'mail/activity', mail, 'Inspect delivery events', { querySchema: Type.Partial(Type.Object({

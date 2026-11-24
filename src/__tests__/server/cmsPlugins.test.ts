@@ -208,6 +208,7 @@ function makeFakeDb() {
     // queued email and limit counters. No plugin in these tests declares or sends email.
     if (
       normalized.includes('from mail_templates') ||
+      normalized.includes('from disabled_mail_templates') ||
       normalized.includes('from mail_queue') ||
       normalized.includes('delete from mail_counters')
     ) {

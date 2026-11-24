@@ -196,6 +196,12 @@
   background: var(--email-preview-surface);
 }
 
+.sendingSwitch {
+  gap: var(--space-s);
+  color: var(--text-bright);
+  font: inherit;
+}
+
 /* Same floating-chrome look as the mode switch, so it reads on the light
    Live ground as well as the dark Write one. */
 .canvasTools {

@@ -6,7 +6,8 @@ import { Select } from '@ui/components/Select'
 import { SettingsListSection } from '@admin/shared/SettingsWorkspace/SettingsListSection'
 import styles from '../EmailPage.module.css'
 
-function wordingStatus(template: MailTemplate): string {
+function templateStatus(template: MailTemplate): string {
+  if (!template.sendingEnabled) return 'Sending off'
   if (!template.customised) return ''
   return template.wordingProblem ? 'Not used' : 'Edited'
 }
@@ -35,7 +36,7 @@ export function TemplateNavigation({ templates, selectedKey, onSelect }: {
           <SettingsListSection key={label} label={label}>
             {items.map((template) => {
               const active = template.key === selectedKey
-              const status = wordingStatus(template)
+              const status = templateStatus(template)
               return (
                 <Button key={template.key} variant={active ? 'secondary' : 'ghost'} size="sm" align="start" fullWidth active={active}
                   aria-current={active ? 'true' : undefined} className={styles.templateRow}
@@ -54,7 +55,7 @@ export function TemplateNavigation({ templates, selectedKey, onSelect }: {
           {groups.map(({ label, items }) => (
             <optgroup key={label} label={label}>
               {items.map((template) => {
-                const status = wordingStatus(template)
+                const status = templateStatus(template)
                 return <option key={template.key} value={template.key}>{template.label}{status && ` · ${status}`}</option>
               })}
             </optgroup>
