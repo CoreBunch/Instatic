@@ -35,7 +35,6 @@ const MAX_HEIGHT = 16000
 
 interface HighlightBox {
   key: string
-  label: string
   tone: 'added' | 'changed' | 'removed'
   x: number
   y: number
@@ -49,7 +48,7 @@ interface FrameProps {
   side: ReviewRenderSide
   title: string
   /** Node ids to outline in this frame, with their tone. */
-  marks: Array<{ id: string; label: string; tone: HighlightBox['tone'] }>
+  marks: Array<{ id: string; tone: HighlightBox['tone'] }>
   showHighlights: boolean
 }
 
@@ -133,7 +132,6 @@ function ScaledFrame({ branchId, rowId, side, title, marks, showHighlights }: Fr
         if (rect.width === 0 && rect.height === 0) continue
         next.push({
           key: `${mark.id}:${index}`,
-          label: mark.label,
           tone: mark.tone,
           x: rect.left + scrollX,
           y: rect.top + scrollY,
@@ -181,11 +179,10 @@ function ScaledFrame({ branchId, rowId, side, title, marks, showHighlights }: Fr
           <span
             key={box.key}
             className={styles.highlight}
+            aria-hidden="true"
             data-tone={box.tone}
             style={{ '--hl-x': `${box.x}px`, '--hl-y': `${box.y}px`, '--hl-w': `${box.width}px`, '--hl-h': `${box.height}px` } as CSSProperties}
-          >
-            <span className={styles.highlightLabel}>{box.label}</span>
-          </span>
+          />
         ))}
       </div>
     </div>
@@ -193,15 +190,6 @@ function ScaledFrame({ branchId, rowId, side, title, marks, showHighlights }: Fr
 }
 
 type Mode = 'side' | 'swipe' | 'list'
-
-/**
- * "Changed · Hero title" when the node carries a name of its own; a bare
- * "Changed" when the plan could only name its module (`text`, `container`).
- */
-function markLabel(verb: string, nodeLabel: string | undefined): string {
-  if (!nodeLabel || /^[a-z][a-z0-9-]*$/.test(nodeLabel)) return verb
-  return `${verb} · ${nodeLabel}`
-}
 
 function clampPercent(value: number): number {
   return Math.min(100, Math.max(0, value))
@@ -233,11 +221,11 @@ export function PageCompare({ branchId, rowId, label, action, tree, fieldLines, 
 
   const branchMarks = tree
     ? [
-        ...tree.changed.map((id) => ({ id, label: markLabel('Changed', tree.labels[id]), tone: 'changed' as const })),
-        ...tree.added.map((id) => ({ id, label: markLabel('Added', tree.labels[id]), tone: 'added' as const })),
+        ...tree.changed.map((id) => ({ id, tone: 'changed' as const })),
+        ...tree.added.map((id) => ({ id, tone: 'added' as const })),
       ]
     : []
-  const mainMarks = tree ? tree.removed.map((id) => ({ id, label: markLabel('Removed', tree.labels[id]), tone: 'removed' as const })) : []
+  const mainMarks = tree ? tree.removed.map((id) => ({ id, tone: 'removed' as const })) : []
   const treeLines = tree ? treeChangeLines(tree) : []
   const lines = [...fieldLines, ...treeLines]
 
