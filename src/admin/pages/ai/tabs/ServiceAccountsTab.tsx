@@ -33,7 +33,7 @@ function status(account: ServiceAccount) {
   return account.connected ? 'Connected' : 'Awaiting connection'
 }
 function useOverview() {
-  const resource = useAsyncResource(signal => apiRequest(base, { schema: ServiceOverviewSchema, signal }), [], { fallbackError: 'Cannot load service accounts.' })
+  const resource = useAsyncResource(signal => apiRequest(base, { schema: ServiceOverviewSchema, signal }), [], { fallbackError: 'Cannot load CLI connections.' })
   const { refresh } = resource
   useEffect(() => {
     window.addEventListener('focus', refresh)
@@ -84,7 +84,7 @@ export function ServiceAccountsTab({ initialAccount }: { initialAccount?: string
   const origin = overview.data?.origin
   const prompt = account && origin && overview.data ? agentPrompt(origin, account.id, overview.data.cliFilename) : ''
   const active = account && !account.revoked && !account.expired
-  const create = <Button variant="primary" disabled={!origin} onClick={() => setDialog('create')}>Create service account</Button>
+  const create = <Button variant="primary" disabled={!origin} onClick={() => setDialog('create')}>Create CLI connection</Button>
 
   async function copy() {
     try {
@@ -101,7 +101,7 @@ export function ServiceAccountsTab({ initialAccount }: { initialAccount?: string
       await apiRequest(base + '/' + account.id, { method: 'DELETE' })
       setDialog(null)
       overview.refresh()
-    } catch (err) { report('Could not revoke service account', err) }
+    } catch (err) { report('Could not revoke CLI connection', err) }
     setBusy(false)
   }
   return <div className={directory.directory} data-split={Boolean(account)}>
@@ -109,13 +109,13 @@ export function ServiceAccountsTab({ initialAccount }: { initialAccount?: string
       {pairing === 'failed' && <Alert tone="danger">The CLI could not finish connecting. Check the terminal and run the connection command again.</Alert>}
       {pairing === 'declined' && <Text variant="muted">CLI connection request declined.</Text>}
       {overview.error && <Alert tone="danger">{overview.error}</Alert>}
-      {overview.loading && !overview.data && <div role="status"><Text variant="muted">Loading service accounts…</Text></div>}
+      {overview.loading && !overview.data && <div role="status"><Text variant="muted">Loading CLI connections…</Text></div>}
       {overview.data && !origin && <Alert tone="warning">Set PUBLIC_ORIGIN to the HTTPS address of this installation to enable CLI connections.</Alert>}
       {overview.data && (overview.data.accounts.length ? <>
         <div className={directory.toolbar}>{create}</div>
-        <DataTable aria-label="Service accounts" className={directory.table} density="compact">
+        <DataTable aria-label="CLI connections" className={directory.table} density="compact">
           <DataTableHead><DataTableRow>
-            <DataTableHeader>Account</DataTableHeader>
+            <DataTableHeader>Connection</DataTableHeader>
             <DataTableHeader className={directory.accessColumn}>Permissions</DataTableHeader>
             <DataTableHeader className={directory.statusColumn}>Status</DataTableHeader>
             <DataTableHeader className={directory.loginColumn}>Expires</DataTableHeader>
@@ -133,7 +133,7 @@ export function ServiceAccountsTab({ initialAccount }: { initialAccount?: string
       </> : <EmptyState variant="centered" icon={<CodeIcon size={22} />} title="Connect an external agent"
         description="Choose what the agent can do and when its access expires." action={create} />)}
     </div>
-    {account && <DirectoryInspector key={account.id} id={inspectorId} label="Account details" onClose={() => {
+    {account && <DirectoryInspector key={account.id} id={inspectorId} label="Connection details" onClose={() => {
       selectedRow.current?.focus({ preventScroll: true })
       setId('')
     }}
@@ -155,7 +155,7 @@ export function ServiceAccountsTab({ initialAccount }: { initialAccount?: string
         setId(result.id)
         setDialog(null)
         overview.refresh()
-      } catch (err) { report('Could not create service account', err) }
+      } catch (err) { report('Could not create CLI connection', err) }
     }} />}
     {dialog === 'revoke' && account && <Dialog open tone="danger" size="sm" title="Revoke access?" onClose={() => { if (!busy) setDialog(null) }}
       footer={<>
@@ -197,7 +197,7 @@ export function ServiceConsent() {
 
   return <AdminPageLayout workspace="ai" mode="workspace">
     <section className={cn(styles.consent, styles.stack, layout.detailCard)} aria-label="Connect Instatic CLI">
-      {overview.loading && !overview.data ? <Text variant="muted">Loading account…</Text> : valid ? <>
+      {overview.loading && !overview.data ? <Text variant="muted">Loading connection…</Text> : valid ? <>
         <header className={directory.identityText}>
           <Text variant="muted" size="sm">CLI connection request</Text>
           <Heading level={3}>{account.label}</Heading>

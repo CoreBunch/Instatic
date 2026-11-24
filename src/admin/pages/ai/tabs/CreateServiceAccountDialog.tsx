@@ -32,11 +32,11 @@ export function CreateServiceAccountDialog({ onClose, onCreate }: {
   const [busy, setBusy] = useState(false)
   const nameInput = useRef<HTMLInputElement>(null)
 
-  return <Dialog open size="xl" initialFocusRef={nameInput} title="Create service account" onClose={() => { if (!busy) onClose() }}
+  return <Dialog open size="xl" initialFocusRef={nameInput} title="Create CLI connection" onClose={() => { if (!busy) onClose() }}
     footer={<>
       <Button variant="secondary" disabled={busy} onClick={onClose}>Cancel</Button>
       <Button variant="primary" type="submit" form="service-account-form" disabled={busy || !label.trim() || !selected.size}>
-        {busy ? 'Creating…' : 'Create account'}
+        {busy ? 'Creating…' : 'Create connection'}
       </Button>
     </>}>
     <form id="service-account-form" className={styles.stack} onSubmit={async event => {
@@ -47,7 +47,7 @@ export function CreateServiceAccountDialog({ onClose, onCreate }: {
       setBusy(false)
     }}>
       <div className={styles.fields}>
-        <FormField label="Account name" htmlFor="service-account-name">
+        <FormField label="Connection name" htmlFor="service-account-name">
           <Input ref={nameInput} id="service-account-name" value={label} maxLength={100} placeholder="e.g. Content editor" onChange={event => setLabel(event.currentTarget.value)} />
         </FormField>
         <FormField label="Expires after" htmlFor="service-account-expiry">

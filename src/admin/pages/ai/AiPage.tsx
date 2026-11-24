@@ -29,7 +29,7 @@ const SECTION_LABELS: Record<Section, string> = {
   providers: 'Providers',
   defaults: 'Defaults',
   mcp: 'MCP connections',
-  service: 'Service accounts',
+  service: 'CLI',
   audit: 'Audit',
 }
 
