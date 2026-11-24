@@ -1,6 +1,8 @@
+import { memberFormAction } from '@core/members'
+import { memberFormFragment } from '@core/memberForms'
 import { JSDOM } from 'jsdom'
 import { importHtml } from '@core/htmlImport'
-import { isGeneratedClassLocked, updateNodeProps, type Page, type SiteShell, type StyleRule } from '@core/page-tree'
+import { createNode, isGeneratedClassLocked, updateNodeProps, type Page, type SiteShell, type StyleRule } from '@core/page-tree'
 import { cssToStyleRules, insertImportedFragment } from '@core/siteImport'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 
@@ -13,6 +15,7 @@ const operations = Type.Union([
   Type.Object({ op: Type.Literal('text'), node: id, value: Type.String() }, { additionalProperties: false }),
   Type.Object({ op: Type.Literal('inline'), node: id, ...css.properties }, { additionalProperties: false }),
   Type.Object({ op: Type.Literal('rule'), rule: id, context: Type.Optional(id), ...css.properties }, { additionalProperties: false }),
+  Type.Object({ op: Type.Literal('memberForm'), parent: id, action: id, successPath: Type.Optional(Type.String({ pattern: '^/(?!/)' })) }, { additionalProperties: false }),
   Type.Object({ op: Type.Literal('insertHtml'), parent: id, html: Type.String({ minLength: 1, maxLength: 100000 }) }, { additionalProperties: false }),
 ])
 export const CanvasEditSchema = Type.Object({
@@ -34,6 +37,18 @@ function insertMarkup(page: Page, site: SiteShell, parentId: string, html: strin
 }
 
 export function applyCanvasEdit(page: Page, site: SiteShell, edit: Static<typeof operations>) {
+  if (edit.op === 'memberForm') {
+    const action = memberFormAction(edit.action)
+    if (!action) throw new Error('Unknown member form action. Use api lookup membership.')
+    const formId = 'form-' + crypto.randomUUID()
+    const form = createNode('base.form', { formId, mode: 'member', memberAction: action.action,
+      successBehavior: edit.successPath ? 'redirect' : 'message', redirectUrl: edit.successPath ?? '', successMessage: action.successMessage })
+    const parts = memberFormFragment(action, formId, { fields: [...action.fields], submit: true, messages: true, secondary: !!action.choice })
+    form.children = parts.rootIds
+    parts.nodes[form.id] = form
+    if (!insertImportedFragment(page, site, edit.parent, { rootIds: [form.id], nodes: parts.nodes })) throw new Error('Choose a page container as the parent')
+    return { op: edit.op, node: form.id, action: action.action, successPath: edit.successPath }
+  }
   if (edit.op === 'insertHtml') return insertMarkup(page, site, edit.parent, edit.html)
   if (edit.op === 'text') {
     const node = Object.hasOwn(page.nodes, edit.node) && page.nodes[edit.node]

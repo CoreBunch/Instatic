@@ -5,7 +5,6 @@ import type { AuthUser } from '../repositories/users'
 // the opaque credential that proved its identity.
 interface ServicePrincipal {
   user: AuthUser
-  stepUpExpiresAt: string | null
 }
 const actors = new WeakMap<Request, ServicePrincipal>()
 

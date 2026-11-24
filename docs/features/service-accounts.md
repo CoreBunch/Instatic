@@ -9,7 +9,9 @@ An external agent can use the CMS API from an existing Codex or Claude Code sess
 3. Match the code in the terminal with the one shown in your browser, review permissions and expiry, and choose **Authorize CLI**. After pairing, the browser returns to the account and shows **Connected**. Creation and approval use admin step-up. Remote sites need an HTTPS public origin. A local loopback site can pair over HTTP.
 4. Give the session a task such as “Create a branch called review, fix the hero heading on the homepage, check it at mobile width, and tell me what you changed.” The agent reports back in that session.
 
-The CLI requires Bun 1.4 and a working OS credential store. Pair on the machine running the CLI. Sandboxed terminals need permission for the loopback callback and the OS credential store. If approval succeeds but storing the credential fails, allow credential-store access and pair again. The connection uses a temporary listener bound to 127.0.0.1, a random state, and a one-minute single-use authorization code with an S256 proof. Use `connect --no-open` to open the printed URL yourself. The resulting opaque bearer credential expires with the connector (one hour to 30 days). The system credential store holds the token under the site account’s ID. The server stores its hash. Use **Copy agent prompt** again to pair another device. Reconnecting a device replaces the previous credential when the new device finishes the exchange.
+The CLI requires Bun 1.4. Pair on the machine running the agent. A sandboxed terminal needs permission to listen on loopback and write to its private credential directory. Pairing uses a temporary listener on 127.0.0.1, a random state, a one-minute single-use authorization code and an S256 proof. Use `connect --no-open` to open the printed URL yourself.
+
+CLI 1.4 stores the opaque bearer credential in the current user’s profile. On Unix, the default directory is `~/.instatic/credentials` (0700), with one file per account (0600). On Windows the default is the Instatic credentials directory under Local AppData and it inherits the profile’s ACL. Set `INSTATIC_CREDENTIAL_DIR` to an absolute private directory for an isolated agent workspace. Protect this directory as a secret. Upgrading from the keychain-backed CLI requires one new pairing. Completing the exchange replaces the previous device credential. The CMS retains only its hash.
 
 ## Use the CLI
 
@@ -24,7 +26,7 @@ instatic api POST branches --json '{"name":"review"}'
 instatic api GET pages --branch review
 ```
 
-Use the page ID from the branch’s page list. Inspect at the viewport where the problem occurs, then open the returned PNG. The JSON reports visible node IDs, bounds, horizontal overflow, inline styles and assigned rules. Each rule lists pages and components that reference its class directly. A rendered element with a null node ID has no editable target in this page.
+Use a page ID or a slash-prefixed slug such as `/` or `/login`. Inspect at the viewport where the problem occurs, then open the returned PNG. The JSON reports visible node IDs, bounds, horizontal overflow, inline styles and assigned rules. Each rule lists pages and components that reference its class directly. A rendered element with a null node ID has no editable target in this page.
 
 ```sh
 instatic canvas inspect PAGE_ID --branch review --viewport 390x844 --out before.png
@@ -33,9 +35,25 @@ instatic canvas edit PAGE_ID --branch review --revision REVISION_FROM_INSPECT --
 instatic canvas inspect PAGE_ID --branch review --viewport 390x844 --out after.png
 ```
 
-Use IDs and contexts from inspect. To focus the output, add `--node NODE_ID`. A batch accepts text on an unbound text node, an inline CSS declaration, a shared rule declaration (optionally in a responsive context), or an HTML fragment under a container using `insertHtml`. Set a CSS value to `null` to remove the declaration. A rule edit affects every use of that selector on the branch. The CMS checks the complete batch against normal role permissions and commits it atomically. After HTTP 409, inspect again and reconcile the change. For document-level edits the lower-level `draft-page/:id` and `site-document` operations remain available.
+Use IDs and contexts from inspect. To focus the output, add `--node NODE_ID`. A batch accepts text on an unbound text node, an inline CSS declaration, a shared rule declaration (optionally in a responsive context), an HTML fragment under a container using `insertHtml`, or a native membership form using `memberForm`. Set a CSS value to `null` to remove the declaration. A rule edit affects every use of that selector on the branch. The CMS checks the complete batch against normal role permissions and commits it atomically. The response includes the committed page revision. After HTTP 409, read the affected pages again and reconcile the change. For document-level edits the lower-level `draft-page/:id` and `site-document` operations remain available.
 
 Open the returned PNG in the agent’s image viewer to inspect the result. Capture uses the branch review renderer and script-disabled local Chromium. No admin tab needs to be open. Set `INSTATIC_CHROMIUM` to an installed Chromium executable, or approve installation of the matching Playwright Chromium. The screenshot result includes its absolute path, dimensions and count of skipped asset requests. Assets are fetched from the same origin without the CLI credential. Screens relying on external assets or runtime JavaScript can differ from the public page.
+
+## Build and verify membership pages
+
+`instatic api lookup "public signup"` returns a workflow guide and matching permitted operations. The guide includes the installation’s member settings and assigned pages when the grant allows reading them. It identifies the permissions needed for writes, describes native form actions and includes a minimal page example.
+
+```sh
+instatic canvas read / /login /signup --branch main
+instatic canvas edit /signup --branch main --revision REV --json '[{"op":"memberForm","parent":"PARENT_NODE_ID","action":"signup"}]'
+instatic check membership
+```
+
+Use the `document` from a canvas read as the starting point for an incremental `PUT site-document`. A single read returns the shell once and includes sequences and revisions for the requested pages. Both the document save and canvas edit return revisions. Editing a shared rule changes the shell revision for all pages on the branch.
+
+The membership check visits the published login, signup and verification forms in a signed-out browser and tests anonymous access to the dashboard. On a disposable loopback installation, `instatic check membership --live --out ./evidence` also creates a test member, follows the confirmation email, opens the protected dashboard, signs out and signs back in. It saves screenshots of the signup result and dashboard. The test member remains on the disposable installation.
+
+For live checks, set `INSTATIC_TEST_INBOX` to a private directory watched by your local mail-capture fixture. The CLI prints a unique test email address on stderr. Have the fixture write the captured verification URL to `<directory>/<that email>.url` within 30 seconds. The CLI checks the link’s origin and assigned verification path. The fixture can receive test mail independently of the service account’s permissions.
 
 ## Permissions and lifecycle
 
@@ -43,8 +61,8 @@ Open the returned PNG in the agent’s image viewer to inspect the result. Captu
 - The CMS resolves a distinct actor for each connector. Content ownership, branch ownership and existing mutation audit records identify that actor. It has no interactive login. The creating administrator owns management and approval of its connection.
 - Every authenticated call checks the connector’s expiry and revocation, its creator’s current account status and connector-management permission, and the intersection of the selected capabilities with the creator’s current capabilities. The target handler enforces its own row, branch, role and write-diff policies.
 - The CLI can call operational HTTP endpoints under `/admin/api/cms/` and `/admin/api/ai/`, including plugin installation, user administration, exports and publishing. Each handler applies its normal capability and ownership checks. Login, personal security, connector issuance and browser workspace callbacks require a browser session. Omit `--branch` for installation-wide changes such as plugin installation.
-- For sensitive actions, the CMS applies the sponsor’s step-up policy. When you approve a CLI connection, its credential inherits the remaining password-confirmation window from that browser approval. When a command requires fresh confirmation, run the same `instatic connect` command and approve again. Ordinary reads can continue until the connector expires or is revoked.
-- `api lookup [search terms]` searches built-in CMS and AI operations and live plugin routes for this account. Search by method, path, description, or capability. The list reflects the current grant. Every GET also supports HEAD to read response headers. Ownership, resource type, branch state and fresh approval are checked on the actual request.
+- The owner confirms their password when creating the grant and authorizing the device. An authenticated service account can perform permitted operational actions for the grant’s lifetime, including sensitive actions. Browser sessions continue to use the installation’s normal step-up policy.
+- `api lookup [search terms]` searches built-in CMS and AI operations and live plugin routes for this account. Search by method, path, description, or capability. The list reflects the current grant. Every GET also supports HEAD to read response headers. Ownership, resource type and branch state are checked on the actual request.
 - Copy the method and path template from lookup into `api describe METHOD PATH`. It returns the path parameters, query schema, request body format, JSON schema or multipart fields, and a CLI command template. Replace colon-prefixed path parameters with URL-encoded values. Add query parameters to the quoted path. Pass JSON with `--json` or `--file`, multipart files with `--upload` and optional repeated `--field NAME=VALUE`, and binary inputs with `--raw`. Save binary responses with `--out`.
 - A plugin route’s input instructions come from the plugin that registered it. A route without published instructions is marked as such. Unloading the plugin removes its routes from discovery.
 - **Revoke access** invalidates future requests and pending approvals. It also works when the CLI machine has been lost. `instatic forget` clears the credential on the current machine. The manager’s default restore and transfer settings also clear issued CLI credentials and pending approvals. Reconnect the account on the restored installation.

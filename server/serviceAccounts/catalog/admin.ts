@@ -30,7 +30,7 @@ export const adminOperations = [
   op('GET', 'members/:id/export', manage, 'Export the member’s data including plugin sections', { outputFile: 'member.json' }),
   op('POST', 'members/:id/tags', manage, 'Grant a member tag', { bodySchema: MemberTagInputSchema }),
   op('DELETE', 'members/:id/tags', manage, 'Revoke a member tag', { bodySchema: MemberTagRemoveInputSchema }),
-  op('GET', 'members/settings', members, 'Read member settings'),
+  op('GET', 'members/settings', members, 'Read member settings. For the setup workflow use instatic api lookup membership.'),
   op('PUT', 'members/settings', manage, 'Save member settings', { bodySchema: MemberSettingsSchema }),
   op('GET', 'members/apps', members, 'List member apps'),
   op('POST', 'members/apps', manage, 'Create a member app', { bodySchema: CreateMemberAppBodySchema }),

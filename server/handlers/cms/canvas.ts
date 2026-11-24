@@ -1,40 +1,63 @@
+import { Type } from '@sinclair/typebox'
+import { readEnvelope } from '@core/http'
 import { isGeneratedClassLocked, type Page } from '@core/page-tree'
 import { BRANCH_HEADER } from '@core/branches'
 import { composedNodeSourceId } from '@core/templates'
 import { requireCapability } from '../../auth/authz'
-import { contentHash } from '../../branches/contentHash'
+import { canvasRevision } from '../../canvas/revision'
 import type { BranchScope } from '../../branches/scope'
 import type { DbClient } from '../../db/client'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
-import { listDataRowSeqs } from '../../repositories/data'
+import { listDataRowSeqs, getDataRowBySlug } from '../../repositories/data'
 import { getDraftSiteSeq } from '../../repositories/site'
 import { runPublishFlush } from '../../publish/publishFlush'
 import { getDraftSiteDocument } from '../../repositories/publish'
 import { composeReviewPage, renderReviewDocument } from '../../publish/branchReviewRender'
-import { readDraftPage } from '../../serviceAccounts/draftPage'
+import { readDraftPage, readDraftPages } from '../../serviceAccounts/draftPage'
 import { saveSiteDocument, SITE_WRITE_CAPABILITIES } from './siteDocument'
 import { applyCanvasEdit, CanvasEditSchema } from '../../canvas/edit'
 
+const CanvasSave = Type.Object({ pages: Type.Array(Type.Object({
+  id: Type.String(), slug: Type.String(), rootNodeId: Type.String(), revision: Type.String(),
+}), { minItems: 1 }) })
+
 async function inspectRevision(db: DbClient, scope: BranchScope, pageId: string) {
   const [rows, shell] = await Promise.all([listDataRowSeqs(db, scope, 'pages', [pageId]), getDraftSiteSeq(db, scope)])
-  return contentHash([scope.branchId, pageId, rows[0]?.seq, shell])
+  return canvasRevision(scope.branchId, pageId, rows[0]?.seq, shell)
 }
 
 export async function handleCanvas(req: Request, db: DbClient, scope: BranchScope) {
   const url = new URL(req.url)
   const match = /^\/admin\/api\/cms\/canvas\/pages\/([^/]+)$/.exec(url.pathname)
-  if (!match) return null
+  const batch = url.pathname === '/admin/api/cms/canvas/pages'
+  if (!match && !batch) return null
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
+  if (!match) {
+    if (req.method !== 'GET') return methodNotAllowed()
+    const refs = url.searchParams.getAll('ref')
+    if (!refs.length || refs.length > 100) return badRequest('Specify 1 to 100 page IDs or /slugs')
+    const document = await readDraftPages(db, scope, refs)
+    if (!document) return jsonResponse({ error: 'Page not found' }, { status: 404 })
+    return jsonResponse({ document, pages: document.changedPages.map(({ id, slug, rootNodeId, access }) => ({
+      id, slug, rootNodeId, access: access ?? { level: 'public' },
+      revision: canvasRevision(scope.branchId, id, document.baseSeqs[id], document.shellBaseSeq),
+    })) })
+  }
   if (!['GET', 'PATCH'].includes(req.method)) return methodNotAllowed()
   let id: string
   try { id = decodeURIComponent(match[1]) } catch { return badRequest('Invalid page ID') }
+  if (id.startsWith('/')) {
+    const row = await getDataRowBySlug(db, scope, 'pages', id.slice(1) || 'index')
+    if (!row) return jsonResponse({ error: 'Page not found' }, { status: 404 })
+    id = row.id
+  }
   if (req.method === 'PATCH') {
     if (!req.headers.get(BRANCH_HEADER)?.trim()) return badRequest('Choose an explicit branch for canvas edits')
     if (!SITE_WRITE_CAPABILITIES.some(cap => user.capabilities.includes(cap))) return jsonResponse({ error: 'Missing site edit permission' }, { status: 403 })
     const draft = await readDraftPage(db, scope, id)
     if (!draft) return jsonResponse({ error: 'Page not found' }, { status: 404 })
-    const revision = contentHash([scope.branchId, id, draft.baseSeqs[id], draft.shellBaseSeq])
+    const revision = canvasRevision(scope.branchId, id, draft.baseSeqs[id], draft.shellBaseSeq)
     const body = await readValidatedBody(req, CanvasEditSchema)
     if (!body) return badRequest('Invalid canvas edits. Use api describe PATCH canvas/pages/:id for supported operations.')
     if (revision !== body.revision) return jsonResponse({ error: 'Page or site styles changed. Inspect this branch again before editing.' }, { status: 409 })
@@ -43,7 +66,8 @@ export async function handleCanvas(req: Request, db: DbClient, scope: BranchScop
     catch (err) { return badRequest(err instanceof Error ? err.message : 'Invalid canvas edit') }
     const saved = await saveSiteDocument(db, scope, user, draft, true)
     if (!saved.ok) return saved
-    return jsonResponse({ changes })
+    const result = await readEnvelope(saved, CanvasSave, 'Invalid canvas save response')
+    return jsonResponse({ ...result.pages[0], changes })
   }
   const width = Number(url.searchParams.get('width') ?? 1280), height = Number(url.searchParams.get('height') ?? 800)
   if (![width, height].every(n => Number.isInteger(n) && n >= 10 && n <= 4096)) return badRequest('Invalid viewport dimensions')
@@ -77,5 +101,5 @@ export async function handleCanvas(req: Request, db: DbClient, scope: BranchScop
   if (revision !== await inspectRevision(db, scope, id)) {
     return jsonResponse({ error: 'Page or site styles changed during inspection. Inspect again.' }, { status: 409 })
   }
-  return jsonResponse({ revision, html, nodes, rules, contexts: [...site.breakpoints, ...(site.conditions ?? [])] })
+  return jsonResponse({ id, slug: page.slug, access: page.access ?? { level: 'public' }, revision, html, nodes, rules, contexts: [...site.breakpoints, ...(site.conditions ?? [])] })
 }

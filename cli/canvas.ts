@@ -2,6 +2,7 @@ import { Type, type Static } from '@sinclair/typebox'
 import type { Page } from 'playwright-core'
 
 export const CanvasSnapshotSchema = Type.Object({
+  id: Type.String(), slug: Type.String(), access: Type.Object({ level: Type.String() }),
   revision: Type.String(), html: Type.String(),
   nodes: Type.Array(Type.Object({
     uid: Type.String(), node: Type.Union([Type.String(), Type.Null()]), module: Type.String(),
@@ -40,6 +41,12 @@ export async function inspectViewport(page: Page, snapshot: Static<typeof Canvas
   const shown = visible.slice(0, 100)
   const ruleIds = new Set(shown.flatMap(hit => hit.classes ?? []))
   return {
+    id: snapshot.id, slug: snapshot.slug, access: snapshot.access,
+    forms: await page.locator('form').evaluateAll(forms => forms.filter((form): form is HTMLFormElement => form instanceof HTMLFormElement).map(form => ({
+      action: form.getAttribute('action'), method: form.method,
+      fields: Array.from(form.elements, el => el.getAttribute('name')).filter(Boolean),
+      success: form.querySelector<HTMLInputElement>('input[name="_success"]')?.value || form.getAttribute('data-instatic-success-redirect'),
+    }))),
     revision: snapshot.revision, visibleCount: visible.length, nodes: shown,
     rules: snapshot.rules.filter(rule => ruleIds.has(rule.id)), contexts: snapshot.contexts,
     ...(visible.length > shown.length ? { truncated: true } : {}),

@@ -2,7 +2,7 @@
 
 The full authentication and authorization surface — login, sessions, MFA, capabilities, roles, lockout, step-up, CSRF defense, CORS.
 
-Admin requests resolve the session cookie and check the required capability. Operational CMS and AI routes also resolve a [service account](service-accounts.md) from a scoped CLI credential. The same capability, ownership and step-up rules apply. Browser approval binds a fresh confirmation window to the paired device. There's no per-handler bespoke auth code — the helpers in `server/auth/authz.ts` are the only auth surface a handler should call.
+Admin requests resolve the session cookie and check the required capability. Operational CMS and AI routes also resolve a [service account](service-accounts.md) from a scoped CLI credential. Capability and ownership checks apply to both identities. The owner confirms their password for CLI issuance and consent. Subsequent service requests use the active grant for sensitive operations. Browser sessions retain their normal step-up checks. There's no per-handler bespoke auth code — the helpers in `server/auth/authz.ts` are the only auth surface a handler should call.
 
 ---
 

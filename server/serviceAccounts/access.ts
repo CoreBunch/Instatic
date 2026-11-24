@@ -1,3 +1,4 @@
+import { membershipGuide } from './membershipGuide'
 import type { DbClient } from '../db/client'
 import { jsonResponse } from '../http'
 import { resolveServiceActor } from './store'
@@ -37,6 +38,8 @@ async function authorize(req: Request, db: DbClient, token: string): Promise<Req
     }
     return jsonResponse({
       account: actor.id, name: actor.displayName, scope: 'installation', expiresAt: grant.expiresAt, capabilities: actor.capabilities,
+      guide: new URL(req.url).searchParams.get('guide') === 'membership' ? await membershipGuide(req, db, available) : undefined,
+      guides: [{ topic: 'membership', command: 'instatic api lookup "public signup"', summary: 'Build login, signup, verification and protected member pages.' }],
       operations: available.map(({ method, path, summary, permissions }) => ({ method, path, summary, permissions })),
     })
   }

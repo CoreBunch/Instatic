@@ -336,3 +336,7 @@ It is a development tool: fixed passwords, loopback only, and a database that is
 - `tests/e2e/members-editor.e2e.ts` (MEMBER-001), `members-admin.e2e.ts` (MEMBER-002), `members-account.e2e.ts` (MEMBER-003: sign-up, profile, tag page, export, password change, emailed sign-in link, reset, email change, deletion) and `members-plugin.e2e.ts` (MEMBER-004: a plugin's member routes) — the same flows in a browser, against published pages.
 - `tests/e2e/members-apps.e2e.ts` (MEMBER-005) — an app signs a member in: the owner registers it, the member approves on the owner's page, the app exchanges the code, reads the member and signs out.
 - `src/__tests__/server/membersAccessGate.test.ts` — the gate: static slot, render cache, path spellings, the uploads route, fragments, table rules.
+
+## CLI discovery and verification
+
+External agents can run `instatic api lookup membership` for the current page assignments, available form actions and setup sequence. Newly rendered forms initially hide success and error messages, including in script-disabled CLI previews. After publication, `instatic check membership` verifies the published forms and anonymous dashboard access. A disposable local installation with captured mail also supports a live signup and returning-login test. [Service account CLI](service-accounts.md#build-and-verify-membership-pages)

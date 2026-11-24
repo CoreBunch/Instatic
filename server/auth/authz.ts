@@ -108,7 +108,7 @@ export async function requireAnyCapability(
 
 /**
  * Step-up gate for an ALREADY-AUTHENTICATED request. Returns `null` when the
- * caller's session is inside a fresh step-up window (the action may proceed),
+ * dispatcher bound a verified service grant or the browser session is fresh,
  * or a 401 response with the structured body `{ error: 'step_up_required' }`
  * so the client can open the StepUp dialog and retry.
  *
@@ -136,17 +136,16 @@ export async function requireStepUp(
   options: RequireStepUpOptions = {},
 ): Promise<Response | null> {
   if ((options.policy ?? 'user') === 'user' && user.stepUpAuthMode === 'disabled') return null
-  const principal = servicePrincipal(req)
-  const confirmedUntil = principal
-    ? principal.stepUpExpiresAt && new Date(principal.stepUpExpiresAt)
-    : await browserStepUpExpiresAt(req, db)
+  // Only the dispatcher can bind a verified, unexpired service grant to this Request.
+  if (servicePrincipal(req)) return null
+  const confirmedUntil = await browserStepUpExpiresAt(req, db)
   if (!confirmedUntil || !(confirmedUntil.getTime() > Date.now())) {
     return jsonResponse({ error: 'step_up_required' }, { status: 401 })
   }
   return null
 }
 
-export async function browserStepUpExpiresAt(req: Request, db: DbClient): Promise<Date | null> {
+async function browserStepUpExpiresAt(req: Request, db: DbClient): Promise<Date | null> {
   const hash = await getSessionHash(req)
   return hash ? getSessionStepUpExpiresAt(db, hash) : null
 }

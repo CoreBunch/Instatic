@@ -536,7 +536,7 @@ export const FormMessageModule: ModuleDefinition<FormMessageProps> = {
   component: FormMessageEditor,
   htmlTag: 'div',
   render: (props) => ({
-    html: `<div data-instatic-form-message="${props.kind}" data-instatic-form-id="${normalizeIdentifierValue(props.formId)}"${props.kind === 'error' && props.fieldName ? ` data-instatic-form-field="${props.fieldName}"` : ''} role="${props.kind === 'error' ? 'alert' : 'status'}">${props.text}</div>`,
+    html: `<div data-instatic-form-message="${props.kind}" data-instatic-form-id="${normalizeIdentifierValue(props.formId)}"${props.kind === 'error' && props.fieldName ? ` data-instatic-form-field="${props.fieldName}"` : ''} role="${props.kind === 'error' ? 'alert' : 'status'}"${props.kind === 'status' ? '' : ' hidden'}>${props.text}</div>`,
   }),
 }
 

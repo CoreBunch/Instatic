@@ -5,7 +5,7 @@ import { spawn, execFile } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { promisify } from 'node:util'
 import { join } from 'node:path'
-import { mkdir, writeFile, readFile } from 'node:fs/promises'
+import { mkdir, writeFile, readFile, stat, chmod, symlink, unlink } from 'node:fs/promises'
 import { completeStepUp, login } from './helpers/auth'
 import { ANONYMOUS_STATE } from './helpers/constants'
 
@@ -52,24 +52,17 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
   await expect(page.getByRole('dialog', { name: 'Agent prompt' })).toHaveCount(0)
   const id = /--account (svc_[a-f0-9-]+)/.exec(handoff)![1]
 
-  // Exercise the shipped CLI in a separate process. Only the OS keyring is
-  // replaced so Linux CI needs no desktop keychain and no real keys are written.
   const scratch = testInfo.outputPath('cli')
   await mkdir(scratch, { recursive: true })
-  const key = join(scratch, 'temporary-keyring')
-  const preload = join(scratch, 'test-keyring.ts')
-  await writeFile(preload, `Bun.secrets = {
-    set: async ({ value }) => Bun.write(${JSON.stringify(key)}, value, { mode: 0o600 }),
-    get: async () => Bun.file(${JSON.stringify(key)}).text(),
-  }`)
+  const credentials = join(scratch, 'credentials')
   const download = /(https?:\/\/[^'\s]+\.tgz)/.exec(handoff)![1]
   const tar = await page.request.get(download)
   expect(tar.ok()).toBe(true)
   const packageFile = join(scratch, 'cli.tgz')
   await writeFile(packageFile, await tar.body())
   await promisify(execFile)('tar', ['-xzf', packageFile, '-C', scratch])
-  const cli = ['--preload', preload, join(scratch, 'package/instatic.ts')]
-  const options = { env: { ...process.env, INSTATIC_ACCOUNT: id } }
+  const cli = [join(scratch, 'package/instatic.ts')]
+  const options = { env: { ...process.env, INSTATIC_ACCOUNT: id, INSTATIC_CREDENTIAL_DIR: credentials } }
   const run = (...args: string[]) => promisify(execFile)('bun', [...cli, ...args], options)
   const child = spawn('bun', [...cli, 'connect', baseURL!, '--no-open'], { ...options, stdio: ['ignore', 'pipe', 'pipe'] })
   const finished = new Promise<number | null>(resolve => child.on('close', resolve))
@@ -90,6 +83,22 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
     await page.getByRole('button', { name: 'Authorize CLI' }).click()
     await completeStepUp(page)
     expect(await finished).toBe(0)
+    const file = join(credentials, id + '.json')
+    if (process.platform !== 'win32') {
+      expect((await stat(credentials)).mode & 0o777).toBe(0o700)
+      expect((await stat(file)).mode & 0o777).toBe(0o600)
+      await chmod(file, 0o644)
+      await expect(run('whoami')).rejects.toThrow('private to the current user')
+      await chmod(file, 0o600)
+      const alias = 'svc_00000000-0000-0000-0000-000000000000'
+      const link = join(credentials, alias + '.json')
+      await symlink(file, link)
+      await expect(run('whoami', '--account', alias)).rejects.toThrow()
+      await unlink(link)
+    }
+    const { guide, operations } = JSON.parse((await run('api', 'lookup', 'member')).stdout)
+    expect(guide.task).toContain('membership')
+    expect(operations).toEqual(expect.any(Array))
     await expect(page).toHaveURL(new RegExp('/admin/ai\\?service-account=' + id))
     await expect(page.getByRole('article', { name: 'Account details' })).toContainText('Connected')
     expect(await copyPrompt()).toBe(handoff)
@@ -187,6 +196,6 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
     await expect(run('whoami')).rejects.toThrow(/401/)
   } finally {
     child.kill()
-    await import('node:fs/promises').then(fs => fs.rm(key, { force: true }))
+    await import('node:fs/promises').then(fs => fs.rm(credentials, { recursive: true, force: true }))
   }
 })

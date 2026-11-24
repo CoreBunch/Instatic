@@ -42,7 +42,7 @@
  *      queued behind the transaction chain). This is also the emission point
  *      for the multi-admin live-sync plan's site events.
  *
- * Response: `{ ok: true, seq }` — the save's site-global sequence number,
+ * Response includes the saved page revisions and the site-global sequence number,
  * stamped on the shell and every written/deleted row (conflict detection and
  * delta reconciliation substrate for the live-sync plan).
  */
@@ -79,6 +79,7 @@ import { validateSavedLayoutsForPartialWrite } from '@core/persistence/validateL
 import { vcSlugFromName, type VisualComponent } from '@core/visualComponents'
 import { layoutSlugFromName, type SavedLayout } from '@core/layouts'
 import type { Page } from '@core/page-tree'
+import { canvasRevision } from '../../canvas/revision'
 import { SaveConflictError, type SaveConflict } from '@core/persistence/saveConflict'
 import { shellsEqual } from '@core/persistence/shellsEqual'
 import {
@@ -327,6 +328,7 @@ export async function saveSiteDocument(db: DbClient, scope: BranchScope, user: A
       slug: page.slug,
     }))
 
+    let shellSeq = 0
     let seq = 0
     let deletedPublishedPage = false
     await serializeCollabAwareWrite(async () => {
@@ -375,6 +377,7 @@ export async function saveSiteDocument(db: DbClient, scope: BranchScope, user: A
         await saveDraftSite(tx, scope, shell, user.id, { collabInternal: true })
         await stampDraftSiteSeq(tx, scope, seq)
       }
+      if (pages.length) shellSeq = shellChanged ? seq : await getDraftSiteSeq(tx, scope)
       // Empty change sets skip their table entirely — a shell-only save
       // issues no row queries inside the transaction.
       if (componentWrites.length > 0 || componentDeleteIds.size > 0) {
@@ -422,7 +425,9 @@ export async function saveSiteDocument(db: DbClient, scope: BranchScope, user: A
     // Only main's routes are served, so only main's deletions evict the cache.
     if (deletedPublishedPage && isMainScope(scope)) await bumpPublishVersionSerialized()
 
-    return jsonResponse({ ok: true, seq })
+    return jsonResponse({ ok: true, seq, pages: pages.map(({ id, slug, rootNodeId }) => ({
+      id, slug, rootNodeId, revision: canvasRevision(scope.branchId, id, seq, shellSeq),
+    })) })
   } catch (err) {
     if (err instanceof SiteValidationError) return badRequest(err.message)
     if (err instanceof ForbiddenSiteChangeError) {

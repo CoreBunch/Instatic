@@ -2,7 +2,7 @@ import { pageFromRow } from '@core/data/pageFromRow'
 import { requireCapability } from '../auth/authz'
 import type { BranchScope } from '../branches/scope'
 import type { DbClient } from '../db/client'
-import { getDataRow } from '../repositories/data'
+import { getDataRow, getDataRowBySlug } from '../repositories/data'
 import { getDraftSite, getDraftSiteSeq } from '../repositories/site'
 import { runPublishFlush } from '../publish/publishFlush'
 import { jsonResponse, methodNotAllowed } from '../http'
@@ -24,15 +24,28 @@ export async function handleDraftPage(req: Request, db: DbClient, scope: BranchS
 }
 
 export async function readDraftPage(db: DbClient, scope: BranchScope, pageId: string) {
+  return readDraftPages(db, scope, [pageId])
+}
+
+export async function readDraftPages(db: DbClient, scope: BranchScope, refs: string[]) {
   await runPublishFlush()
   return db.transaction(async tx => {
-    // Read the sequence first: a concurrent shell update can then only produce a conflict.
     const shellBaseSeq = await getDraftSiteSeq(tx, scope)
     const site = await getDraftSite(tx, scope)
-    const row = await getDataRow(tx, scope, pageId)
-    if (!site || row?.tableId !== 'pages') return null
-    return { mode: 'incremental' as const, site, shellBaseSeq, baseSeqs: { [row.id]: row.seq ?? 0 },
-      changedPages: [pageFromRow(row)], deletedPageIds: [], changedComponents: [], deletedComponentIds: [],
+    if (!site) return null
+    const pages = []
+    const baseSeqs: Record<string, number> = Object.create(null)
+    for (const ref of refs) {
+      const row = ref.startsWith('/')
+        ? await getDataRowBySlug(tx, scope, 'pages', ref.slice(1) || 'index')
+        : await getDataRow(tx, scope, ref)
+      if (row?.tableId !== 'pages') return null
+      if (Object.hasOwn(baseSeqs, row.id)) continue
+      pages.push(pageFromRow(row))
+      baseSeqs[row.id] = row.seq ?? 0
+    }
+    return { mode: 'incremental' as const, site, shellBaseSeq, baseSeqs,
+      changedPages: pages, deletedPageIds: [], changedComponents: [], deletedComponentIds: [],
       changedLayouts: [], deletedLayoutIds: [] }
   })
 }

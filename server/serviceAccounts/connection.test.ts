@@ -34,7 +34,12 @@ test('CLI approval grants an expiring, revocable identity that can fork and edit
     expect((await exchange(code, verifier)).status).toBe(401)
     const headers = { Authorization: 'Bearer ' + token }
     const branch = { ...headers, 'X-Instatic-Branch': 'review' }
-    expect((await h.cms(base + 'cli-context', { headers })).status).toBe(200)
+    const discovery = await h.cms(base + 'cli-context?guide=membership', { headers })
+    expect(discovery.status).toBe(200)
+    const { guide, operations } = await discovery.json()
+    expect(guide.state).toBeNull()
+    expect(guide.steps.at(-1).unavailable).toBe(true)
+    expect(operations).toContainEqual(expect.objectContaining({ path: 'pages', method: 'GET' }))
     expect((await h.ai('/admin/api/ai/credentials', { headers })).status).toBe(403)
     expect((await h.cms(base + 'cli-context', { headers, cookie })).status).toBe(403)
     expect((await h.cms(base + 'me', { headers })).status).toBe(403)
@@ -56,7 +61,14 @@ test('CLI approval grants an expiring, revocable identity that can fork and edit
     const payload = await (await read()).json()
     payload.changedPages[0].nodes.heading.props.text = 'May'
     const write = () => h.cms(base + 'site-document', { method: 'PUT', headers: branch, json: payload })
-    expect((await write()).status).toBe(200)
+    const saved = await write()
+    expect(saved.status).toBe(200)
+    const { pages: [receipt] } = await saved.json()
+    const batch = await h.cms(base + 'canvas/pages?ref=%2Flaunch&ref=hero-page', { headers: branch })
+    expect(batch.status).toBe(200)
+    const snapshot = await batch.json()
+    expect(snapshot.pages).toEqual([{ ...receipt, access: { level: 'public' } }])
+    expect(snapshot.document.changedPages).toHaveLength(1)
     expect((await write()).status).toBe(409)
     expect((await (await read()).json()).changedPages[0].nodes.heading.props.text).toBe('May')
     const main = await h.cms(base + 'draft-page/hero-page', { headers })
@@ -65,6 +77,7 @@ test('CLI approval grants an expiring, revocable identity that can fork and edit
     const inspection = await h.cms(canvas, { headers: branch })
     expect(inspection.status).toBe(200)
     const { revision, nodes } = await inspection.json()
+    expect(revision).toBe(receipt.revision)
     expect(nodes).toContainEqual(expect.objectContaining({ node: 'heading', module: 'base.text' }))
     const edit = (edits: unknown[], rev = revision, grant = branch as Record<string, string>) =>
       h.cms(canvas, { headers: grant, method: 'PATCH', json: { revision: rev, edits } })
@@ -81,7 +94,9 @@ test('CLI approval grants an expiring, revocable identity that can fork and edit
       revision: current.revision, edits: [{ op: 'insertHtml', parent: 'body', html: '<style>.notice { color: red }</style><p class="notice">See you there</p>' }],
     } })
     expect(insert.status).toBe(200)
+    const { revision: next } = await insert.json()
     const imported = await (await h.cms(canvas, { headers: branch })).json()
+    expect(imported.revision).toBe(next)
     expect(imported.html).toContain('See you there')
     expect(imported.rules).toContainEqual(expect.objectContaining({ selector: '.notice', styles: expect.objectContaining({ color: 'red' }) }))
     const rule = imported.rules.find((item: { selector: string }) => item.selector === '.notice')
@@ -92,6 +107,14 @@ test('CLI approval grants an expiring, revocable identity that can fork and edit
     expect((await responsive.json()).changes[0]).toMatchObject({ property: 'whiteSpace', before: null, after: 'normal' })
     const updated = await (await h.cms(canvas, { headers: branch })).json()
     expect(updated.rules).toContainEqual(expect.objectContaining({ id: rule.id, contexts: { mobile: { whiteSpace: 'normal' } } }))
+    const formEdit = await h.cms(base + 'canvas/pages/%2Flaunch', { cookie: owner, headers: ownerBranch, method: 'PATCH', json: {
+      revision: updated.revision, edits: [{ op: 'memberForm', parent: 'body', action: 'verify' }],
+    } })
+    expect(formEdit.status).toBe(200)
+    const withForm = await (await h.cms(canvas, { headers: branch })).json()
+    expect(withForm.html).toContain('/_instatic/members/verify')
+    expect(withForm.html).toContain('name="token"')
+    expect(withForm.html).toMatch(/<div[^>]*data-instatic-form-message="success"[^>]*\bhidden\b/)
     expect((await edit([title], imported.revision)).status).toBe(409)
     expect((await (await h.cms(canvas, { headers })).json()).html).not.toContain('See you there')
     await h.db`update roles set capabilities_json = ${JSON.stringify(['site.read', 'ai.providers.manage'])} where id = ${sponsor.roleId}`
@@ -110,7 +133,7 @@ test('CLI approval grants an expiring, revocable identity that can fork and edit
   } finally { await h.cleanup() }
 })
 
-test('CMS operations use role permissions and the confirmation window of the paired device', async () => {
+test('CMS operations use role permissions throughout the lifetime of the paired device grant', async () => {
   const h = await createCapabilityTestHarness()
   const base = '/admin/api/cms/'
   const accounts = base + 'service-accounts'
@@ -149,9 +172,8 @@ test('CMS operations use role permissions and the confirmation window of the pai
 
     await h.db`update service_accounts set token_step_up_expires_at = ${new Date(0).toISOString()} where id = ${id}`
     const nextApproval = await approve()
-    const stale = await install(first)
-    expect(stale.status).toBe(401)
-    expect(await stale.json()).toEqual({ error: 'step_up_required' })
+    const repeat = await h.cms(base + 'plugins', { method: 'POST', headers: first, json: { manifest: { ...manifest, id: 'fixture.second' } } })
+    expect(repeat.status).toBe(201)
     expect((await h.cms(base + 'dashboard/domain', { headers: first })).status).toBe(200)
     const second = await exchange(nextApproval)
     expect((await install(first)).status).toBe(401)

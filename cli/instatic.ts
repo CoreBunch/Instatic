@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { CanvasSnapshotSchema, inspectViewport } from './canvas'
+import { saveCredential, readCredential, forgetCredential } from './credentials'
 import manifest from './package.json' with { type: 'json' }
 import { parseArgs } from 'node:util'
 import { createHash, randomBytes } from 'node:crypto'
@@ -13,7 +14,7 @@ const { positionals, values } = parseArgs({
     node: { type: 'string' }, revision: { type: 'string' }, account: { type: 'string' }, branch: { type: 'string' }, file: { type: 'string' }, upload: { type: 'string' },
     field: { type: 'string', multiple: true }, raw: { type: 'string' },
     json: { type: 'string' }, out: { type: 'string' }, viewport: { type: 'string' },
-    'no-open': { type: 'boolean' }, help: { type: 'boolean' }, version: { type: 'boolean' },
+    live: { type: 'boolean' }, 'no-open': { type: 'boolean' }, help: { type: 'boolean' }, version: { type: 'boolean' },
   },
 })
 function output(text: string) {
@@ -22,17 +23,20 @@ function output(text: string) {
 
 const help = `Instatic CLI
   instatic connect SITE --account ID          Authorize this machine in your browser
+  instatic check membership [--live] [--out DIRECTORY]    Check published forms and anonymous access; --live exercises a disposable signup
+  instatic api lookup "public signup"          Get the membership workflow, live settings and native form operations
   instatic whoami                             Show the current grant
   instatic api lookup [SEARCH]                Search all operations available to this account
   instatic api describe METHOD PATH          Show path, query, request body and CLI usage
   instatic api METHOD PATH [--branch ID]      Call a CMS endpoint
     --json '{"name":"review"}' | --file changes.json | --upload FILE [--field NAME=VALUE] | --raw FILE
     --out FILE saves the response bytes
-  instatic canvas inspect PAGE_ID --branch ID [--viewport 390x844] [--out before.png] [--node NODE_ID]
+  instatic canvas read ID_OR_/SLUG [...] --branch ID   Return one editable document and page revisions without a screenshot
+  instatic canvas inspect ID_OR_/SLUG --branch ID [--viewport 390x844] [--out before.png] [--node NODE_ID]
     Save a screenshot and return visible nodes, horizontal overflow, assigned CSS rules and a revision.
-  instatic canvas edit PAGE_ID --branch ID --revision REV --json '[{"op":"text","node":"NODE_ID","value":"Title"}]'
-    Or --file edits.json. Batch operations: text, inline, rule, insertHtml. CSS null removes a declaration.
-    Inspect first. Use api describe PATCH canvas/pages/:id for fields. Inspect again to verify.
+  instatic canvas edit ID_OR_/SLUG --branch ID --revision REV --json '[{"op":"text","node":"NODE_ID","value":"Title"}]'
+    Or --file edits.json. Batch operations: text, inline, rule, insertHtml, memberForm. CSS null removes a declaration.
+    Use the revision from canvas read, inspect, or your last save. Inspect at the target viewport to verify.
   instatic screenshot PAGE_ID --branch ID --out hero.png [--viewport 1280x800]
   instatic forget                             Remove this machine's saved credential
 
@@ -41,6 +45,7 @@ Use a branch ID explicitly for site-document writes. Re-read the page after a co
 const endpoint = '/admin/api/cms/'
 const credentialSchema = Type.Object({ origin: Type.String(), token: Type.String({ pattern: '^icli_at_[A-Za-z0-9_-]{43}$' }) })
 const contextSchema = Type.Object({
+  guide: Type.Optional(Type.Object({ task: Type.String(), steps: Type.Array(Type.Object({ goal: Type.String() })) })),
   name: Type.String(), account: Type.String(), capabilities: Type.Array(Type.String()),
   operations: Type.Array(Type.Object({ method: Type.String(), path: Type.String(), summary: Type.String(), permissions: Type.Optional(Type.Array(Type.Array(Type.String()))) })),
 })
@@ -60,9 +65,6 @@ async function request(url: URL, options: RequestInit = {}) {
   const response = await fetch(url, { ...options, redirect: 'error', signal: AbortSignal.timeout(90000) })
   if (!response.ok) {
     const detail = (await response.text()).slice(0, 1800)
-    if (response.status === 401 && detail.includes('"step_up_required"')) {
-      throw new Error('This operation needs fresh approval. Run instatic connect again and approve it in the browser.')
-    }
     throw new Error(`CMS returned ${response.status}: ${detail}`)
   }
   return response
@@ -98,7 +100,7 @@ async function connect(origin: string, account: string) {
       }
       const code = url.searchParams.get('code')
       if (!code?.startsWith('icli_code_')) return new Response('Invalid approval', { status: 400 })
-      server.timeout(req, 0) // The OS credential store may ask the user to unlock it.
+      server.timeout(req, 0)
       approval.resolve(code)
       // Show the account after the CLI has stored its credential.
       return returnToAccount(await paired.promise ? undefined : 'failed')
@@ -119,11 +121,7 @@ async function connect(origin: string, account: string) {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, verifier }),
     })
     const { token } = checked(Type.Pick(credentialSchema, ['token']), await response.json())
-    try {
-      await Bun.secrets.set({ service: 'Instatic CLI', name: account, value: JSON.stringify({ origin, token }) })
-    } catch (err) {
-      throw new Error('Browser approval succeeded, but the OS credential store could not save the connection. Allow this terminal to access the credential store, then run connect again.', { cause: err })
-    }
+    await saveCredential(account, JSON.stringify({ origin, token }))
     paired.resolve(true)
     output('Connected. Run instatic whoami --account ' + account)
   } finally {
@@ -192,15 +190,18 @@ async function main() {
   const account = values.account ?? process.env.INSTATIC_ACCOUNT
   if (!account || !/^svc_[a-f0-9-]{36}$/.test(account)) throw new Error('Pass the --account ID from the connector prompt')
   if (command === 'connect') return connect(siteOrigin(verb ?? prompt('Instatic site URL') ?? ''), account)
-  const key = { service: 'Instatic CLI', name: account }
-  if (command === 'forget') { await Bun.secrets.delete(key); return }
-  const stored = await Bun.secrets.get(key).catch((err: unknown) => {
-    throw new Error('Could not read the OS credential store. Allow this terminal to access it, then retry.', { cause: err })
-  })
+  if (command === 'forget') return forgetCredential(account)
+  const stored = await readCredential(account)
   if (!stored) throw new Error('This account is not connected. Use the connection prompt from Instatic.')
   const { origin: savedOrigin, token } = checked(credentialSchema, JSON.parse(stored))
   const origin = siteOrigin(savedOrigin)
   const headers = new Headers({ Authorization: 'Bearer ' + token })
+  if (command === 'check' && verb === 'membership') {
+    const { checkMembership } = await import('./membership')
+    const settings = await request(apiUrl(origin, 'members/settings'), { headers })
+    output(JSON.stringify(await checkMembership(origin, await settings.json(), !!values.live, values.out), null, 2))
+    return
+  }
   if (command === 'api' && verb === 'describe') {
     if (!path || !positionals[3]) throw new Error('Use api describe METHOD PATH from the lookup results')
     const url = apiUrl(origin, 'cli-context')
@@ -211,20 +212,34 @@ async function main() {
     return
   }
   if (command === 'whoami' || (command === 'api' && verb === 'lookup')) {
-    const result = checked(contextSchema, await (await request(apiUrl(origin, 'cli-context'), { headers })).json())
-    const { operations, ...identity } = result
-    const words = positionals.slice(2).join(' ').toLowerCase().split(/\s+/).filter(Boolean)
-    output(JSON.stringify(command === 'whoami' ? { ...identity, origin } : operations.filter(op => {
+    const query = positionals.slice(2).join(' ').toLowerCase()
+    const words = query.split(/\s+/).filter(Boolean)
+    const url = apiUrl(origin, 'cli-context')
+    if (verb === 'lookup' && !query.includes('/') && /\b(membership|members?|signup|sign[ -]?up|registration|login|sign[ -]?in)\b/.test(query)) {
+      url.searchParams.set('guide', 'membership')
+    }
+    const { operations, guide, ...identity } = checked(contextSchema, await (await request(url, { headers })).json())
+    if (command === 'whoami') { output(JSON.stringify({ ...identity, origin }, null, 2)); return }
+    const matches = operations.filter(op => {
       const pathname = op.path.startsWith('/') ? op.path : endpoint + op.path
       const searchable = [op.method, pathname, op.summary, ...(op.permissions ?? []).flat()].join(' ').toLowerCase()
       return words.every(word => searchable.includes(word))
-    }), null, 2))
+    })
+    output(JSON.stringify(guide ? { guide, operations: matches } : matches, null, 2))
+    return
+  }
+  if (command === 'canvas' && verb === 'read') {
+    if (!values.branch || !path) throw new Error('Specify page IDs or /slugs and --branch ID')
+    const url = apiUrl(origin, 'canvas/pages')
+    for (const ref of positionals.slice(2)) url.searchParams.append('ref', ref)
+    headers.set('X-Instatic-Branch', values.branch)
+    output(await (await request(url, { headers })).text())
     return
   }
   if (command === 'canvas' && verb === 'inspect') return capture(origin, token, path, true)
   if (command === 'canvas' && verb === 'edit') {
     if (!path || !values.branch || !values.revision || Number(values.file !== undefined) + Number(values.json !== undefined) !== 1) {
-      throw new Error('Use canvas edit PAGE_ID --branch ID --revision REV and either --json EDIT_ARRAY or --file EDITS.json')
+      throw new Error('Use canvas edit ID_OR_/SLUG --branch ID --revision REV and either --json EDIT_ARRAY or --file EDITS.json')
     }
     headers.set('X-Instatic-Branch', values.branch)
     headers.set('Content-Type', 'application/json')
