@@ -45,7 +45,7 @@ import {
 } from './shared'
 import { runRouteTable, type Route, type RouteParams } from './routeTable'
 
-const UserCreateBodySchema = Type.Object({
+export const UserCreateBodySchema = Type.Object({
   email: Type.String(),
   displayName: Type.Optional(Type.String()),
   password: Type.String(),
@@ -53,7 +53,7 @@ const UserCreateBodySchema = Type.Object({
   status: Type.Optional(UserStatusSchema),
 })
 
-const UserPatchBodySchema = Type.Partial(Type.Object({
+export const UserPatchBodySchema = Type.Partial(Type.Object({
   email: Type.String(),
   displayName: Type.String(),
   password: Type.String(),
@@ -187,6 +187,12 @@ async function handleUserPatch(
   // overwrite the Owner's password_hash / email and seize the Owner identity.
   if (currentUser.role.slug === 'owner' && actor.id !== currentUser.id) {
     return jsonResponse({ error: 'Only the owner can modify the owner account' }, { status: 403 })
+  }
+
+  // Managing a login must respect the same grant ceiling as assigning its role.
+  if ((body.email !== undefined || body.password !== undefined) &&
+      capabilitiesUserCannotGrant(actor, currentUser.capabilities).length) {
+    return jsonResponse({ error: 'Cannot change login credentials for a more privileged account' }, { status: 403 })
   }
 
   const ownerRoleError = rejectsOwnerRoleAssignment(body.roleId)
@@ -323,7 +329,7 @@ async function handleUserDelete(
 const USERS_PATH = `${CMS_API_PREFIX}/users`
 const USER_ITEM_PATTERN = /^\/admin\/api\/cms\/users\/([^/]+)$/
 
-const USERS_ROUTES: readonly Route<[AuthUser]>[] = [
+export const USERS_ROUTES: readonly Route<[AuthUser]>[] = [
   { method: 'GET', pattern: USERS_PATH, handler: handleListUsers },
   { method: 'POST', pattern: USERS_PATH, handler: handleCreateUser },
   {

@@ -247,7 +247,7 @@ export function toPublicUser(user: AuthUser): CmsUser {
 }
 
 export async function listUsers(db: DbClient, search: string, requestedOffset: number) {
-  let where = 'where users.deleted_at is null'
+  let where = 'where users.deleted_at is null and not exists (select 1 from service_accounts sa where sa.id = users.id)'
   const values: string[] = []
   if (search.trim()) {
     const pattern = `%${search.trim().toLowerCase().replace(/[!%_]/g, '!$&')}%`
@@ -278,7 +278,7 @@ export async function findUserById(db: DbClient, userId: string): Promise<AuthUs
 export async function findUserByEmail(db: DbClient, email: string): Promise<AuthUser | null> {
   const rows = await queryUsers(
     db,
-    `where users.email_normalized = ${placeholder(db.dialect, 1)} and users.deleted_at is null limit 1`,
+    `where users.email_normalized = ${placeholder(db.dialect, 1)} and users.deleted_at is null and not exists (select 1 from service_accounts sa where sa.id = users.id) limit 1`,
     [normalizeEmail(email)],
   )
   return rows[0] ? rowToUser(rows[0]) : null
@@ -364,6 +364,7 @@ export async function updateUser(
         updated_at = ${nowIso()}
     where id = ${userId}
       and deleted_at is null
+      and not exists (select 1 from service_accounts sa where sa.id = users.id)
   `
   return reloadPublicUser(db, userId, result.rowCount)
 }
@@ -511,6 +512,7 @@ export async function softDeleteUser(db: DbClient, userId: string): Promise<bool
         updated_at = ${now}
     where id = ${userId}
       and deleted_at is null
+      and not exists (select 1 from service_accounts sa where sa.id = users.id)
   `
   return result.rowCount > 0
 }

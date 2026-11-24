@@ -244,8 +244,7 @@ test.describe('AI settings', () => {
 
     await test.step('reload and verify the saved default resolves', async () => {
       await page.reload()
-      await expect(page.getByRole('heading', { name: 'Providers', level: 1 })).toBeVisible()
-      await page.getByTestId('ai-nav-defaults').click()
+      await expect(page.getByRole('tab', { name: 'Defaults', selected: true })).toBeVisible()
       await page.getByRole('button', { name: /^Data\b/ }).click()
       await expect(page.getByRole('button', { name: 'Model for Data' })).toContainText(
         `${label} · Llama 4`,

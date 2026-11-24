@@ -35,6 +35,7 @@ import {
   CreateReviewCommentBodySchema,
   DeclineMergeRequestBodySchema,
   RenameBranchBodySchema,
+  REVIEW_VIEWPORT,
   canActOnBranch,
   canMergeBranches,
   isMainBranch,
@@ -442,7 +443,10 @@ async function handleReviewRender(req: Request, db: DbClient, branchId: string, 
     return badRequest('Pass ?row=<page row id>&side=main|branch')
   }
   // Pages are the site: `site.read` (the canvas viewer) is the whole gate.
-  const html = await renderBranchReviewPage(db, branchId, side, rowId)
+  const width = Number(url.searchParams.get('width') ?? REVIEW_VIEWPORT.width)
+  const height = Number(url.searchParams.get('height') ?? REVIEW_VIEWPORT.height)
+  if (![width, height].every(n => Number.isInteger(n) && n >= 10 && n <= 4096)) return badRequest('Invalid screenshot viewport')
+  const html = await renderBranchReviewPage(db, branchId, side, rowId, { width, height })
   if (html === null) return jsonResponse({ error: `No page "${rowId}" on ${side}` }, { status: 404 })
   // Served as text and sandboxed: the review reads it and hands it to a
   // scriptless srcdoc frame; navigated to directly it is never a page that

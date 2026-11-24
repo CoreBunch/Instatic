@@ -2,32 +2,33 @@
  * AiPage — `/admin/ai`.
  *
  * Capability-gated workspace for managing AI provider credentials, per-scope
- * defaults, MCP connections, and the AI usage audit log.
+ * defaults, CLI and MCP connections, and the AI usage audit log.
  *
  * Capabilities consulted:
- *   - `ai.providers.manage`  → Providers, Defaults, and MCP connection management
+ *   - `ai.providers.manage`  → API, CLI, MCP, and Defaults tabs
  *   - `ai.audit.read`        → Audit tab (read site-wide usage)
  */
 
-import { useState } from 'react'
 import { Tabs, TabList, Tab, TabPanel } from '@ui/components/Tabs'
 import { AdminPageLayout } from '@admin/layouts/AdminPageLayout'
-import { useLocation } from '@admin/lib/routing'
+import { useLocation, useNavigate } from '@admin/lib/routing'
 import { hasCapability } from '@admin/access'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import { ProvidersTab } from './tabs/ProvidersTab'
 import { DefaultsTab } from './tabs/DefaultsTab'
 import { AuditTab } from './tabs/AuditTab'
+import { ServiceAccountsTab, ServiceConsent } from './tabs/ServiceAccountsTab'
 import { McpTab } from './tabs/McpTab'
 import { McpOAuthAuthorizePage } from './McpOAuthAuthorizePage'
 import directory from '@admin/shared/Directory/Directory.module.css'
 
-type Section = 'providers' | 'defaults' | 'mcp' | 'audit'
+type Section = 'providers' | 'service' | 'mcp' | 'defaults' | 'audit'
 
 const SECTION_LABELS: Record<Section, string> = {
-  providers: 'Providers',
+  providers: 'API',
+  service: 'CLI',
+  mcp: 'MCP',
   defaults: 'Defaults',
-  mcp: 'MCP connections',
   audit: 'Audit',
 }
 
@@ -39,13 +40,25 @@ export function AiPage() {
   const canReadAudit = unrestricted || hasCapability(currentUser, 'ai.audit.read')
 
   const availableSections: Section[] = []
-  if (canManage) availableSections.push('providers', 'defaults', 'mcp')
+  if (canManage) availableSections.push('providers', 'service', 'mcp', 'defaults')
   if (canReadAudit) availableSections.push('audit')
 
-  const [section, setSection] = useState<Section>('providers')
-  const activeSection = availableSections.includes(section)
-    ? section
-    : availableSections[0] ?? 'providers'
+  const navigate = useNavigate()
+  const query = new URLSearchParams(location.search)
+  const accountId = query.get('service-account')
+  const requested = accountId || query.has('cli') ? 'service' : query.get('tab')
+  const activeSection = availableSections.find(item => item === requested) ?? availableSections[0] ?? 'providers'
+  function selectSection(section: Section, account?: string) {
+    const next = new URLSearchParams(location.search)
+    for (const key of ['cli', 'service-account', 'pairing', 'tab']) next.delete(key)
+    if (section === 'service') {
+      if (account) next.set('service-account', account)
+      else next.set('cli', '')
+    } else if (section !== 'providers') next.set('tab', section)
+    navigate('/admin/ai' + (next.size ? '?' + next.toString() : ''))
+  }
+
+  if (location.pathname === '/admin/ai/cli/authorize') return <ServiceConsent />
 
   if (location.pathname === '/admin/ai/oauth/authorize') {
     return <McpOAuthAuthorizePage />
@@ -53,7 +66,7 @@ export function AiPage() {
 
   return (
     <AdminPageLayout workspace="ai" mode="workspace">
-      <Tabs value={activeSection} onChange={setSection}>
+      <Tabs value={activeSection} onChange={selectSection}>
         <div className={directory.workspace}>
           <TabList ariaLabel="AI settings">
             {availableSections.map((item) => (
@@ -61,9 +74,10 @@ export function AiPage() {
             ))}
           </TabList>
           {canManage && <>
-            <TabPanel value="providers"><ProvidersTab onNavigateToDefaults={() => setSection('defaults')} /></TabPanel>
-            <TabPanel value="defaults"><DefaultsTab onNavigateToProviders={() => setSection('providers')} /></TabPanel>
+            <TabPanel value="providers"><ProvidersTab onNavigateToDefaults={() => selectSection('defaults')} /></TabPanel>
+            <TabPanel value="service"><ServiceAccountsTab accountId={accountId} onSelect={id => selectSection('service', id)} /></TabPanel>
             <TabPanel value="mcp"><McpTab /></TabPanel>
+            <TabPanel value="defaults"><DefaultsTab onNavigateToProviders={() => selectSection('providers')} /></TabPanel>
           </>}
           {canReadAudit && <TabPanel value="audit"><AuditTab /></TabPanel>}
         </div>

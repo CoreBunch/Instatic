@@ -10,7 +10,7 @@
  */
 import { memberFormAction, type AccessRule, type MemberSettings, type ShowWhen } from '@core/members'
 import { createNode, type Page, type PageNode } from '@core/page-tree'
-import { memberFormFragment } from '../../src/admin/pages/site/panels/PropertiesPanel/memberFormParts'
+import { memberFormFragment } from '@core/memberForms'
 
 type Nodes = Record<string, PageNode>
 

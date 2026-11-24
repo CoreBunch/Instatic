@@ -172,7 +172,7 @@ const authorSchema = Type.Object({
   url: Type.Optional(Type.String({ pattern: URL_PATTERN.source, maxLength: 500 })),
 })
 
-const manifestSchema = Type.Object({
+export const PluginManifestSchema = Type.Object({
   id: Type.String({ pattern: PLUGIN_ID_PATTERN.source }),
   name: Type.String({ minLength: 1, maxLength: 80 }),
   version: Type.String({ pattern: SEMVERISH_PATTERN.source }),
@@ -252,7 +252,7 @@ const manifestSchema = Type.Object({
   settings: Type.Optional(Type.Array(settingDefinitionSchema, { maxItems: 50 })),
 })
 
-type ManifestRaw = Static<typeof manifestSchema>
+type ManifestRaw = Static<typeof PluginManifestSchema>
 
 /**
  * Convert a raw TypeBox pattern-validation error into a human-readable
@@ -277,9 +277,9 @@ function friendlyManifestError(message: string, path: string): string {
 export function parsePluginManifest(input: unknown): PluginManifest {
   let data: ManifestRaw
   try {
-    data = Value.Parse(manifestSchema, input) as ManifestRaw
+    data = Value.Parse(PluginManifestSchema, input) as ManifestRaw
   } catch {
-    const errors = [...compiled(manifestSchema).Errors(input)]
+    const errors = [...compiled(PluginManifestSchema).Errors(input)]
     const first = errors[0]
     const rawMessage = first?.message ?? 'manifest is malformed'
     const message = first ? friendlyManifestError(rawMessage, first.path ?? '') : rawMessage

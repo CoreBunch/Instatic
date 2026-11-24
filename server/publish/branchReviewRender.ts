@@ -11,9 +11,10 @@
 import { REVIEW_VIEWPORT } from '@core/branches'
 import '../../src/modules/base'
 import '@core/loops/sources'
+import type { Page, SiteDocument } from '@core/page-tree'
 import { registry } from '@core/module-engine'
 import { publishPage } from '@core/publisher'
-import { buildPageFrame, buildRouteFrame, composeTemplateChain, resolveTemplateChain } from '@core/templates'
+import { buildPageFrame, buildRouteFrame, composeTemplateChain, resolveTemplateChain, treeHasOutlet } from '@core/templates'
 import { sourceRequestFor, type LoopRequestScope } from './loopSourceRequest'
 import type { DbClient } from '../db/client'
 import { MAIN_SCOPE, type BranchScope } from '../branches/scope'
@@ -33,6 +34,7 @@ export async function renderBranchReviewPage(
   branchId: string,
   side: ReviewRenderSide,
   rowId: string,
+  viewport: { width: number; height: number } = REVIEW_VIEWPORT,
 ): Promise<string | null> {
   const scope: BranchScope = side === 'main' ? MAIN_SCOPE : { branchId }
   const site = await getDraftSiteDocument(db, scope)
@@ -40,8 +42,18 @@ export async function renderBranchReviewPage(
   const page = site.pages.find((candidate) => candidate.id === rowId)
   if (!page) return null
 
+  return renderReviewDocument(db, scope, site, page, composeReviewPage(site, page).composed, viewport)
+}
+
+export function composeReviewPage(site: SiteDocument, page: Page) {
   const chain = resolveTemplateChain(site, { kind: 'page' })
-  const merged = composeTemplateChain(chain, { kind: 'page', page })
+  return { composed: composeTemplateChain(chain, { kind: 'page', page }), templated: chain.some(treeHasOutlet) }
+}
+
+export async function renderReviewDocument(
+  db: DbClient, scope: BranchScope, site: SiteDocument, page: Page, merged: Page,
+  viewport: { width: number; height: number },
+) {
   const url = new URL(`http://localhost/${page.slug}`)
   const templateContext = { entryStack: [], page: buildPageFrame(page), route: buildRouteFrame(url.toString()) }
   const requestScope: LoopRequestScope = { base: { query: {}, path: url.pathname, slug: page.slug || null } }
@@ -63,5 +75,5 @@ export async function renderBranchReviewPage(
   })
   // Viewport units against a desktop screen, not against the document-tall
   // frame: the same scanner the canvas frames use.
-  return resolveViewportUnitsInHtml(rendered.html, REVIEW_VIEWPORT)
+  return resolveViewportUnitsInHtml(rendered.html, viewport)
 }

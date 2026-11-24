@@ -43,7 +43,7 @@ import {
   findReimportedStyleRule,
   indexStyleRulesByOrigin,
   registerStyleRuleOrigin,
-} from './importLinking'
+} from '@core/siteImport'
 import { addImportedColorTokens, overwriteImportedColorTokens } from './importedColorTokens'
 import { addImportedFonts, addImportedFontTokens, addInstalledFontEntries, overwriteImportedFontTokens } from './importedFonts'
 import type { SiteMutationResult, SiteSliceHelpers, SiteSliceRecipe } from './types'

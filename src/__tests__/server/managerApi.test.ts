@@ -630,11 +630,16 @@ describe('Manager API — review hardening', () => {
       insert into ai_mcp_connectors (id, user_id, name, token_hash, token_prefix, scopes_json)
         select 'c1', 'u1', 'c', 'h', 'p', '[]' where 0;
     `).catch(() => undefined)
+    await source.db.unsafe("insert into users (id, email, email_normalized, display_name, password_hash, status, role_id) values ('cli-actor','cli@service.invalid','cli@service.invalid','CLI','!','suspended','member')")
+    await source.db`insert into service_accounts (id, owner_id, label, capabilities_json, expires_at, token_hash, code_hash, code_challenge, code_expires_at)
+      values ('cli-actor', 'cli-actor', 'CLI', '[]', '2999-01-01', 'paired-hash', 'pending-hash', 'challenge', '2999-01-01')`
     const push = await buildPush(source)
     const transfer = await (await target.call('POST', '/transfers', { body: JSON.stringify(push.manifest) })).json()
     await target.call('PUT', `/transfers/${transfer.id}/database?offset=0`, { body: push.database })
     expect((await target.call('POST', `/transfers/${transfer.id}/commit`)).status).toBe(202)
     expect(await target.reboot()).toEqual({ status: 'applied', kind: 'transfer' })
+    const { rows: connectors } = await target.db`select label, token_hash, code_hash, code_challenge, code_expires_at from service_accounts`
+    expect(connectors).toEqual([{ label: 'CLI', token_hash: null, code_hash: null, code_challenge: null, code_expires_at: null }])
     for (const table of ['sessions', 'ai_mcp_oauth_tokens', 'ai_mcp_oauth_codes']) {
       const { rows } = await target.db.unsafe(`select count(*) as n from ${table}`)
       expect(Number((rows[0] as { n: number }).n)).toBe(0)

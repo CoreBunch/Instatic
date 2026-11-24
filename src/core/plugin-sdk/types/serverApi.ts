@@ -26,6 +26,7 @@ import type { PluginMigrationContext } from './lifecycle'
 import type { PluginPermission } from './permissions'
 import type { ServerPluginMailApi, ServerPluginSiteApi } from './mail'
 import type { MemberRouteOptions, ServerPluginMembersApi } from './members'
+import type { PluginRouteDocumentation } from '../../plugins/routeDocumentation'
 import type { ServerPluginRouteHandler } from './routes'
 import type { ServerPluginScheduleApi } from './schedule'
 import type { ServerPluginSettingsApi } from './settings'
@@ -101,21 +102,21 @@ export interface ServerPluginApi {
      *       and frontend tracker ingest endpoints.
      */
     routes: {
-      get: (path: string, capability: string, handler: ServerPluginRouteHandler) => void
-      post: (path: string, capability: string, handler: ServerPluginRouteHandler) => void
-      patch: (path: string, capability: string, handler: ServerPluginRouteHandler) => void
-      delete: (path: string, capability: string, handler: ServerPluginRouteHandler) => void
+      get: (path: string, capability: string, handler: ServerPluginRouteHandler, documentation?: PluginRouteDocumentation) => void
+      post: (path: string, capability: string, handler: ServerPluginRouteHandler, documentation?: PluginRouteDocumentation) => void
+      patch: (path: string, capability: string, handler: ServerPluginRouteHandler, documentation?: PluginRouteDocumentation) => void
+      delete: (path: string, capability: string, handler: ServerPluginRouteHandler, documentation?: PluginRouteDocumentation) => void
       authenticated: {
-        get: (path: string, handler: ServerPluginRouteHandler) => void
-        post: (path: string, handler: ServerPluginRouteHandler) => void
-        patch: (path: string, handler: ServerPluginRouteHandler) => void
-        delete: (path: string, handler: ServerPluginRouteHandler) => void
+        get: (path: string, handler: ServerPluginRouteHandler, documentation?: PluginRouteDocumentation) => void
+        post: (path: string, handler: ServerPluginRouteHandler, documentation?: PluginRouteDocumentation) => void
+        patch: (path: string, handler: ServerPluginRouteHandler, documentation?: PluginRouteDocumentation) => void
+        delete: (path: string, handler: ServerPluginRouteHandler, documentation?: PluginRouteDocumentation) => void
       }
       public: {
-        get: (path: string, handler: ServerPluginRouteHandler) => void
-        post: (path: string, handler: ServerPluginRouteHandler) => void
-        patch: (path: string, handler: ServerPluginRouteHandler) => void
-        delete: (path: string, handler: ServerPluginRouteHandler) => void
+        get: (path: string, handler: ServerPluginRouteHandler, documentation?: PluginRouteDocumentation) => void
+        post: (path: string, handler: ServerPluginRouteHandler, documentation?: PluginRouteDocumentation) => void
+        patch: (path: string, handler: ServerPluginRouteHandler, documentation?: PluginRouteDocumentation) => void
+        delete: (path: string, handler: ServerPluginRouteHandler, documentation?: PluginRouteDocumentation) => void
       }
       /**
        * Routes only a signed-in site member reaches (optionally one holding

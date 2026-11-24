@@ -28,7 +28,8 @@ import {
 } from './formSettingsAnalysis'
 import { memberFormAction } from '@core/members'
 import { MemberActionRow } from './MemberActionRow'
-import { memberFormFragment, missingMemberFormParts, type MemberFormMissing } from './memberFormParts'
+import { memberFormFragment, type MemberFormMissing } from '@core/memberForms'
+import { missingMemberFormParts } from './memberFormParts'
 import styles from './FormSettingsPanel.module.css'
 
 type FormPreviewState = 'default' | 'submitting' | 'success' | 'error'

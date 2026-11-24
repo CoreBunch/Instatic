@@ -14,18 +14,18 @@ import type { DbClient } from '../../../db/client'
 import { jsonResponse } from '../../../http'
 import type { AuthUser } from '../../../repositories/users'
 
-const DATA_EDIT_CAPABILITIES = [
+export const DATA_EDIT_CAPABILITIES = [
   'content.edit.own',
   'content.edit.any',
   'content.manage',
 ] satisfies CoreCapability[]
 
-const DATA_REASSIGN_CAPABILITIES = [
+export const DATA_REASSIGN_CAPABILITIES = [
   'content.edit.any',
   'content.manage',
 ] satisfies CoreCapability[]
 
-const DATA_PUBLISH_CAPABILITIES = [
+export const DATA_PUBLISH_CAPABILITIES = [
   'content.publish.own',
   'content.publish.any',
 ] satisfies CoreCapability[]
@@ -40,7 +40,7 @@ export async function requireDataAccess(req: Request, db: DbClient): Promise<Aut
 
 // Any data-table read/manage cap is enough to OPEN the Data workspace; the
 // list endpoint then filters tables per-family via `canReadTable`.
-const TABLE_READ_CAPABILITIES = [
+export const TABLE_READ_CAPABILITIES = [
   'data.custom.tables.read',
   'data.custom.tables.manage',
   'data.system.tables.read',

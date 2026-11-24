@@ -2,7 +2,7 @@
 
 The full authentication and authorization surface — login, sessions, MFA, capabilities, roles, lockout, step-up, CSRF defense, CORS.
 
-Every state-changing CMS request goes through one auth funnel: parse the session cookie, look up the user, check the required capability. There's no per-handler bespoke auth code — the helpers in `server/auth/authz.ts` are the only auth surface a handler should call.
+Admin requests resolve the session cookie and check the required capability. Operational CMS and AI routes also resolve a [service account](service-accounts.md) from a scoped CLI credential. Capability and ownership checks apply to both identities. The owner confirms their password for CLI issuance and consent. Subsequent service requests use the active grant for sensitive operations. Browser sessions retain their normal step-up checks. There's no per-handler bespoke auth code — the helpers in `server/auth/authz.ts` are the only auth surface a handler should call.
 
 ---
 
@@ -182,7 +182,7 @@ Four system roles, defined in `SYSTEM_ROLES`:
 | Client  | `client`  | `dashboard.read`, `site.read`, `site.content.edit`, `media.read`, `data.custom.tables.read` | Editable    |
 | Member  | `member`  | (none)                                                                       | Editable    |
 
-`listRoles(db)` returns the built-ins in rank order (`owner`, `admin`, `client`, `member`), followed by custom roles alphabetized by name. Custom roles can be created via `roles.manage` (Owner-only). Roles are persisted in the `roles` table with `capabilities_json: CoreCapability[]`.
+`listRoles(db)` returns the built-ins in rank order (`owner`, `admin`, `client`, `member`), followed by custom roles alphabetized by name. Changing another user’s login email or password requires the actor to hold every capability of that account. Custom roles can be created via `roles.manage` (Owner-only). Roles are persisted in the `roles` table with `capabilities_json: CoreCapability[]`.
 
 Role assignment follows a strict delegation rule: an actor may assign only a role whose effective capabilities are a subset of the actor's own capabilities. This applies to both user creation and role changes, including self-assignment. `roles.manage` is additionally reserved for the Owner role: role mutations reject it, persisted non-Owner roles are stripped on read as a runtime fail-safe, and migration `025_remove_non_owner_role_management` removes legacy invalid grants.
 
@@ -420,7 +420,7 @@ export async function handleSubscribersRoutes(req: Request, db: DbClient): Promi
 1. Append the literal to `CORE_CAPABILITIES` in `src/core/capabilities.ts` (`@core/capabilities`). The `CoreCapability` type updates automatically; the server picks it up via import.
 2. If it belongs to the Owner / Admin / Client default sets, add it to the matching entry in `SYSTEM_ROLES` inside `server/auth/capabilities.ts`. Owner + Admin force-sync on next boot.
 3. Use `requireCapability(req, db, 'your.new.capability')` in the handler that needs it.
-4. Add a `CAPABILITY_META` entry + `CAPABILITY_GROUPS` section in `src/admin/pages/users/utils/capabilities.ts` so the role-edit dialog renders a checkbox. The `capability-picker-coverage.test.ts` gate fails until you do.
+4. Add a `CAPABILITY_META` entry + `CAPABILITY_GROUPS` section in `src/admin/shared/CapabilityPicker/` so the role-edit dialog renders a checkbox. The `capability-picker-coverage.test.ts` gate fails until you do.
 5. Existing custom roles will NOT have the new capability until users grant it through the Roles admin page.
 
 ### Gate a sensitive action

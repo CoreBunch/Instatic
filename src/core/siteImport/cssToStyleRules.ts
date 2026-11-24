@@ -69,6 +69,7 @@ import type { ImportWarning } from './warnings'
 // ---------------------------------------------------------------------------
 
 interface CssToStyleRulesOptions {
+  sheetConstructor?: typeof CSSStyleSheet
   /**
    * Site viewport contexts used to match `@media` queries.
    * Defaults to `[]` (all @media queries are treated as unmatched).
@@ -224,7 +225,7 @@ export function cssToStyleRules(
   const conditionsById = new Map<string, ConditionDef>()
 
   // ── Acquire the CSS engine ──────────────────────────────────────────────
-  const SheetCtor = getSheetConstructor()
+  const SheetCtor = options?.sheetConstructor ?? getSheetConstructor()
   if (!SheetCtor) {
     warnings.push({
       kind: 'invalid-rule',

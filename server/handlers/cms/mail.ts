@@ -303,7 +303,7 @@ const CONNECTOR_TEST = new RegExp(`^${MAIL_PREFIX}/connectors/(?<id>[^/]+)/test$
 const TEMPLATE = new RegExp(`^${MAIL_PREFIX}/templates/(?<key>[^/]+)$`)
 const TEMPLATE_TEST = new RegExp(`^${MAIL_PREFIX}/templates/(?<key>[^/]+)/test$`)
 
-const ROUTES: Route<[]>[] = [
+export const MAIL_ROUTES: Route<[]>[] = [
   { method: 'GET', pattern: MAIL_PREFIX, handler: handleOverview },
   { method: 'POST', pattern: `${MAIL_PREFIX}/connectors`, handler: handleCreateConnector },
   { method: 'DELETE', pattern: CONNECTOR, handler: handleDeleteConnector },
@@ -318,5 +318,5 @@ const ROUTES: Route<[]>[] = [
 ]
 
 export function handleMailRoutes(req: Request, db: DbClient): Promise<Response | null> {
-  return runRouteTable(req, db, ROUTES)
+  return runRouteTable(req, db, MAIL_ROUTES)
 }

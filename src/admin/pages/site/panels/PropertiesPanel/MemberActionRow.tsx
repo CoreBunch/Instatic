@@ -10,7 +10,7 @@ import { ControlRow } from '@ui/components/ControlRow'
 import { Select } from '@ui/components/Select'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import type { FormContextSummary } from './formSettingsAnalysis'
-import type { MemberFormMissing } from './memberFormParts'
+import type { MemberFormMissing } from '@core/memberForms'
 import styles from './FormSettingsPanel.module.css'
 
 const MEMBER_FORM_GROUPS: readonly MemberFormGroup[] = ['entry', 'emailLink', 'account']

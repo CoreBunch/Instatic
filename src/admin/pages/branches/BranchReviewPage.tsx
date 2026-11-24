@@ -199,6 +199,9 @@ function Review({ branch, onReturnToMain }: ReviewProps) {
   const request = review.request
   const open = request?.status === 'open'
   const stale = open && request.contentHash !== review.contentHash
+  const changeKeys = new Set(plan.changes.map(change => change.key))
+  // Keep threads in the conversation after their original change leaves the merge plan.
+  const conversation = review.comments.filter(comment => !changeKeys.has(comment.entityKey))
   const commentsFor = (key: string) => review.comments.filter((comment) => comment.entityKey === key)
   const unresolved = plan.changes.filter((change) => change.conflicts.length > 0 && !resolutions[change.key])
   const visible = plan.changes.filter((change) => matchesFilter(change, filter, commentsFor(change.key).length))
@@ -210,7 +213,8 @@ function Review({ branch, onReturnToMain }: ReviewProps) {
     site: plan.changes.filter((change) => change.kind === 'site').length,
   }
   const filterCount = (id: ReviewFilter): number =>
-    plan.changes.filter((change) => matchesFilter(change, id, commentsFor(change.key).length)).length
+    plan.changes.filter((change) => matchesFilter(change, id, commentsFor(change.key).length)).length +
+      (id === 'comments' && conversation.length ? 1 : 0)
 
   async function withBusy(label: string, action: () => Promise<unknown>): Promise<boolean> {
     setBusy(true)
@@ -330,13 +334,13 @@ function Review({ branch, onReturnToMain }: ReviewProps) {
               </header>
 
               <div className={styles.timeline}>
-                {filter === 'all' && (
+                {(filter === 'all' || (filter === 'comments' && conversation.length > 0)) && (
                   <TimelineNode
                     id="review-request"
                     left={(
                       <ReviewThread
                         title="Conversation"
-                        comments={commentsFor(REQUEST_ENTITY_KEY)}
+                        comments={conversation}
                         me={me}
                         placeholder="Comment on the request"
                         onPost={(body) => data.comment(REQUEST_ENTITY_KEY, body)}

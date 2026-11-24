@@ -2,7 +2,7 @@
  * Capability surface — THE single source of truth enumerating every
  * permission a CMS user can hold. Both the client and the server consume
  * this list: `server/auth/capabilities.ts` imports it (no parallel list),
- * and `src/admin/pages/users/utils/capabilities.ts` attaches the picker
+ * and `src/admin/shared/CapabilityPicker/` attaches the picker
  * metadata (label / description / group). The `CoreCapability` type below
  * is derived from this array via `typeof … [number]`, so adding a string
  * here flows everywhere automatically. The `capability-picker-coverage.test.ts`
@@ -96,3 +96,9 @@ export type CoreCapability = typeof CORE_CAPABILITIES[number]
  * gives the server and role editor one shared source of truth.
  */
 export const OWNER_ONLY_CAPABILITIES = ['roles.manage'] as const satisfies readonly CoreCapability[]
+
+export const OWNER_ONLY_CAPABILITY_SET: ReadonlySet<CoreCapability> = new Set<CoreCapability>(OWNER_ONLY_CAPABILITIES)
+export function isDelegableCapability(capability: CoreCapability): boolean {
+  return !OWNER_ONLY_CAPABILITY_SET.has(capability)
+}
+export const DELEGABLE_CAPABILITIES = CORE_CAPABILITIES.filter(isDelegableCapability)

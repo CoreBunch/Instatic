@@ -17,5 +17,12 @@ test('AI section nav entry routes to the AI workspace (ADMIN-010)', async ({ pag
 
   await aiLink.click()
   await page.waitForURL(/\/admin\/ai/)
-  await expect(page).toHaveURL(/\/admin\/ai/)
+  const header = page.getByRole('tablist', { name: 'AI settings' })
+  const sections = ['API', 'CLI', 'MCP', 'Defaults', 'Audit']
+  await expect(header.getByRole('tab')).toHaveText(sections)
+  await expect(header.getByRole('tab', { name: 'API', selected: true })).toBeVisible()
+  for (const name of sections) {
+    await header.getByRole('tab', { name, exact: true }).click()
+    await expect(page.getByRole('tabpanel', { name, exact: true })).toBeVisible()
+  }
 })
