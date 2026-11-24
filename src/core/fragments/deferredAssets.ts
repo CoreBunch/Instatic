@@ -25,6 +25,7 @@ export async function placeFragmentLayout(plan: FragmentInsertPlan, adapter: Fra
     : await writeTables(plan, media, adapter, options, false)
   options.signal?.throwIfAborted()
   const initial = resolveFragmentPlan(plan, { mediaUrlByPath: placeholders, tableIdMap, fontEntryByFamilyId: new Map() })
+  options.onProgress?.({ phase: 'commit', done: 0, total: 1 })
   const result = await adapter.commit(initial)
   return { result, placeholders, tableIdMap }
 }

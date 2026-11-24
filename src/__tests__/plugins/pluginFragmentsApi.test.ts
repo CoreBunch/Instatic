@@ -282,6 +282,33 @@ describe('api.editor.fragments', () => {
     expect(bodyChildren()).toEqual(['first', 'second', end.insertedRootIds[0]])
   })
 
+  it('reports progress and cancels a background import while the media reader is pending', async () => {
+    const controller = new AbortController()
+    const phases: string[] = []
+    const started = Promise.withResolvers<void>()
+    const resume = Promise.withResolvers<void>()
+    const outcome = await api().editor.fragments.insert({
+      fragment: await bannerFragment(),
+      assets: 'background',
+      signal: controller.signal,
+      onProgress: event => phases.push(event.phase),
+      readMediaBytes: async media => {
+        started.resolve()
+        await resume.promise
+        return bytesOf(media.filename)
+      },
+    })
+    expect(outcome.ok).toBe(true)
+    await started.promise
+    controller.abort()
+    resume.resolve()
+    await Bun.sleep(0)
+    expect(phases[0]).toBe('commit')
+    expect(phases).toContain('media')
+    expect(uploads).toEqual([])
+    expect(bodyChildren()).toHaveLength(3)
+  })
+
   it('inserts at a canvas drop ahead of the first sibling independently of selection', async () => {
     const fragments = api().editor.fragments
     expect(fragments.canvasDropAt(NaN, 20)).toBeNull()

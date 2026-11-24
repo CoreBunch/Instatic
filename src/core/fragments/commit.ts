@@ -113,6 +113,7 @@ export async function resolveMedia(
         if (ref) out.reused += 1
         else {
           const bytes = await options.readMediaBytes(item)
+          options.signal?.throwIfAborted()
           if (!bytes) throw new Error(`no bytes for ${item.src}`)
           ref = await adapter.uploadMedia({
             filename: item.filename,

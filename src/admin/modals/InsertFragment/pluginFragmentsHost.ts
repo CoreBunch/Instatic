@@ -154,7 +154,7 @@ export async function insertFragmentForPlugin(
       const plan = attempt.plan
       const backgroundTarget = capturePreviewBranch()
       const adapter = createFragmentInsertAdapter(runStepUp, target, placement)
-      const options = { readMediaBytes: input.readMediaBytes, signal: input.signal }
+      const options = { readMediaBytes: input.readMediaBytes, signal: input.signal, onProgress: input.onProgress }
       const layoutOnly = input.assets === 'layout-only'
       const { result, placeholders, tableIdMap } = await placeFragmentLayout(plan, adapter, options, layoutOnly)
       const report = layoutOnly ? {
@@ -167,6 +167,7 @@ export async function insertFragmentForPlugin(
       if (!layoutOnly && (plan.media.length || plan.fontFamilies.length || plan.tables.some(table => table.action === 'create' && table.rows.length))) {
         const assetsAdapter = createFragmentInsertAdapter(runStepUp, backgroundTarget)
         void loadFragmentAssets(plan, tableIdMap, assetsAdapter, options).then(async ({ media, fonts, warnings, seedRows }) => {
+          options.signal?.throwIfAborted()
           backgroundTarget()
           useEditorStore.getState().finishFragmentAssets(plan, { placeholders, media, fonts })
           await seedRows()

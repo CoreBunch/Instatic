@@ -27,8 +27,8 @@ export interface FragmentInsertInput {
   /**
    * The bytes of one media item the insert adds. Only called for media the
    * plan adds that the media library does not already hold. Return null when
-   * the bytes are unavailable; the insert then stops before touching the
-   * document.
+   * the bytes are unavailable. A blocking insert stops before touching the
+   * document. A background import keeps the layout and reports the missing file.
    */
   readMediaBytes: (media: FragmentMedia) => Uint8Array | null | Promise<Uint8Array | null>
   /** Where a section or component lands. Default `after-selection`. */
@@ -37,6 +37,7 @@ export interface FragmentInsertInput {
   colorSources?: Record<string, string>
   /** Aborts at the next step boundary; never after the store write started. */
   signal?: AbortSignal
+  /** Background asset progress can arrive after the layout insertion resolves. */
   onProgress?: (progress: FragmentInsertProgress) => void
   /** Skip the editor's result toast (the plugin shows its own). */
   silent?: boolean
