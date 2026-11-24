@@ -3,6 +3,7 @@
  * token interpolation.
  */
 
+import type { ApprovalView } from '@core/members'
 import type { LoopItem } from '@core/loops/types'
 import type {
   MemberFrame,
@@ -30,5 +31,6 @@ export interface TemplateRenderDataContext {
    * bindings then resolve empty, show-when treats the visitor as signed out,
    * and the publisher defers anything member-dependent to a per-visitor hole.
    */
+  readonly approval?: ApprovalView
   readonly member?: MemberFrame | null
 }

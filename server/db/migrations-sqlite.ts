@@ -1975,4 +1975,18 @@ export const sqliteMigrations: Migration[] = [
       select 1; -- SQLite already stores these grants as JSON arrays.
     `,
   },
+  {
+    id: '045_member_app_pairing',
+    sql: `
+      create table if not exists member_app_pairs (
+        request_hash text primary key references member_app_requests(id_hash) on delete cascade,
+        device_hash text unique not null,
+        display_code text not null,
+        email_hash text,
+        email_member_id text references members(id) on delete cascade,
+        email_address text,
+        decision text
+      );
+    `,
+  },
 ]

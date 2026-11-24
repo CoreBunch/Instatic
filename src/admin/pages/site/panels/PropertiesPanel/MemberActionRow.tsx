@@ -17,6 +17,7 @@ const MEMBER_FORM_GROUPS: readonly MemberFormGroup[] = ['entry', 'emailLink', 'a
 
 /** What the member form still needs, in words, or '' when it is complete. */
 function memberMissingText(missing: MemberFormMissing, action: MemberFormAction): string {
+  if (missing.states?.length) return 'approval states'
   const parts = [
     ...missing.fields.map((field) => field.label.toLowerCase()),
     ...(missing.messages ? [action.successMessage ? 'messages' : 'an error message'] : []),

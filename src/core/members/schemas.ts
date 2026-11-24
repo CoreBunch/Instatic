@@ -65,6 +65,7 @@ export const MemberPagesSchema = Type.Object(
     emailChange: Type.Optional(PageIdSchema),
     /** Where a member approves an app that wants to sign them in. */
     appSignIn: Type.Optional(PageIdSchema),
+    appPair: Type.Optional(PageIdSchema),
   },
   { additionalProperties: false },
 )

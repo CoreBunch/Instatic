@@ -37,6 +37,7 @@ import { htmlAttributesAttr } from '@core/publisher'
 import {
   DEFAULT_MEMBER_FORM_ACTION,
   MEMBER_FORM_ACTIONS,
+  PAIR_FORM_ACTION,
   memberFormAction,
   memberFormActionPath,
 } from '@core/members'
@@ -232,6 +233,7 @@ export const FormModule: ModuleDefinition<FormProps> = {
   htmlTag: 'form',
   render: (props, renderedChildren) => {
     const formId = normalizeIdentifierValue(props.formId, 'form')
+    const paired = props.mode === 'member' && props.memberAction === PAIR_FORM_ACTION
     const attrs = [
       `data-instatic-form-id="${formId}"`,
       `data-instatic-form-mode="${props.mode}"`,
@@ -240,6 +242,7 @@ export const FormModule: ModuleDefinition<FormProps> = {
       props.mode === 'custom' ? `method="${props.method}"` : '',
       // A member form is a real POST to the member endpoint, so it works with
       // scripts off; the runtime upgrades it to an in-place submit.
+      paired ? 'data-instatic-pair-form method="post"' :
       props.mode === 'member' ? `action="${memberFormActionPath(props.memberAction)}" method="post"` : '',
       props.successBehavior === 'message' ? `data-instatic-success-message="${props.successMessage}"` : '',
       props.successBehavior === 'redirect' ? `data-instatic-success-redirect="${safeUrl(props.redirectUrl)}"` : '',
@@ -254,7 +257,7 @@ export const FormModule: ModuleDefinition<FormProps> = {
       html: `<form ${attrs}${authored}>${honeypot}${memberHiddenInputs(props)}${renderedChildren.join('')}</form>`,
       // CMS-native and member forms use the browser runtime; custom-action
       // forms are plain HTML form submissions and ship zero JS.
-      ...(props.mode === 'custom' ? {} : { js: FORM_RUNTIME_JS }),
+      ...(props.mode === 'custom' || paired ? {} : { js: FORM_RUNTIME_JS }),
     }
   },
 }

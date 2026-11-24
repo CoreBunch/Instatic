@@ -31,6 +31,7 @@ export const MEMBER_MAIL_KEYS = {
   email_change_notice: 'member.email_change_notice',
   password_changed: 'member.password_changed',
   app_connected: 'member.app_connected',
+  app_pair: 'member.app_pair',
 } as const
 
 export type MemberMailKind = keyof typeof MEMBER_MAIL_KEYS
@@ -148,4 +149,14 @@ registerMailTemplate({
     '**{app.name}** was just signed in to your account at **{site.name}**.\n\n' +
     'If that was you, there is nothing to do.\n\n' +
     'If it was not, change your password now. That signs every app out of your account.',
+})
+
+registerMailTemplate({
+  key: MEMBER_MAIL_KEYS.app_pair,
+  label: 'Approve an app',
+  description: 'Sent when a member requests email confirmation for an app connection.',
+  group: GROUP,
+  variables: [link('approve'), EMAIL, { name: 'app.name', label: 'App name', sample: 'Desktop' }],
+  defaultSubject: 'Review your {app.name} connection',
+  defaultBody: 'Review the request to connect **{app.name}** to your account. Check that the code matches the one in your app before allowing access. If you didn’t start this request, you can ignore this email.\n\n[Review app connection]({link})',
 })

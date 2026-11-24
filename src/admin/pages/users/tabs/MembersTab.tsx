@@ -395,7 +395,7 @@ export function MembersTab({ canManage }: { canManage: boolean }) {
       {dialog === 'apps' && settings.data && (
         <MemberAppsDialog
           canManage={canManage}
-          approvalPageLive={memberPageIsLive('appSignIn', settings.data.settings.pages, settings.data.pageOptions)}
+          approvalPageLive={memberPageIsLive('appSignIn', settings.data.settings.pages, settings.data.pageOptions) || memberPageIsLive('appPair', settings.data.settings.pages, settings.data.pageOptions)}
           onClose={() => setDialog(null)}
         />
       )}

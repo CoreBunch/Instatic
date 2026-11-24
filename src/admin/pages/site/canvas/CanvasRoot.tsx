@@ -65,6 +65,7 @@ import { useCanvasKeyboardShortcuts } from './useCanvasKeyboardShortcuts'
 import { clientPointToEditorDoc } from './canvasDomGeometry'
 import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { useEditorPreference, readEditorSelectPreference } from '@site/preferences/editorPreferences'
+import { useAppPairPreview } from './useAppPairPreview'
 import { useTemplatePreviewContext } from '@site/hooks/useTemplatePreviewContext'
 import styles from './CanvasRoot.module.css'
 import { userDisplayLabel } from '@core/users/displayName'
@@ -160,9 +161,10 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   const setActiveDocument = useEditorStore((s) => s.setActiveDocument)
   const activeDocument = useEditorStore((s) => s.activeDocument)
   const {
-    context: templatePreviewContext,
+    context: pagePreviewContext,
     loading: templatePreviewContextLoading,
   } = useTemplatePreviewContext(canvasPage)
+  const { templatePreviewContext, stateControl } = useAppPairPreview(canvasPage, pagePreviewContext)
   const agentSnapshotBreakpoint = agentSnapshotCaptureRequest
     ? breakpoints.find((breakpoint) => breakpoint.id === agentSnapshotCaptureRequest.breakpointId) ?? null
     : null
@@ -531,7 +533,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
                   peek={isLive}
                   compact={compactChrome}
                   floatingControl={
-                    activeDocument?.kind === 'visualComponent' ? (
+                    stateControl ?? (activeDocument?.kind === 'visualComponent' ? (
                       <Suspense fallback={null}>
                         <VisualComponentModeControl />
                       </Suspense>
@@ -539,7 +541,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
                       <Suspense fallback={null}>
                         <TemplateModeControl />
                       </Suspense>
-                    ) : null
+                    ) : null)
                   }
                 />
               )}

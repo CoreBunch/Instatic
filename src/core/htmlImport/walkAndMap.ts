@@ -151,6 +151,7 @@ const MODULE_GENERATED_ATTRIBUTE_NAMES: Record<string, readonly string[]> = {
     'action',
     'data-instatic-form-id',
     'data-instatic-form-mode',
+    'data-instatic-pair-form',
     'data-instatic-success-message',
     'data-instatic-success-redirect',
     'data-instatic-target-table',

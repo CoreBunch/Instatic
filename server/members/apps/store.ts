@@ -25,7 +25,7 @@ import {
   normalizeMemberAppScope,
 } from './protocol'
 
-const REQUEST_TTL_MS = 10 * 60 * 1000
+export const REQUEST_TTL_MS = 10 * 60 * 1000
 const AUTHORIZATION_CODE_TTL_MS = 5 * 60 * 1000
 const ACCESS_TOKEN_TTL_SECONDS = 60 * 60
 /** How long an approval lasts before the member has to sign the app in again. */
@@ -232,32 +232,39 @@ export async function decideMemberAppRequest(
     const decided = await tx`
       update member_app_requests set decided_at = ${now.toISOString()}
        where id_hash = ${idHash} and decided_at is null and browser_hash = ${browserHash}
+         and not exists (select 1 from member_app_pairs where request_hash = ${idHash})
     `
     if (decided.rowCount !== 1) return null
     if (!input.approve) return { request, code: null }
 
-    const grantId = nanoid()
-    await tx`
-      insert into member_app_grants (id, member_id, app_id, scope, device_jkt, device_name, created_at, expires_at)
-      values (
-        ${grantId}, ${input.memberId}, ${request.appId}, ${request.scope},
-        ${request.deviceKey}, ${request.deviceName}, ${now.toISOString()},
-        ${new Date(now.getTime() + GRANT_TTL_MS).toISOString()}
-      )
-    `
     const code = generateOpaqueToken('imem_ac_')
-    await tx`
-      insert into member_app_codes (
-        code_hash, grant_id, app_id, redirect_uri, code_challenge, scope, resource, expires_at
-      )
-      values (
-        ${await hashOpaqueToken(code)}, ${grantId}, ${request.appId}, ${request.redirectUri},
-        ${request.codeChallenge}, ${request.scope}, ${request.resource},
-        ${new Date(now.getTime() + AUTHORIZATION_CODE_TTL_MS).toISOString()}
-      )
-    `
+    await issueAppCode(tx, request, input.memberId, await hashOpaqueToken(code), now)
     return { request, code }
   })
+}
+
+export async function issueAppCode(
+  tx: DbClient, request: MemberAppRequest, memberId: string, codeHash: string, now: Date,
+): Promise<void> {
+  const grantId = nanoid()
+  await tx`
+    insert into member_app_grants (id, member_id, app_id, scope, device_jkt, device_name, created_at, expires_at)
+    values (
+      ${grantId}, ${memberId}, ${request.appId}, ${request.scope},
+      ${request.deviceKey}, ${request.deviceName}, ${now.toISOString()},
+      ${new Date(now.getTime() + GRANT_TTL_MS).toISOString()}
+    )
+  `
+  await tx`
+    insert into member_app_codes (
+      code_hash, grant_id, app_id, redirect_uri, code_challenge, scope, resource, expires_at
+    )
+    values (
+      ${codeHash}, ${grantId}, ${request.appId}, ${request.redirectUri},
+      ${request.codeChallenge}, ${request.scope}, ${request.resource},
+      ${new Date(now.getTime() + AUTHORIZATION_CODE_TTL_MS).toISOString()}
+    )
+  `
 }
 
 // ─── Grants and tokens ─────────────────────────────────────────────────────
