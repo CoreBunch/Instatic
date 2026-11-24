@@ -93,8 +93,9 @@ describe('publishPage runtime assets', () => {
     expect(html).toContain(
       '<script src="/_instatic/assets/runtime/jquery.js" data-instatic-runtime-script="classic"></script>',
     )
-    expect(html).not.toContain(
-      '<script type="module" src="/_instatic/assets/runtime/jquery.js"',
+    runtimeAssets.scripts[0]!.defer = true
+    expect(publishPage(page, site, registry, { runtimeAssets }).html).toContain(
+      '<script defer src="/_instatic/assets/runtime/jquery.js" data-instatic-runtime-script="classic"></script>',
     )
   })
 

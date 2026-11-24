@@ -122,7 +122,7 @@ describe('Site Import keeps what the page needs to work', () => {
     const body = html.slice(html.indexOf('<body'))
     expect(head).toMatch(/<script src="[^"]*theme[^"]*"/)
     expect(body).not.toContain('theme')
-    expect(body).toMatch(/<script src="[^"]*later[^"]*"/)
+    expect(body).toMatch(/<script defer src="[^"]*later[^"]*"/)
     expect(body).toMatch(/<script src="[^"]*app[^"]*"/)
   })
 

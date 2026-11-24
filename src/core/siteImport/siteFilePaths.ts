@@ -21,10 +21,12 @@ import { sha256Hex } from '@core/utils/sha256'
 export function importSourceHash(item: {
   content: string
   format?: SiteScriptFormat
+  defer?: boolean
   placement?: SiteScriptPlacement
   dependencies?: { name: string; version: string }[]
 }): string {
   const deps = (item.dependencies ?? []).map((d) => `${d.name}@${d.version}`).toSorted()
+  if (item.defer) return sha256Hex(JSON.stringify([item.content, deps, item.format, item.placement, 'defer']))
   if (item.format && (item.format !== 'classic' || item.placement === 'head')) {
     return sha256Hex(JSON.stringify([item.content, deps, item.format, item.placement]))
   }

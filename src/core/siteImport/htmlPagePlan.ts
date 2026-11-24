@@ -82,7 +82,7 @@ export function makeHtmlPagePlan(
     }
     const resolved = resolveHref(script.src, htmlPath)
     if (resolved && fileMap.files[resolved]) {
-      scripts.push({ kind: 'external', path: resolved, format: script.format, placement: script.placement })
+      scripts.push({ kind: 'external', path: resolved, format: script.format, placement: script.placement, defer: script.defer })
     } else if (resolved) {
       warnings.push({
         kind: 'missing-script',
@@ -152,6 +152,7 @@ type ScriptRef =
   | {
     kind: 'external'
     src: string
+    defer?: boolean
     format: SiteScriptFormat
     placement: SiteScriptPlacement
   }
@@ -252,7 +253,7 @@ function extractDocumentMetaFromDom(htmlSource: string, htmlPath: string): Docum
       )
 
       if (src && hasSrc) {
-        scriptRefs.push({ kind: 'external', src: src.trim(), format, placement })
+        scriptRefs.push({ kind: 'external', src: src.trim(), format, placement, defer: format === 'classic' && script.hasAttribute('defer') || undefined })
         continue
       }
 
@@ -315,7 +316,7 @@ function extractDocumentMetaFromRegex(htmlSource: string, htmlPath: string): Doc
       Boolean(src) && (hasBooleanAttr(attrs, 'defer') || hasBooleanAttr(attrs, 'async')),
     )
     if (src) {
-      scriptRefs.push({ kind: 'external', src, format, placement })
+      scriptRefs.push({ kind: 'external', src, format, placement, defer: format === 'classic' && hasBooleanAttr(attrs, 'defer') || undefined })
       continue
     }
 

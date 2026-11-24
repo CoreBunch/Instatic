@@ -200,6 +200,7 @@ export interface ImportScript {
   format: SiteScriptFormat
   /** `'head'` only when every page runs it as a blocking `<head>` script. */
   placement: SiteScriptPlacement
+  defer?: boolean
   /** HTML FileMap sources that linked this script. */
   pageSources: string[]
   /** Final committed page IDs. Filled by `commitImportPlan` before adapter call. */
@@ -287,6 +288,7 @@ export type PageScript = {
   format: SiteScriptFormat
   /** Where the page ran it: a blocking `<head>` script, or after the body. */
   placement: SiteScriptPlacement
+  defer?: boolean
 } & (
   /** `path`: the linked FileMap file. */
   | { kind: 'external'; path: string }

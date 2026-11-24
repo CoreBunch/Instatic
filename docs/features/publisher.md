@@ -6,7 +6,7 @@ The published output has **no framework runtime**, **no client-side hydration of
 
 ---
 
-Published module scripts are minified by `server/publish/runtime/bundleScripts.ts`. Canvas bundles remain readable with inline source maps; classic scripts retain their original bytes.
+Published module scripts are minified by `server/publish/runtime/bundleScripts.ts`. Canvas bundles remain readable with inline source maps; classic scripts retain their original bytes. The runtime manifest carries an external classic script’s imported `defer` flag into its published HTML tag.
 
 ## TL;DR
 

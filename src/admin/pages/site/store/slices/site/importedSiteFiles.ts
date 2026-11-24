@@ -36,6 +36,7 @@ import {
 function importedScriptRuntime(script: ImportScript) {
   return {
     format: script.format,
+    defer: Boolean(script.defer),
     placement: script.placement,
     timing: script.placement === 'head' ? 'immediate' as const : DEFAULT_SCRIPT_RUNTIME_CONFIG.timing,
   }

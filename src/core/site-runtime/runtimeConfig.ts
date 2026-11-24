@@ -93,6 +93,7 @@ export function normalizeScriptRuntimeConfig(raw: unknown): SiteScriptRuntimeCon
     format: raw.format === 'classic' || raw.format === 'module'
       ? raw.format
       : DEFAULT_SCRIPT_RUNTIME_CONFIG.format,
+    ...(raw.defer === true && { defer: true }),
     placement: raw.placement === 'head' || raw.placement === 'body-end'
       ? raw.placement
       : DEFAULT_SCRIPT_RUNTIME_CONFIG.placement,

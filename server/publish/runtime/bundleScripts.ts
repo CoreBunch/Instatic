@@ -147,6 +147,7 @@ function buildClassicRuntimeFiles(
       fileId: script.file.id,
       src: publicPath,
       format: 'classic',
+      defer: script.config.defer,
       placement: script.config.placement,
       timing: script.config.timing,
       priority: script.config.priority,

@@ -48,7 +48,8 @@ export function scriptTagsForRuntimeAssets(
         ? ` integrity="${escapeAttribute(asset.integrity)}" crossorigin="anonymous"`
         : ''
       const type = asset.format === 'classic' ? '' : ' type="module"'
-      return `  <script${type} src="${escapeAttribute(asset.src.trim())}" data-instatic-runtime-script="${escapeAttribute(asset.fileId)}"${integrity}></script>`
+      const defer = asset.format === 'classic' && asset.defer ? ' defer' : ''
+      return `  <script${type}${defer} src="${escapeAttribute(asset.src.trim())}" data-instatic-runtime-script="${escapeAttribute(asset.fileId)}"${integrity}></script>`
     })
     .join('\n')
 }

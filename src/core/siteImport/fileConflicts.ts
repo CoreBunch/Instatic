@@ -71,10 +71,11 @@ export function detectFileConflicts(
 
 function fileConflictState(file: SiteFile, imported: ImportScript | ImportStylesheet, runtime?: SiteRuntimeConfig['scripts'][string]): FileConflictState {
   const record = file.importRecord
-  if (!record) return file.content === imported.content ? 'unchanged' : 'differs'
+  const sameDefer = !('format' in imported) || Boolean(runtime?.defer) === Boolean(imported.defer)
+  if (!record) return sameDefer && file.content === imported.content ? 'unchanged' : 'differs'
   if (importSourceHash(imported) === record.sourceHash) return 'unchanged'
   // Older import records hashed the script bytes and dependencies only.
-  if ('format' in imported && runtime?.format === imported.format && runtime.placement === imported.placement
+  if ('format' in imported && runtime?.format === imported.format && runtime.placement === imported.placement && sameDefer
     && importSourceHash({ content: imported.content, dependencies: imported.dependencies }) === record.sourceHash) return 'unchanged'
   return sha256Hex(file.content ?? '') === record.contentHash ? 'changed' : 'edited'
 }
