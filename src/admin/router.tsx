@@ -64,6 +64,7 @@ export function AdminRoutes() {
       <Route path="/admin/ai" element={withRouteBoundary(<AdminEntry section="ai" />)} />
       <Route path="/admin/email" element={withRouteBoundary(<AdminEntry section="email" />)} />
       <Route path="/admin/ai/oauth/authorize" element={withRouteBoundary(<AdminEntry section="ai" />)} />
+      <Route path="/admin/ai/cli/authorize" element={withRouteBoundary(<AdminEntry section="ai" />)} />
       <Route path="/admin/account" element={withRouteBoundary(<AdminEntry section="account" />)} />
       <Route
         path="/admin/plugins/:pluginId/:pageId"

@@ -275,12 +275,11 @@ function composeTemplateContext(
   const provided = incoming ?? { entryStack: [] }
   const pageFrame = provided.page ?? buildPageFrame(page)
   return {
-    entryStack: provided.entryStack,
+    ...provided,
     page: pageFrame,
     site: provided.site ?? buildSiteFrame(site),
     route: provided.route ?? buildRouteFrame(pageFrame.permalink),
     media: provided.media ?? mediaAssets,
-    ...(provided.member !== undefined ? { member: provided.member } : {}),
   }
 }
 

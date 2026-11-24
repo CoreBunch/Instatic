@@ -9,7 +9,7 @@
 import { nanoid } from 'nanoid'
 import { classKindSelector } from '@core/page-tree'
 import type { StyleRule, StyleRuleOrderAllocator, StyleRuleOrigin } from '@core/page-tree'
-import type { NewStyleRule } from '@core/siteImport'
+import type { NewStyleRule } from './types'
 
 /**
  * Index a StyleRule registry by name → id.

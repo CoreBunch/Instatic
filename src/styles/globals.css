@@ -81,6 +81,7 @@
     --bg-surface-5: #605f5f;
 
     /* Borders */
+    --divider: var(--overlay-10);
     --border-subtle: #1f1f1f;
     --border-muted: #2e2e2e;
     --border: #333333;
@@ -414,6 +415,7 @@
     --bg-surface-5: #d3d9e1;
 
     /* Borders */
+    --divider: var(--overlay-10);
     --border-subtle: #eef0f3;
     --border-muted: #dce1e7;
     --border: #cbd3dc;

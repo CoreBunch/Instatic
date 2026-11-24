@@ -60,11 +60,6 @@ import type {
   EditorFragmentsApi,
   EditorPluginApi,
   EditorPluginModule,
-  FragmentInsertInput,
-  FragmentInsertPlacement,
-  FragmentPlanInput,
-  ThemeApplyInput,
-  ThemePlanInput,
   PluginCanvasOverlay,
   PluginCommand,
   PluginCommandResult,
@@ -77,6 +72,8 @@ import type {
   RegisteredPluginEditorPanel,
   RegisteredPluginToolbarButton,
 } from '@core/plugin-sdk'
+import { assertFragmentPlanInput, assertFragmentInsertInput, assertThemePlanInput, assertThemeApplyInput } from './fragmentInputs'
+import { clearPluginLivePreviews, requestPluginLivePreview } from './livePreview'
 import { assertPluginPermission } from '@core/plugin-sdk'
 import { dashboardWidgetRegistry } from '@core/dashboard'
 
@@ -98,63 +95,8 @@ export function bindPluginRuntimeFragmentsHost(host: EditorFragmentsApi): () => 
   }
 }
 
-const FRAGMENT_PLACEMENTS: ReadonlySet<string> = new Set<FragmentInsertPlacement>(['after-selection', 'inside-selection', 'end'])
 const FRAGMENTS_UNAVAILABLE = 'Open a page or component in the site editor to insert a fragment.'
 const THEME_UNAVAILABLE = 'Open the site editor to apply a theme.'
-
-function assertFragmentPlanInput(input: unknown, method: string): asserts input is FragmentPlanInput {
-  if (!input || typeof input !== 'object') {
-    throw new TypeError(`editor.fragments.${method}: input must be an object`)
-  }
-  if (!('fragment' in input) || input.fragment === undefined || input.fragment === null) {
-    throw new TypeError(`editor.fragments.${method}: input.fragment is required`)
-  }
-  const sources = (input as { colorSources?: unknown }).colorSources
-  if (sources !== undefined && (!sources || typeof sources !== 'object' || Array.isArray(sources)
-    || Object.values(sources).some((v) => typeof v !== 'string'))) {
-    throw new TypeError(`editor.fragments.${method}: input.colorSources must map colour slugs to colour slugs`)
-  }
-}
-
-function assertFragmentInsertInput(input: unknown): asserts input is FragmentInsertInput {
-  assertFragmentPlanInput(input, 'insert')
-  const placement = (input as { placement?: unknown }).placement
-  if (placement !== undefined && !FRAGMENT_PLACEMENTS.has(placement as string)) {
-    throw new TypeError(`editor.fragments.insert: input.placement must be one of ${[...FRAGMENT_PLACEMENTS].join(', ')}`)
-  }
-  assertCommitOptions(input, 'insert')
-}
-
-function assertThemePlanInput(input: unknown, method: string): asserts input is ThemePlanInput {
-  if (!input || typeof input !== 'object') {
-    throw new TypeError(`editor.fragments.${method}: input must be an object`)
-  }
-  if (!('theme' in input) || input.theme === undefined || input.theme === null) {
-    throw new TypeError(`editor.fragments.${method}: input.theme is required`)
-  }
-}
-
-function assertThemeApplyInput(input: unknown): asserts input is ThemeApplyInput {
-  assertThemePlanInput(input, 'applyTheme')
-  assertCommitOptions(input, 'applyTheme')
-}
-
-/** The options an insert and a theme share: the media reader, progress, cancellation, toast. */
-function assertCommitOptions(input: object, method: string): void {
-  const value = input as Partial<Record<keyof FragmentInsertInput, unknown>>
-  if (typeof value.readMediaBytes !== 'function') {
-    throw new TypeError(`editor.fragments.${method}: input.readMediaBytes must be a function`)
-  }
-  if (value.onProgress !== undefined && typeof value.onProgress !== 'function') {
-    throw new TypeError(`editor.fragments.${method}: input.onProgress must be a function`)
-  }
-  if (value.signal !== undefined && !(value.signal instanceof AbortSignal)) {
-    throw new TypeError(`editor.fragments.${method}: input.signal must be an AbortSignal`)
-  }
-  if (value.silent !== undefined && typeof value.silent !== 'boolean') {
-    throw new TypeError(`editor.fragments.${method}: input.silent must be a boolean`)
-  }
-}
 
 /**
  * Icon-name → component resolver injected by the admin shell at boot.
@@ -236,6 +178,7 @@ class PluginRuntime {
    * the next time a getter is called.
    */
   private toolbarButtonsSnapshot: RegisteredPluginToolbarButton[] | null = null
+  private dockCommandsSnapshot: PluginCommand[] | null = null
   private panelsSnapshot: RegisteredPluginEditorPanel[] | null = null
   private canvasOverlaysSnapshot: RegisteredPluginCanvasOverlay[] | null = null
 
@@ -247,6 +190,8 @@ class PluginRuntime {
   }
 
   reset(): void {
+    clearPluginLivePreviews()
+    this.dockCommandsSnapshot = null
     this.commands.clear()
     this.toolbarButtons.clear()
     this.panels.clear()
@@ -281,6 +226,8 @@ class PluginRuntime {
    * case (e.g. admin disabling a plugin from the Plugins page).
    */
   deactivatePlugin(pluginId: string): void {
+    clearPluginLivePreviews(pluginId)
+    this.dockCommandsSnapshot = null
     for (const [key, cmd] of this.commands) {
       if (cmd.pluginId === pluginId) this.commands.delete(key)
     }
@@ -334,6 +281,7 @@ class PluginRuntime {
   }
 
   registerCommand(pluginId: string, command: PluginCommand): void {
+    this.dockCommandsSnapshot = null
     this.commands.set(command.id, { ...command, pluginId })
     this.emit()
   }
@@ -362,6 +310,13 @@ class PluginRuntime {
    */
   getPluginCommands(): ReadonlyArray<PluginCommand & { pluginId: string }> {
     return [...this.commands.values()]
+  }
+
+  getSiteDockCommands(): readonly PluginCommand[] {
+    return this.dockCommandsSnapshot ??= [...this.commands.values()].filter(command =>
+      command.showInSiteDock && !command.destructive && !command.args?.length &&
+      (!command.workspaces || command.workspaces.includes('site') || command.workspaces.includes('any')),
+    )
   }
 
   /**
@@ -568,6 +523,10 @@ export function createEditorPluginApi(
         },
       },
       canvas: {
+        requestLivePreview() {
+          assertPluginPermission(manifest, 'editor.canvas')
+          return requestPluginLivePreview(manifest.id)
+        },
         registerOverlay(overlay) {
           assertPluginPermission(manifest, 'editor.canvas')
           pluginRuntime.registerCanvasOverlay(manifest, overlay)
@@ -594,6 +553,22 @@ export function createEditorPluginApi(
         },
       },
       fragments: {
+        canvasDropAt(x, y) {
+          assertPluginPermission(manifest, 'editor.fragments')
+          if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+          const host = fragmentsHost
+          const drop = host?.canvasDropAt(x, y)
+          if (!drop) return null
+          return {
+            preview: drop.preview,
+            async insert(input) {
+              assertPluginPermission(manifest, 'editor.fragments')
+              assertFragmentInsertInput(input)
+              if (host !== fragmentsHost) return { ok: false, stage: 'unavailable', message: FRAGMENTS_UNAVAILABLE }
+              return drop.insert(input)
+            },
+          }
+        },
         watchPreviewStyles(onChange) {
           assertPluginPermission(manifest, 'editor.fragments')
           if (typeof onChange !== 'function') {

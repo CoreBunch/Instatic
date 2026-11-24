@@ -62,7 +62,7 @@ import {
   listMemberSessions,
   revokeAllMemberSessions,
   revokeMemberSession,
-  type MemberSession,
+  type SignedInMember,
 } from './sessions'
 import { consumeMemberToken, issueMemberToken, withdrawMemberTokens } from './tokens'
 
@@ -74,12 +74,6 @@ export interface MemberActionContext extends MemberEventContext {
   linkOrigin: string | null
   /** Can an email with a link be delivered at all right now? */
   mailAvailable: boolean
-}
-
-/** A signed-in caller: the member and the session they came in on. */
-export interface SignedInMember {
-  member: MemberRecord
-  session: MemberSession
 }
 
 export type MemberSuccessCode =
@@ -133,13 +127,13 @@ function limited(retryAfterMs: number): MemberOutcome {
  * never left without a way in: the last link sent is still in their inbox
  * and still valid, because a refused request issues no new token.
  */
-function mailAllowedTo(email: string, kind: string): boolean {
+export function mailAllowedTo(email: string, kind: string): boolean {
   const recipient = normalizeMemberEmail(email)
   if (!memberLimits.mailPerRecipientKind.consume(`${kind}|${recipient}`).ok) return false
   return memberLimits.mailPerRecipient.consume(recipient).ok
 }
 
-function emailProblem(email: string): MemberOutcome | null {
+export function emailProblem(email: string): MemberOutcome | null {
   const trimmed = email.trim()
   if (!trimmed || trimmed.length > MEMBER_EMAIL_MAX_LENGTH || !ADDRESS_RE.test(trimmed)) {
     return fail('invalid_input', 'email')

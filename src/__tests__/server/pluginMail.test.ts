@@ -23,6 +23,7 @@ import {
 } from '@core/mail'
 import { hookBus } from '@core/plugins/hookBus'
 import { parsePluginManifest } from '@core/plugins/manifest'
+import { installPlugin } from '../../../server/repositories/plugins'
 import { undeclaredMailVariables } from '@core/plugins/manifestMail'
 import { configurePublicOrigins, resetPublicOrigins } from '../../../server/auth/security'
 import { handleCmsRequest } from '../../../server/handlers/cms'
@@ -271,6 +272,34 @@ describe('email for plugins', () => {
       expect((await listMailActivity(h.db)).entries[0]).toMatchObject({
         kind: REPLY_KEY, kindLabel: 'Ticket reply', subject: 'Re: Publishing stops at 80%',
       })
+    })
+
+    it('keeps sending off through wording resets and upgrades, and suppresses member, external and test mail', async () => {
+      await install(BOTH)
+      const path = `/admin/api/cms/mail/templates/${REPLY_KEY}`
+      const toggle = (sendingEnabled: boolean) => h.cms(`${path}/sending`, {
+        method: 'PUT', cookie: owner, json: { sendingEnabled },
+      })
+      const member = await activeMember()
+      const variables = { subject: 'Hello', link: 'https://example.com/t/1' }
+      expect((await toggle(false)).status).toBe(200)
+      await h.cms(path, { method: 'PUT', cookie: owner, json: { subject: 'Edited', body: 'Edited' } })
+      await h.cms(path, { method: 'DELETE', cookie: owner })
+      expect((await install(BOTH, { version: '1.1.0' })).status).toBeLessThan(300)
+      expect((await templates()).find((template) => template.key === REPLY_KEY)).toMatchObject({
+        sendingEnabled: false, customised: false,
+      })
+      for (const to of [{ member }, { address: 'reader@example.com' }]) {
+        expect(await send({ template: 'ticket.reply', to, variables })).toEqual({ status: 'disabled' })
+      }
+      expect((await h.cms(`${path}/test`, {
+        method: 'POST', cookie: owner, json: { to: 'owner@example.com' },
+      })).status).toBe(422)
+      expect((await listMailActivity(h.db)).entries).toHaveLength(0)
+      expect(await send({ template: 'ticket.opened', to: { member }, variables: { subject: 'Hello' } }))
+        .toEqual({ status: 'captured' })
+      expect((await toggle(true)).status).toBe(200)
+      expect(await send({ template: 'ticket.reply', to: { member }, variables })).toEqual({ status: 'captured' })
     })
 
     it('keeps the owner\'s wording across an upgrade and uses it when the plugin sends', async () => {
@@ -1398,6 +1427,11 @@ describe('email for plugins', () => {
   describe('two plugins with related ids', () => {
     it('keeps `acme.desk` from touching the templates of `acme.desk.pro`', async () => {
       await install(BOTH)
+      // Such a pair can no longer be installed side by side; a site may still
+      // hold one from before. Put the second plugin's row in place the way an
+      // old install left it, then let its package through as a re-install.
+      const proManifest = parsePluginManifest({ ...manifest(BOTH), id: 'acme.desk.pro', name: 'Desk Pro', version: '0.9.0' })
+      await installPlugin(h.db, proManifest, proManifest.permissions)
       const pro = zipSync({
         'plugin.json': strToU8(JSON.stringify({ ...manifest(BOTH), id: 'acme.desk.pro', name: 'Desk Pro' })),
         'server/index.js': strToU8('export function activate() {}'),
@@ -1411,7 +1445,8 @@ describe('email for plugins', () => {
         headers: { get: (name: string) => (name.toLowerCase() === 'cookie' ? owner : null) },
         formData: async () => formData,
       } as unknown as Request
-      expect((await handleCmsRequest(req, h.db, { uploadsDir })).status).toBe(201)
+      // 200: an upgrade of the row above, not a fresh install.
+      expect((await handleCmsRequest(req, h.db, { uploadsDir })).status).toBe(200)
       const proKey = 'plugin.acme.desk.pro~ticket.reply'
       await h.cms(`/admin/api/cms/mail/templates/${proKey}`, {
         method: 'PUT', cookie: owner, json: { subject: 'Pro wording', body: 'Pro' },

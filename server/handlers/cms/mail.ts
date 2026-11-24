@@ -9,6 +9,7 @@
  *   PUT    /admin/api/cms/mail/defaults                 — default connector and sender (step-up)
  *   GET    /admin/api/cms/mail/templates                — every template, with edits applied
  *   PUT    /admin/api/cms/mail/templates/:key           — save a template's wording (step-up)
+ *   PUT    /admin/api/cms/mail/templates/:key/sending   — turn sending on or off (step-up)
  *   DELETE /admin/api/cms/mail/templates/:key           — back to the built-in wording (step-up)
  *   POST   /admin/api/cms/mail/templates/:key/test      — send it with sample values
  *   GET    /admin/api/cms/mail/activity?status=         — the delivery log
@@ -29,6 +30,7 @@ import {
   MailConnectorSecretInputSchema,
   MailDefaultsSchema,
   MailTemplateInputSchema,
+  MailTemplateSendingSchema,
   MailTestInputSchema,
   TEST_MAIL_TEMPLATE_KEY,
   getMailTemplateDefinition,
@@ -47,12 +49,13 @@ import {
   MailSecretUnreadableError,
   setMailConnectorSecret,
 } from '../../mail/connectors'
-import { wakeMailQueue } from '../../mail/delivery'
+import { setMailTemplateSending, wakeMailQueue } from '../../mail/delivery'
 import { getMailDefaults, saveMailDefaults } from '../../mail/defaults'
 import {
   buildTemplateMail,
   mailDeliveryMode,
   MailNotConfiguredError,
+  MailTemplateDisabledError,
   sendConnectorTest,
   sendSiteMail,
 } from '../../mail/send'
@@ -94,6 +97,7 @@ async function gate(req: Request, db: DbClient, stepUp: boolean): Promise<AuthUs
 /** A delivery failure as a response: a safe sentence for the ones we understand. */
 function deliveryFailure(err: unknown): Response {
   if (
+    err instanceof MailTemplateDisabledError ||
     err instanceof MailDeliveryError ||
     err instanceof MailNotConfiguredError ||
     err instanceof MailSecretUnreadableError
@@ -239,6 +243,24 @@ async function handleSaveTemplate(req: Request, db: DbClient, params: RouteParam
   return jsonResponse({ template: await getMailTemplate(db, params.key) })
 }
 
+async function handleTemplateSending(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
+  const user = await gate(req, db, true)
+  if (user instanceof Response) return user
+  if (!getMailTemplateDefinition(params.key)) return notFound('Template')
+  const input = await readValidatedBody(req, MailTemplateSendingSchema)
+  if (!input) return badRequest('Choose whether to send this email template')
+  await setMailTemplateSending(db, params.key, input.sendingEnabled)
+  await createAuditEvent(db, {
+    actorUserId: user.id,
+    action: 'mail.template.update',
+    targetType: 'mail_template',
+    targetId: params.key,
+    metadata: { sendingEnabled: input.sendingEnabled },
+    ...requestAuditContext(req),
+  })
+  return jsonResponse({ template: await getMailTemplate(db, params.key) })
+}
+
 async function handleResetTemplate(req: Request, db: DbClient, params: RouteParams): Promise<Response> {
   const user = await gate(req, db, true)
   if (user instanceof Response) return user
@@ -301,9 +323,10 @@ const CONNECTOR = new RegExp(`^${MAIL_PREFIX}/connectors/(?<id>[^/]+)$`)
 const CONNECTOR_SECRET = new RegExp(`^${MAIL_PREFIX}/connectors/(?<id>[^/]+)/secret$`)
 const CONNECTOR_TEST = new RegExp(`^${MAIL_PREFIX}/connectors/(?<id>[^/]+)/test$`)
 const TEMPLATE = new RegExp(`^${MAIL_PREFIX}/templates/(?<key>[^/]+)$`)
+const TEMPLATE_SENDING = new RegExp(`^${MAIL_PREFIX}/templates/(?<key>[^/]+)/sending$`)
 const TEMPLATE_TEST = new RegExp(`^${MAIL_PREFIX}/templates/(?<key>[^/]+)/test$`)
 
-const ROUTES: Route<[]>[] = [
+export const MAIL_ROUTES: Route<[]>[] = [
   { method: 'GET', pattern: MAIL_PREFIX, handler: handleOverview },
   { method: 'POST', pattern: `${MAIL_PREFIX}/connectors`, handler: handleCreateConnector },
   { method: 'DELETE', pattern: CONNECTOR, handler: handleDeleteConnector },
@@ -311,6 +334,7 @@ const ROUTES: Route<[]>[] = [
   { method: 'POST', pattern: CONNECTOR_TEST, handler: handleTestConnector },
   { method: 'PUT', pattern: `${MAIL_PREFIX}/defaults`, handler: handleSaveDefaults },
   { method: 'GET', pattern: `${MAIL_PREFIX}/templates`, handler: handleListTemplates },
+  { method: 'PUT', pattern: TEMPLATE_SENDING, handler: handleTemplateSending },
   { method: 'PUT', pattern: TEMPLATE, handler: handleSaveTemplate },
   { method: 'DELETE', pattern: TEMPLATE, handler: handleResetTemplate },
   { method: 'POST', pattern: TEMPLATE_TEST, handler: handleTestTemplate },
@@ -318,5 +342,5 @@ const ROUTES: Route<[]>[] = [
 ]
 
 export function handleMailRoutes(req: Request, db: DbClient): Promise<Response | null> {
-  return runRouteTable(req, db, ROUTES)
+  return runRouteTable(req, db, MAIL_ROUTES)
 }

@@ -70,6 +70,7 @@ import {
   captureAllowed,
   carryThroughConnector,
   MailNotConfiguredError,
+  MailTemplateDisabledError,
   MailTemplateInvalidError,
   MailVariableMissingError,
   readyToSend,
@@ -119,7 +120,8 @@ export interface QueueTemplateMailInput {
 
 /**
  * Accept an email for delivery. Resolves `queued` once it is safely stored,
- * or `captured` on a development server with no connector. Throws
+ * `captured` on a development server with no connector, or `disabled` when
+ * the owner has turned off this template. Throws
  * `MailNotConfiguredError` in production when email is not set up, and
  * `MailDeliveryError` for a recipient or subject that could add headers:
  * both are known before anything is queued.
@@ -128,10 +130,16 @@ export async function queueTemplateMail(
   db: DbClient,
   input: QueueTemplateMailInput,
   deps: Pick<SendDeps, 'env'> = {},
-): Promise<'queued' | 'captured'> {
+): Promise<'queued' | 'captured' | 'disabled'> {
   // Rendering now proves the template exists and gives the log its subject.
   // The email is rendered again when it is sent, with the wording of then.
-  const mail = await buildTemplateMail(db, input)
+  let mail
+  try {
+    mail = await buildTemplateMail(db, input)
+  } catch (err) {
+    if (err instanceof MailTemplateDisabledError) return 'disabled'
+    throw err
+  }
   assertSendable(mail)
   const log = {
     kind: mail.kind,
@@ -308,6 +316,9 @@ async function attemptQueuedMail(db: DbClient, mail: QueuedMail, deps: DrainDeps
     rendered = await buildTemplateMail(db, { key: mail.kind, to: mail.to, variables }, 'deliver')
     assertSendable(rendered)
   } catch (err) {
+    if (err instanceof MailTemplateDisabledError) {
+      return { sent: false, message: err.message, retry: 'never', reason: 'template_disabled' }
+    }
     // The template no longer renders a sendable message. Another try would
     // end the same way, and nothing is sent with a variable left in it.
     return {
@@ -439,18 +450,37 @@ export async function discardQueuedMail(
   error: string,
   reason: MailFailureReason | null,
 ): Promise<void> {
-  const discarded = await db.transaction(async (tx) => {
-    const removed: QueuedMail[] = []
-    for (const mail of await listQueuedMailBy(tx, column, value)) {
-      const gone = await tx`delete from mail_queue where id = ${mail.id} and accepted_at is null and claimed_at is null`
-      if (gone.rowCount === 0) continue
-      if (mail.source !== CORE_MAIL_SOURCE) await releaseBacklogSlot(tx, mail.source)
-      await updateMailProgress(tx, mail.outboxId, { status: 'failed', attempts: mail.attempts, error })
-      removed.push(mail)
-    }
-    return removed
-  })
+  const discarded = await db.transaction((tx) => removeWaitingMail(tx, column, value, error))
   if (reason !== null) for (const mail of discarded) announceOutcome(db, mail, 'failed', reason)
+}
+
+export async function setMailTemplateSending(db: DbClient, key: string, enabled: boolean): Promise<void> {
+  if (enabled) {
+    await db`delete from disabled_mail_templates where template_key = ${key}`
+    return
+  }
+  const removed = await db.transaction(async (tx) => {
+    await tx`insert into disabled_mail_templates (template_key) values (${key}) on conflict (template_key) do nothing`
+    return removeWaitingMail(tx, 'kind', key, new MailTemplateDisabledError().message)
+  })
+  for (const mail of removed) announceOutcome(db, mail, 'failed', 'template_disabled')
+}
+
+async function removeWaitingMail(
+  tx: DbClient,
+  column: 'source' | 'member_id' | 'kind',
+  value: string,
+  error: string,
+): Promise<QueuedMail[]> {
+  const removed: QueuedMail[] = []
+  for (const mail of await listQueuedMailBy(tx, column, value)) {
+    const gone = await tx`delete from mail_queue where id = ${mail.id} and accepted_at is null and claimed_at is null`
+    if (gone.rowCount === 0) continue
+    if (mail.source !== CORE_MAIL_SOURCE) await releaseBacklogSlot(tx, mail.source)
+    await updateMailProgress(tx, mail.outboxId, { status: 'failed', attempts: mail.attempts, error })
+    removed.push(mail)
+  }
+  return removed
 }
 
 /** A deleted member is not written to: what was queued for them is dropped. */

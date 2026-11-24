@@ -85,8 +85,6 @@ export const MergeFieldChangeSchema = Type.Object({
   before: Type.Union([Type.String(), Type.Null()]),
   /** Value on the contributing side (`from`), null when absent there. */
   after: Type.Union([Type.String(), Type.Null()]),
-  /** True when either value is an object or array shown as a JSON preview. */
-  structured: Type.Boolean(),
   /** True when this field is one both sides changed differently. */
   conflict: Type.Boolean(),
 })
@@ -294,7 +292,10 @@ export const DeclineMergeRequestBodySchema = Type.Object({
 export type DeclineMergeRequestBody = Static<typeof DeclineMergeRequestBodySchema>
 
 export const CreateReviewCommentBodySchema = Type.Object({
-  entityKey: Type.String({ maxLength: 400 }),
+  entityKey: Type.String({
+    maxLength: 400, pattern: '^(?:(?:row|table|site|file):.+)?$',
+    description: 'Use the exact plan.changes[].key from GET branches/:id/merge, or an empty string for the general conversation.',
+  }),
   body: Type.String({ minLength: 1, maxLength: REVIEW_COMMENT_MAX_LENGTH }),
 }, { additionalProperties: false })
 export type CreateReviewCommentBody = Static<typeof CreateReviewCommentBodySchema>

@@ -13,6 +13,8 @@ import { requestCmsSiteReload } from '@admin/state/adminEvents'
 import { cmsAdapter } from '@core/persistence/cms'
 import type { SiteDocument } from '@core/page-tree'
 import { useEditorStore } from '@site/store/store'
+import { currentBranchId } from '@admin/state/activeBranch'
+import { useBranchStore } from '@admin/state/branchStore'
 import { makeSite } from '../fixtures'
 
 /** Minimal Settings section: shows the site name and renames it on click. */
@@ -52,6 +54,7 @@ beforeEach(() => {
 })
 afterEach(() => {
   cleanup()
+  useBranchStore.getState().setActiveBranch('main')
   cmsAdapter.loadSite = originalLoad
   cmsAdapter.saveSite = originalSave
 })
@@ -162,5 +165,61 @@ it('refreshes the real General settings inputs after an outside write', async ()
     expect((screen.getByLabelText('Meta Title') as HTMLInputElement).value).toBe('Imported title')
     expect((screen.getByLabelText('Meta Description') as HTMLTextAreaElement).value).toBe('Imported description')
     expect((screen.getByLabelText('Language') as HTMLInputElement).value).toBe('fr')
+  })
+})
+
+describe('Settings outside the Site editor after a branch switch', () => {
+  const mainSite = makeSite({ name: 'Main site' })
+  const branchSite = makeSite({ name: 'Branch site' })
+
+  beforeEach(() => {
+    cmsAdapter.loadSite = async () => {
+      loads++
+      return { site: currentBranchId() === 'main' ? mainSite : branchSite, rowSeqs: {}, shellSeq: loads }
+    }
+  })
+
+  it('never saves the previous branch\'s cached document into the active branch', async () => {
+    const saved: Array<{ branch: string; name: string }> = []
+    cmsAdapter.saveSite = async (doc) => {
+      saved.push({ branch: currentBranchId(), name: doc.name })
+      return { seq: 100 }
+    }
+    const first = render(<SiteNameProbe />)
+    expect(await shownName()).toBe('Main site')
+    first.unmount()
+
+    useBranchStore.getState().setActiveBranch('feature')
+    render(<SiteNameProbe />)
+    await waitFor(async () => expect(await shownName()).toBe('Branch site'))
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }))
+    await waitFor(() => expect(saved.length).toBe(1))
+    expect(saved[0]).toEqual({ branch: 'feature', name: 'Branch site+' })
+  })
+
+  it('saves both queued edits to their original branch after a switch', async () => {
+    render(<SiteNameProbe />)
+    expect(await shownName()).toBe('Main site')
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((r) => { release = r })
+    const saved: Array<{ branch: string; name: string }> = []
+    const bases: Array<number | undefined> = []
+    cmsAdapter.saveSite = async (doc, opts) => {
+      bases.push(opts?.shellBaseSeq)
+      saved.push({ branch: opts?.branchId ?? currentBranchId(), name: doc.name })
+      if (saved.length === 1) await gate
+      return { seq: 100 }
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Rename' }))
+    await waitFor(() => expect(saved.length).toBe(1))
+    useBranchStore.getState().setActiveBranch('feature')
+    release?.()
+    await waitFor(async () => expect(await shownName()).toBe('Branch site'))
+    expect(bases[1]).toBe(100)
+    expect(saved).toEqual([
+      { branch: 'main', name: 'Main site+' },
+      { branch: 'main', name: 'Main site++' },
+    ])
   })
 })

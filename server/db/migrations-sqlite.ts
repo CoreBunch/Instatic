@@ -1930,4 +1930,71 @@ export const sqliteMigrations: Migration[] = [
         on media_assets (content_hash);
     `,
   },
+  {
+    id: '041_service_accounts',
+    sql: `
+      create table service_accounts (
+        id text primary key references users(id),
+        owner_id text not null references users(id),
+        label text not null,
+        capabilities_json text not null,
+        expires_at text not null,
+        revoked_at text,
+        token_hash text unique,
+        code_hash text unique,
+        code_challenge text,
+        code_expires_at text
+      );
+      create index service_accounts_owner_idx on service_accounts(owner_id);
+    `,
+  },
+  {
+    id: '042_service_account_step_up',
+    sql: `
+      alter table service_accounts add column pending_step_up_expires_at text;
+      alter table service_accounts add column token_step_up_expires_at text;
+    `,
+  },
+  {
+    id: '043_service_account_activity',
+    sql: `
+      create table service_account_activity (
+        id text primary key,
+        account_id text not null references service_accounts(id) on delete cascade,
+        title text not null,
+        scope text,
+        http_status integer not null,
+        occurred_at text not null
+      );
+      create index service_account_activity_account_idx on service_account_activity(account_id, occurred_at desc, id);
+    `,
+  },
+  {
+    id: '044_service_account_capability_arrays',
+    sql: `
+      select 1; -- SQLite already stores these grants as JSON arrays.
+    `,
+  },
+  {
+    id: '045_member_app_pairing',
+    sql: `
+      create table if not exists member_app_pairs (
+        request_hash text primary key references member_app_requests(id_hash) on delete cascade,
+        device_hash text unique not null,
+        display_code text not null,
+        email_hash text,
+        email_member_id text references members(id) on delete cascade,
+        email_address text,
+        decision text
+      );
+    `,
+  },
+  {
+    id: '046_disabled_mail_templates',
+    sql: `
+      create table disabled_mail_templates (
+        template_key text primary key
+      );
+    `,
+  },
 ]

@@ -122,6 +122,7 @@ interface PluginsWorkspaceVM extends WorkspaceLoadState {
   // Async actions.
   loadPlugins: () => Promise<void>
   handleUpload: (event: ChangeEvent<HTMLInputElement>) => Promise<void>
+  reviewFile: (file: File, expected?: { id: string; version: string }) => Promise<void>
   installPendingPlugin: (
     pending: PendingInstall,
     grantedPermissions?: PluginPermission[],
@@ -305,8 +306,10 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
   async function handleUpload(event: ChangeEvent<HTMLInputElement>): Promise<void> {
     const file = event.currentTarget.files?.[0]
     event.currentTarget.value = ''
-    if (!file) return
+    if (file) await reviewFile(file)
+  }
 
+  async function reviewFile(file: File, expected?: { id: string; version: string }) {
     setUploading(true)
     setError(null)
     try {
@@ -314,6 +317,10 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
       const manifest = isZip
         ? await inspectCmsPluginPackage(file)
         : parsePluginManifest(JSON.parse(await file.text()))
+
+      if (expected && (expected.id !== manifest.id || expected.version !== manifest.version)) {
+        throw new Error('The update package does not match the offered plugin and version.')
+      }
 
       // Detect upgrade vs. reinstall vs. fresh install client-side so the
       // confirmation dialog can say which one is about to happen. The server
@@ -495,6 +502,7 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
     setRemoveFailure,
     loadPlugins,
     handleUpload,
+    reviewFile,
     installPendingPlugin,
     togglePlugin,
     restartPlugin,

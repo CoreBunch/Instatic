@@ -169,7 +169,7 @@
 
 .builtInDivider {
     height: 1px;
-    background: var(--border);
+    background: var(--divider);
     margin-top: var(--space-3xs);
 }
 

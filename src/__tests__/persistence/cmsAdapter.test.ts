@@ -336,12 +336,14 @@ describe('CmsAdapter conflict protocol', () => {
         'unrelated-row': 99, // not shipped — must not leak onto the wire
       },
       shellBaseSeq: 7,
+      branchId: 'main',
     })
 
     expect(result.seq).toBe(9)
     const body = JSON.parse(String(calls[0].init?.body)) as Record<string, unknown>
     expect(body.baseSeqs).toEqual({ page_home: 4, 'vc-gone': 5 })
     expect(body.shellBaseSeq).toBe(7)
+    expect(new Headers(calls[0].init?.headers).get('X-Instatic-Branch')).toBe('main')
   })
 
   it('throws SaveConflictError with the parsed conflicts on a 409', async () => {

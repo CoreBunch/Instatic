@@ -12,10 +12,9 @@
  * gate enforces full coverage so a new capability can't quietly disappear from
  * the role-edit UI.
  */
-import type { CoreCapability } from '@core/capabilities'
-import type { CapabilityGroup } from '../types'
+import type { CapabilityPickerGroup } from './CapabilityPicker'
 
-export const CAPABILITY_GROUPS: CapabilityGroup[] = [
+export const CAPABILITY_GROUPS: readonly CapabilityPickerGroup[] = [
   { title: 'Dashboard', capabilities: ['dashboard.read'] },
   {
     title: 'Site',
@@ -73,12 +72,3 @@ export const CAPABILITY_GROUPS: CapabilityGroup[] = [
   { title: 'Email', capabilities: ['mail.manage'] },
   { title: 'Members', capabilities: ['members.read', 'members.manage'] },
 ]
-
-/**
- * Flat list of every capability rendered by the role-edit dialog, in the
- * order defined by `CAPABILITY_GROUPS`. Used for the dialog's "select all
- * across every group" master toggle.
- */
-export const ALL_PICKER_CAPABILITIES: readonly CoreCapability[] = CAPABILITY_GROUPS.flatMap(
-  (group) => group.capabilities,
-)

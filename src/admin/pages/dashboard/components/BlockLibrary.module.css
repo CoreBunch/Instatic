@@ -26,7 +26,7 @@
        before this rule runs. */
     height: var(--lib-height);
     background: var(--bg-surface);
-    border-top: 1px solid var(--overlay-10);
+    border-top: 1px solid var(--divider);
     box-shadow: 0 -16px 48px var(--scrim-50);
     display: flex;
     flex-direction: column;
@@ -239,7 +239,7 @@
     align-items: center;
     gap: var(--space-2xl);
     padding: var(--space-xl) var(--space-4xl) var(--space-l);
-    border-bottom: 1px solid var(--overlay-10);
+    border-bottom: 1px solid var(--divider);
 }
 
 .title h3 {
@@ -502,7 +502,7 @@
     gap: var(--space-m);
     padding: var(--space-s) var(--space-l);
     background: var(--bg-surface);
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--divider);
 }
 
 .itemMeta {

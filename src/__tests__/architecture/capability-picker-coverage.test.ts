@@ -12,8 +12,9 @@
 
 import { describe, expect, it } from 'bun:test'
 import { CORE_CAPABILITIES } from '@core/capabilities'
-import { ALL_PICKER_CAPABILITIES } from '@admin/pages/users/utils/capabilities'
-import { CAPABILITY_META } from '@admin/shared/CapabilityPicker'
+import { CAPABILITY_GROUPS, CAPABILITY_META } from '@admin/shared/CapabilityPicker'
+
+const pickerCapabilities = CAPABILITY_GROUPS.flatMap(group => group.capabilities)
 
 describe('capability picker coverage', () => {
   it('every CoreCapability has a CAPABILITY_META entry', () => {
@@ -31,7 +32,7 @@ describe('capability picker coverage', () => {
   })
 
   it('every CoreCapability appears in one CAPABILITY_GROUPS section', () => {
-    const pickerSet = new Set(ALL_PICKER_CAPABILITIES)
+    const pickerSet = new Set(pickerCapabilities)
     const missing = CORE_CAPABILITIES.filter((cap) => !pickerSet.has(cap))
     if (missing.length > 0) {
       throw new Error(
@@ -47,7 +48,7 @@ describe('capability picker coverage', () => {
 
   it('CAPABILITY_GROUPS does not reference unknown capabilities', () => {
     const coreSet = new Set<string>(CORE_CAPABILITIES)
-    const orphans = ALL_PICKER_CAPABILITIES.filter((cap) => !coreSet.has(cap))
+    const orphans = pickerCapabilities.filter((cap) => !coreSet.has(cap))
     if (orphans.length > 0) {
       throw new Error(
         `[capability-picker-coverage] picker references capabilities that ` +

@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react'
+import layout from '@admin/shared/SettingsWorkspace/WorkspaceSection.module.css'
+import { cn } from '@ui/cn'
 import styles from '../AccountPage.module.css'
 
 interface SecurityCardProps {
@@ -19,10 +21,10 @@ export function SecurityCard({
   testId,
 }: SecurityCardProps) {
   return (
-    <div className={styles.card} data-testid={testId}>
+    <div className={cn(layout.detailCard, styles.card)} data-testid={testId}>
       <div className={styles.cardHeader}>
         <div>
-          <h3 className={styles.cardTitle}>{title}</h3>
+          <h2 className={styles.cardTitle}>{title}</h2>
           <p className={styles.cardDesc}>{description}</p>
         </div>
         <div className={styles.cardActions}>{action}</div>

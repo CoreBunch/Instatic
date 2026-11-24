@@ -139,8 +139,30 @@ function openMark(mark: JSONMark): string {
 function closeMark(mark: JSONMark): string {
   if (mark.type === 'link') {
     const href = (mark.attrs?.href ?? '') as string
-    return `](${href})`
+    return `](${linkDestination(href)})`
   }
   if (mark.type === 'underline') return '</u>'
   return MARK_OPEN[mark.type] ?? ''
+}
+
+/**
+ * Write a link URL so the markdown parser reads back exactly the same URL.
+ * A bare CommonMark destination cannot contain whitespace, start with `<`,
+ * have unbalanced parentheses, or keep a backslash literal before punctuation,
+ * so such URLs are written between angle brackets, where only `<`, `>` and `\`
+ * need escaping. Every other URL is written bare, as before.
+ */
+function linkDestination(href: string): string {
+  const fitsBare = !/[\s\\]/.test(href) && !href.startsWith('<') && hasBalancedParentheses(href)
+  if (fitsBare) return href
+  return `<${href.replace(/[\\<>]/g, '\\$&')}>`
+}
+
+function hasBalancedParentheses(text: string): boolean {
+  let depth = 0
+  for (const char of text) {
+    if (char === '(') depth++
+    else if (char === ')' && --depth < 0) return false
+  }
+  return depth === 0
 }

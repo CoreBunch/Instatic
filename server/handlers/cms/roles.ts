@@ -142,7 +142,7 @@ async function handleDeleteRole(
 // Route table + dispatcher
 // ---------------------------------------------------------------------------
 
-const ROLES_ROUTES: readonly Route<[]>[] = [
+export const ROLES_ROUTES: readonly Route<[]>[] = [
   { method: 'GET', pattern: `${CMS_API_PREFIX}/roles`, handler: handleListRoles },
   { method: 'POST', pattern: `${CMS_API_PREFIX}/roles`, handler: handleCreateRole },
   {

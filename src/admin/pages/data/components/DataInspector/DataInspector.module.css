@@ -215,7 +215,7 @@
     gap: var(--space-2xs);
     min-height: 40px;
     padding: var(--space-xs) var(--space-s);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
     background: transparent;
     user-select: none;
 }
@@ -322,7 +322,7 @@
     justify-content: space-between;
     gap: var(--space-l);
     padding: var(--space-3xs) var(--space-s);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
 }
 
 .draftStatus {

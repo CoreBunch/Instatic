@@ -113,7 +113,7 @@ interface PluginRoutePolicy {
   stepUp: boolean
 }
 
-function resolvePluginRoutePolicy(method: string, pathname: string): PluginRoutePolicy {
+export function resolvePluginRoutePolicy(method: string, pathname: string): PluginRoutePolicy {
   // Fresh install / upgrade — uploads + executes arbitrary plugin code. RCE.
   if (method === 'POST' && pathname === '/admin/api/cms/plugins') {
     return { capability: 'plugins.install', stepUp: true }
@@ -198,7 +198,7 @@ function resolvePluginRoutePolicy(method: string, pathname: string): PluginRoute
 
 const PLUGIN_ADMIN_PATH = '/admin/api/cms/plugins'
 
-const PLUGIN_ROUTES: readonly Route<[CmsHandlerOptions, AuthUser]>[] = [
+export const PLUGIN_ROUTES: readonly Route<[CmsHandlerOptions, AuthUser]>[] = [
   { method: 'GET', pattern: PLUGIN_ADMIN_PATH, handler: (req, db, _p, _o, user) => handlePluginsCollection(req, db, user) },
   { method: 'POST', pattern: PLUGIN_ADMIN_PATH, handler: (req, db, _p, _o, user) => handlePluginsCollection(req, db, user) },
   { method: 'POST', pattern: `${PLUGIN_ADMIN_PATH}/inspect-package`, handler: (req) => handleInspectPackage(req) },

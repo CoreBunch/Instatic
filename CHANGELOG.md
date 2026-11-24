@@ -4,6 +4,66 @@ All notable changes to Instatic will be documented here.
 
 This project is pre-1.0. Breaking changes may appear in minor or patch releases until a stable release line exists.
 
+## 0.0.23 - 2026-11-22
+
+Instatic adds site member accounts, transactional email, and reusable site fragments. This release also addresses five security advisories affecting self-hosted installations. Operators with third-party plugins or trusted reverse proxies should review the Security section before upgrading.
+
+### Features
+
+- **Member sites.** Visitors can create accounts, sign in, reset passwords, and manage their profiles on pages you design in the editor. Choose the published pages in Member settings, then restrict pages, collections, or individual elements to signed-in members or people with particular tags.
+- **User directory.** Find administrators and site members in one searchable directory. Invite members by email or link, grant time-limited tags, inspect devices and activity, suspend accounts, or sign someone out everywhere.
+- **Connected apps.** Members can sign in to an app registered by the site owner, see which access it requests, and disconnect it later. Apps can bind a sign-in to a device and request access to a plugin’s member features with explicit approval.
+- **Email workspace.** Connect a mail provider, choose a sender, edit and preview site or plugin email templates, and follow each message in Activity. The delivery queue retries temporary failures and shows which messages are waiting or need attention.
+- **Reusable fragments and themes.** Move a section, page, or Visual Component to another site with its styles, media, and table dependencies. Editor plugins can preview an insertion against the destination’s styles or apply a theme in one undoable step.
+- **Canvas style inspector.** Adjust gradients, corner radii, and other styles directly on the canvas, and save reusable colors to Framework.
+- **Search and social settings.** Page settings now cover search titles, descriptions, canonical URLs, social cards, icons, and structured data, including values brought in by HTML import.
+- **Conditional visibility.** Show an element when a URL query parameter, entry field, or loop item field matches a condition, for example a confirmation message after checkout.
+- **Mobile workspaces.** Tap the current workspace to switch from a bottom sheet. On portrait phones, the explorer docks below the canvas, inspectors can stay closed while you edit, and branch actions fit beside the branch name.
+- **PostgreSQL transfers.** Instatic Desktop and other managers can push, pull, snapshot, and restore PostgreSQL sites, including transfers to and from SQLite. Repeat pushes reuse verified file hashes after a restart.
+- **Plugins for member sites.** Plugins can create or link a member without sending an invitation, manage access tags, and show each visitor their own records. A member’s data export can also include records held by plugins and identifies any contribution that could not be retrieved.
+- **Plugin integrations.** Operators can review which external script and frame origins a plugin requests. Plugins can handle redirects themselves and, with permission, use the caller’s IP address for per-visitor rate limits.
+- **Plugin development.** Plugin records support unique keys and version-checked updates so duplicate deliveries or simultaneous edits are easier to handle.
+- Editor plugins can use the same segmented controls, tag pills, and keyboard hints as the admin.
+
+### Bug fixes
+
+- Published lists now reflect entries as they are published, unpublished, or deleted, including changes made by plugins. Dynamic sections and “Load more” lists inside layouts now resolve in the context of the page being viewed.
+- Published Visual Components retain responsive variants, dimensions, and alt text when an image is overridden. Media-library background images using automatic sizing now render at their original size.
+- Published pages can recover missing runtime packages after a temporary-folder cleanup or container replacement. Browsers also pick up changed form and list scripts after a server upgrade or restart.
+- The editing canvas now loads plugin stylesheets, applies submit-button styles to form controls, and leaves intentionally empty text elements empty. Published stylesheets retain classes emitted by modules.
+- Matching selectors appear as soon as an element is inserted, long selectors stay inside the Styles panel, and data-binding buttons leave switches and number controls clickable. Resetting zoom to 100% keeps the current canvas area in view.
+- Side-by-side branch previews now align at the top, and opening your account in two tabs no longer shows your own cursor as a collaborator. Opening a large collaborative site also does less repeated work during its first sync.
+- The dashboard shows the configured domain and actual publishing status. Publish lineup opens the right entry, shows its public path, and flags overdue scheduled items.
+- Site Import picks up standalone stylesheets, preserves page-specific CSS, and identifies plugin ZIPs so you can install them through Plugins. Imported pages also keep SVG sprite icons, form and link attributes, and the timing of scripts that run in the document head.
+- Re-importing a site now surfaces route and code-file conflicts and reuses matching media. Images in WordPress exports resolve when the archive has an extra enclosing folder.
+- Older site bundles that lack a published version import new entries as drafts. Importing over an existing entry respects its live state and cancels a pending schedule.
+- Plugin loop sources appear in the editor with sample items and retain their natural order until you choose a sort direction. Publishing warns when a missing plugin leaves a list empty.
+- PostgreSQL plugin records now filter and sort by their stored values, including numeric fields. The upgrade repairs existing records where possible and logs any remaining text records that need to be saved again.
+- Re-syncing a plugin pack restores a deleted pack page as a draft.
+- Imported fragments on fresh sites now get the missing type and spacing scales their design uses.
+- Editing a post preserves raw HTML and image URLs, and bold, italic, or struck-through text keeps its formatting beside whitespace.
+- Plugin dashboard widgets receive their settings and permissions in the dashboard, Customize view, and Block Library.
+- A stalled plugin request now times out without stopping other calls in the worker.
+- AI conversations can resume after an interrupted tool call on strict OpenAI-compatible gateways, including DeepSeek.
+- Fixed the packaging job that prevented the 0.0.22 release from providing standalone server downloads.
+
+### Security
+
+- **Plugin secrets, 0.0.1–0.0.22.** An enabled plugin listening for settings changes could receive another plugin’s secret values. If an untrusted plugin could have been listening when settings were saved, disable it, upgrade, rotate the affected credentials at their issuer, and update them in Instatic. [Settings disclosure](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-r7cv-2823-gw6j)
+- **Plugin hooks, 0.0.1–0.0.22.** A plugin with hook access could read or change entries outside its granted tables and receive unpublished preview HTML, including branch previews from 0.0.20 onward. Review drafts saved while an untrusted plugin with hook access was enabled. [Hook permissions](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-v75q-4pjv-gwx6)
+- **Plugin content access, 0.0.1–0.0.22.** A plugin could receive fields from tables it could write but could not read, or move an entry between tables it could write. Review unexpected entry changes and table assignments if an untrusted plugin held these grants. [Content API permissions](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-895v-q9qc-x2mf)
+- **Plugin packs, 0.0.1–0.0.22.** Applying a pack could overwrite page or Visual Component drafts outside the plugin’s namespace. Review revisions around untrusted pack installs, upgrades, and re-syncs, including published content if the site was published afterward. [Pack ownership](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-p8jj-gqx8-f9vw)
+- **Trusted reverse proxies, 0.0.2–0.0.22.** On affected proxy configurations, requests could be attributed to the wrong client, weakening per-IP limits and audit records. Upgrade and use trusted edge logs when reviewing past IP attribution. [Proxy attribution](https://github.com/CoreBunch/Instatic/security/advisories/GHSA-9jj9-j8wh-jqc4)
+
+### Other changes
+
+- **Plugin compatibility.** The plugin entry-move API has been removed. Plugins that need returned entry fields must have read access to that table, and plugins that listen for their own settings changes must read the new values through their settings API.
+- Native OAuth clients can use an available port for a registered loopback IP callback. Reusing an unexpired authorization code now revokes the connection.
+- Admin lists share a consistent empty state, and creation actions in the Site and Code explorers use a plus icon. Notifications move above open dialogs so their footer buttons stay accessible.
+- Running the development server in one checkout no longer reloads the admin when a different worktree changes.
+
+**Deployment guides** · [Docker](https://github.com/CoreBunch/Instatic/blob/main/docs/deployment/docker-image.md) · [VPS](https://github.com/CoreBunch/Instatic/blob/main/docs/deployment/vps.md) · [Railway](https://github.com/CoreBunch/Instatic/blob/main/docs/deployment/railway.md) · [Render](https://github.com/CoreBunch/Instatic/blob/main/docs/deployment/render.md) · [Backup and restore](https://github.com/CoreBunch/Instatic/blob/main/docs/deployment/backup-restore.md)
+
 ## 0.0.22 - 2026-11-16
 
 ### Features

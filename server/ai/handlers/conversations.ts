@@ -35,14 +35,14 @@ import type { ToolScope } from '../runtime/types'
 
 const VALID_SCOPES: ToolScope[] = ['site', 'content', 'data', 'plugin']
 
-const CreateBodySchema = Type.Object({
+export const CreateBodySchema = Type.Object({
   scope: Type.Union(VALID_SCOPES.map((s) => Type.Literal(s))),
   title: Type.Optional(Type.String()),
   credentialId: Type.String({ minLength: 1 }),
   modelId: Type.String({ minLength: 1 }),
 })
 
-const UpdateBodySchema = Type.Object({
+export const UpdateBodySchema = Type.Object({
   title: Type.Optional(Type.String({ minLength: 1 })),
   credentialId: Type.Optional(Type.String({ minLength: 1 })),
   modelId: Type.Optional(Type.String({ minLength: 1 })),

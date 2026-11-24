@@ -116,6 +116,8 @@ export async function memberTokenIsLive(
 
 /** Withdraw every unused token of a member (password change, deletion). */
 export async function withdrawMemberTokens(db: DbClient, memberId: string): Promise<void> {
+  await db`update member_app_pairs set email_hash = null, email_member_id = null, email_address = null
+    where email_member_id = ${memberId} and decision is null`
   await db`
     update member_tokens set used_at = ${nowIso()}
      where member_id = ${memberId} and used_at is null

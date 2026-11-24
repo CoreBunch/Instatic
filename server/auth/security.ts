@@ -409,6 +409,9 @@ export function isCrossSiteFetch(req: Request): boolean {
  *   1. If the socket peer is a configured trusted proxy, walk
  *      `X-Forwarded-For` right-to-left and return the nearest untrusted IP.
  *      That avoids trusting a spoofed leftmost value preserved by the proxy.
+ *      Entries written as `host:port` / `[v6]:port` are read without the
+ *      port; an entry that holds no address stops the walk at the nearest
+ *      trusted hop (never past it).
  *   2. Otherwise ignore forwarding headers and fall back to the synthetic
  *      `x-bun-socket-ip` header that `stampSocketIp` writes from
  *      `server.requestIP(req)`. That covers dev (`bun run dev`) and any
@@ -421,13 +424,38 @@ export function clientIp(req: Request): string | null {
   if (!socketIp) return null
 
   const forwardedFor = req.headers.get('x-forwarded-for')
-  if (forwardedFor && isTrustedProxyPeer(socketIp)) {
-    const chain = forwardedFor.split(',').map((entry) => entry.trim()).filter(Boolean)
-    for (let i = chain.length - 1; i >= 0; i--) {
-      const candidate = chain[i]
-      if (!candidate || !parseIpAddress(candidate)) continue
-      if (!isTrustedProxyPeer(candidate)) return normalizeIpLiteral(candidate)
-    }
+  if (!forwardedFor || !isTrustedProxyPeer(socketIp)) return socketIp
+
+  // Right to left: each entry was written by the hop to its right, the
+  // rightmost by the socket peer. The nearest hop that is not a trusted
+  // proxy is the client. An entry that cannot be read ends the walk at the
+  // last trusted hop: nothing to its left can be vouched for, and skipping
+  // it would hand the answer to whatever the client wrote further left.
+  let nearestTrustedHop = socketIp
+  const chain = forwardedFor.split(',')
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const address = forwardedAddress(chain[i]?.trim() ?? '')
+    if (address === null) return nearestTrustedHop
+    if (!isTrustedProxyPeer(address)) return address
+    nearestTrustedHop = address
   }
-  return socketIp
+  return nearestTrustedHop
+}
+
+/**
+ * The address in one `X-Forwarded-For` entry, normalised, or null when the
+ * entry holds none. Some proxies (Azure Application Gateway, IIS ARR) write
+ * their client as `host:port`, or `[v6]:port`; the port is dropped. A bare
+ * IPv6 address has colons of its own and is never read as `host:port`.
+ */
+function forwardedAddress(entry: string): string | null {
+  const bracketed = /^\[([^\]]+)\](?::(\d{1,5}))?$/.exec(entry)
+  const ipv4WithPort = /^(\d{1,3}(?:\.\d{1,3}){3}):(\d{1,5})$/.exec(entry)
+  const host = bracketed?.[1] ?? ipv4WithPort?.[1] ?? entry
+  const port = bracketed?.[2] ?? ipv4WithPort?.[2]
+  if (port !== undefined && (Number(port) < 1 || Number(port) > 65535)) return null
+  // Validate the wire representation before normalising mapped IPv6 to IPv4.
+  const family = isIP(host)
+  if (!family || (bracketed && family !== 6)) return null
+  return canonicalIp(host)
 }

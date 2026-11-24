@@ -24,7 +24,7 @@ import type { DbClient } from '../../../db/client'
 import { replyApiOk } from '../apiReplies'
 import { buildAdapterShim, runMediaUrlTransformerInWorker } from '../media'
 import type { HostPluginRecord } from '../types'
-import { assertHostPluginPermission } from '../registry'
+import { assertHostPluginPermission, assertOwnsNamespacedId } from '../registry'
 import { upsertMediaAsset } from '../../../media/ingestion'
 
 export async function handleMediaUpsert(
@@ -50,7 +50,7 @@ export async function handleMediaUpsert(
 export async function handleMediaRegisterStorageAdapter(
   msg: ApiCallFor<'cms.media.registerStorageAdapter'>,
   entry: HostPluginRecord,
-  _db: DbClient,
+  db: DbClient,
 ): Promise<void> {
   const [arg] = msg.args
   // Schema-validated, so the cast is for the union narrowing the
@@ -70,7 +70,8 @@ export async function handleMediaRegisterStorageAdapter(
   // so the plugin sees a real exception instead of a silent failure.
   // The outer try/catch in dispatchApiCall converts it to a structured
   // api-call error reply.
-  mediaStorageRegistry.register(adapter)
+  await assertOwnsNamespacedId(db, msg.pluginId, arg.adapterId, 'Media storage adapter')
+  mediaStorageRegistry.register(adapter, msg.pluginId)
   entry.mediaAdapters.push({ pluginId: msg.pluginId, adapterId: arg.adapterId })
   replyApiOk(msg.pluginId, msg.correlationId)
 }
@@ -106,13 +107,14 @@ export async function handleMediaRegisterUrlTransformer(
 export async function handleMediaRegisterVariantDelegate(
   msg: ApiCallFor<'cms.media.registerVariantDelegate'>,
   _entry: HostPluginRecord,
-  _db: DbClient,
+  db: DbClient,
 ): Promise<void> {
   const [arg] = msg.args
   // Persist in the in-memory registry so the admin UI's
   // "Pick a delegate" picker sees it. Election (which delegate
   // actually wins) lives in `active_media_variant_delegate` and
   // is managed by the admin API in `server/handlers/cms/mediaStorageAdmin.ts`.
+  await assertOwnsNamespacedId(db, msg.pluginId, arg.delegateId, 'Media variant delegate')
   mediaVariantDelegateRegistry.register({
     id: arg.delegateId,
     pluginId: msg.pluginId,

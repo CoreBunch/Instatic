@@ -1,3 +1,4 @@
+import { PAIR_FORM_ACTION } from '@core/members'
 import type { ModuleComponentProps } from '@core/module-engine'
 import { normalizeHtmlAttributes } from '@core/htmlAttributes'
 import { useCanvasHiddenAttribute, useCanvasHtmlAttributes } from '@modules/base/shared/useCanvasHtmlAttributes'
@@ -92,6 +93,7 @@ export function FormEditor({ children, mcClassName, nodeWrapperProps, props }: M
       {...useCanvasHiddenAttribute(normalizeHtmlAttributes(props.htmlAttributes).hidden)}
       {...nodeWrapperProps}
       className={mcClassName}
+      onSubmit={props.memberAction === PAIR_FORM_ACTION ? event => event.preventDefault() : undefined}
       data-instatic-form-id={formId}
       data-instatic-form-editor-preview={previewState !== 'default' ? previewState : undefined}
       data-instatic-form-state={runtimeState !== 'default' ? runtimeState : undefined}
@@ -216,7 +218,7 @@ export function RadioEditor({ mcClassName, nodeWrapperProps, props }: ModuleComp
 }
 
 export function SubmitEditor({ mcClassName, nodeWrapperProps, props, children }: ModuleComponentProps<SubmitProps>) {
-  const formId = normalizeIdentifierValue(props.formId)
+  const formId = normalizeIdentifierValue(props.formId ?? '')
   const childCount = Array.isArray(children) ? children.length : children != null ? 1 : 0
   return (
     <button

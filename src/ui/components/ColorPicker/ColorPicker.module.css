@@ -215,7 +215,7 @@
     flex-direction: column;
     gap: var(--space-2xs);
     padding-top: var(--space-2xs);
-    border-top: 1px solid var(--border-muted);
+    border-top: 1px solid var(--divider);
 }
 
 .tokenList {

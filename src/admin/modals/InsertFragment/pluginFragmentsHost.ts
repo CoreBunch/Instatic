@@ -14,6 +14,8 @@
  */
 
 import {
+  placeFragmentLayout,
+  loadFragmentAssets,
   FragmentCommitError,
   FragmentInsertError,
   parseSiteFragment,
@@ -21,6 +23,7 @@ import {
   type SiteTheme,
   type ThemeApplyPlan,
 } from '@core/fragments'
+import type { EditorFragmentPlacement } from '@site/store/slices/fragmentsSlice'
 import type {
   FragmentInsertFailureStage,
   FragmentInsertInput,
@@ -47,7 +50,9 @@ import {
   toastFragmentInserted,
   type EditorFragmentPlan,
 } from './fragmentInsertFlow'
-import { captureFragmentTarget, captureThemeTarget } from './fragmentInsertTarget'
+import { createFragmentInsertAdapter } from './createFragmentInsertAdapter'
+import { pushToast } from '@ui/components/Toast'
+import { captureFragmentTarget, capturePreviewBranch, captureThemeTarget } from './fragmentInsertTarget'
 import { commitThemeForEditor, planThemeForEditor, toastThemeApplied, toastThemeApplyFailed } from './themeApplyFlow'
 
 export function watchFragmentPreviewStyles(onChange: FragmentPreviewStylesListener): () => void {
@@ -118,7 +123,7 @@ function failureStage(err: unknown): FragmentInsertFailureStage {
 
 export async function planFragmentForPlugin(
   input: FragmentPlanInput,
-  target = captureFragmentTarget(),
+  target = capturePreviewBranch(),
 ): Promise<FragmentPlanOutcome> {
   let attempt: PlanAttempt
   try {
@@ -133,6 +138,7 @@ export async function insertFragmentForPlugin(
   input: FragmentInsertInput,
   runStepUp: RunStepUp,
   target = captureFragmentTarget(),
+  placement: EditorFragmentPlacement | undefined = input.placement,
 ): Promise<FragmentInsertOutcome> {
   const announce = input.silent !== true
   const attempt = await planForActiveDocument(input.fragment, input.colorSources, target)
@@ -144,10 +150,36 @@ export async function insertFragmentForPlugin(
     return { ok: false, stage: 'cancelled', message: 'The insert was cancelled.' }
   }
   try {
+    if (input.assets) {
+      const plan = attempt.plan
+      const backgroundTarget = capturePreviewBranch()
+      const adapter = createFragmentInsertAdapter(runStepUp, target, placement)
+      const options = { readMediaBytes: input.readMediaBytes, signal: input.signal, onProgress: input.onProgress }
+      const layoutOnly = input.assets === 'layout-only'
+      const { result, placeholders, tableIdMap } = await placeFragmentLayout(plan, adapter, options, layoutOnly)
+      const report = layoutOnly ? {
+        ...plan.report,
+        tables: { ...plan.report.tables, created: [], fieldsAdded: [], rows: 0 },
+        fonts: { ...plan.report.fonts, familiesAdded: [] },
+        media: { total: 0, uploaded: 0, reused: 0 },
+      } : plan.report
+      if (announce) toastFragmentInserted({ ...result, report })
+      if (!layoutOnly && (plan.media.length || plan.fontFamilies.length || plan.tables.some(table => table.action === 'create' && table.rows.length))) {
+        const assetsAdapter = createFragmentInsertAdapter(runStepUp, backgroundTarget)
+        void loadFragmentAssets(plan, tableIdMap, assetsAdapter, options).then(async ({ media, fonts, warnings, seedRows }) => {
+          options.signal?.throwIfAborted()
+          backgroundTarget()
+          useEditorStore.getState().finishFragmentAssets(plan, { placeholders, media, fonts })
+          await seedRows()
+          if (warnings.length) pushToast({ kind: 'warning', title: 'Some assets could not be imported', body: warnings[0].message, location: 'site-editor' })
+        }).catch(error => pushToast({ kind: 'warning', title: 'Asset import interrupted', body: getErrorMessage(error, 'The layout is in your draft.'), location: 'site-editor' }))
+      }
+      return { ok: true, insertedRootIds: result.rootIds, pageId: result.pageId, report }
+    }
     const result = await commitFragmentForEditor(attempt.plan, {
       readMediaBytes: input.readMediaBytes,
       runStepUp,
-      placement: input.placement,
+      placement,
       signal: input.signal,
       onProgress: input.onProgress,
     })

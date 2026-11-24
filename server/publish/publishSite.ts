@@ -53,6 +53,7 @@ import {
 } from './staticArtefact'
 import { buildPublishedSiteCssBundle } from './siteCssBundle'
 import { bakePublishedDataRowArtefacts } from './bakeDataRows'
+import { loadAccessIndex, pageAudience } from './accessGate'
 import { bumpPublishVersion, getPublishVersion, withPublishLock } from './publishState'
 import { runPublishFlush } from './publishFlush'
 import { sweepStalePluginVersionAssets } from './stalePluginAssets'
@@ -239,6 +240,7 @@ async function publishSiteDocumentLocked(
           if (!assetsByPath.has(publicPath)) assetsByPath.set(publicPath, encoder.encode(file.content))
         }
       }
+      const accessIndex = await loadAccessIndex(db)
       for (const snapshot of snapshots) {
         const page = snapshot.site.pages.find((p) => p.id === snapshot.pageRowId)
         if (!page || isTemplatePage(page)) continue // template pages only ever wrap; never baked at their own slug
@@ -265,7 +267,7 @@ async function publishSiteDocumentLocked(
             publishVersion: nextPublishVersion,
           })
           if (rendered) {
-            const html = await applyPublishedHtmlPipeline(rendered, db)
+            const html = await applyPublishedHtmlPipeline(rendered, db, 'public')
             await writeArtefact(slotDir, NOT_FOUND_ARTEFACT_URL_PATH, html)
             collectCssFiles(rendered.cssBundle)
           }
@@ -294,8 +296,10 @@ async function publishSiteDocumentLocked(
           // A protected page's HTML never goes to disk: the slot is served
           // without asking who is asking, and can be copied as a static
           // export. Its CSS is not secret and is still collected above.
-          if (page.access && page.access.level !== 'public') continue
-          const html = await applyPublishedHtmlPipeline(rendered, db)
+          // Protected by ANY rule the public router applies to its address:
+          // its own, or a protected table whose route base it sits under.
+          if (pageAudience(accessIndex, page) !== 'public') continue
+          const html = await applyPublishedHtmlPipeline(rendered, db, 'public')
           await writeArtefact(slotDir, urlPath, html)
         } catch (err) {
           console.error('[publish:site] failed to bake artefact for', urlPath, '(falls through to live renderer):', err)

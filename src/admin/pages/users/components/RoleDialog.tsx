@@ -15,12 +15,11 @@ import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { SaveSolidIcon } from 'pixel-art-icons/icons/save-solid'
-import { CapabilityPicker } from '@admin/shared/CapabilityPicker'
-import { OWNER_ONLY_CAPABILITIES, type CoreCapability } from '@core/capabilities'
+import { CAPABILITY_GROUPS, CapabilityPicker } from '@admin/shared/CapabilityPicker'
+import { OWNER_ONLY_CAPABILITY_SET, type CoreCapability } from '@core/capabilities'
 import dialogStyles from '../../../shared/dialogs/SiteCreateDialog/SiteCreateDialog.module.css'
 import styles from '../UsersPage.module.css'
 import type { RoleDialogMode, RoleFormState } from '../types'
-import { CAPABILITY_GROUPS } from '../utils/capabilities'
 
 interface RoleDialogProps {
   mode: RoleDialogMode
@@ -33,7 +32,6 @@ interface RoleDialogProps {
 }
 
 const ROLE_FORM_ID = 'users-page-role-form'
-const OWNER_ONLY_CAPABILITY_SET = new Set<CoreCapability>(OWNER_ONLY_CAPABILITIES)
 
 export function RoleDialog({
   mode,

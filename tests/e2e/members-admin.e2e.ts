@@ -144,7 +144,7 @@ test('owner manages site members from the Users page (MEMBER-002)', async ({ pag
 
     await page.goto('/admin/email')
     await page.getByTestId('email-nav-activity').click()
-    await expect(page.getByRole('list', { name: 'Email activity' }).getByText(email).first()).toBeVisible()
+    await expect(page.getByRole('table', { name: 'Email activity' }).getByText(email).first()).toBeVisible()
   })
 
   await test.step('delete the member', async () => {

@@ -47,6 +47,7 @@ export type PluginMailRecipient = { member: string } | { address: string }
  *
  *  - `recipient_rejected`: the mail provider refused the message or the recipient.
  *  - `expired`: it could not be delivered before its deadline (a day), so it was not sent.
+ *  - `template_disabled`: the owner turned off sending while this email was waiting.
  *  - `template_removed`: the template no longer exists.
  *  - `unreadable`: the queued email could not be read any more.
  *  - `recipient_unavailable`: the member it was for was suspended or deleted before it went out.
@@ -56,6 +57,7 @@ export type PluginMailFailureReason =
   | 'recipient_rejected'
   | 'expired'
   | 'template_removed'
+  | 'template_disabled'
   | 'unreadable'
   | 'recipient_unavailable'
   | 'template_invalid'
@@ -75,7 +77,8 @@ export interface ServerPluginMailApi {
    * Queue one of this plugin's templates for one recipient. Resolves
    * `queued` once the site has accepted the email (it is sent by the mail
    * queue, with retries), or `captured` on a development server with no
-   * connector. `{ member }` needs `mail.send`; `{ address }` needs
+   * connector. Returns `disabled` without queuing when the template is turned off.
+   * `{ member }` needs `mail.send`; `{ address }` needs
    * `mail.send.external`.
    *
    * Rejects when email is not set up, the member cannot be emailed, the
@@ -93,7 +96,7 @@ export interface ServerPluginMailApi {
    * Nothing here returns a member's address: the outcome events name the
    * recipient the way this call did.
    */
-  send: (input: PluginMailSendInput) => Promise<'queued' | 'captured'>
+  send: (input: PluginMailSendInput) => Promise<'queued' | 'captured' | 'disabled'>
 }
 
 export interface ServerPluginSiteApi {

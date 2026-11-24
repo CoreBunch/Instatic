@@ -41,7 +41,7 @@ import { runRouteTable, type Route, type RouteParams } from './routeTable'
 
 const REGISTRY_PREFIX = `${CMS_API_PREFIX}/registry`
 
-const SearchQuerySchema = Type.Object({
+export const SearchQuerySchema = Type.Object({
   q: Type.String({ minLength: 1, maxLength: 200 }),
   sort: RegistrySearchSortSchema,
   from: Type.Integer({ minimum: 0, maximum: REGISTRY_MAX_SEARCH_FROM }),
@@ -121,7 +121,7 @@ function handleSearch(req: Request, url: URL): Promise<unknown> | Response {
 // the capture once, so handlers see `@scope/name` and validate that.
 const NAME = '(?<name>[^/]+)'
 
-const REGISTRY_ROUTES: readonly Route<[]>[] = [
+export const REGISTRY_ROUTES: readonly Route<[]>[] = [
   { method: 'GET', pattern: REGISTRY_PREFIX, handler: registryRoute(TTL.details, () => Promise.resolve(registryProfile())) },
   { method: 'GET', pattern: `${REGISTRY_PREFIX}/search`, handler: registryRoute(TTL.search, handleSearch) },
   {

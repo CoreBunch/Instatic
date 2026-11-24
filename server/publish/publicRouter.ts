@@ -62,16 +62,18 @@
  *     falls through so Layer A never serves stale pagination output.
  */
 
+import type { ApprovalView } from '@core/members'
 import type { DbClient } from '../db/client'
-import { LOCKED_ACCESS, type AccessRule, type CurrentMember } from '@core/members'
+import type { AccessRule, CurrentMember } from '@core/members'
 import {
+  audienceForRules,
   decideAccess,
   denyResponse,
   getAccessIndex,
   indexedRulesForPath,
-  pageRules,
+  pageRouteRules,
   PRIVATE_HEADERS,
-  tableRulesForRouteBase,
+  rowRouteRules,
   type Visitor,
 } from './accessGate'
 import type { PublishedPageSnapshot } from '../repositories/publish'
@@ -208,14 +210,21 @@ export async function resolvePublicRoute(
   return { kind: 'not-found' }
 }
 
-/** The access rules of a resolved route: the page's own, or its table's for an entry. */
+/**
+ * Every access rule of a resolved route as requested at `pathname`: the
+ * route's own (a page's, or its table's for an entry) and whatever the index
+ * holds for the path as it was spelled. Every one must pass.
+ */
 function resolvedRouteRules(
   index: Awaited<ReturnType<typeof getAccessIndex>>,
   resolution: Extract<PublicRouteResolution, { kind: 'page' | 'row' }>,
+  pathname: string,
 ): AccessRule[] {
-  if (resolution.kind === 'row') return tableRulesForRouteBase(index, resolution.row.tableRouteBase)
+  if (resolution.kind === 'row') {
+    return rowRouteRules(index, resolution.row.tableId, pathname)
+  }
   const page = resolution.snapshot.site.pages.find((p) => p.id === resolution.snapshot.pageRowId)
-  return page ? pageRules(index, page) : [LOCKED_ACCESS]
+  return pageRouteRules(index, page, pathname)
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +260,7 @@ export async function renderPublicResolution(
   url: URL,
   uploadsDir?: string,
   visitor?: Visitor,
+  approval?: ApprovalView,
 ): Promise<Response | null> {
   // Access first: a path the publish-time index knows to be protected skips
   // both cache layers. Neither ever holds a protected page (they are not
@@ -258,7 +268,7 @@ export async function renderPublicResolution(
   // is the check on the resolved route below.
   const accessIndex = await getAccessIndex(db, getPublishVersion())
   const indexedRules = indexedRulesForPath(accessIndex, url.pathname)
-  const mayUseCaches = indexedRules.length === 0
+  const mayUseCaches = !approval && indexedRules.length === 0
 
   // Canonicalise the query to the loop-pagination params the renderer actually
   // consumes. Junk params collapse to '' (so they never mint cache slots), and
@@ -308,25 +318,25 @@ export async function renderPublicResolution(
   }
 
   // `forVisitor` is passed only on a protected route; a shared render leaves it out.
-  const render = async (forVisitor?: CurrentMember | null): Promise<string | null> => {
-    const context = forVisitor === undefined ? { db, url } : { db, url, visitor: forVisitor }
+  const render = async (audience: 'public' | 'member', forVisitor?: CurrentMember | null): Promise<string | null> => {
+    const context = forVisitor === undefined ? { db, url } : { db, url, visitor: forVisitor, approval }
     const rendered = resolution.kind === 'page'
       ? await renderPublishedSnapshot(resolution.snapshot, context)
       : await renderPublishedDataRowTemplate(resolution.snapshot, resolution.row, context)
-    return rendered ? await applyPublishedHtmlPipeline(rendered, db, { forMember: forVisitor !== undefined }) : null
+    return rendered ? await applyPublishedHtmlPipeline(rendered, db, audience) : null
   }
 
   // ── Access: decided from the route that actually resolved ────────────────
   // Every rule that applies must pass: the resolved route's own, and whatever
   // the index holds for the path as it was spelled.
-  const rules = [...resolvedRouteRules(accessIndex, resolution), ...indexedRules]
-  if (rules.length > 0) {
+  const rules = resolvedRouteRules(accessIndex, resolution, url.pathname)
+  if (rules.length > 0 || approval) {
     const decision = await decideAccess(rules, visitor)
     if (decision === 'hide') return null // answered exactly like a route that does not exist
     if (decision !== 'allow') return denyResponse(db, url, decision)
     // Rendered for this visitor alone: never through the shared cache. Lists
     // on the page show what this member may open.
-    const html = await render(visitor ? await visitor() : null)
+    const html = await render(audienceForRules(rules), visitor ? await visitor() : null)
     if (html === null) return null
     return new Response(html, {
       headers: { 'content-type': 'text/html; charset=utf-8', ...PRIVATE_HEADERS },
@@ -337,7 +347,7 @@ export async function renderPublicResolution(
   const cached = await getOrRender(
     cacheKey,
     async () => {
-      const html = await render()
+      const html = await render(audienceForRules(rules))
       if (html === null) return null
       return { body: html, headers: { 'content-type': 'text/html; charset=utf-8' }, status: 200 }
     },
@@ -402,7 +412,8 @@ export async function renderNotFoundResponse(
   const cached = await getOrRender(cacheKey, async () => {
     const rendered = await renderPublishedNotFound(snapshot, { db, url: syntheticUrl })
     if (!rendered) return null
-    const html = await applyPublishedHtmlPipeline(rendered, db)
+    // The 404 page is public by nature.
+    const html = await applyPublishedHtmlPipeline(rendered, db, 'public')
     return { body: html, headers: htmlHeaders, status: 200 }
   })
   if (!cached) return null

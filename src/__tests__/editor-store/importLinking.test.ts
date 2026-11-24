@@ -10,12 +10,12 @@
 
 import { describe, it, expect } from 'bun:test'
 import type { StyleRule } from '@core/page-tree'
-import type { NewStyleRule } from '@core/siteImport'
 import {
+  type NewStyleRule,
   findReimportedStyleRule,
   indexStyleRulesByOrigin,
   registerStyleRuleOrigin,
-} from '@admin/pages/site/store/slices/site/importLinking'
+} from '@core/siteImport'
 
 const ORIGIN = { source: 'style.css', ordinal: 2 }
 

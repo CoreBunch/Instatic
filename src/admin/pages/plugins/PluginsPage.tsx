@@ -50,7 +50,6 @@ export function PluginsPage() {
       workspace="plugins"
       title="Plugins"
       titleId="plugins-title"
-      description="Install admin extensions and control what they add to the CMS."
       actions={canInstall ? (
         <>
           <Button
@@ -166,6 +165,7 @@ export function PluginsPage() {
                 onOpenSchedules={(p) => vm.setSchedulesPluginId(p.id)}
                 onInstallPack={(p) => void vm.installPluginPack(p)}
                 onRestart={(p) => void vm.restartPlugin(p)}
+                onReviewUpdate={vm.reviewFile}
                 onReinstall={() => fileInputRef.current?.click()}
                 onToggle={(p) => void vm.togglePlugin(p)}
                 onRemove={(p) => vm.setPendingRemove({ plugin: p, force: false })}

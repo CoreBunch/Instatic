@@ -66,6 +66,7 @@ export function Section({
         Boolean(headerAction) && styles.sectionHeaderWithAction,
       )}>
         <button
+          type="button"
           onClick={() => {
             if (!forceOpen) setOpen((o) => !o);
           }}

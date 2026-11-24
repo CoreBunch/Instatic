@@ -92,7 +92,7 @@ export const PLUGIN_CAPABILITIES: PluginCapability[] = [
   {
     permission: 'cms.hooks',
     label: 'Subscribe to CMS lifecycle events and filters',
-    description: 'Allows the plugin server entrypoint to listen to CMS events (publish, content changes, page updates) and to register filters that transform values before they leave the CMS. A filter on published HTML sees public pages as they are sent. A members-only page rendered for a member reaches the filter only if the plugin may also read site members.',
+    description: 'Allows the plugin server entrypoint to listen to publish events and to filter public pages as they are sent. It does not open anything another permission guards: entry events and the entry cells filter reach the plugin only for tables its content access covers, member events and members-only pages only if it may read site members, and previews of unpublished work never.',
     risk: 'high',
     surfaces: ['server', 'cms'],
   },

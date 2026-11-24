@@ -8,7 +8,7 @@
  * routes, forms, plugins, the dashboard, MCP headless reads) pass
  * `MAIN_SCOPE`.
  */
-import { MAIN_BRANCH_ID, isValidBranchId } from '@core/branches'
+import { BRANCH_HEADER, MAIN_BRANCH_ID, isValidBranchId } from '@core/branches'
 import type { DbClient } from '../db/client'
 import { jsonResponse } from '../http'
 import { requireAuthenticatedUser } from '../auth/authz'
@@ -19,8 +19,6 @@ export interface BranchScope {
 }
 
 export const MAIN_SCOPE: BranchScope = Object.freeze({ branchId: MAIN_BRANCH_ID })
-
-export const BRANCH_HEADER = 'x-instatic-branch'
 
 /** Error code the client keys on to fall back to main. */
 export const BRANCH_NOT_FOUND_CODE = 'branch_not_found'

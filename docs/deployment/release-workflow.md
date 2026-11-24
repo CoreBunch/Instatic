@@ -24,7 +24,7 @@ Release flow:
 4. GitHub Actions runs `bun run build`, `bun test`, and `bun run lint`.
 5. GitHub Actions builds `Dockerfile`.
 6. GitHub Actions pushes the semver image, minor image, and `latest` to GHCR.
-7. GitHub Actions creates the GitHub Release and uploads the release bundle.
+7. GitHub Actions creates the release page from the matching dated section in the tagged `CHANGELOG.md`, appends GitHub’s new contributor credits and comparison link when available, then uploads the release bundle and server downloads.
 
 ## Pre-Tag Template Updates
 

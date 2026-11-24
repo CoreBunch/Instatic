@@ -159,6 +159,33 @@ describe('inline marks with whitespace at their edges', () => {
   })
 })
 
+describe('link destinations survive save and reload (#687, point E)', () => {
+  const linkDoc = (href: string): JSONNode => ({
+    type: 'doc',
+    content: [{ type: 'paragraph', content: [{ type: 'text', text: 'PDF', marks: [{ type: 'link', attrs: { href } }] }] }],
+  })
+
+  it.each([
+    // Already valid as a bare destination: written as before.
+    { href: 'https://example.com/a', markdown: '[PDF](https://example.com/a)' },
+    { href: 'https://en.wikipedia.org/wiki/Foo_(bar)', markdown: '[PDF](https://en.wikipedia.org/wiki/Foo_(bar))' },
+    { href: 'https://e.com/<x>', markdown: '[PDF](https://e.com/<x>)' },
+    // Not valid bare: written between angle brackets.
+    { href: 'https://e.com/a b.pdf', markdown: '[PDF](<https://e.com/a b.pdf>)' },
+    { href: 'https://e.com/a)b', markdown: '[PDF](<https://e.com/a)b>)' },
+    { href: 'https://e.com/(a', markdown: '[PDF](<https://e.com/(a>)' },
+    { href: 'https://e.com/a\\_b', markdown: '[PDF](<https://e.com/a\\\\_b>)' },
+    { href: 'https://e.com/<x> y', markdown: '[PDF](<https://e.com/\\<x\\> y>)' },
+  ])('keeps the whole URL $href', ({ href, markdown }) => {
+    const serialised = proseMirrorDocToMarkdown(linkDoc(href))
+    expect(serialised).toBe(markdown)
+    expect(markdownToProseMirrorDoc(serialised)).toEqual(linkDoc(href))
+    const html = renderMarkdownToHtml(serialised)
+    expect(html).toContain('>PDF</a>')
+    expect(html).not.toContain('](')
+  })
+})
+
 describe('publisher markdown renderer', () => {
   it('renders the extended grammar via marked', () => {
     const html = renderMarkdownToHtml(

@@ -29,7 +29,7 @@
  */
 
 import type { DbClient } from '../db/client'
-import { hookBus } from '@core/plugins/hookBus'
+import { hookBus, type EveryRecipient, type HookRecipientCheck } from '@core/plugins/hookBus'
 import { hostPluginHasPermission } from '../plugins/host/registry'
 import {
   collectFrontendInjections,
@@ -39,25 +39,48 @@ import { stampFormPageTokens } from '../forms/formRuntime'
 import { injectModuleScripts } from './moduleJsBundle'
 import type { RendererOutput } from './publicRenderer'
 
+/**
+ * Who a render is for. Every caller of the pipeline states it: this is the
+ * one place that decides which plugins' `publish.html` filters may see the
+ * HTML, so no caller can hand out a page by forgetting a flag.
+ *
+ *   - `public`  — a page anyone may open. Every registered filter runs and
+ *     every listener hears `publish.before` / `publish.after`.
+ *   - `member`  — a page behind an access rule (rendered for a member, or
+ *     re-rendered in the background). Only plugins granted `members.read`
+ *     filter it or hear that it was rendered: the events say which protected
+ *     page a member just opened.
+ *   - `preview` — unpublished work (a draft entry, a branch). No plugin
+ *     filter and no publish event: a preview is not a publish, and a page can
+ *     pull in drafts from any table, which nothing a plugin holds covers.
+ *     Plugin frontend assets are still injected.
+ *
+ * The audience of a published route comes from its access rules
+ * (`audienceForRules` / `pageAudience` in `accessGate.ts`).
+ */
+export type RenderAudience = 'public' | 'member' | 'preview'
+
+/**
+ * Which plugins may be told about, and handed, a render for `audience`.
+ * `null`: none at all.
+ */
+function pluginRecipients(audience: RenderAudience): HookRecipientCheck | EveryRecipient | null {
+  if (audience === 'preview') return null
+  if (audience === 'member') return (pluginId) => hostPluginHasPermission(pluginId, 'members.read')
+  return 'everyone'
+}
+
 /** What the pipeline reads of a render; the CSS bundle is the bake's concern. */
 export type PublishedHtmlPipelineInput = Omit<RendererOutput, 'cssBundle'>
 
 export async function applyPublishedHtmlPipeline(
   rendered: PublishedHtmlPipelineInput,
   db: DbClient,
-  options: {
-    /**
-     * The page was rendered for one member on a protected route, so its HTML
-     * may hold that member's data. Only plugins granted `members.read` get to
-     * filter it; the rest are passed over, like a plugin that never asked.
-     */
-    forMember?: boolean
-  } = {},
+  audience: RenderAudience,
 ): Promise<string> {
-  await hookBus.emit('publish.before', {
-    siteId: rendered.siteId,
-    pageId: rendered.pageId,
-  })
+  const recipients = pluginRecipients(audience)
+  const event = { siteId: rendered.siteId, pageId: rendered.pageId }
+  if (recipients !== null) await hookBus.emit('publish.before', event, recipients)
   const injections = await collectFrontendInjections(db)
   const withInjections = injectFrontendAssets(rendered.html, injections)
   // Token stamping is an HTML mutation (needs the server signing secret) —
@@ -66,14 +89,12 @@ export async function applyPublishedHtmlPipeline(
   // Module-JS channel: one external <script defer> per moduleId the page
   // needs; relaxes CSP script-src to 'self' iff at least one tag landed.
   const withModuleScripts = injectModuleScripts(withFormTokens, rendered.moduleScripts)
+  if (recipients === null) return withModuleScripts
   const filtered = await hookBus.applyFilter('publish.html', withModuleScripts, {
     siteId: rendered.siteId,
     pageId: rendered.pageId,
     slug: rendered.slug,
-  }, options.forMember ? (pluginId) => hostPluginHasPermission(pluginId, 'members.read') : undefined)
-  await hookBus.emit('publish.after', {
-    siteId: rendered.siteId,
-    pageId: rendered.pageId,
-  })
+  }, recipients)
+  await hookBus.emit('publish.after', event, recipients)
   return filtered
 }

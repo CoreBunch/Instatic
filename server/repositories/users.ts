@@ -1,3 +1,4 @@
+import { DIRECTORY_PAGE_SIZE, directoryPageOffset } from '@core/users/directoryPagination'
 import { createHash } from 'node:crypto'
 import { nanoid } from 'nanoid'
 import { placeholder, type DbClient } from '../db/client'
@@ -245,12 +246,24 @@ export function toPublicUser(user: AuthUser): CmsUser {
   }
 }
 
-export async function listUsers(db: DbClient): Promise<CmsUser[]> {
-  const rows = await queryUsers(
-    db,
-    'where users.deleted_at is null order by users.created_at asc',
+export async function listUsers(db: DbClient, search: string, requestedOffset: number) {
+  let where = 'where users.deleted_at is null and not exists (select 1 from service_accounts sa where sa.id = users.id)'
+  const values: string[] = []
+  if (search.trim()) {
+    const pattern = `%${search.trim().toLowerCase().replace(/[!%_]/g, '!$&')}%`
+    values.push(pattern, pattern)
+    where += ` and (users.email_normalized like ${placeholder(db.dialect, 1)} escape '!'
+      or lower(users.display_name) like ${placeholder(db.dialect, 2)} escape '!')`
+  }
+  const { rows: counts } = await db.unsafe<{ total: number }>(`select count(*) as total from users ${where}`, values)
+  const matching = Number(counts[0].total)
+  const offset = directoryPageOffset(requestedOffset, matching)
+  const rows = await queryUsers(db,
+    `${where} order by users.created_at asc, users.id asc
+     limit ${placeholder(db.dialect, values.length + 1)} offset ${placeholder(db.dialect, values.length + 2)}`,
+    [...values, DIRECTORY_PAGE_SIZE, offset],
   )
-  return rows.map((row) => toPublicUser(rowToUser(row)))
+  return { users: rows.map((row) => toPublicUser(rowToUser(row))), matching, offset }
 }
 
 export async function findUserById(db: DbClient, userId: string): Promise<AuthUser | null> {
@@ -265,7 +278,7 @@ export async function findUserById(db: DbClient, userId: string): Promise<AuthUs
 export async function findUserByEmail(db: DbClient, email: string): Promise<AuthUser | null> {
   const rows = await queryUsers(
     db,
-    `where users.email_normalized = ${placeholder(db.dialect, 1)} and users.deleted_at is null limit 1`,
+    `where users.email_normalized = ${placeholder(db.dialect, 1)} and users.deleted_at is null and not exists (select 1 from service_accounts sa where sa.id = users.id) limit 1`,
     [normalizeEmail(email)],
   )
   return rows[0] ? rowToUser(rows[0]) : null
@@ -351,6 +364,7 @@ export async function updateUser(
         updated_at = ${nowIso()}
     where id = ${userId}
       and deleted_at is null
+      and not exists (select 1 from service_accounts sa where sa.id = users.id)
   `
   return reloadPublicUser(db, userId, result.rowCount)
 }
@@ -498,6 +512,7 @@ export async function softDeleteUser(db: DbClient, userId: string): Promise<bool
         updated_at = ${now}
     where id = ${userId}
       and deleted_at is null
+      and not exists (select 1 from service_accounts sa where sa.id = users.id)
   `
   return result.rowCount > 0
 }

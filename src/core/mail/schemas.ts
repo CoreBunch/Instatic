@@ -223,6 +223,7 @@ export const MailTemplateSchema = Type.Object({
   variables: Type.Array(MailTemplateVariableSchema),
   subject: Type.String(),
   body: Type.String(),
+  sendingEnabled: Type.Boolean(),
   /** False while the template still has its built-in wording. */
   customised: Type.Boolean(),
   /**
@@ -233,6 +234,11 @@ export const MailTemplateSchema = Type.Object({
   wordingProblem: Type.Union([Type.String(), Type.Null()]),
 })
 export type MailTemplate = Static<typeof MailTemplateSchema>
+
+export const MailTemplateSendingSchema = Type.Object(
+  { sendingEnabled: Type.Boolean() },
+  { additionalProperties: false },
+)
 
 export const MailTemplateInputSchema = Type.Object(
   {

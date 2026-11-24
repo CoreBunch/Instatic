@@ -1,0 +1,13 @@
+{
+  "name": "@instatic/cli",
+  "version": "1.0.0",
+  "description": "Scoped command-line access to an Instatic CMS installation",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "instatic": "instatic.ts" },
+  "engines": { "bun": ">=1.4.0 <1.5.0" },
+  "dependencies": {
+    "@sinclair/typebox": "0.34.49",
+    "playwright-core": "1.60.0"
+  }
+}

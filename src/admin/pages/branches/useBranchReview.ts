@@ -5,7 +5,7 @@
  * copy from the server's response so the page never guesses.
  */
 import { useEffect, useState } from 'react'
-import type { BranchMergeRequest, BranchReviewComment, BranchReviewState, MergePlan, UndoMergeEnvelope } from '@core/branches'
+import type { BranchMergeRequest, BranchReviewComment, BranchReviewState, MergePlan } from '@core/branches'
 import { ApiError, isAbortError } from '@core/http'
 import { pushToast } from '@ui/components/Toast'
 import {
@@ -17,7 +17,6 @@ import {
   withdrawCmsBranchMergeRequest,
 } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { undoBranchMerge } from '@admin/state/branchStore'
 
 export interface BranchReviewData {
   plan: MergePlan | null
@@ -29,8 +28,6 @@ export interface BranchReviewData {
   withdraw: () => Promise<BranchMergeRequest>
   decline: (note: string) => Promise<BranchMergeRequest>
   comment: (entityKey: string, body: string) => Promise<BranchReviewComment>
-  /** Reverse the latest merge into main, then reload: the plan is live again. */
-  undo: () => Promise<UndoMergeEnvelope>
 }
 
 async function fetchReviewData(
@@ -112,11 +109,6 @@ export function useBranchReview(branchId: string): BranchReviewData {
       const comment = await addCmsBranchReviewComment(branchId, { entityKey, body })
       setReview((current) => (current ? { ...current, comments: [...current.comments, comment] } : current))
       return comment
-    },
-    undo: async () => {
-      const result = await undoBranchMerge(branchId, 'merge')
-      await reload()
-      return result
     },
   }
 }

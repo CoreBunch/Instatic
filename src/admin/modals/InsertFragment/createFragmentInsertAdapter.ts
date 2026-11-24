@@ -16,10 +16,10 @@
  * prompt and retries instead of failing the insert.
  */
 
+import type { EditorFragmentPlacement } from '@site/store/slices/fragmentsSlice'
 import type {
   FragmentAssetAdapter,
   FragmentInsertAdapter,
-  FragmentInsertPlacement,
   ThemeApplyAdapter,
 } from '@core/fragments'
 import { installCmsGoogleFont, registerCustomFont } from '@core/persistence/cmsFonts'
@@ -67,7 +67,7 @@ function createFragmentAssetAdapter(write: RunStepUp, assertCurrentTarget: () =>
 export function createFragmentInsertAdapter(
   runStepUp: RunStepUp,
   assertCurrentTarget: () => void,
-  placement: FragmentInsertPlacement = 'after-selection',
+  placement: EditorFragmentPlacement = 'after-selection',
 ): FragmentInsertAdapter {
   const write = guardWrite(runStepUp, assertCurrentTarget)
   return {

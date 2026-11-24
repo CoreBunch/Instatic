@@ -8,9 +8,9 @@
  * shows what the editor can build, and opening any page in the editor shows
  * how.
  */
-import { memberFormAction, type AccessRule, type MemberSettings, type ShowWhen } from '@core/members'
-import { createNode, type Page, type PageNode } from '@core/page-tree'
-import { memberFormFragment } from '../../src/admin/pages/site/panels/PropertiesPanel/memberFormParts'
+import { PAIR_FORM_ACTION, memberFormAction, type AccessRule, type MemberSettings, type ShowWhen } from '@core/members'
+import { flattenSubtree, createNode, type Page, type PageNode } from '@core/page-tree'
+import { memberFormFragment } from '@core/memberForms'
 
 type Nodes = Record<string, PageNode>
 
@@ -355,9 +355,52 @@ export function buildMembersDemoPages(prefix = ''): Page[] {
     MEMBERS,
   )
 
+  const pairBuilder = new PageBuilder()
+  const pairForm = pairBuilder.memberForm(PAIR_FORM_ACTION, 'device-approval')
+  const pairPage = pairBuilder.page('demo_app_pair', 'App connection', 'connect-app', [pairForm])
+  // A focused, installation-owned page. Its typography, spacing and controls
+  // remain normal node styles in the inspector.
+  const root = pairPage.nodes[pairPage.rootNodeId]
+  const header = root.children.shift()!
+  for (const id of flattenSubtree(pairPage, header)) delete pairPage.nodes[id]
+  const main = pairPage.nodes[root.children[0]]
+  main.inlineStyles = { minHeight: '100svh', boxSizing: 'border-box', display: 'grid', placeItems: 'center',
+    margin: '0', maxWidth: 'none', padding: '24px', backgroundColor: '#f3f3f0', color: '#171817',
+    fontFamily: 'system-ui, sans-serif', lineHeight: '1.5' }
+  pairForm.inlineStyles = { width: 'min(100%, 440px)', boxSizing: 'border-box', padding: 'clamp(24px, 5vw, 40px)',
+    borderRadius: '26px', border: '1px solid #deded9', backgroundColor: '#ffffff',
+    boxShadow: '0 8px 28px rgba(0, 0, 0, 0.06)', margin: '0' }
+  for (const groupId of pairForm.children) {
+    const group = pairPage.nodes[groupId]
+    group.inlineStyles = { display: 'grid', gap: '12px' }
+    for (const id of group.children) {
+      const node = pairPage.nodes[id]
+      const attrs = node.props.htmlAttributes as Record<string, string> | undefined
+      const part = attrs?.['data-approval-part']
+      if (node.moduleId === 'base.text') {
+        node.inlineStyles = { margin: '0', fontSize: '16px', color: '#50514d', overflowWrap: 'anywhere' }
+        if (node.props.tag === 'h1') Object.assign(node.inlineStyles, {
+          fontSize: 'clamp(27px, 4vw, 36px)', lineHeight: '1.12', letterSpacing: '-0.045em', color: '#171817' })
+        if (part === 'label') Object.assign(node.inlineStyles, { fontSize: '13px', fontWeight: '650', marginBottom: '-8px' })
+        if (part === 'code') Object.assign(node.inlineStyles, { padding: '16px', textAlign: 'center', margin: '6px 0',
+          borderRadius: '12px', backgroundColor: '#f1f1ee', color: '#171817', letterSpacing: '0.12em',
+          fontFamily: 'ui-monospace, monospace', fontSize: '24px', fontWeight: '600' })
+      }
+      if (node.moduleId === 'base.label') node.inlineStyles = { fontSize: '14px', fontWeight: '600', marginBottom: '-6px' }
+      if (node.moduleId === 'base.input') node.inlineStyles = { minWidth: '0', padding: '12px 14px', font: 'inherit',
+        borderRadius: '10px', border: '1px solid #cccfc8', boxShadow: '0 1px 3px rgba(0,0,0,.08)' }
+      if (node.moduleId === 'base.submit') {
+        const secondary = node.props.value === 'deny'
+        node.inlineStyles = { padding: '12px 16px', font: 'inherit', fontWeight: '600', cursor: 'pointer',
+          borderRadius: '10px', border: '1px solid #212220', color: secondary ? '#171817' : '#fff',
+          backgroundColor: secondary ? '#fff' : '#212220' }
+      }
+    }
+  }
+
   const pages = [
     homePage, join, signIn, forgot, reset, welcome, signInLink, confirmEmail, invitation, accountPage, members, pro,
-    approveApp,
+    approveApp, pairPage,
   ]
   return prefix === '' ? pages : withPrefix(pages, prefix)
 }
@@ -372,6 +415,7 @@ const MEMBER_PAGE_SLUGS = {
   invite: 'invitation',
   emailChange: 'confirm-email',
   appSignIn: 'approve-app',
+  appPair: 'connect-app',
 } as const
 
 /** Who can join, and which of the demo pages each member link opens. Settings name a page by id. */
