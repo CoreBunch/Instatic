@@ -3,6 +3,7 @@ import {
   DEV_ORIGIN_ALLOWLIST,
   canonicalIp,
   visitorIpKey,
+  pluginVisitorIp,
   clientIp,
   configurePublicOrigins,
   configureTrustedProxyCidrs,
@@ -306,6 +307,26 @@ describe('visitorIpKey', () => {
     // Outside the /96 it is an ordinary IPv6 address.
     expect(visitorIpKey('64:ff9b:1::cb00:7107')).toBe('64:ff9b:1::/64')
     expect(visitorIpKey('nope')).toBeNull()
+  })
+})
+
+describe('visitor attribution on hosted deployments', () => {
+  it('withholds the Railway peer even when the request has no forwarded header', () => {
+    const req = makeReq('http://app/')
+    stampSocketIp(req, '100.64.0.2')
+    expect(pluginVisitorIp(req, clientIp(req), true)).toBeNull()
+    req.headers.set('x-real-ip', '203.0.113.8')
+    expect(pluginVisitorIp(req, clientIp(req), true)).toBeNull()
+  })
+
+  it('requires a visitor beyond the verified proxy chain', () => {
+    configureTrustedProxyCidrs(['10.0.0.1/32'])
+    const req = makeReq('http://app/')
+    stampSocketIp(req, '10.0.0.1')
+    expect(pluginVisitorIp(req, clientIp(req), true)).toBeNull()
+    req.headers.set('x-forwarded-for', '203.0.113.8')
+    expect(pluginVisitorIp(req, clientIp(req), true)).toBe('203.0.113.8')
+    expect(pluginVisitorIp(req, clientIp(req), false)).toBe('203.0.113.8')
   })
 })
 

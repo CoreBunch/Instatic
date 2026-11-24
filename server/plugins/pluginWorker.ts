@@ -283,6 +283,7 @@ async function handleRunRoute(msg: RunRouteRequest): Promise<void> {
       app: msg.app,
       ip: msg.ip,
       ipKey: msg.ipKey,
+      visitorIp: msg.visitorIp,
     })
     const response = serializeRouteResult(result)
     send({ kind: 'route-result', correlationId: msg.correlationId, ok: true, response })

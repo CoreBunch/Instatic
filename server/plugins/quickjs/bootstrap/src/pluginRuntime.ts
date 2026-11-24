@@ -192,6 +192,7 @@ globalThis.__runRoute = async function runRoute(routeKey, ctxJson) {
     member: ctx.member || null,
     app: ctx.app || null,
     ip: typeof ctx.ip === 'string' ? ctx.ip : null,
+    visitorIp: typeof ctx.visitorIp === 'string' ? ctx.visitorIp : null,
     ipKey: typeof ctx.ipKey === 'string' ? ctx.ipKey : null,
   })
   if (

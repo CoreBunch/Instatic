@@ -73,6 +73,7 @@ import {
   handleContentTreeReplace,
 } from './handlers/contentTree'
 import { handleMailSend, handleMailSendExternal, handleSitePublicUrl } from './handlers/mail'
+import { handlePackageRead } from './handlers/package'
 import { handleRateLimitTake } from './handlers/rateLimit'
 import {
   handleMembersDeletedSince,
@@ -107,6 +108,7 @@ type AnyHostApiHandler = (
 ) => Promise<void>
 
 const apiHandlers = {
+  'cms.package.read': handlePackageRead,
   'cms.routes.register': handleRoutesRegister,
   'cms.hooks.on': handleHooksOn,
   'cms.hooks.filter': handleHooksFilter,

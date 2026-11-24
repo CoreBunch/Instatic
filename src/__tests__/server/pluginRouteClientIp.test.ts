@@ -31,6 +31,7 @@ const PLUGIN_SOURCE = `
   export function activate(api) {
     const seen = (ctx) => ({
       ip: ctx.ip,
+      visitorIp: ctx.visitorIp,
       ipKey: ctx.ipKey,
       peer: ctx.req.headers.get('x-bun-socket-ip'),
       forwarded: ctx.req.headers.get('x-forwarded-for'),
@@ -38,6 +39,11 @@ const PLUGIN_SOURCE = `
       headerNames: ctx.req.headers.keys(),
     })
     api.cms.routes.public.get('/ip', seen)
+    api.cms.routes.public.get('/package-data', async () => ({
+      middle: Array.from(await api.cms.package.read('test.bin', 1, 2)),
+      end: Array.from(await api.cms.package.read('test.bin', 3, 8)),
+      past: Array.from(await api.cms.package.read('test.bin', 24, 2)),
+    }))
     api.cms.routes.member.get('/me-ip', seen)
     api.cms.routes.get('/admin-ip', 'plugins.read', seen)
     api.cms.routes.authenticated.get('/ip-any', seen)
@@ -87,6 +93,7 @@ describe('plugin routes and the caller', () => {
         adminPages: [],
       })),
       'server/index.js': strToU8(PLUGIN_SOURCE),
+      'data/test.bin': new Uint8Array([0xff, 0x81, 0, 0xc0]),
     })
     const formData = new FormData()
     formData.set('file', new File([zipped], 'plugin.zip', { type: 'application/zip' }))
@@ -122,6 +129,7 @@ describe('plugin routes and the caller', () => {
     expect(res.status).toBe(200)
     return (await res.json()) as {
       ip: string | null
+      visitorIp: string | null
       ipKey: string | null
       peer: string | null
       forwarded: string | null
@@ -129,9 +137,21 @@ describe('plugin routes and the caller', () => {
     }
   }
 
+  it('reads binary data from the installed ZIP in bounded slices through the sandbox', async () => {
+    const res = await visit(`${MOUNT}/package-data`)
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ middle: [129, 0], end: [192], past: [] })
+  })
+
   describe('ctx.ip', () => {
     it('is the socket peer for a direct caller, and the peer header itself is not passed on', async () => {
-      expect(await seen(`${MOUNT}/ip`, { peer: '203.0.113.7' })).toMatchObject({ ip: '203.0.113.7', ipKey: '203.0.113.7', peer: null, forwarded: null })
+      expect(await seen(`${MOUNT}/ip`, { peer: '203.0.113.7' })).toMatchObject({ ip: '203.0.113.7', ipKey: '203.0.113.7', visitorIp: '203.0.113.7', peer: null, forwarded: null })
+    })
+
+    it('leaves visitor attribution unknown when a forwarding peer has no trust configuration', async () => {
+      expect(await seen(`${MOUNT}/ip`, { peer: '10.0.0.5', forwardedFor: '198.51.100.20' })).toMatchObject({
+        ip: '10.0.0.5', visitorIp: null,
+      })
     })
 
     it('is one spelling per address, with a per-visitor key beside it', async () => {
@@ -146,7 +166,7 @@ describe('plugin routes and the caller', () => {
       expect((await install({ id: 'acme.blind', permissions: WITHOUT_IP })).status).toBe(201)
       configureTrustedProxyCidrs(['10.0.0.0/8'])
       const view = await seen('/_instatic/plugins/acme.blind/ip', { peer: '10.0.0.2', forwardedFor: '198.51.100.20' })
-      expect(view).toMatchObject({ ip: null, ipKey: null, peer: null })
+      expect(view).toMatchObject({ ip: null, ipKey: null, visitorIp: null, peer: null })
       const admin = await seen('/admin/api/cms/plugins/acme.blind/runtime/admin-ip', { peer: '203.0.113.9', cookie: owner })
       expect(admin).toMatchObject({ ip: null, ipKey: null })
     })
@@ -196,6 +216,7 @@ describe('plugin routes and the caller', () => {
       configureTrustedProxyCidrs(['10.0.0.0/8'])
       const view = await seen(`${MOUNT}/ip`, { peer: '10.0.0.2', forwardedFor: '198.51.100.20, 10.0.0.9' })
       expect(view.ip).toBe('198.51.100.20')
+      expect(view.visitorIp).toBe('198.51.100.20')
       // The header itself is not passed on: the address arrives only as ctx.ip.
       expect(view.forwarded).toBeNull()
     })

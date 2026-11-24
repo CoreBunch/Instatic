@@ -21,7 +21,7 @@
  * node_modules in the zip.
  */
 import { existsSync, readdirSync } from 'node:fs'
-import { copyFile, mkdir, rm, writeFile } from 'node:fs/promises'
+import { copyFile, cp, lstat, mkdir, rm, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { spawn } from 'node:child_process'
@@ -490,6 +490,18 @@ export async function buildPlugin(
       throw new Error(`Plugin icon "${definition.manifest.icon}" not found at ${iconSource}`)
     }
     await copyFile(iconSource, join(distDir, definition.manifest.icon))
+  }
+
+  const dataDir = join(absoluteSource, 'data')
+  if (existsSync(dataDir)) {
+    await cp(dataDir, join(distDir, 'data'), {
+      recursive: true,
+      filter: async path => {
+        const stat = await lstat(path)
+        if (!stat.isFile() && !stat.isDirectory()) throw new Error('Package data must contain regular files and directories')
+        return true
+      },
+    })
   }
 
   // 6. Zip — skipped during `dev` mode where the dist directory is synced

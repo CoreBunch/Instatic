@@ -169,6 +169,8 @@ export interface RunRouteRequest {
   ip: string | null
   /** `ip` as a per-visitor key: IPv4 as it is, IPv6 as its /64. */
   ipKey: string | null
+  /** Visitor address for attribution, or null when only a proxy peer is known. Requires visitors.ip. */
+  visitorIp: string | null
   body: Record<string, unknown>
 }
 

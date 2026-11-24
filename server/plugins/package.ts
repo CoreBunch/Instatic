@@ -13,7 +13,7 @@ interface PluginPackage {
   /**
    * Files inside the plugin zip, keyed by package-relative path. Text
    * entrypoints (JS / JSON / SVG) are stored as `string`; binary assets
-   * (PNG / JPG / WEBP / fonts) as `Uint8Array`. The install handler
+   * (data/ files, images and fonts) as `Uint8Array`. The install handler
    * writes them to disk based on the value type.
    */
   files: Record<string, string | Uint8Array>
@@ -39,7 +39,7 @@ export async function readPluginPackage(file: File): Promise<PluginPackage> {
   for (const [path, bytes] of Object.entries(archive)) {
     if (path.endsWith('/')) continue
     assertSafePackagePath(path)
-    files[path] = isBinaryPath(path) ? bytes : strFromU8(bytes)
+    files[path] = path.startsWith('data/') || isBinaryPath(path) ? bytes : strFromU8(bytes)
   }
 
   const manifestText = files['plugin.json']

@@ -208,6 +208,7 @@ describe('plugin sandbox invariants', () => {
       'cms.members.invite',
       'cms.members.tags.grant',
       'cms.members.tags.revoke',
+      'cms.package.read',
       'cms.rateLimit.take',
       'cms.routes.register',
       'cms.schedule.cancel',

@@ -106,6 +106,7 @@ const UNGATED_TARGETS = [
   'network.abort',
   'crypto.digest',
   'crypto.signHmac',
+  'cms.package.read',
   'cms.site.publicUrl',
   'cms.rateLimit.take',
 ]

@@ -18,7 +18,7 @@ import type { LoopFetchResult, LoopItem } from '@core/loops/types'
 import type { SerializedApp, SerializedMember, SerializedUser } from '../protocol/messages'
 import type { LoadPluginResult } from '../protocol/messages'
 import { normalizeRoutePath } from '../protocol/parser'
-import { canonicalIp, clientIp, visitorIpKey } from '../../auth/security'
+import { canonicalIp, clientIp, pluginVisitorIp, visitorIpKey } from '../../auth/security'
 import { materializeRouteResponse, serializeRouteRequest } from './routeIo'
 import { PluginRateLimitStore } from './pluginRateLimit'
 import { hostPluginHasPermission, hostPlugins } from './registry'
@@ -230,6 +230,7 @@ export async function runRouteInWorker(args: {
       app: args.app,
       ip,
       ipKey,
+      visitorIp: pluginVisitorIp(args.request, ip),
       body: parsedBody,
     },
     'route-result',

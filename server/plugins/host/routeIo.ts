@@ -30,7 +30,7 @@ import type {
  * socket peer, the one `clientIp` reads behind a trusted proxy
  * (`x-forwarded-for`), and the ones common proxies and CDNs add. None of them
  * is handed to plugin code, whatever its permissions: the caller's address
- * reaches a plugin only as `ctx.ip` / `ctx.ipKey`, worked out with the
+ * reaches a plugin only as `ctx.ip`, `ctx.ipKey` or `ctx.visitorIp`, worked out with the
  * trusted-proxy setting and only for a plugin granted `visitors.ip`. Lower
  * case, as the serialized headers are.
  */

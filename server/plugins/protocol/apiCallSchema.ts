@@ -93,6 +93,11 @@ function apiCallSchema<TTarget extends string, TArgs extends TSchema>(
 // ---------------------------------------------------------------------------
 
 export const ApiCallSchemas = {
+  'cms.package.read': apiCallSchema('cms.package.read', Type.Tuple([
+    Type.String({ minLength: 1, maxLength: 512, pattern: '^[a-zA-Z0-9_-][a-zA-Z0-9._-]*(/[a-zA-Z0-9_-][a-zA-Z0-9._-]*)*$' }),
+    Type.Integer({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }),
+    Type.Integer({ minimum: 1, maximum: 65536 }),
+  ])),
   'cms.routes.register': apiCallSchema('cms.routes.register', Type.Tuple([RouteRegistrationArgSchema])),
   'cms.hooks.on': apiCallSchema('cms.hooks.on', Type.Tuple([HookListenerArgSchema])),
   'cms.hooks.filter': apiCallSchema('cms.hooks.filter', Type.Tuple([HookFilterArgSchema])),

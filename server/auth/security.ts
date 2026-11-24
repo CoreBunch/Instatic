@@ -443,6 +443,22 @@ export function clientIp(req: Request): string | null {
 }
 
 /**
+ * Plugins that need a visitor's location must distinguish a visitor from the
+ * proxy fallback retained for audit logs and throttling. An untrusted header
+ * can suppress attribution, but it can never supply an address.
+ */
+export function pluginVisitorIp(req: Request, resolvedIp: string | null, railway = Boolean(process.env.RAILWAY_ENVIRONMENT_ID)): string | null {
+  if (!resolvedIp) return null
+  const peer = req.headers.get(BUN_SOCKET_IP_HEADER)
+  if (!peer) return null
+  if (isTrustedProxyPeer(peer)) {
+    return isTrustedProxyPeer(resolvedIp) ? null : resolvedIp
+  }
+  if (railway || req.headers.has('forwarded') || req.headers.has('x-forwarded-for') || req.headers.has('x-real-ip')) return null
+  return resolvedIp
+}
+
+/**
  * The address in one `X-Forwarded-For` entry, normalised, or null when the
  * entry holds none. Some proxies (Azure Application Gateway, IIS ARR) write
  * their client as `host:port`, or `[v6]:port`; the port is dropped. A bare

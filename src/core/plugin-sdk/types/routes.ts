@@ -96,6 +96,8 @@ export interface ServerPluginRouteContext {
    * carries. Null when `ip` is (also without `visitors.ip`).
    */
   ipKey: string | null
+  /** Visitor address for attribution, or null when only a proxy peer is known. Requires visitors.ip. */
+  visitorIp: string | null
 }
 
 /** An app calling a member route on a member's behalf. */

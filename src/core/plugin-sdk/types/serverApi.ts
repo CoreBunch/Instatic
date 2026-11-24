@@ -135,6 +135,8 @@ export interface ServerPluginApi {
     members: ServerPluginMembersApi
     /** Email: send one of the plugin's declared templates through the site's mail queue. */
     mail: ServerPluginMailApi
+    /** Read up to 64 KiB from a file beneath this installed package's data/ directory. */
+    package: { read(path: string, offset: number, length: number): Promise<Uint8Array> }
     /** Facts about the site a plugin needs to build links. No permission needed. */
     site: ServerPluginSiteApi
     /**

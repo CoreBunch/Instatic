@@ -19,6 +19,7 @@
  *
  * Targets deliberately ABSENT from this map require NO permission and are
  * intentionally ungated:
+ *   - `cms.package.read` — bounded reads of the calling plugin's own bundled data.
  *   - `cms.settings.replace` — any active plugin may update its own settings.
  *   - `network.abort`        — a plugin without `network.outbound` can never
  *                              mint a live abortId, so the lookup just no-ops.

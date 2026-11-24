@@ -252,3 +252,5 @@ The path is package-relative. Plugins cannot read arbitrary host filesystem path
 For optional signed package updates, see the signed plugin updates section in [the plugin system guide](../../../docs/features/plugin-system.md).
 
 Use `showInSiteDock: true` on a direct editor command to open an overlay from the Site dock. The [fragment API](../../../docs/features/plugin-system.md#inserting-site-fragments-and-applying-themes-editorfragments) supports dropping content at a position in the live canvas.
+
+Ship lookup tables in the package’s `data/` directory. A server entrypoint can call `api.cms.package.read('lookup.bin', offset, length)` for a slice of up to 65,536 bytes.

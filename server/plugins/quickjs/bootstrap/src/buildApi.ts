@@ -505,6 +505,13 @@ globalThis.__buildApi = function buildApi() {
         },
       },
       // Facts about the site. No permission needed.
+      package: {
+        async read(path: string, offset: number, length: number) {
+          const encoded = await call('cms.package.read', [path, offset, length])
+          if (typeof encoded !== 'string') throw new TypeError('Invalid package read response')
+          return __base64ToBytes(encoded)
+        },
+      },
       site: {
         // api.cms.site.publicUrl() → 'https://example.com' | null
         publicUrl: function () {
