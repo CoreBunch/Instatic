@@ -509,6 +509,10 @@ Editor surfaces are permission-split:
 
 #### Inserting site fragments and applying themes (`editor.fragments`)
 
+A Site command can set `showInSiteDock: true` to run directly from the dock. The dock accepts commands that take no arguments and are safe to run directly. An overlay with `showInLiveMode: true` can call `api.editor.canvas.requestLivePreview()` to display the current page. Invoke the returned release function on cleanup to restore the editor view.
+
+For drag and drop, call `canvasDropAt(clientX, clientY)` with editor-window coordinates. It returns null outside a breakpoint, or a drop target with a viewport-relative preview rectangle and a position (before, inside, or after). Resolve again on release and call the returned target’s `insert(input)` to use that location even if the selection changes during the import.
+
 `api.editor.fragments` inserts a [site fragment](fragments.md) into the document open in the site editor, through the same flow as Spotlight **Insert fragment from file…**: the plan runs against the open document, the site's own classes, components, tokens and tables win, media and table writes go through the step-up prompt, and the whole insert is one undo step with the inserted root selected. Types (`FragmentInsertInput`, `FragmentInsertOutcome`, `FragmentPlanOutcome`, `FragmentInsertReport`, `FragmentMedia`, `FragmentInsertPlacement`) come from the SDK (`src/core/plugin-sdk/types/fragments.ts`).
 
 ```js

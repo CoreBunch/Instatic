@@ -8,6 +8,8 @@ import { BoxStackSolidIcon } from 'pixel-art-icons/icons/box-stack-solid'
 import { PaintBucketSolidIcon } from 'pixel-art-icons/icons/paint-bucket-solid'
 import { ColorsSwatchSolidIcon } from 'pixel-art-icons/icons/colors-swatch-solid'
 import { Button } from '@ui/components/Button'
+import { pushToast } from '@ui/components/Toast'
+import { getErrorMessage } from '@core/utils/errorMessage'
 import { cn } from '@ui/cn'
 import { assignRailAccents, railTintVar, type RailAccent } from '@ui/railAccent'
 import { pluginRuntime } from '@core/plugins/runtime'
@@ -27,7 +29,7 @@ interface RailItem {
   icon: IconComponent
   iconName: string
   accent: RailAccent
-  open: boolean
+  open?: boolean
   detached?: boolean
   disabled?: boolean
   onToggle: () => void
@@ -85,6 +87,9 @@ const getPluginPanelsSnapshot = () => pluginRuntime.getPanels()
 // detect a snapshot mismatch.
 const SERVER_PLUGIN_PANELS_SNAPSHOT: ReturnType<typeof getPluginPanelsSnapshot> = []
 
+const getDockCommands = () => pluginRuntime.getSiteDockCommands()
+const NO_DOCK_COMMANDS: ReturnType<typeof getDockCommands> = []
+
 export function PanelRail({
   workspace = 'site',
   editable = true,
@@ -114,6 +119,9 @@ export function PanelRail({
     getPluginPanelsSnapshot,
     () => SERVER_PLUGIN_PANELS_SNAPSHOT,
   )
+
+  const commands = useSyncExternalStore(subscribePluginRuntime, getDockCommands, () => NO_DOCK_COMMANDS)
+  const dockCommands = editable && workspace === 'site' ? commands : NO_DOCK_COMMANDS
 
   const panelOpenById = {
     explorer: explorerOpen,
@@ -187,9 +195,9 @@ export function PanelRail({
   // explicit accent keep it; the rest get deterministic identity colors with
   // repeat avoidance within the plugin rail group.
   const pluginAccents = assignRailAccents(
-    pluginPanels,
+    [...pluginPanels, ...dockCommands],
     (panel) => `plugin:${panel.id}:${panel.label}`,
-    (panel) => panel.accent,
+    (panel) => 'accent' in panel ? panel.accent : undefined,
   )
   const pluginItems: RailItem[] = editable
     ? pluginPanels.map((panel, index) => ({
@@ -210,6 +218,26 @@ export function PanelRail({
         shortcutLabel: panel.shortcutLabel,
       }))
     : []
+
+  for (const [index, command] of dockCommands.entries()) {
+    const iconName = command.iconName ?? 'box'
+    pluginItems.push({
+      id: `command:${command.id}`,
+      label: command.label,
+      icon: resolvePluginPanelIcon(iconName),
+      iconName,
+      accent: pluginAccents[pluginPanels.length + index] ?? 'mint',
+      onToggle: async () => {
+        try {
+          const result = await pluginRuntime.runCommand(command.id)
+          if (result?.message) pushToast({ kind: 'success', title: result.message })
+        } catch (err) {
+          console.error('[PanelRail] Plugin command failed:', err)
+          pushToast({ kind: 'error', title: command.label, body: getErrorMessage(err, 'Command failed') })
+        }
+      },
+    })
+  }
 
   return (
     <nav
@@ -244,15 +272,16 @@ export function PanelRail({
 
 function RailButton({ item }: { item: RailItem }) {
   const RailIcon = item.icon
-  const action = item.open ? 'Close' : 'Open'
+  const name = item.open === undefined ? item.label : `${item.label} panel`
+  const accessibleName = item.open === undefined ? name : `${item.open ? 'Close' : 'Open'} ${name}`
   const style = {
     '--rail-icon-tint': railTintVar(item.accent),
   } as CSSProperties
   const title = item.disabled
     ? item.disabledTitle
     : item.shortcutLabel
-      ? `${item.label} panel (${item.shortcutLabel})`
-      : `${item.label} panel`
+      ? `${name} (${item.shortcutLabel})`
+      : name
 
   return (
     <Button
@@ -260,7 +289,7 @@ function RailButton({ item }: { item: RailItem }) {
       size="md"
       iconOnly
       pressed={item.open && !item.detached}
-      aria-label={`${action} ${item.label} panel`}
+      aria-label={accessibleName}
       disabled={item.disabled}
       tooltip={title}
       data-testid={`panel-rail-${item.id}`}

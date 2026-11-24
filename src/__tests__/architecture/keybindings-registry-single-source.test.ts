@@ -15,7 +15,6 @@
  *   - CanvasRoot.tsx           — uses getKeybindingForCommand().match(e)
  *   - usePersistence.ts        — uses getKeybindingForCommand().match(e)
  *   - SpotlightRoot.tsx        — uses getKeybindingForCommand().match(e)
- *   - UndoRedoButtons.tsx      — uses getKeybindingForCommand().match(e)
  *   - useCanvas.ts             — canvas-specific zoom/pan shortcuts (not global)
  *   - Spotlight.tsx            — ⌘ symbol appears only in a JSDoc comment
  */
@@ -41,7 +40,6 @@ const ALLOWLIST = new Set([
   'admin/pages/site/canvas/CanvasRoot.tsx',
   'admin/pages/site/hooks/usePersistence.ts',
   'admin/spotlight/SpotlightRoot.tsx',
-  'admin/pages/site/canvas/UndoRedoButtons.tsx',
   // Canvas-specific zoom/pan shortcuts (Ctrl+0, f, 1, 2) — not global commands.
   // These are canvas viewport controls that don't belong in the palette registry.
   'admin/pages/site/hooks/useCanvas.ts',

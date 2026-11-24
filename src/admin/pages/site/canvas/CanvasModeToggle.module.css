@@ -180,3 +180,5 @@
     .pill { overflow-x: auto; }
     .pill > * { flex-shrink: 0; }
 }
+
+.scaleSelect { width: 7ch; }

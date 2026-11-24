@@ -20,6 +20,8 @@ export interface FragmentInsertProgress {
 }
 
 export interface FragmentInsertInput {
+  /** Place the layout first, then import assets while editing, or skip asset imports. */
+  assets?: 'background' | 'layout-only'
   /** A fragment object (`fragment.json`, parsed). Checked with `parseSiteFragment`. */
   fragment: unknown
   /**
@@ -123,7 +125,15 @@ export type ThemePlanOutcome =
   | { ok: true; report: ThemeApplyReport }
   | { ok: false; message: string }
 
+export interface FragmentCanvasDrop {
+  preview: { left: number; top: number; width: number; height: number; position: 'before' | 'after' | 'inside' }
+  /** Uses the document and position captured at hit testing. */
+  insert: (input: FragmentInsertInput) => Promise<FragmentInsertOutcome>
+}
+
 export interface EditorFragmentsApi {
+  /** Hit test an editor viewport point using the canvas insertion rules. */
+  canvasDropAt: (clientX: number, clientY: number) => FragmentCanvasDrop | null
   /**
    * Observe the destination's saved styles for a preview. Emits null when the
    * site editor is unavailable. Call the returned function to unsubscribe.

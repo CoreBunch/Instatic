@@ -92,6 +92,7 @@ import {
   shouldStartCanvasPointerPan,
 } from './canvasPanInput'
 import { useEditorStore } from '@site/store/store'
+import { canvasHistoryCommand } from './useCanvasHistoryShortcuts'
 import { closestReadonlyRegion, isElementLike } from './readonlyRegion'
 import { CanvasDocumentContext, CanvasFrameElementContext } from './CanvasContexts'
 import styles from './IframeFrameSurface.module.css'
@@ -440,9 +441,6 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
     // pointer event into module selection logic (otherwise a module would
     // get selected while the user was trying to pan).
     useEffect(() => {
-      // Pan-gesture / parent-doc canvas-drag relay is canvas-only. Live frames
-      // neither pan nor host the cross-frame canvas drag.
-      if (isLive) return
       if (!iframeDoc) return
       const iframe = iframeRef.current
       if (!iframe) return
@@ -482,6 +480,15 @@ export const IframeFrameSurface = forwardRef<IframeFrameSurfaceHandle, IframeFra
           e.preventDefault()
           e.stopPropagation()
         }
+      }
+      // Live frames scroll natively. Relay editor history while leaving typing,
+      // navigation and gestures in the preview document.
+      if (isLive) {
+        const onHistoryKeyDown = (e: KeyboardEvent) => {
+          if (canvasHistoryCommand(e) && !useEditorStore.getState().activeInlineEdit) forwardKeyboard(e)
+        }
+        iframeDoc.addEventListener('keydown', onHistoryKeyDown)
+        return () => iframeDoc.removeEventListener('keydown', onHistoryKeyDown)
       }
       const onKeyDown = (e: KeyboardEvent) => {
         // While inline text editing, the contentEditable node owns the keyboard.

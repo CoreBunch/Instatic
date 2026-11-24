@@ -177,7 +177,7 @@ describe('UndoRedoButtons — WCAG aria-disabled pattern (Guideline #224)', () =
   it('keyboard shortcut handler guards against text input targets', () => {
     const { readFileSync } = require('fs')
     const src = readFileSync(
-      new URL('../../admin/pages/site/canvas/UndoRedoButtons.tsx', import.meta.url),
+      new URL('../../admin/pages/site/canvas/useCanvasHistoryShortcuts.ts', import.meta.url),
       'utf-8',
     )
     // Shortcuts must not fire inside inputs (would break text editing)
@@ -189,7 +189,7 @@ describe('UndoRedoButtons — WCAG aria-disabled pattern (Guideline #224)', () =
   it('keyboard handler registers on document (global scope, not canvas-local)', () => {
     const { readFileSync } = require('fs')
     const src = readFileSync(
-      new URL('../../admin/pages/site/canvas/UndoRedoButtons.tsx', import.meta.url),
+      new URL('../../admin/pages/site/canvas/useCanvasHistoryShortcuts.ts', import.meta.url),
       'utf-8',
     )
     expect(src).toContain('document.addEventListener')
@@ -197,19 +197,23 @@ describe('UndoRedoButtons — WCAG aria-disabled pattern (Guideline #224)', () =
   })
 
   it('handler supports both Cmd+Z (undo) and Cmd+Shift+Z / Cmd+Y (redo)', () => {
-    // Post-spotlight refactor: the keydown handler delegates undo/redo matching
-    // to the keybindings registry via `kb.match(e)`. The Ctrl+Y Windows alias
-    // stays inline because the canonical Redo binding is ⌘⇧Z — Ctrl+Y is just
-    // a convenience escape hatch.
     const { readFileSync } = require('fs')
     const src = readFileSync(
-      new URL('../../admin/pages/site/canvas/UndoRedoButtons.tsx', import.meta.url),
+      new URL('../../admin/pages/site/canvas/useCanvasHistoryShortcuts.ts', import.meta.url),
       'utf-8',
     )
     expect(src).toContain('kbUndo?.match(e)')
     expect(src).toContain('kbRedo?.match(e)')
-    // Also support Ctrl+Y (Windows redo) — handled inline as an alias.
-    expect(src).toContain("e.key === 'y'")
+    const registry = readFileSync(new URL('../../admin/spotlight/keybindings.ts', import.meta.url), 'utf-8')
+    expect(registry).toContain("e.key === 'y'")
+  })
+
+  it('mounts history shortcuts on the editable canvas independently of the toolbar', () => {
+    const { readFileSync } = require('fs')
+    const root = readFileSync(new URL('../../admin/pages/site/canvas/CanvasRoot.tsx', import.meta.url), 'utf-8')
+    const buttons = readFileSync(new URL('../../admin/pages/site/canvas/UndoRedoButtons.tsx', import.meta.url), 'utf-8')
+    expect(root).toContain('useCanvasHistoryShortcuts(editable)')
+    expect(buttons).not.toContain('addEventListener')
   })
 })
 
