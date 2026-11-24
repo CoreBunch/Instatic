@@ -71,6 +71,15 @@ describe('validatePluginSettingsRecord', () => {
     })
   })
 
+  it('keeps an omitted optional secret and allows an explicit clear even with a manifest default', () => {
+    const schema: PluginSettingDefinition[] = [
+      { id: 'token', label: 'Token', type: 'password', secret: true, default: 'initial' },
+    ]
+    expect(validatePluginSettingsRecord(schema, {})).toEqual({})
+    expect(validatePluginSettingsRecord(schema, { token: '' })).toEqual({ token: '' })
+    expect(() => validatePluginSettingsRecord(schema, { token: null })).toThrow(/must be a string/)
+  })
+
   it('rejects values that violate type expectations', () => {
     expect(() => validatePluginSettingsRecord(baseSchema, {
       enabled: 'yes',

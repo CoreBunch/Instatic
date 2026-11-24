@@ -93,11 +93,23 @@ test.describe.serial('plugin settings', () => {
     await expect(dialog.getByLabel('Mode')).toHaveValue('draft')
     await expect(dialog.getByLabel('API token')).toHaveValue('')
 
+    // Keep the initial empty settings open in another tab while the first saves the token.
+    const secondTab = await page.context().newPage()
+    await secondTab.goto('/admin/plugins')
+    await secondTab.getByRole('button', { name: `Edit settings for ${pluginName}` }).click()
+    const staleDialog = secondTab.getByRole('dialog', { name: pluginName })
+    await expect(staleDialog.getByLabel('API token')).toHaveValue('')
+
     await dialog.getByLabel('Mode').fill(savedMode)
     await dialog.getByLabel('API token').fill(secretValue)
     await dialog.getByRole('button', { name: 'Save settings' }).click()
     await completeStepUp(page)
     await expect(dialog).toHaveCount(0)
+
+    await staleDialog.getByLabel('Mode').fill(savedMode)
+    await staleDialog.getByRole('button', { name: 'Save settings' }).click()
+    await expect(staleDialog).toHaveCount(0)
+    await secondTab.close()
 
     await pluginCard.getByRole('button', { name: `Edit settings for ${pluginName}` }).click()
     const reopenedDialog = page.getByRole('dialog', { name: pluginName })

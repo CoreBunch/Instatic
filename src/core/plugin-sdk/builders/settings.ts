@@ -183,6 +183,15 @@ export function validatePluginSettingsRecord(
   const out: PluginSettingsValues = {}
   for (const s of settings) {
     const value = raw[s.id]
+    // Only an explicit empty string clears a stored secret. Defaults belong to installation.
+    if (s.secret && !s.required) {
+      if (value === undefined) continue
+      if (value === null) throw new Error(`Setting "${s.label}" must be a string.`)
+      if (value === '') {
+        out[s.id] = ''
+        continue
+      }
+    }
     if (value === undefined || value === null || value === '') {
       if (s.required) {
         throw new Error(`Setting "${s.label}" is required.`)

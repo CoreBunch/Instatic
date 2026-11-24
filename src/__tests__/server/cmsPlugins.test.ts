@@ -525,6 +525,14 @@ describe('CMS plugin handlers', () => {
     expect(storedSettings()).toEqual({ mode: 'slow' })
     expect(ciphertextBefore.equals(Buffer.from(secretRow()!.ciphertext as Uint8Array))).toBe(true)
 
+    const partial = await putSettings({ mode: 'fast' })
+    expect(partial.status).toBe(200)
+    expect(await partial.json()).toEqual({
+      settings: { apiKey: '***', mode: 'fast' },
+      secretsNeedingReentry: [],
+    })
+    expect(ciphertextBefore.equals(Buffer.from(secretRow()!.ciphertext as Uint8Array))).toBe(true)
+
     // A deliberate new value rotates the encrypted row…
     const rotate = await putSettings({ apiKey: 'rotated-secret', mode: 'slow' })
     expect(rotate.status).toBe(200)

@@ -415,7 +415,7 @@ PLUGIN-001 note: JSON manifest review/install step-up is automated in `capabilit
 
 PLUGIN-002 note: packaged lifecycle fixture install, disable, runtime route unregistration, enable, runtime route restoration, remove confirmation, uninstall, and post-remove route absence are automated in `plugins.e2e.ts`; parked-error restart, uninstall-hook failure/force-remove, and mobile card layout remain lower-level or agent-run.
 
-PLUGIN-003 note: packaged settings fixture install, non-secret setting persistence, secret value save, reopened `***` masking, and direct settings API no-plaintext projection are automated in `plugins.e2e.ts`; invalid setting payloads, disabled-plugin behavior, and mobile dialog layout remain lower-level or agent-run.
+PLUGIN-003 note: packaged settings fixture install, non-secret setting persistence, secret value save, saving from a second dialog opened before that secret was set, reopened `***` masking, and direct settings API no-plaintext projection are automated in `plugins.e2e.ts`; invalid setting payloads, disabled-plugin behavior, and mobile dialog layout remain lower-level or agent-run.
 
 PLUGIN-004 note: packaged ZIP install, permission review, markdown/map/resource/app admin pages, resource create/delete, and an authenticated runtime route are automated in `plugins.e2e.ts`; disabled-plugin, runtime-denied, app-failure, and mobile layout variants remain agent-run or lower-level.
 
