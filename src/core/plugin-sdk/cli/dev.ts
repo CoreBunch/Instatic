@@ -13,10 +13,10 @@
  * request that touches a plugin's server hook sees the fresh code. Editor
  * and frontend bundles still need a manual page reload (browser cache).
  */
-import { watch } from 'node:fs'
+import { statSync, watch } from 'node:fs'
 import { cp, mkdir, readdir, rm, stat } from 'node:fs/promises'
 import { basename, join, relative, resolve } from 'node:path'
-import { buildPlugin } from './build'
+import { buildPlugin, isBuildScratchFile } from './build'
 import {
   resolvePluginDevConfig,
   type PluginDevTargets,
@@ -42,10 +42,11 @@ export async function runPluginDev(options: PluginDevOptions): Promise<void> {
 
   await rebuildAndSync(pluginDir, targets, { initial: true })
 
-  // Watch source — ignore generated artifacts.
+  // Watch source — ignore what the build itself writes, or each rebuild
+  // would trigger the next one.
   const watcher = watch(pluginDir, { recursive: true }, (_event, fileName) => {
     if (!fileName) return
-    if (shouldIgnore(fileName)) return
+    if (shouldIgnoreChange(pluginDir, fileName)) return
     void debounce(async () => {
       try {
         await rebuildAndSync(pluginDir, targets, { initial: false, changed: fileName })
@@ -65,18 +66,23 @@ export async function runPluginDev(options: PluginDevOptions): Promise<void> {
   })
 }
 
-const IGNORED_PATH_FRAGMENTS = [
-  'node_modules',
-  '/dist/',
-  '/dist',
-  '__modules-facade.ts',
-  '.DS_Store',
-  '/.git',
-]
-
-function shouldIgnore(fileName: string): boolean {
-  if (fileName.startsWith('dist/') || fileName === 'dist') return true
-  return IGNORED_PATH_FRAGMENTS.some((fragment) => fileName.includes(fragment))
+/**
+ * Whether a watcher event for `fileName` (relative to `pluginDir`) is not a
+ * source edit: the build output in `dist/`, the facades the build writes next
+ * to the sources, dependencies, git metadata, or a folder whose listing changed.
+ * `fs.watch` reports paths with the platform separator (`dist\modules\index.js`
+ * on Windows), so the path is split on both.
+ */
+export function shouldIgnoreChange(pluginDir: string, fileName: string): boolean {
+  const segments = fileName.split(/[\\/]+/).filter(Boolean)
+  const name = segments[segments.length - 1] ?? ''
+  if (segments[0] === 'dist') return true
+  if (segments.some((segment) => segment === 'node_modules' || segment === '.git')) return true
+  if (name === '.DS_Store' || isBuildScratchFile(name)) return true
+  // Windows also reports the folder itself when a file inside it is created or
+  // removed (`server` around each sandbox facade). A real edit always reports
+  // the file too, so a folder event alone never needs a rebuild.
+  return statSync(join(pluginDir, fileName), { throwIfNoEntry: false })?.isDirectory() ?? false
 }
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
