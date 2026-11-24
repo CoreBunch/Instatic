@@ -1,8 +1,10 @@
 import type { ImportFragment } from '@core/htmlImport'
-import type { MemberFormAction, MemberFormField } from '@core/members'
+import { PAIR_FORM_ACTION, approvalStates, type ApprovalState, type MemberFormAction, type MemberFormField } from '@core/members'
+import { appPairFormParts } from './appPairFormParts'
 import { createNode, type PageNode } from '@core/page-tree'
 
 export interface MemberFormMissing {
+  states?: ApprovalState[]
   fields: MemberFormField[]
   submit: boolean
   messages: boolean
@@ -21,6 +23,9 @@ export function memberFormFragment(
   formId: string,
   missing: MemberFormMissing,
 ): ImportFragment {
+  if (action.action === PAIR_FORM_ACTION) {
+    return appPairFormParts(formId, missing.states ?? Object.keys(approvalStates) as ApprovalState[])
+  }
   const nodes: Record<string, PageNode> = {}
   const rootIds: string[] = []
   const add = (node: PageNode, root = true): PageNode => {

@@ -3,7 +3,7 @@
  * nodes that add it. Used by the form setup panel's "Add …" button.
  */
 import type { MemberFormMissing } from '@core/memberForms'
-import type { MemberFormAction } from '@core/members'
+import { approvalGroup, approvalStates, PAIR_FORM_ACTION, type ApprovalState, type MemberFormAction } from '@core/members'
 import { flattenSubtree, type Page } from '@core/page-tree'
 import { FORM_CONTROL_MODULES, stringProp } from './formSettingsAnalysis'
 
@@ -37,6 +37,11 @@ export function missingMemberFormParts(
   formNodeId: string,
   action: MemberFormAction,
 ): MemberFormMissing {
+  if (action.action === PAIR_FORM_ACTION) {
+    const present = new Set(flattenSubtree(page, formNodeId).map(id => approvalGroup(page.nodes[id].props)))
+    const states = (Object.keys(approvalStates) as ApprovalState[]).filter(state => !present.has(state))
+    return { states, fields: [], submit: false, secondary: false, messages: false }
+  }
   const names = controlNamesInForm(page, formNodeId)
   return {
     fields: action.fields.filter((field) => !names.has(field.name)),

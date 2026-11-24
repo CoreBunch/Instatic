@@ -191,6 +191,7 @@ export async function anonymizeMember(db: DbClient, memberId: string): Promise<v
   await db.transaction(async (tx) => {
     await tx`delete from member_sessions where member_id = ${memberId}`
     await tx`delete from member_tokens where member_id = ${memberId}`
+    await tx`delete from member_app_pairs where email_member_id = ${memberId}`
     // Sign-ins to apps go with the account, and with them the device names
     // the apps gave ("Ada's MacBook").
     await tx`

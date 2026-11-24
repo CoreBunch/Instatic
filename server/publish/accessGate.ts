@@ -26,7 +26,7 @@ import {
   type MemberAppRequestFrame,
   type MemberFrame,
 } from '@core/templates'
-import { resolveSignedInMember } from '../members/handlers'
+import { resolveSignedInMember } from '../members/sessions'
 import { getMemberPagePaths } from '../members/pages'
 import { toCurrentMember } from '../members/repository'
 import { listProtectedTables, listTableIdsBySlug, type ProtectedTable } from '../repositories/data/tableAccess'

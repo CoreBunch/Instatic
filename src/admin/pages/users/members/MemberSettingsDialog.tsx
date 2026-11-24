@@ -92,6 +92,12 @@ const PAGE_FIELDS: Array<{ key: MemberPageKey; label: string; hint: string; off:
     off: 'Not set: members cannot change their address.',
   },
   {
+    key: 'appPair',
+    label: 'Connect an app by code',
+    hint: 'Choose a public page with a Connect an app by code form.',
+    off: 'Device approval is off until a page is assigned.',
+  },
+  {
     key: 'appSignIn',
     label: 'Approve an app',
     hint: 'Where a member is sent when an app asks to sign them in.',
@@ -136,6 +142,9 @@ function pageNote(
     case 'ready':
       // A signed-out visitor an app sends to an open page can do nothing
       // there; on a members page they are sent to sign in and come back.
+      if (key === 'appPair' && state.page.membersOnly) {
+        return { text: 'Set this page to public so a member can open the approval email on another device.', problem: true }
+      }
       if (key === 'appSignIn' && !state.page.membersOnly) {
         return {
           text: `"${state.page.title}" is open to everyone. Set its Access to signed-in members in the page settings, so a signed-out visitor is sent to sign in first.`,
