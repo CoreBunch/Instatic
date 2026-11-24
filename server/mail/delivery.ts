@@ -63,6 +63,7 @@ import {
   removeQueuedMail,
   rescheduleQueuedMail,
   type QueuedMail,
+  type QueueTemplateMailInput,
 } from './queue'
 import {
   assertSendable,
@@ -91,32 +92,6 @@ export const MAIL_DELIVERY_WINDOW_MS = 24 * 60 * 60 * 1000
 const RETRY_DELAYS_MS = [30_000, 2 * 60_000, 10 * 60_000, 30 * 60_000, 3_600_000, 2 * 3_600_000, 4 * 3_600_000, 6 * 3_600_000, 8 * 3_600_000]
 /** Each wait is moved by up to this share either way, so retries do not arrive in step. */
 const RETRY_JITTER = 0.2
-
-export interface QueueTemplateMailInput {
-  key: string
-  to: string
-  variables: Record<string, string>
-  /**
-   * After this moment (milliseconds since the epoch) the email is not sent
-   * any more. Pass the expiry of the link it carries. Without one the email
-   * has a day.
-   */
-  deliverBefore?: number
-  /** Who asks: omitted for the core's own mail, a plugin's id otherwise. */
-  source?: string
-  /** The asking plugin's name, kept in the activity log. */
-  sourceLabel?: string
-  /** The sender's own name for this email, handed back with the outcome. */
-  reference?: string
-  /**
-   * The site member the email is for, when the sender named a member and
-   * the host looked the address up. The outcome then names the member, never
-   * the address: a sender that was not given the address does not learn it.
-   */
-  memberId?: string
-  /** The sending plugin's install; its outcome is told to that install only. */
-  installId?: string
-}
 
 /**
  * Accept an email for delivery. Resolves `queued` once it is safely stored,

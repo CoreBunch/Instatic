@@ -1,7 +1,8 @@
 import { Type } from '@core/utils/typeboxHelpers'
 import { MailConnectorInputSchema, MailConnectorSecretInputSchema, MailDefaultsSchema, MailTemplateInputSchema, MailTemplateSendingSchema, MailTestInputSchema } from '@core/mail'
 import { CreateMemberAppBodySchema, MemberInviteInputSchema, MemberSettingsSchema, MemberTagInputSchema, MemberTagRemoveInputSchema } from '@core/members'
-import { UserCreateBodySchema, UserInviteBodySchema, UserPatchBodySchema } from '../../handlers/cms/users'
+import { UserCreateBodySchema, UserPatchBodySchema } from '../../handlers/cms/users'
+import { UserInviteBodySchema } from '../../handlers/cms/userInvitations'
 import { DASHBOARD_READERS } from '../../handlers/cms/dashboard'
 import { operation as op } from './operation'
 

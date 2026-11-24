@@ -3,7 +3,8 @@ import type { DbClient } from '../db/client'
 import { SESSION_COOKIE_NAME, hashSessionToken } from './tokens'
 import { roleHasCapability, type CoreCapability } from './capabilities'
 import { findUserBySessionHash, getSessionStepUpExpiresAt, sessionRequiresMfa } from './sessions'
-import { jsonResponse } from '../http'
+import { findRoleById } from '../repositories/roles'
+import { badRequest, jsonResponse } from '../http'
 import type { AuthUser } from '../repositories/users'
 
 /**
@@ -91,6 +92,24 @@ export function capabilitiesUserCannotGrant(
   capabilities: readonly CoreCapability[],
 ): CoreCapability[] {
   return capabilities.filter((capability) => !userHasCapability(user, capability))
+}
+
+export async function rejectsRoleAssignment(
+  db: DbClient,
+  actor: AuthUser,
+  roleId: string,
+): Promise<Response | null> {
+  if (roleId === 'owner') return badRequest('Owner role is setup-only')
+  const role = await findRoleById(db, roleId)
+  if (!role) return jsonResponse({ error: 'Role not found' }, { status: 404 })
+
+  const overreach = capabilitiesUserCannotGrant(actor, role.capabilities)
+  return overreach.length > 0
+    ? jsonResponse(
+      { error: `You cannot assign capabilities you don't hold: ${overreach.join(', ')}` },
+      { status: 403 },
+    )
+    : null
 }
 
 export async function requireAnyCapability(

@@ -15,23 +15,19 @@
  * owns its own method-routing, body-parsing, and audit emission.
  */
 import type { DbClient } from '../../db/client'
-import { isValidEmail } from '@core/utils/email'
-import { ADMIN_INVITE_TEMPLATE_KEY } from '@core/mail'
-import { accountLinkOrigin } from '../../auth/security'
+import { handleInviteUser } from './userInvitations'
 import { getMailDefaults } from '../../mail/defaults'
-import { readyToSend, MailNotConfiguredError } from '../../mail/send'
-import { queueTemplateMail } from '../../mail/delivery'
-import { storeUserInvitation } from '../../repositories/userInvitations'
-import { createSessionToken, hashSessionToken, hashPassword } from '../../auth/tokens'
+import { readyToSend } from '../../mail/send'
+import { hashPassword } from '../../auth/tokens'
 import {
   capabilitiesUserCannotGrant,
   getSessionHash,
   requireCapability,
   requireStepUp,
+  rejectsRoleAssignment,
 } from '../../auth/authz'
 import type { AuthUser } from '../../repositories/users'
 import { createAuditEvent } from '../../repositories/audit'
-import { findRoleById } from '../../repositories/roles'
 import { revokeAllOtherSessions } from '../../repositories/sessions'
 import {
   countActiveOwners,
@@ -61,12 +57,6 @@ export const UserCreateBodySchema = Type.Object({
   status: Type.Optional(UserStatusSchema),
 })
 
-export const UserInviteBodySchema = Type.Object({
-  email: Type.String(),
-  roleId: Type.String(),
-  delivery: Type.Union([Type.Literal('email'), Type.Literal('link')]),
-}, { additionalProperties: false })
-
 export const UserPatchBodySchema = Type.Partial(Type.Object({
   email: Type.String(),
   displayName: Type.String(),
@@ -90,24 +80,6 @@ async function rejectsLastOwnerRemoval(
   const removesOwnerRole = next.delete || next.roleId !== undefined && next.roleId !== 'owner'
   const deactivatesOwner = next.status !== undefined && next.status !== 'active'
   return (removesOwnerRole || deactivatesOwner) && await countActiveOwners(db) <= 1
-}
-
-async function rejectsRoleAssignment(
-  db: DbClient,
-  actor: AuthUser,
-  roleId: string,
-): Promise<Response | null> {
-  if (roleId === 'owner') return badRequest('Owner role is setup-only')
-  const role = await findRoleById(db, roleId)
-  if (!role) return jsonResponse({ error: 'Role not found' }, { status: 404 })
-
-  const overreach = capabilitiesUserCannotGrant(actor, role.capabilities)
-  return overreach.length > 0
-    ? jsonResponse(
-      { error: `You cannot assign capabilities you don't hold: ${overreach.join(', ')}` },
-      { status: 403 },
-    )
-    : null
 }
 
 const USER_NOT_FOUND_BODY = { error: 'User not found' }
@@ -167,50 +139,6 @@ async function handleCreateUser(
     })
     return jsonResponse({ user }, { status: 201 })
   } catch (err) {
-    return mutationErrorResponse(err)
-  }
-}
-
-async function handleInviteUser(req: Request, db: DbClient, _params: RouteParams, actor: AuthUser): Promise<Response> {
-  const stepUp = await requireStepUp(req, db, actor)
-  if (stepUp) return stepUp
-  const body = await readValidatedBody(req, UserInviteBodySchema)
-  if (!body || !isValidEmail(body.email.trim())) return badRequest('Enter a valid email address')
-  const roleError = await rejectsRoleAssignment(db, actor, body.roleId)
-  if (roleError) return roleError
-  const origin = accountLinkOrigin(req)
-  if (!origin) return jsonResponse({ error: 'Set PUBLIC_ORIGIN on the server to create invitation links.' }, { status: 409 })
-
-  const email = body.email.trim()
-  const token = createSessionToken()
-  const link = new URL('/admin/invitation', origin)
-  link.hash = `invite=${token}`
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-  const tokenHash = await hashSessionToken(token)
-  // Login always verifies a valid password hash, including for suspended users.
-  const passwordHash = await hashPassword(createSessionToken())
-  const { roleId, delivery } = body
-  async function issue(tx: DbClient) {
-    const id = await storeUserInvitation(tx, { email, roleId, tokenHash, passwordHash, expiresAt })
-    await createAuditEvent(tx, {
-      actorUserId: actor.id, action: 'user.invite', targetType: 'user', targetId: id,
-      metadata: { roleId, delivery }, ...requestAuditContext(req),
-    })
-  }
-  try {
-    if (delivery === 'link') {
-      await db.transaction(issue)
-      return jsonResponse({ link: link.href }, { status: 201, headers: { 'cache-control': 'no-store' } })
-    }
-    const outcome = await queueTemplateMail(db, {
-      key: ADMIN_INVITE_TEMPLATE_KEY, to: email, variables: { link: link.href }, deliverBefore: expiresAt.getTime(),
-    }, { onQueued: issue })
-    if (outcome === 'disabled') return jsonResponse({ error: 'The admin invitation email is disabled. Create an invitation link instead.' }, { status: 409 })
-    return jsonResponse({ queued: true }, { status: 201 })
-  } catch (err) {
-    if (err instanceof MailNotConfiguredError) {
-      return jsonResponse({ error: 'Outgoing email is not set up. Create an invitation link instead.' }, { status: 409 })
-    }
     return mutationErrorResponse(err)
   }
 }

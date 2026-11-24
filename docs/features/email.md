@@ -32,7 +32,8 @@ This is the path for mail the core sends itself (account emails, tests). It is b
 ```text
 src/core/mail/
 ├── schemas.ts                 — TypeBox wire shapes (@core/mail)
-└── templates.ts               — template catalogue + renderMailTemplate (server and admin preview)
+├── catalog.ts                 — template definitions and registration
+└── templates.ts               — renderMailTemplate (server and admin preview)
 server/mail/
 ├── connectors.ts              — mail_connectors: CRUD, secret encryption, resolve for one send
 ├── defaults.ts                — the mail_settings row

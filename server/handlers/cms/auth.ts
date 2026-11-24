@@ -25,7 +25,6 @@
  */
 import type { DbClient } from '../../db/client'
 import {
-  hashPassword,
   createSessionToken,
   hashSessionToken,
   sessionExpiry,
@@ -66,8 +65,7 @@ import { findMatchingRecoveryCodeHash } from '../../auth/mfa'
 import { totpSecretErrorResponse, verifyEncryptedTotpCode } from '../../auth/totpSecrets'
 import { jsonResponse, readValidatedBody, setCookieHeader } from '../../http'
 import { Type } from '@core/utils/typeboxHelpers'
-import { MIN_PASSWORD_LENGTH, PASSWORD_TOO_SHORT_MESSAGE } from '@core/utils/passwordPolicy'
-import { activateInvitedUser, invitationIsCurrent } from '../../repositories/userInvitations'
+import { handleAcceptInvitation } from './userInvitations'
 import { CMS_API_PREFIX, requestAuditContext } from './shared'
 import { clearSessionCookie, getDummyPasswordHash, sessionCookie } from './session'
 import { runRouteTable, type Route } from './routeTable'
@@ -363,31 +361,6 @@ async function respondLoginSuccess(
     jsonResponse({ ok: true, mfaRequired: false }),
     sessionCookie(req, token, expiresAt),
   )
-}
-
-const AcceptInvitationSchema = Type.Object({
-  token: Type.String({ pattern: '^[A-Za-z0-9_-]{43}$' }),
-  password: Type.String({ maxLength: 1024 }),
-})
-
-async function handleAcceptInvitation(req: Request, db: DbClient): Promise<Response> {
-  const body = await readValidatedBody(req, AcceptInvitationSchema)
-  const invalid = () => jsonResponse({ error: 'This invitation has expired or is no longer valid. Ask for a new invitation.' }, { status: 400 })
-  if (!body) return invalid()
-  const password = body.password.trim()
-  if (password.length < MIN_PASSWORD_LENGTH) return jsonResponse({ error: PASSWORD_TOO_SHORT_MESSAGE }, { status: 400 })
-  const tokenHash = await hashSessionToken(body.token)
-  if (!await invitationIsCurrent(db, tokenHash)) return invalid()
-  const passwordHash = await hashPassword(password)
-  return db.transaction(async (tx) => {
-    const user = await activateInvitedUser(tx, tokenHash, passwordHash)
-    if (!user) return invalid()
-    await createAuditEvent(tx, {
-      actorUserId: user.id, action: 'user.invite.accept', targetType: 'user', targetId: user.id,
-      metadata: {}, ...requestAuditContext(req),
-    })
-    return jsonResponse({ email: user.email }, { headers: { 'cache-control': 'no-store' } })
-  })
 }
 
 const LoginBodySchema = Type.Object({ email: Type.String(), password: Type.String() })
