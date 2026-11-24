@@ -91,7 +91,7 @@ The route table (`src/admin/router.tsx`):
 | `/admin/plugins`                        | `<AdminEntry section="plugins" />` |
 | `/admin/users`                          | `<AdminEntry section="users" />` |
 | `/admin/ai`                             | `<AdminEntry section="ai" />` (AI credentials, models, defaults) |
-| `/admin/account`                        | `<AdminEntry section="account" />` |
+| `/admin/account`                        | `<AdminEntry section="account" />` with workspace tabs for Profile, Active devices, Security, and Sign-in history |
 | `/admin/plugins/:pluginId/:pageId`      | `<AdminEntry section="pluginPage" />` |
 
 Every route is wrapped with `withRouteBoundary(...)` → `<ErrorBoundary location="admin-route" resetKeys={[pathname]}>` and `<Suspense fallback={<AppLoadingScreen />}>`. The error boundary resets when the pathname changes so a broken route never strands the user.
