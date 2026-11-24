@@ -376,7 +376,7 @@ export async function holdQueuedMail(db: DbClient, id: string, error: string): P
 /** Every queued email matching a column value, for removing a sender's or a member's mail. */
 export async function listQueuedMailBy(
   db: DbClient,
-  column: 'source' | 'member_id',
+  column: 'source' | 'member_id' | 'kind',
   value: string,
 ): Promise<QueuedMail[]> {
   const { rows } = await db.unsafe<QueueRow>(

@@ -13,6 +13,7 @@ import {
   __resetMailQueuePauseForTesting,
   drainMailQueue,
   mailRetryDelayMs,
+  setMailTemplateSending,
   queueTemplateMail,
 } from '../../../server/mail/delivery'
 import { __resetMasterKeyCacheForTesting } from '../../../server/secrets/masterKey'
@@ -60,6 +61,41 @@ describe('mail queue', () => {
 
   afterEach(async () => {
     await h.cleanup()
+  })
+
+  it('drops waiting mail when switched off, suppresses new requests and sends again when enabled', async () => {
+    await readyConnector()
+    expect(await queueTemplateMail(h.db, MAIL)).toBe('queued')
+    await setMailTemplateSending(h.db, MAIL.key, false)
+    expect(await queueRows()).toHaveLength(0)
+    expect((await listMailActivity(h.db)).entries[0]).toMatchObject({ status: 'failed', attempts: 0 })
+    expect(await queueTemplateMail(h.db, MAIL)).toBe('disabled')
+    expect(await queueRows()).toHaveLength(0)
+
+    await setMailTemplateSending(h.db, MAIL.key, true)
+    expect(await queueTemplateMail(h.db, MAIL)).toBe('queued')
+    const recipients: string[] = []
+    await drain(async (_connector, _sender, mail) => {
+      recipients.push(mail.to)
+      return null
+    })
+    expect(recipients).toEqual([MAIL.to])
+  })
+
+  it('checks sending again when a previously claimed message returns to the worker', async () => {
+    await readyConnector()
+    await queueTemplateMail(h.db, MAIL)
+    // Simulate a worker that claimed the message and died before handoff.
+    await h.db`update mail_queue set claimed_at = ${new Date(now - HOUR).toISOString()}`
+    await setMailTemplateSending(h.db, MAIL.key, false)
+    expect(await queueRows()).toHaveLength(1)
+    let deliveries = 0
+    await drain(async () => { deliveries++; return null })
+    expect(deliveries).toBe(0)
+    expect(await queueRows()).toHaveLength(0)
+    expect((await listMailActivity(h.db)).entries[0]).toMatchObject({
+      status: 'failed', error: 'Sending is turned off for this email template.',
+    })
   })
 
   async function readyConnector(): Promise<MailConnector> {
