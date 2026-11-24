@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { CopySolidIcon } from 'pixel-art-icons/icons/copy-solid'
 import { apiRequest } from '@core/http'
-import { ServiceOverviewSchema, ServiceCodeSchema, type ServiceAccount } from '@core/serviceAccounts'
+import { ServiceOverviewSchema, ServiceCodeSchema, ServiceRenewalReceiptSchema, type ServiceAccount } from '@core/serviceAccounts'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { Type } from '@core/utils/typeboxHelpers'
 import { AdminPageLayout } from '@admin/layouts/AdminPageLayout'
@@ -21,6 +21,7 @@ import { Heading } from '@ui/components/Heading'
 import { Text } from '@ui/components/Text'
 import { pushToast } from '@ui/components/Toast'
 import { CreateServiceAccountDialog } from './CreateServiceAccountDialog'
+import { ServiceAccountLifetime } from './ServiceAccountLifetime'
 import { RecentActivity } from './RecentActivity'
 import styles from './ServiceAccounts.module.css'
 import directory from '@admin/shared/Directory/Directory.module.css'
@@ -79,12 +80,12 @@ export function ServiceAccountsTab({ accountId, onSelect }: { accountId: string 
   const pairing = new URLSearchParams(useLocation().search).get('pairing')
   const id = pairing ? null : accountId
   const selectedRow = useRef<HTMLButtonElement>(null)
-  const [dialog, setDialog] = useState<'create' | 'revoke' | null>(null)
+  const [dialog, setDialog] = useState<'create' | 'renew' | 'revoke' | null>(null)
+  const [ttl, setTtl] = useState('8')
   const [busy, setBusy] = useState(false)
   const account = overview.data?.accounts.find(a => a.id === id)
   const origin = overview.data?.origin
   const prompt = account && origin && overview.data ? agentPrompt(origin, account.id, overview.data.cliFilename) : ''
-  const active = account && !account.revoked && !account.expired
   const create = <Button variant="primary" disabled={!origin} onClick={() => setDialog('create')}>Create CLI connection</Button>
 
   async function copy() {
@@ -94,6 +95,18 @@ export function ServiceAccountsTab({ accountId, onSelect }: { accountId: string 
     } catch (err) {
       report('Could not copy the prompt. Allow clipboard access and try again.', err)
     }
+  }
+  async function renew() {
+    if (!account || busy) return
+    setBusy(true)
+    try {
+      const receipt = await runStepUp(() => apiRequest(base + '/' + account.id + '/renew', {
+        method: 'POST', body: { ttlHours: Number(ttl) }, schema: ServiceRenewalReceiptSchema,
+      }))
+      setDialog(null)
+      pushToast({ kind: 'success', title: 'Access renewed', body: 'Expires ' + expires.format(new Date(receipt.expiresAt)) })
+    } catch (err) { report('Could not renew CLI connection', err) }
+    finally { setBusy(false); overview.refresh() }
   }
   async function revoke() {
     if (!account) return
@@ -141,12 +154,13 @@ export function ServiceAccountsTab({ accountId, onSelect }: { accountId: string 
       heading={<div className={directory.identityText}><Heading level={3}>{account.label}</Heading></div>}
       status={<AccountStatus account={account} />}>
       <AccountFacts account={account} />
-      {active && <div className={styles.stack}>
-        {!account.connected && prompt && <Text variant="muted" size="sm">Paste the prompt into your agent, then approve its connection in your browser.</Text>}
-        {account.connected && <Text variant="muted">Return to your agent to start working.</Text>}
-        <div className={styles.actions}>
-          {prompt && <Button variant={account.connected ? 'secondary' : 'primary'} onClick={copy}><CopySolidIcon size={14} />Copy agent prompt</Button>}
-          <Button variant="ghost" dangerHover onClick={() => setDialog('revoke')}>Revoke access</Button>
+      {!account.revoked && <div className={styles.stack}>
+        {!account.expired && !account.connected && prompt && <Text variant="muted" size="sm">Paste the prompt into your agent, then approve its connection in your browser.</Text>}
+        <div className={cn(directory.actions, styles.inspectorActions)}>
+          {account.expired
+            ? <Button variant="primary" onClick={() => { setTtl('8'); setDialog('renew') }}>Renew access</Button>
+            : <Button variant={account.connected ? 'secondary' : 'primary'} disabled={!prompt} onClick={copy}><CopySolidIcon size={14} />Copy agent prompt</Button>}
+          <Button variant="destructive" onClick={() => setDialog('revoke')}>Revoke access</Button>
         </div>
       </div>}
       <RecentActivity account={account} refreshStatus={overview.refresh} />
@@ -159,6 +173,16 @@ export function ServiceAccountsTab({ accountId, onSelect }: { accountId: string 
         overview.refresh()
       } catch (err) { report('Could not create CLI connection', err) }
     }} />}
+    {dialog === 'renew' && account && !account.revoked && account.expired && <Dialog open size="sm" title="Renew access" onClose={() => { if (!busy) setDialog(null) }}
+      footer={<>
+        <Button variant="secondary" disabled={busy} onClick={() => setDialog(null)}>Cancel</Button>
+        <Button variant="primary" busy={busy} onClick={renew}>Renew access</Button>
+      </>}>
+      <div className={styles.group}>
+        <Text size="sm">Renew <strong>{account.label}</strong> with its existing permissions.</Text>
+        <ServiceAccountLifetime value={ttl} onChange={setTtl} />
+      </div>
+    </Dialog>}
     {dialog === 'revoke' && account && <Dialog open tone="danger" size="sm" title="Revoke access?" onClose={() => { if (!busy) setDialog(null) }}
       footer={<>
         <Button variant="secondary" disabled={busy} onClick={() => setDialog(null)}>Cancel</Button>

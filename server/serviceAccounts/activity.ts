@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { isValidBranchId } from '@core/branches'
-import type { ServiceActivity } from '@core/serviceAccounts'
+import { compiledCheck } from '@core/utils/typeboxCompiler'
+import { ServiceRenewalReceiptSchema, type ServiceActivity } from '@core/serviceAccounts'
 import type { DbClient } from '../db/client'
 import { servicePrincipal } from '../auth/servicePrincipal'
 import { cmsOperations } from './catalog'
@@ -44,7 +45,7 @@ export async function recordServiceResponse(req: Request, db: DbClient, response
 
 const lifecycle: Record<string, string> = {
   'service_account.created': 'Connection created', 'service_account.authorized': 'Access approved',
-  'service_account.revoked': 'Access revoked',
+  'service_account.renewed': 'Access renewed', 'service_account.revoked': 'Access revoked',
 }
 export async function recentServiceActivity(db: DbClient, ownerId: string, accountId: string) {
   const [calls, changes] = await Promise.all([
@@ -52,13 +53,14 @@ export async function recentServiceActivity(db: DbClient, ownerId: string, accou
       from service_accounts a join service_account_activity e on e.account_id = a.id
       where a.owner_id = ${ownerId} and a.id = ${accountId}
       order by e.occurred_at desc, e.id desc limit 10`,
-    db<{ id: string; agent: string; action: string; created_at: Date | string }>`
-      select e.id, a.label as agent, e.action, e.created_at from service_accounts a
+    db<{ id: string; agent: string; action: string; metadata_json: unknown; created_at: Date | string }>`
+      select e.id, a.label as agent, e.action, e.metadata_json, e.created_at from service_accounts a
       join audit_events e on e.target_id = a.id and e.target_type = 'service_account'
       where a.owner_id = ${ownerId} and a.id = ${accountId}
       order by e.created_at desc, e.id desc limit 10`,
   ])
   const events = [...calls.rows, ...changes.rows.map(e => ({
+    ...(e.action === 'service_account.renewed' && compiledCheck(ServiceRenewalReceiptSchema, e.metadata_json) ? { expiresAt: e.metadata_json.expiresAt } : {}),
     id: e.id, agent: e.agent, at: new Date(e.created_at).toISOString(), title: lifecycle[e.action] ?? e.action, scope: null, status: null,
   }))].sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id)).slice(0, 10)
   return { events }

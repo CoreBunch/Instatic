@@ -204,6 +204,8 @@ export function auditTitle(
       return 'CLI connection created'
     case 'service_account.authorized':
       return 'CLI connection authorized'
+    case 'service_account.renewed':
+      return 'CLI connection renewed'
     case 'service_account.revoked':
       return 'CLI connection revoked'
     case 'ai.mcp_connector.created':

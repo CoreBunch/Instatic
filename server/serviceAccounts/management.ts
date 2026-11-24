@@ -1,10 +1,10 @@
-import { ApproveServiceSchema, ExchangeServiceSchema, ServiceAccountInputSchema } from '@core/serviceAccounts'
+import { ApproveServiceSchema, ExchangeServiceSchema, RenewServiceAccountSchema, ServiceAccountInputSchema } from '@core/serviceAccounts'
 import type { DbClient } from '../db/client'
 import { requireCapability, requireStepUp, capabilitiesUserCannotGrant } from '../auth/authz'
 import { jsonResponse, badRequest, readValidatedBody, methodNotAllowed } from '../http'
 import { oauthIssuerOrigin } from '../oauth/protocol'
 import { createAuditEvent } from '../repositories/audit'
-import { listAccounts, createAccount, issueCode, exchangeCode, revokeAccount } from './store'
+import { listAccounts, createAccount, issueCode, exchangeCode, renewExpiredAccount, revokeAccount } from './store'
 import { recentServiceActivity } from './activity'
 import { cliFilename, cliPackageResponse } from './package'
 
@@ -40,6 +40,18 @@ export async function handleServiceAccounts(req: Request, db: DbClient): Promise
       await createAuditEvent(tx, { actorUserId: user.id, action: 'service_account.created', targetId: accountId,
         targetType: 'service_account', metadata: { label: body.label, capabilities: body.capabilities, ttlHours: body.ttlHours } })
       return jsonResponse({ id: accountId }, { status: 201 })
+    })
+  }
+  if (id && action === 'renew' && req.method === 'POST') {
+    const body = await readValidatedBody(req, RenewServiceAccountSchema)
+    if (!body) return badRequest('Choose a connection lifetime between 1 hour and 30 days')
+    const step = await requireStepUp(req, db, user, { policy: 'always' })
+    if (step) return step
+    return db.transaction(async tx => {
+      const renewal = await renewExpiredAccount(tx, id, user.id, body.ttlHours)
+      if (!renewal) return jsonResponse({ error: 'No expired connection available to renew' }, { status: 409 })
+      await createAuditEvent(tx, { actorUserId: user.id, action: 'service_account.renewed', targetType: 'service_account', targetId: id, metadata: renewal })
+      return jsonResponse(renewal)
     })
   }
   if (id && !action && req.method === 'DELETE') {

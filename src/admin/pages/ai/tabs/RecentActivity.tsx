@@ -15,7 +15,7 @@ function summarize(events: ServiceActivity[]) {
   const rows: { event: ServiceActivity; count: number }[] = []
   for (const event of events) {
     const last = rows.at(-1)
-    if (last && last.event.title === event.title && last.event.scope === event.scope && last.event.status === event.status) {
+    if (last && !event.expiresAt && last.event.title === event.title && last.event.scope === event.scope && last.event.status === event.status) {
       last.count++
     } else {
       rows.push({ event, count: 1 })
@@ -30,7 +30,7 @@ export function RecentActivity({ account, refreshStatus }: { account: ServiceAcc
   const { data, error, refresh, loading } = useAsyncResource(signal =>
     apiRequest('/admin/api/cms/service-accounts/' + account.id + '/activity', { schema: ServiceActivitySchema, signal }), [account.id, active])
   useEffect(() => {
-    if (!active || loading) return
+    if (account.revoked || loading) return
     const timer = window.setInterval(() => {
       if (!document.hidden) {
         refreshStatus()
@@ -38,7 +38,7 @@ export function RecentActivity({ account, refreshStatus }: { account: ServiceAcc
       }
     }, 4000)
     return () => window.clearInterval(timer)
-  }, [active, loading, refresh, refreshStatus])
+  }, [account.revoked, loading, refresh, refreshStatus])
   const events = data?.events ?? []
   const rows = expanded ? events.map(event => ({ event, count: 1 })) : summarize(events)
   const sharedScope = rows[0]?.event.scope
@@ -63,6 +63,9 @@ export function RecentActivity({ account, refreshStatus }: { account: ServiceAcc
           {failed && <small className={styles.activityError}>HTTP {event.status}</small>}
         </div>
         <time dateTime={event.at} title={date.toLocaleString()}>{formatRelativeTime(date.getTime())}</time>
+        {event.expiresAt && <small className={styles.activityScope}>
+          Until {new Date(event.expiresAt).toLocaleString()}
+        </small>}
         {event.scope && !showSharedScope && <small className={styles.activityScope}>
           <GitBranchSolidIcon size={12} aria-label="Branch" />{event.scope}
         </small>}

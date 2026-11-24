@@ -7,14 +7,10 @@ import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { FormField } from '@ui/components/FormField'
 import { Input } from '@ui/components/Input'
-import { Select } from '@ui/components/Select'
+import { ServiceAccountLifetime } from './ServiceAccountLifetime'
 import { Text } from '@ui/components/Text'
 import styles from './ServiceAccounts.module.css'
 
-const expiryOptions = [
-  { value: '1', label: '1 hour' }, { value: '8', label: '8 hours' }, { value: '24', label: '1 day' },
-  { value: '168', label: '7 days' }, { value: '720', label: '30 days' },
-]
 type Grant = { label: string; ttlHours: number; capabilities: CoreCapability[] }
 
 export function CreateServiceAccountDialog({ onClose, onCreate }: {
@@ -50,9 +46,7 @@ export function CreateServiceAccountDialog({ onClose, onCreate }: {
         <FormField label="Connection name" htmlFor="service-account-name">
           <Input ref={nameInput} id="service-account-name" value={label} maxLength={100} placeholder="e.g. Content editor" onChange={event => setLabel(event.currentTarget.value)} />
         </FormField>
-        <FormField label="Expires after" htmlFor="service-account-expiry">
-          <Select id="service-account-expiry" value={ttl} options={expiryOptions} onChange={event => setTtl(event.currentTarget.value)} />
-        </FormField>
+        <ServiceAccountLifetime value={ttl} onChange={setTtl} />
       </div>
       <div className={styles.group}>
         <Text variant="muted" size="sm">Permissions apply across the site, including main.</Text>

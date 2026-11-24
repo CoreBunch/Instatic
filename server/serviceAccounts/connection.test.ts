@@ -11,7 +11,7 @@ test('CLI approval grants an expiring, revocable identity that can fork and edit
     const owner = await h.setupOwner()
     const sponsor = await h.createRoleUser({ name: 'Site agents', slug: 'site-agents',
       capabilities: ['ai.providers.manage', 'site.branches.create', 'site.read', 'site.content.edit', 'site.structure.edit'] })
-    const cookie = await h.stepUp(sponsor.cookie)
+    let cookie = await h.stepUp(sponsor.cookie)
     const input = { label: 'Launch editor', ttlHours: 2, capabilities: ['site.read', 'site.content.edit', 'site.branches.create'] }
     expect((await h.cms(path, { cookie, method: 'POST', json: { ...input, capabilities: ['mail.manage'] } })).status).toBe(403)
     const created = await h.cms(path, { cookie, method: 'POST', json: input })
@@ -133,10 +133,35 @@ test('CLI approval grants an expiring, revocable identity that can fork and edit
     await h.db`update roles set capabilities_json = ${JSON.stringify(['site.read', 'ai.providers.manage'])} where id = ${sponsor.roleId}`
     expect((await write()).status).toBe(403)
     expect((await h.cms(visitor, { headers: branch })).status).toBe(403)
-    const future = new Date(Date.now() + 7200000).toISOString()
+    const renew = (session: string, ttlHours: number) => h.cms(path + '/' + id + '/renew', {
+      method: 'POST', cookie: session, json: { ttlHours },
+    })
+    const staleApproval = await (await approve()).json()
+    expect((await renew(cookie, 8)).status).toBe(409)
     await h.db`update service_accounts set expires_at = ${new Date(0).toISOString()} where id = ${id}`
     expect((await read()).status).toBe(401)
-    await h.db`update service_accounts set expires_at = ${future} where id = ${id}`
+    expect((await renew(owner, 8)).status).toBe(409)
+    expect((await renew(cookie, 721)).status).toBe(400)
+    const freshLogin = await h.sessionForEmail(sponsor.email)
+    await h.db`update sessions set step_up_expires_at = null where user_id = (select owner_id from service_accounts where id = ${id})`
+    expect(await (await renew(freshLogin, 8)).json()).toEqual({ error: 'step_up_required' })
+    cookie = await h.stepUp(freshLogin)
+    const started = Date.now()
+    const res = await renew(cookie, 8)
+    expect(res.status).toBe(200)
+    const { expiresAt } = await res.json()
+    expect(Date.parse(expiresAt)).toBeGreaterThanOrEqual(started + 8 * 3600000)
+    expect(Date.parse(expiresAt)).toBeLessThanOrEqual(Date.now() + 8 * 3600000)
+    expect((await renew(cookie, 8)).status).toBe(409)
+    expect((await exchange(staleApproval.code, verifier)).status).toBe(401)
+    expect((await read()).status).toBe(200)
+    expect((await write()).status).toBe(403)
+    const renewed = await (await h.cms(activity, { cookie })).json()
+    expect(renewed.events.filter((event: { title: string }) => event.title === 'Access renewed'))
+      .toEqual([expect.objectContaining({ expiresAt })])
+    await h.db`update service_accounts set expires_at = ${new Date(0).toISOString()} where id = ${id}`
+    expect((await read()).status).toBe(401)
+    expect((await renew(cookie, 1)).status).toBe(200)
     const pending = await (await approve()).json()
     await h.db`update roles set capabilities_json = ${JSON.stringify(['site.read'])} where id = ${sponsor.roleId}`
     expect((await exchange(pending.code, verifier)).status).toBe(401)
@@ -144,6 +169,9 @@ test('CLI approval grants an expiring, revocable identity that can fork and edit
     expect((await h.cms(path + '/' + id, { cookie, method: 'DELETE' })).status).toBe(200)
     expect((await read()).status).toBe(401)
     expect((await exchange(pending.code, verifier)).status).toBe(401)
+    await h.db`update service_accounts set expires_at = ${new Date(0).toISOString()} where id = ${id}`
+    expect((await renew(cookie, 8)).status).toBe(409)
+    expect((await read()).status).toBe(401)
   } finally { await h.cleanup() }
 })
 
