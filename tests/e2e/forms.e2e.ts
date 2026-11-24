@@ -27,8 +27,8 @@ test.describe('forms', () => {
     await login(page)
 
     const suffix = Date.now().toString(36)
-    const tableName = `E2E Form Submissions ${suffix}`
-    const formId = `lead-${suffix}`
+    const tableName = `Contact enquiries ${suffix}`
+    const formId = 'contact-enquiry'
     const visitorName = `Visitor ${suffix}`
     const successMessage = `Submission received ${suffix}`
 
@@ -37,13 +37,10 @@ test.describe('forms', () => {
     })
 
     const { slug } = await test.step('author and publish the form page', async () => {
-      const created = await openBlankPage(page, 'Form submit')
+      const created = await openBlankPage(page, 'Contact')
 
       await insertModuleViaPicker(page, 'base.form')
-      await page.getByLabel('Form ID').fill(formId)
-      await selectLabeledOption(page, 'Target table', tableName)
-      await setPropValue(page, 'successMessage', successMessage)
-      await setPropValue(page, 'minSubmitSeconds', '0')
+      await configureForm(page, tableName, formId, successMessage, '0')
 
       await insertModuleViaPicker(page, 'base.input')
       await setPropValue(page, 'fieldId', 'name')
@@ -57,6 +54,12 @@ test.describe('forms', () => {
       await insertModuleViaPicker(page, 'base.form-message')
       await selectPropertyOption(page, 'kind', 'Success')
 
+      await selectFormLayer(page)
+      await page.screenshot({ path: '.tmp/evidence/form-sidebar.png' })
+      await page.getByRole('button', { name: 'Edit form settings' }).click()
+      await expect(page.getByRole('radio', { name: 'Collect submissions' })).toBeChecked()
+      await page.screenshot({ path: '.tmp/evidence/form-settings.png' })
+      await page.getByRole('button', { name: 'Done' }).click()
       await publishDraft(page)
       return created
     })
@@ -94,10 +97,7 @@ test.describe('forms', () => {
       const created = await openBlankPage(page, 'Timed form submit')
 
       await insertModuleViaPicker(page, 'base.form')
-      await page.getByLabel('Form ID').fill(formId)
-      await selectLabeledOption(page, 'Target table', tableName)
-      await setPropValue(page, 'successMessage', successMessage)
-      await setPropValue(page, 'minSubmitSeconds', '1')
+      await configureForm(page, tableName, formId, successMessage, '1')
 
       await insertModuleViaPicker(page, 'base.input')
       await setPropValue(page, 'fieldId', 'name')
@@ -135,6 +135,19 @@ test.describe('forms', () => {
   })
 })
 
+async function configureForm(page: Page, tableName: string, formId: string, message: string, seconds: string) {
+  await page.getByRole('button', { name: 'Edit form settings' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Form settings' })
+  await selectLabeledOption(page, 'Target table', tableName)
+  await dialog.getByRole('button', { name: 'After submission' }).click()
+  await setPropValue(page, 'successMessage', message)
+  await dialog.getByRole('button', { name: 'Advanced' }).click()
+  await dialog.getByLabel('Form ID').fill(formId)
+  await setPropValue(page, 'minSubmitSeconds', seconds)
+  await dialog.getByRole('button', { name: 'Done' }).click()
+  await expect(page.getByText(`CMS · ${tableName}`, { exact: true })).toBeVisible()
+}
+
 async function createCustomDataTable(page: Page, tableName: string): Promise<void> {
   await page.goto('/admin/data')
   await page.getByRole('button', { name: 'New table' }).click()
@@ -161,6 +174,8 @@ async function openBlankPage(
   const item = page.getByRole('treeitem', { name: `Open page ${name}` })
   await item.click()
   await expect(item).toHaveAttribute('aria-selected', 'true')
+  await openLayersPanel(page)
+  await page.getByRole('treeitem', { name: 'Body', exact: true }).click()
   return { name, slug }
 }
 

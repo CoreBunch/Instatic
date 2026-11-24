@@ -202,7 +202,7 @@ describe('FormSettingsPanelView', () => {
     expect(container.firstChild).toBeNull()
   })
 
-  it('lets a CMS form choose or create its target table inline', async () => {
+  it('lets a CMS form choose or create its target table from Destination', async () => {
     const targetChanges: string[] = []
     const createdNames: string[] = []
     const formAnalysis: FormSettingsAnalysis = {
@@ -235,6 +235,7 @@ describe('FormSettingsPanelView', () => {
       />,
     )
 
+    fireEvent.click(screen.getByRole('button', { name: 'Edit form settings' }))
     const select = document.querySelector('select[name="form-target-table"]') as HTMLSelectElement
     expect(select).not.toBeNull()
     fireEvent.change(select, { target: { value: 'contact_submissions' } })
@@ -244,7 +245,7 @@ describe('FormSettingsPanelView', () => {
     const targetControl = screen.getByTestId('form-target-table-control')
     expect(targetControl.contains(select)).toBe(true)
     expect(targetControl.contains(createButton)).toBe(true)
-    expect(createButton.textContent?.trim()).toBe('')
+    expect(createButton.textContent?.trim()).toBe('Create table')
     expect(createButton.hasAttribute('title')).toBe(false)
     fireEvent.click(createButton)
     const nameInput = screen.getByLabelText('Table name') as HTMLInputElement
@@ -285,12 +286,13 @@ describe('FormSettingsPanelView', () => {
       />,
     )
 
+    fireEvent.click(screen.getByRole('button', { name: 'Edit form settings' }))
     const select = document.querySelector('select[name="form-target-table"]') as HTMLSelectElement
     const optionLabels = Array.from(select.options).map((option) => option.textContent)
     expect(optionLabels).toEqual(['Choose table', 'Contact submissions'])
   })
 
-  it('promotes mode and form id controls into the setup panel', () => {
+  it('shows a sidebar summary and edits the mode and ID in their dialog sections', () => {
     const patches: Record<string, unknown>[] = []
     const formAnalysis: FormSettingsAnalysis = {
       ...analysis,
@@ -321,35 +323,16 @@ describe('FormSettingsPanelView', () => {
       />,
     )
 
-    const modeControl = screen.getByTestId('form-mode')
-    const previewControl = screen.getByTestId('form-preview-state')
-    expect(modeControl.compareDocumentPosition(previewControl) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(screen.getByText('Mode').tagName).toBe('LABEL')
-    expect(screen.getByText('Preview state').tagName).toBe('LABEL')
-
-    fireEvent.click(screen.getByRole('button', { name: 'Custom action' }))
+    expect(screen.getByText('CMS · Contact submissions')).toBeDefined()
+    expect(screen.queryByRole('radio')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit form settings' }))
+    fireEvent.click(screen.getByRole('radio', { name: 'Custom action' }))
     expect(patches).toContainEqual({ mode: 'custom' })
-
+    fireEvent.click(screen.getByRole('button', { name: 'Advanced' }))
     const idInput = screen.getByLabelText('Form ID') as HTMLInputElement
     expect(idInput.value).toBe('contact')
     fireEvent.change(idInput, { target: { value: 'Support Requests' } })
     expect(patches).toContainEqual({ formId: 'Support-Requests' })
-  })
-
-  it('keeps the create-table action as a square icon beside the table select', async () => {
-    const { readFileSync } = await import('fs')
-    const source = readFileSync(
-      new URL('../../admin/pages/site/panels/PropertiesPanel/FormSettingsPanel.tsx', import.meta.url),
-      'utf-8',
-    )
-    const css = readFileSync(
-      new URL('../../admin/pages/site/panels/PropertiesPanel/FormSettingsPanel.module.css', import.meta.url),
-      'utf-8',
-    )
-
-    expect(source).toMatch(/<Select\s+id="form-target-table"[^>]*fieldSize="sm"/)
-    expect(source).toMatch(/<Button[^>]*size="sm"[^>]*iconOnly[^>]*tooltip="Create table"/)
-    expect(css).toMatch(/\.targetTableControl\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto;/)
   })
 
   it('offers missing table fields as one-click form nodes', () => {
@@ -383,11 +366,12 @@ describe('FormSettingsPanelView', () => {
       />,
     )
 
+    fireEvent.click(screen.getByRole('button', { name: 'Edit form settings' }))
     fireEvent.click(screen.getByRole('button', { name: 'Add Message field' }))
     expect(inserted).toEqual(['message'])
   })
 
-  it('switches editor-only form preview states from the setup panel', () => {
+  it('switches editor-only form preview states with the dialog closed', () => {
     const states: string[] = []
     render(
       <FormSettingsPanelView
@@ -406,9 +390,9 @@ describe('FormSettingsPanelView', () => {
       />,
     )
 
-    expect(screen.getByTestId('form-preview-state')).toBeDefined()
-    fireEvent.click(screen.getByRole('button', { name: 'Success' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Error' }))
+    const select = document.querySelector('select') as HTMLSelectElement
+    fireEvent.change(select, { target: { value: 'success' } })
+    fireEvent.change(select, { target: { value: 'error' } })
     expect(states).toEqual(['success', 'error'])
   })
 })
@@ -527,6 +511,9 @@ describe('renderModuleTabContent form setup slot', () => {
       expect(screen.queryByTestId('property-control-mode')).toBeNull()
       expect(screen.queryByTestId('property-control-formId')).toBeNull()
       expect(screen.queryByTestId('property-control-targetTableId')).toBeNull()
+      expect(screen.queryByTestId('property-control-successBehavior')).toBeNull()
+      fireEvent.click(screen.getByRole('button', { name: 'Edit form settings' }))
+      fireEvent.click(screen.getByRole('button', { name: 'After submission' }))
       expect(screen.getByTestId('property-control-successBehavior')).toBeDefined()
     } finally {
       globalThis.fetch = originalFetch

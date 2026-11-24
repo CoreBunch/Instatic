@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useId, useRef, useState, type ChangeEvent, type ReactNode, type FormEvent } from 'react'
 import type { DataField, DataTable, DataTableListItem } from '@core/data/schemas'
 import { isFormSubmissionTargetTable } from '@core/forms'
 import type { Page } from '@core/page-tree'
@@ -13,7 +13,7 @@ import { Button } from '@ui/components/Button'
 import { ControlRow } from '@ui/components/ControlRow'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
-import { SegmentedControl } from '@ui/components/SegmentedControl'
+import { FormConfiguration } from './FormConfiguration'
 import { Select } from '@ui/components/Select'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import {
@@ -32,29 +32,22 @@ import { memberFormFragment, missingMemberFormParts, type MemberFormMissing } fr
 import styles from './FormSettingsPanel.module.css'
 
 type FormPreviewState = 'default' | 'submitting' | 'success' | 'error'
-type FormMode = FormContextSummary['mode']
 type FormTableOption = Pick<DataTable, 'id' | 'name' | 'kind' | 'system'>
 
-const FORM_MODE_OPTIONS: ReadonlyArray<{ value: FormMode; label: string }> = [
-  { value: 'cms', label: 'CMS-native' },
-  { value: 'member', label: 'Members' },
-  { value: 'custom', label: 'Custom action' },
-]
+const EMPTY_FIELDS: Record<string, never> = {}
 
-const FORM_PREVIEW_STATES: ReadonlyArray<{ value: FormPreviewState; label: string }> = [
-  { value: 'default', label: 'Default' },
-  { value: 'submitting', label: 'Submitting' },
-  { value: 'success', label: 'Success' },
-  { value: 'error', label: 'Error' },
-]
+interface FormDialogProperties {
+  dialogControls?: Record<string, ReactNode>
+  resolvedProps?: Record<string, unknown>
+}
 
-interface FormSettingsPanelProps {
+interface FormSettingsPanelProps extends FormDialogProperties {
   page: Page | null
   nodeId: string | null
   onPatchProps: (patch: Record<string, unknown>) => void
 }
 
-interface FormSettingsPanelViewProps {
+interface FormSettingsPanelViewProps extends FormDialogProperties {
   analysis: FormSettingsAnalysis
   tables: FormTableOption[]
   tablesLoading: boolean
@@ -75,6 +68,8 @@ interface FormSettingsPanelViewProps {
 export function FormSettingsPanel({
   page,
   nodeId,
+  dialogControls,
+  resolvedProps,
   onPatchProps,
 }: FormSettingsPanelProps) {
   const preliminary = analyzeFormSettings({ page, nodeId })
@@ -155,6 +150,8 @@ export function FormSettingsPanel({
 
   return (
     <FormSettingsPanelView
+      dialogControls={dialogControls}
+      resolvedProps={resolvedProps}
       analysis={analysis}
       tables={tablesResource.data ?? []}
       tablesLoading={tablesResource.loading}
@@ -181,6 +178,8 @@ export function FormSettingsPanel({
 
 export function FormSettingsPanelView({
   analysis,
+  dialogControls = EMPTY_FIELDS,
+  resolvedProps,
   tables,
   tablesLoading,
   tablesError,
@@ -197,25 +196,18 @@ export function FormSettingsPanelView({
 }: FormSettingsPanelViewProps) {
   if (analysis.kind === 'none') return null
 
-  const title = panelTitle(analysis)
   const relationship = relationshipText(analysis)
-  const showMeta = analysis.kind !== 'form'
 
   return (
     <div className={styles.formSettingsPanel} data-testid="form-settings-panel">
-      <div className={styles.header}>
-        <span className={styles.kicker}>{kicker(analysis.kind)}</span>
-        <span className={styles.title}>{title}</span>
-      </div>
-
-      {analysis.kind === 'form' && analysis.form && (
-        <FormIdentityRows
-          form={analysis.form}
-          onPatchProps={onPatchProps}
-        />
+      {analysis.kind !== 'form' && (
+        <div className={styles.header}>
+          <span className={styles.kicker}>{kicker(analysis.kind)}</span>
+          <span className={styles.title}>{panelTitle(analysis)}</span>
+        </div>
       )}
 
-      {showMeta && (
+      {analysis.kind !== 'form' && (
         <div className={styles.meta}>
           {analysis.form && (
             <span className={styles.metaItem}>{formDisplayName(analysis.form.formId)}</span>
@@ -248,12 +240,17 @@ export function FormSettingsPanelView({
       )}
 
       {analysis.kind === 'form' && analysis.form && (
-        <>
-          <PreviewStateRow
-            value={previewState}
-            onChange={onPreviewStateChange}
-          />
-
+        <FormConfiguration
+          form={analysis.form}
+          tableName={analysis.table?.name ?? tables.find((table) => table.id === analysis.form?.targetTableId)?.name}
+          tableLoading={loading || tablesLoading}
+          resolvedProps={resolvedProps ?? analysis.node?.props ?? EMPTY_FIELDS}
+          controls={dialogControls}
+          onModeChange={(mode) => onPatchProps({ mode })}
+          previewState={previewState}
+          onPreviewStateChange={onPreviewStateChange}
+          identity={<FormIdRow form={analysis.form} onPatchProps={onPatchProps} />}
+        >
           {analysis.form.mode === 'cms' && (
             <FormTargetTableRow
               analysis={analysis}
@@ -279,7 +276,7 @@ export function FormSettingsPanelView({
               onInsertMissingField={onInsertMissingField}
             />
           )}
-        </>
+        </FormConfiguration>
       )}
 
       {analysis.kind === 'control' && analysis.table && (
@@ -310,7 +307,7 @@ export function FormSettingsPanelView({
   )
 }
 
-function FormIdentityRows({
+function FormIdRow({
   form,
   onPatchProps,
 }: {
@@ -321,21 +318,6 @@ function FormIdentityRows({
 
   return (
     <div className={styles.primaryControls}>
-      <ControlRow
-        propKey="form-mode"
-        label="Mode"
-        layout="stacked"
-      >
-        <SegmentedControl
-          value={form.mode}
-          options={FORM_MODE_OPTIONS}
-          onChange={(mode) => onPatchProps({ mode })}
-          size="xs"
-          fullWidth
-          aria-label="Form mode"
-          data-testid="form-mode"
-        />
-      </ControlRow>
       <ControlRow
         propKey="form-id"
         inputId={formIdInputId}
@@ -354,32 +336,6 @@ function FormIdentityRows({
         />
       </ControlRow>
     </div>
-  )
-}
-
-function PreviewStateRow({
-  value,
-  onChange,
-}: {
-  value: FormPreviewState
-  onChange: (state: FormPreviewState) => void
-}) {
-  return (
-    <ControlRow
-      propKey="form-preview-state"
-      label="Preview state"
-      layout="stacked"
-    >
-      <SegmentedControl
-        value={value}
-        options={FORM_PREVIEW_STATES}
-        onChange={onChange}
-        size="xs"
-        fullWidth
-        aria-label="Preview state"
-        data-testid="form-preview-state"
-      />
-    </ControlRow>
   )
 }
 
@@ -431,14 +387,12 @@ function FormTargetTableRow({
           <Button
             variant="secondary"
             size="sm"
-            iconOnly
-            aria-label="Create table"
-            tooltip="Create table"
             disabled={!canCreateTable}
             type="button"
             onClick={() => setCreateDialogOpen(true)}
           >
             <PlusIcon size={14} />
+            Create table
           </Button>
         </div>
       </ControlRow>
@@ -621,10 +575,8 @@ function FieldBindingRow({
   )
 }
 
-function kicker(kind: FormSettingsAnalysis['kind']): string {
+function kicker(kind: Exclude<FormSettingsAnalysis['kind'], 'form' | 'none'>): string {
   switch (kind) {
-    case 'form':
-      return 'Form setup'
     case 'control':
       return 'Field binding'
     case 'label':
@@ -633,16 +585,10 @@ function kicker(kind: FormSettingsAnalysis['kind']): string {
       return 'Submit target'
     case 'message':
       return 'Message target'
-    case 'none':
-      return ''
   }
 }
 
 function panelTitle(analysis: FormSettingsAnalysis): string {
-  if (analysis.kind === 'form') {
-    if (analysis.form?.mode === 'member') return 'Member form'
-    return analysis.form?.mode === 'custom' ? 'Custom action form' : 'CMS-native form'
-  }
   if (analysis.kind === 'control') {
     return analysis.field ? analysis.field.label : 'Unbound control'
   }
