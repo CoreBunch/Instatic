@@ -402,6 +402,7 @@ AI-002 note: Data-scope default selection, save feedback, reload persistence, cl
 | PLUGIN-006 | P2 | partial | Plugins | Install a plugin-provided site pack | Active plugin with pack | Plugins page | Pack content imports with clear feedback | conflicts, partial imports |
 | PLUGIN-008 | P2 | ✅ | Plugins | Upload invalid plugin package | Logged in | Plugins page | Error is specific and recoverable | generic failure, stuck upload |
 | PLUGIN-009 | P2 | partial | Plugins | See plugin stylesheets on the editing canvas | Active plugin with `frontend.assets` stylesheets and a pack page | Site editor canvas | Canvas matches the published styling; plugin scripts do not run | unstyled canvas, plugin script running in the editor |
+| PLUGIN-010 | P1 | ✅ | Plugins | Review and install a signed update | Installed package with a publisher key | Plugins page | Valid upgrade preserves settings and prompts for added permissions | Failed transfer, invalid signature |
 
 PLUGIN-001 note: JSON manifest review/install step-up is automated in `capabilities.e2e.ts`; ZIP package review/install and activation are exercised by the packaged lifecycle/surfaces fixtures in `plugins.e2e.ts`; malformed ZIP/path-traversal/package-edge coverage remains lower-level or future browser expansion.
 

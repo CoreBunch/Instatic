@@ -1709,3 +1709,9 @@ export default definePlugin({
   - `src/__tests__/server/pluginVmDeadlines.test.ts` — hang hardening: top-level loops abort at load, overlapping evals keep their deadlines, runaway timer callbacks are interrupted, VM stacks survive with the `plugin:<id>` filename
   - `src/__tests__/server/pluginWorkerRpcTimeout.test.ts` — host-side RPC timeout: wedged workers are reset through the crash machinery instead of hanging callers
   - `src/admin/pages/plugins/utils/pluginEventStream.test.ts` — SSE frame validation: well-formed events dispatched, unknown-shape frames dropped with `console.warn`
+
+### Signed plugin updates
+
+A plugin opts into discovery by including a raw Ed25519 public key (32 bytes, base64) in `updatePublicKey`. Its authenticated admin runtime route `GET /updates/check` returns a status of `current`, `denied`, `disconnected`, or `available`. For an available update include a newer semantic version, release notes, an HTTPS URL on a declared network host, and a base64 Ed25519 signature over the ZIP bytes. Restrict this route to plugin installers. Generate download credentials server-side.
+
+Plugins checks for updates when the card is displayed. Selecting an available version refreshes the download offer, verifies it with the installed key and opens the standard installer review. The operator reviews any added permissions before installation. A plugin installed without a publisher key needs one manual signed-package installation to enable discovery.
