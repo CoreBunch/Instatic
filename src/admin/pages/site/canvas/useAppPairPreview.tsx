@@ -10,7 +10,7 @@ export function useAppPairPreview(canvasPage: Page | null, pagePreviewContext: T
   const [approvalState, setApprovalState] = useState<ApprovalState>('email')
   const templatePreviewContext = hasPairForm ? {
     ...pagePreviewContext, entryStack: pagePreviewContext?.entryStack ?? [],
-    approval: { state: approvalState, name: 'Instatic PRO Library', code: '7C2A-8F14',
+    approval: { state: approvalState, name: 'Studio app', code: '7C2A-8F14',
       email: 'alex@example.com', access: 'Which memberships and access you hold',
       device: 'Studio laptop', message: 'Please review the request and try again.' },
   } : pagePreviewContext
