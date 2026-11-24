@@ -21,7 +21,7 @@
 import { normalizeImportedText } from './text'
 import { normalizeIdentifierValue } from '@core/utils/identifier'
 import { normalizeAnchorTarget } from '@core/htmlAttributes'
-import { memberFormAction } from '@core/members'
+import { memberFormAction, PAIR_FORM_ACTION } from '@core/members'
 
 export interface ImportRule {
   /** CSS selector tested via `el.matches()`. */
@@ -153,7 +153,7 @@ function normalizeFormMethod(el: Element): 'get' | 'post' | 'dialog' {
 }
 
 function submitLabel(el: Element): string {
-  const label = attr(el, 'value') || normalizeImportedText(el.textContent ?? '')
+  const label = el.tagName.toLowerCase() === 'input' ? attr(el, 'value') : normalizeImportedText(el.textContent ?? '')
   return label || 'Submit'
 }
 
@@ -237,7 +237,7 @@ export const HTML_TO_MODULE_RULES: ImportRule[] = [
       const mode = declaredMode === 'cms' || declaredMode === 'member' ? declaredMode : 'custom'
       // A member form posts to `/_instatic/members/<action>`; the action is its identity.
       const memberAction = mode === 'member' ? attr(el, 'action').replace(/^\/_instatic\/members\//, '') : ''
-      const knownMemberAction = memberFormAction(memberAction)
+      const knownMemberAction = memberFormAction(mode === 'member' && el.hasAttribute('data-instatic-pair-form') ? PAIR_FORM_ACTION : memberAction)
       const redirectUrl = attr(el, 'data-instatic-success-redirect')
       // A member form without its own message gets its action's wording (the
       // text the Properties panel sets when the action is picked), not the

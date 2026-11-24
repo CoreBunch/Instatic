@@ -4,7 +4,7 @@
   gap: var(--space-l);
   flex-wrap: wrap;
   padding: var(--space-s) 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--divider);
 }
 
 .row:last-child {

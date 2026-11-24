@@ -1,3 +1,4 @@
+import { servicePrincipal } from './servicePrincipal'
 import type { DbClient } from '../db/client'
 import { SESSION_COOKIE_NAME, hashSessionToken } from './tokens'
 import { roleHasCapability, type CoreCapability } from './capabilities'
@@ -42,6 +43,8 @@ export async function requireAuthenticatedUser(
   req: Request,
   db: DbClient,
 ): Promise<AuthUser | Response> {
+  const actor = servicePrincipal(req)
+  if (actor) return actor.user
   const idHash = await getSessionHash(req)
   const user = idHash ? await findUserBySessionHash(db, idHash) : null
   if (!user) {
@@ -105,7 +108,7 @@ export async function requireAnyCapability(
 
 /**
  * Step-up gate for an ALREADY-AUTHENTICATED request. Returns `null` when the
- * caller's session is inside a fresh step-up window (the action may proceed),
+ * dispatcher bound a verified service grant or the browser session is fresh,
  * or a 401 response with the structured body `{ error: 'step_up_required' }`
  * so the client can open the StepUp dialog and retry.
  *
@@ -132,16 +135,17 @@ export async function requireStepUp(
   user: AuthUser,
   options: RequireStepUpOptions = {},
 ): Promise<Response | null> {
-  if ((options.policy ?? 'user') === 'user' && user.stepUpAuthMode === 'disabled') {
-    return null
-  }
-  const idHash = await getSessionHash(req)
-  if (!idHash) {
-    return jsonResponse({ error: 'step_up_required' }, { status: 401 })
-  }
-  const expiresAt = await getSessionStepUpExpiresAt(db, idHash)
-  if (!expiresAt || expiresAt.getTime() <= Date.now()) {
+  if ((options.policy ?? 'user') === 'user' && user.stepUpAuthMode === 'disabled') return null
+  // Only the dispatcher can bind a verified, unexpired service grant to this Request.
+  if (servicePrincipal(req)) return null
+  const confirmedUntil = await browserStepUpExpiresAt(req, db)
+  if (!confirmedUntil || !(confirmedUntil.getTime() > Date.now())) {
     return jsonResponse({ error: 'step_up_required' }, { status: 401 })
   }
   return null
+}
+
+async function browserStepUpExpiresAt(req: Request, db: DbClient): Promise<Date | null> {
+  const hash = await getSessionHash(req)
+  return hash ? getSessionStepUpExpiresAt(db, hash) : null
 }

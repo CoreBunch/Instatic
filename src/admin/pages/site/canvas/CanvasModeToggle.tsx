@@ -29,8 +29,15 @@ import { MonitorSolidIcon } from 'pixel-art-icons/icons/monitor-solid'
 import { LaptopSolidIcon } from 'pixel-art-icons/icons/laptop-solid'
 import { TvSolidIcon } from 'pixel-art-icons/icons/tv-solid'
 import { cn } from '@ui/cn'
+import type { PreviewScale } from './CanvasLiveSurface'
+import { Select } from '@ui/components/Select'
 import { Tooltip } from '@ui/components/Tooltip'
 import styles from './CanvasModeToggle.module.css'
+
+const SCALE_OPTIONS = [
+  { value: 'fit', label: 'Fit' },
+  ...[0.25, 0.5, 0.75, 1].map(value => ({ value, label: value * 100 + '%' })),
+]
 
 const EMPTY_BREAKPOINTS: Breakpoint[] = []
 
@@ -45,10 +52,11 @@ interface CanvasModeToggleProps {
    * surface and a pinned switcher would overlay the page's header. A slim
    * handle stays visible as the hover affordance. Mirrors `CanvasNotch`'s peek.
    */
+  scaleControl?: { value: PreviewScale; onChange: (scale: PreviewScale) => void }
   peek?: boolean
 }
 
-export function CanvasModeToggle({ scriptStatus, onRefreshScripts, peek = false }: CanvasModeToggleProps) {
+export function CanvasModeToggle({ scriptStatus, onRefreshScripts, scaleControl, peek = false }: CanvasModeToggleProps) {
   const view = useEditorStore((s) => s.canvasView)
   const setView = useEditorStore((s) => s.setCanvasView)
   const breakpoints = useEditorStore((s) => s.site?.breakpoints ?? EMPTY_BREAKPOINTS)
@@ -76,6 +84,7 @@ export function CanvasModeToggle({ scriptStatus, onRefreshScripts, peek = false 
           data-canvas-mode-pill=""
           onClick={stopCanvasInteraction}
         >
+      {!scaleControl && <>
       <div role="tablist" aria-label="Canvas view" className={styles.tablist}>
         <Tooltip content="Design mode (multi-breakpoint canvas)">
           <button
@@ -138,9 +147,10 @@ export function CanvasModeToggle({ scriptStatus, onRefreshScripts, peek = false 
 
       {/* Breakpoint switcher — only in live mode. Design mode keeps its own
           breakpoint context selector elsewhere on the canvas chrome. */}
-      {view === 'live' && breakpoints.length > 0 && (
+      </>}
+      {(scaleControl || view === 'live') && breakpoints.length > 0 && (
         <>
-          <span className={styles.divider} aria-hidden="true" />
+          {!scaleControl && <span className={styles.divider} aria-hidden="true" />}
           <div
             role="radiogroup"
             aria-label="Live frame width"
@@ -169,6 +179,17 @@ export function CanvasModeToggle({ scriptStatus, onRefreshScripts, peek = false 
               )
             })}
           </div>
+          {scaleControl && (
+            <>
+              <span className={styles.divider} aria-hidden="true" />
+              <Select aria-label="Preview scale" fieldSize="xs" value={scaleControl.value}
+                className={styles.scaleSelect} options={SCALE_OPTIONS} menuMinWidth={96}
+                onChange={event => {
+                  const option = SCALE_OPTIONS.find(item => String(item.value) === event.target.value)
+                  if (option) scaleControl.onChange(typeof option.value === 'number' ? option.value : 'fit')
+                }} />
+            </>
+          )}
         </>
       )}
         </div>

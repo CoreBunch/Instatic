@@ -103,6 +103,8 @@ export interface PluginManifest {
   /** SPDX license identifier (e.g. `MIT`, `Apache-2.0`). */
   license?: string
   /** Marketing / docs URL. */
+  /** Raw Ed25519 public key for signed package updates, encoded as base64. */
+  updatePublicKey?: string
   homepage?: string
   /** Source repository URL. */
   repository?: string

@@ -23,6 +23,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Check tagged changelog section
+        run: bun scripts/release-notes.ts "$GITHUB_REF_NAME" > /dev/null
+
       - name: Build
         run: bun run build
 
@@ -84,6 +87,29 @@ jobs:
             INSTATIC_REVISION=${{ github.sha }}
             INSTATIC_CREATED=${{ steps.version.outputs.created }}
 
+  release:
+    name: Create GitHub Release
+    needs: image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+
+      - name: Create release from tagged changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            exit 0
+          fi
+          gh api --method POST "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="$GITHUB_REF_NAME" --jq .body > "$RUNNER_TEMP/generated-notes.md"
+          bun scripts/release-notes.ts "$GITHUB_REF_NAME" "$RUNNER_TEMP/generated-notes.md" > "$RUNNER_TEMP/release-notes.md"
+          gh release create "$GITHUB_REF_NAME" --verify-tag \
+            --title "Instatic ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/release-notes.md"
+
   server-artifacts:
     name: Publish Server Artifacts
     # macOS arm64 runner cross-compiles every supported target from one machine.
@@ -92,8 +118,8 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     needs:
-      - verify
       - image
+      - release
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -110,18 +136,6 @@ jobs:
       - name: Build server artifacts
         run: bun run release:server-artifacts -- --all --version "${{ needs.image.outputs.version }}"
 
-      - name: Create release if missing
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            exit 0
-          fi
-          gh release create "$GITHUB_REF_NAME" \
-            --title "Instatic ${{ needs.image.outputs.version }}" \
-            --generate-notes
-
       - name: Upload server artifacts
         env:
           GH_TOKEN: ${{ github.token }}
@@ -135,8 +149,8 @@ jobs:
     name: Publish Release Bundle
     runs-on: ubuntu-latest
     needs:
-      - verify
       - image
+      - release
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -149,18 +163,6 @@ jobs:
 
       - name: Build release bundle
         run: bun run release:bundle -- "${{ needs.image.outputs.version }}"
-
-      - name: Create release if missing
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            exit 0
-          fi
-          gh release create "$GITHUB_REF_NAME" \
-            --title "Instatic ${{ needs.image.outputs.version }}" \
-            --generate-notes
 
       - name: Upload release bundle
         env:

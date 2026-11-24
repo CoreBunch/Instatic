@@ -34,6 +34,7 @@
  * registration time.
  */
 
+import { PluginRouteDocumentationSchema } from '@core/plugins/routeDocumentation'
 import { Type } from '@sinclair/typebox'
 import { MEMBER_TAG_PATTERN, PLUGIN_APP_SCOPE_NAME_PATTERN } from '@core/members'
 
@@ -79,6 +80,7 @@ export const RouteRegistrationArgSchema = Type.Object(
     method: RouteMethodSchema,
     path: Type.String({ minLength: 1 }),
     access: RouteAccessSchema,
+    documentation: Type.Optional(PluginRouteDocumentationSchema),
     routeKey: Type.String({ minLength: 1 }),
   },
   { additionalProperties: false },

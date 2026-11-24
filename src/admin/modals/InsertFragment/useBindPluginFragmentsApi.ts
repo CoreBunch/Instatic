@@ -8,8 +8,10 @@
 
 import { useEffect, useRef } from 'react'
 import { bindPluginRuntimeFragmentsHost } from '@core/plugins/runtime'
+import { resolveCanvasPointerInsertionDrop } from '@site/canvas/canvasInsertionDrop'
+import { selectActiveCanvasPage, useEditorStore } from '@site/store/store'
 import { useStepUp } from '@admin/shared/StepUp'
-import { captureFragmentTarget, captureThemeTarget } from './fragmentInsertTarget'
+import { captureFragmentTarget, capturePreviewBranch, captureThemeTarget } from './fragmentInsertTarget'
 
 const loadHost = () => import('./pluginFragmentsHost')
 
@@ -26,6 +28,19 @@ export function useBindPluginFragmentsApi(enabled: boolean): void {
     const confirm: typeof runStepUp = (action) => stepUp.current(action)
     const closePreviews = new Set<() => void>()
     const unbind = bindPluginRuntimeFragmentsHost({
+      canvasDropAt(clientX, clientY) {
+        const canvasPage = selectActiveCanvasPage(useEditorStore.getState())
+        if (!canvasPage) return null
+        const drop = resolveCanvasPointerInsertionDrop({ canvasPage, clientX, clientY, label: 'Insert' })
+        if (!drop) return null
+        const target = captureFragmentTarget()
+        return {
+          preview: drop.preview,
+          async insert(input) {
+            return (await loadHost()).insertFragmentForPlugin(input, confirm, target, drop.location)
+          },
+        }
+      },
       watchPreviewStyles(onChange) {
         let active = true
         let unsubscribe: (() => void) | undefined
@@ -56,7 +71,7 @@ export function useBindPluginFragmentsApi(enabled: boolean): void {
         return (await loadHost()).insertFragmentForPlugin(input, confirm, target)
       },
       async plan(input) {
-        const target = captureFragmentTarget()
+        const target = capturePreviewBranch()
         return (await loadHost()).planFragmentForPlugin(input, target)
       },
       async applyTheme(input) {

@@ -5,20 +5,23 @@
  *   GET  authorize   the app opens this in the member's browser. A good
  *                    request is stored and the browser is sent to the page
  *                    the owner picked for approving apps (through sign-in
- *                    first when nobody is signed in). Core has no approval
- *                    screen of its own: no page, no app sign-in.
+ *                    first when nobody is signed in).
+ *   POST pair        start cross-device approval and return the private polling credential.
+ *   GET/POST pair/approve   review the app, request email, or explicitly decide.
+ *   POST pair/status        the waiting app checks or cancels its own request.
  *   POST token       code exchange and refresh (public clients, PKCE)
  *   POST revoke      the app signs out (RFC 7009); a sign-in bound to a
  *                    device needs a proof from its key
  *   GET  userinfo    who the member is and what they hold, by access token
  *
- * The member's answer on the approval page is an ordinary member form action
+ * The redirect flow uses an ordinary member form action
  * (`apps/approve` in `../handlers.ts`), so it rides the same
  * session and same-origin checks as every other member action.
  *
- * None of these read the member session cookie except `authorize`, and none
- * of them changes the account: an app token can only read.
+ * The member session can identify the reviewer on authorize and pair/approve.
+ * An app token can only read.
  */
+import { startPair, pairingPage, pairingStatus, readPairFields, PAIR_PATH } from './pairing'
 import { MEMBER_APP_SCOPES } from '@core/members'
 import type { DbClient } from '../../db/client'
 import { RateLimiter } from '../../auth/rateLimit'
@@ -93,7 +96,13 @@ export function handleMemberOAuthRequest(
     case MEMBER_OAUTH_METADATA_PATH:
       return req.method === 'GET' ? metadata(req) : methodNotAllowed()
     case MEMBER_OAUTH_AUTHORIZE_PATH:
-      return req.method === 'GET' ? authorize(req, db, url) : methodNotAllowed()
+      return req.method === 'GET' ? authorize(req, db, url.searchParams) : methodNotAllowed()
+    case PAIR_PATH:
+      return req.method === 'POST' ? beginPair(req, db) : methodNotAllowed()
+    case `${PAIR_PATH}/approve`:
+      return ['GET', 'POST'].includes(req.method) ? pairingPage(req, db, url) : methodNotAllowed()
+    case `${PAIR_PATH}/status`:
+      return req.method === 'POST' ? pairingStatus(req, db) : methodNotAllowed()
     case MEMBER_OAUTH_TOKEN_PATH:
       return req.method === 'POST' ? token(req, db) : methodNotAllowed()
     case MEMBER_OAUTH_REVOKE_PATH:
@@ -112,6 +121,7 @@ function metadata(req: Request): Response {
   return jsonResponse(
     {
       issuer,
+      app_pairing_endpoint: `${origin}${PAIR_PATH}`,
       authorization_endpoint: `${origin}${MEMBER_OAUTH_AUTHORIZE_PATH}`,
       token_endpoint: `${origin}${MEMBER_OAUTH_TOKEN_PATH}`,
       revocation_endpoint: `${origin}${MEMBER_OAUTH_REVOKE_PATH}`,
@@ -139,13 +149,18 @@ function redirectTo(location: string): Response {
   return new Response(null, { status: 302, headers: { ...NO_STORE, location } })
 }
 
-async function authorize(req: Request, db: DbClient, url: URL): Promise<Response> {
+async function beginPair(req: Request, db: DbClient): Promise<Response> {
+  const fields = await readPairFields(req)
+  if (!fields) return plainError('Invalid app pairing request.', 400)
+  return authorize(req, db, fields, true)
+}
+
+async function authorize(req: Request, db: DbClient, params: URLSearchParams, pairing = false): Promise<Response> {
   const limited = consumeOAuthRateLimit(req, memberAppLimits.authorize)
   if (limited) return limited
   const issuer = memberAppIssuer(req)
   if (!issuer) return plainError(MEMBER_OAUTH_ISSUER_UNAVAILABLE_MESSAGE, 503)
 
-  const params = url.searchParams
   if (hasDuplicateParameters(params)) return plainError('The sign-in request names a parameter twice.', 400)
 
   // Until the app and its redirect URI are known to be registered, nothing
@@ -158,7 +173,7 @@ async function authorize(req: Request, db: DbClient, url: URL): Promise<Response
 
   const state = params.get('state') ?? undefined
   const refuse = (error: string, description: string) =>
-    redirectTo(oauthRedirect(redirectUri, { error, error_description: description, state, iss: issuer }))
+    pairing ? oauthError(error, description, 400) : redirectTo(oauthRedirect(redirectUri, { error, error_description: description, state, iss: issuer }))
 
   if (params.get('response_type') !== 'code') {
     return refuse('unsupported_response_type', 'Only the authorization code flow is supported.')
@@ -187,7 +202,7 @@ async function authorize(req: Request, db: DbClient, url: URL): Promise<Response
   }
 
   const pages = await getMemberPagePaths(db)
-  if (!pages.appSignIn) {
+  if (!(pairing ? pages.appPair : pages.appSignIn)) {
     return refuse('temporarily_unavailable', 'This site has no page for approving apps yet.')
   }
 
@@ -197,8 +212,8 @@ async function authorize(req: Request, db: DbClient, url: URL): Promise<Response
   // waiting in another tab keeps working. Anything else (none, a malformed
   // value, the name twice) is never sent back: a new one is set. A browser
   // that still presents two afterwards is refused when it answers.
-  const browserMarker = readAppRequestMarker(req) ?? createAppRequestMarker()
-  const requestId = await createMemberAppRequest(db, {
+  const browserMarker = pairing ? createAppRequestMarker() : readAppRequestMarker(req) ?? createAppRequestMarker()
+  const checked = {
     appId: app.id,
     browserMarker,
     redirectUri,
@@ -208,7 +223,9 @@ async function authorize(req: Request, db: DbClient, url: URL): Promise<Response
     state: state ?? null,
     deviceKey,
     deviceName: cleanDeviceName(params.get('device_name')),
-  })
+  }
+  if (pairing) return db.transaction(async tx => startPair(tx, await createMemberAppRequest(tx, checked), issuer))
+  const requestId = await createMemberAppRequest(db, checked)
   const approval = `${pages.appSignIn}?request=${encodeURIComponent(requestId)}`
   const sessionToken = readMemberSessionToken(req)
   const signedIn = sessionToken ? (await findMemberSession(db, sessionToken)) !== null : false

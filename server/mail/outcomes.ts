@@ -27,6 +27,7 @@ export type MailFailureReason =
   | 'recipient_rejected'
   | 'expired'
   | 'template_removed'
+  | 'template_disabled'
   | 'unreadable'
   | 'recipient_unavailable'
   | 'template_invalid'

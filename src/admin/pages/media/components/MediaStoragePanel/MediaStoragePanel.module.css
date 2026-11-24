@@ -45,7 +45,7 @@
     flex-direction: column;
     gap: var(--space-xs);
     padding: var(--space-l) var(--space-s);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
 }
 
 .row:last-child {

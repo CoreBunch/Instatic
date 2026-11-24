@@ -144,6 +144,10 @@ beforeEach(() => {
   __resetToastBusForTests()
   subscribeToasts((next) => { toasts = next })
   unbind = bindPluginRuntimeFragmentsHost({
+    canvasDropAt: () => ({
+      preview: { left: 0, top: 0, width: 100, height: 20, position: 'before' },
+      insert: input => insertFragmentForPlugin(input, action => action(), undefined, { parentId: 'body', index: 0 }),
+    }),
     insert: (input) => insertFragmentForPlugin(input, (action) => action()),
     plan: planFragmentForPlugin,
     watchPreviewStyles: watchFragmentPreviewStyles,
@@ -168,6 +172,7 @@ function bodyChildren(): string[] {
 describe('api.editor.fragments', () => {
   it('is denied without the editor.fragments permission', async () => {
     const denied = api(['editor.code'])
+    expect(() => denied.editor.fragments.canvasDropAt(4, 8)).toThrow('requires permission "editor.fragments"')
     await expect(denied.editor.fragments.insert({ fragment: await bannerFragment(), readMediaBytes: () => null }))
       .rejects.toThrow('requires permission "editor.fragments"')
     await expect(denied.editor.fragments.plan({ fragment: await bannerFragment() }))
@@ -275,6 +280,47 @@ describe('api.editor.fragments', () => {
     const end = await api().editor.fragments.insert({ fragment: await bannerFragment(), placement: 'end', readMediaBytes: (m) => bytesOf(m.filename), silent: true })
     if (!end.ok) throw new Error(end.message)
     expect(bodyChildren()).toEqual(['first', 'second', end.insertedRootIds[0]])
+  })
+
+  it('reports progress and cancels a background import while the media reader is pending', async () => {
+    const controller = new AbortController()
+    const phases: string[] = []
+    const started = Promise.withResolvers<void>()
+    const resume = Promise.withResolvers<void>()
+    const outcome = await api().editor.fragments.insert({
+      fragment: await bannerFragment(),
+      assets: 'background',
+      signal: controller.signal,
+      onProgress: event => phases.push(event.phase),
+      readMediaBytes: async media => {
+        started.resolve()
+        await resume.promise
+        return bytesOf(media.filename)
+      },
+    })
+    expect(outcome.ok).toBe(true)
+    await started.promise
+    controller.abort()
+    resume.resolve()
+    await Bun.sleep(0)
+    expect(phases[0]).toBe('commit')
+    expect(phases).toContain('media')
+    expect(uploads).toEqual([])
+    expect(bodyChildren()).toHaveLength(3)
+  })
+
+  it('inserts at a canvas drop ahead of the first sibling independently of selection', async () => {
+    const fragments = api().editor.fragments
+    expect(fragments.canvasDropAt(NaN, 20)).toBeNull()
+    const drop = fragments.canvasDropAt(10, 20)!
+    const fragment = await bannerFragment()
+    useEditorStore.getState().selectNode('second')
+    const input = { fragment, readMediaBytes: (m: FragmentMedia) => bytesOf(m.filename), silent: true }
+    const outcome = await drop.insert(input)
+    if (!outcome.ok) throw new Error(outcome.message)
+    expect(bodyChildren()).toEqual([outcome.insertedRootIds[0], 'first', 'second'])
+    unbind()
+    expect(await drop.insert(input)).toMatchObject({ ok: false, stage: 'unavailable' })
   })
 
   it('shows the result toast unless silent', async () => {

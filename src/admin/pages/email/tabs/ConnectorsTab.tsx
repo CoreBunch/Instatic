@@ -2,7 +2,9 @@
 import { useId, useState } from 'react'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
-import { SettingsListSection } from '@admin/shared/SettingsWorkspace/SettingsListSection'
+import { WorkspaceChoice, WorkspaceChoices } from '@admin/shared/SettingsWorkspace/WorkspaceChoices'
+import layout from '@admin/shared/SettingsWorkspace/WorkspaceSection.module.css'
+import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
 import ws from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
@@ -81,83 +83,52 @@ export function ConnectorsTab({
   }
 
   return (
-    <section className={ws.settingsWorkspace} aria-labelledby="connectors-heading">
-      <aside className={ws.settingsBrowser} aria-label="Connector browser">
-        <div className={ws.settingsBrowserHeader}>
-          <h2 id="connectors-heading">Connectors</h2>
-        </div>
-
-        {error && <p role="alert" className={ws.settingsBrowserError}>{error}</p>}
-
-        <div className={ws.settingsBrowserSections}>
-          {(loading || connectors.length > 0) && (
-            <SettingsListSection label="Connected">
-              {loading && connectors.length === 0 ? (
-                <p className={ws.settingsBrowserEmpty}>Loading connectors…</p>
-              ) : (
-                connectors.map((connector) => {
-                  const active = effective.kind === 'connector' && effective.id === connector.id
-                  const healthy = !connector.secretNeedsReentry && connector.lastError === null
-                  const isDefault = overview?.defaults.defaultConnectorId === connector.id
-                  return (
-                    <Button
-                      key={connector.id}
-                      type="button"
-                      variant="ghost"
-                      size="md"
-                      fullWidth
-                      active={active}
-                      align="start"
-                      className={ws.settingsListItem}
-                      onClick={() => setSelection({ kind: 'connector', id: connector.id })}
-                      aria-current={active ? 'true' : undefined}
-                    >
-                      <ConnectorMark logo={connectorLogo(connector)} size="sm" />
-                      <span className={ws.settingsListIdentity}>
-                        <span className={ws.settingsListLabel}>{connector.label}</span>
-                        <span className={ws.settingsListMeta}>
-                          <span className={healthy ? ws.healthDot : ws.warningDot} />
-                          {healthy ? (isDefault ? 'Sending through this' : getConnectorSpec(connector.kind).label) : 'Needs attention'}
-                        </span>
-                      </span>
-                      {!active && <ArrowRightIcon size={13} aria-hidden="true" />}
-                    </Button>
-                  )
-                })
-              )}
-            </SettingsListSection>
-          )}
-
-          <SettingsListSection label="Add connector">
-            {CONNECTOR_SPECS.map((spec) => {
-              const active = addKind === spec.kind
+    <WorkspaceSection title="Connectors">
+      {error && <p role="alert" className={ws.errorAlert}>{error}</p>}
+      {(loading || connectors.length > 0) && (
+        <WorkspaceChoices title="Connected">
+          {loading && connectors.length === 0 ? (
+            <p className={ws.settingsBrowserEmpty}>Loading connectors…</p>
+          ) : (
+            connectors.map((connector) => {
+              const active = effective.kind === 'connector' && effective.id === connector.id
+              const healthy = !connector.secretNeedsReentry && connector.lastError === null
+              const isDefault = overview?.defaults.defaultConnectorId === connector.id
               return (
-                <Button
-                  key={spec.kind}
-                  type="button"
-                  variant="ghost"
-                  size="md"
-                  fullWidth
+                <WorkspaceChoice
+                  key={connector.id}
+                  icon={<ConnectorMark logo={connectorLogo(connector)} size="sm" />}
+                  label={connector.label}
+                  description={<>
+                    <span className={healthy ? ws.healthDot : ws.warningDot} />
+                    {healthy ? (isDefault ? 'Sending through this' : getConnectorSpec(connector.kind).label) : 'Needs attention'}
+                  </>}
                   active={active}
-                  align="start"
-                  className={ws.settingsListItem}
-                  onClick={() => setSelection({ kind: 'add', connectorKind: spec.kind })}
-                  aria-current={active ? 'true' : undefined}
-                >
-                  <ConnectorMark logo={spec.logo} size="sm" />
-                  <span className={ws.settingsListIdentity}>
-                    <span className={ws.settingsListLabel}>{spec.label}</span>
-                    <span className={ws.settingsListMeta}>{spec.shortLabel}</span>
-                  </span>
-                  {!active && <ArrowRightIcon size={13} aria-hidden="true" />}
-                </Button>
+                  onSelect={() => setSelection({ kind: 'connector', id: connector.id })}
+                />
               )
-            })}
-          </SettingsListSection>
-        </div>
-      </aside>
+            })
+          )}
+        </WorkspaceChoices>
+      )}
 
-      <div className={ws.settingsDetailCanvas}>
+      <WorkspaceChoices title="Add connector">
+        {CONNECTOR_SPECS.map((spec) => {
+          const active = addKind === spec.kind
+          return (
+            <WorkspaceChoice
+              key={spec.kind}
+              icon={<ConnectorMark logo={spec.logo} size="sm" />}
+              label={spec.label}
+              description={spec.shortLabel}
+              active={active}
+              onSelect={() => setSelection({ kind: 'add', connectorKind: spec.kind })}
+            />
+          )
+        })}
+      </WorkspaceChoices>
+
+      <div className={layout.detailCard}>
         {selected && overview ? (
           <ConnectorDetail
             key={selected.id}
@@ -205,7 +176,7 @@ export function ConnectorsTab({
           </p>
         </Dialog>
       )}
-    </section>
+    </WorkspaceSection>
   )
 }
 
@@ -279,7 +250,7 @@ function ConnectorDetail({
   }
 
   return (
-    <article className={ws.credentialDetail} aria-labelledby="connector-detail-title">
+    <article className={ws.section} aria-labelledby="connector-detail-title">
       <header className={ws.credentialDetailHeader}>
         <div className={ws.credentialDetailIdentity}>
           <ConnectorMark logo={connectorLogo(connector)} size="lg" />

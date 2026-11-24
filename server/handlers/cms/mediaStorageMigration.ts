@@ -117,7 +117,7 @@ function makeEmitter(controller: ReadableStreamDefaultController<Uint8Array>): E
 // Public handler
 // ---------------------------------------------------------------------------
 
-const MigrateBodySchema = Type.Object({
+export const MigrateBodySchema = Type.Object({
   // v1 only supports 'original' and 'variant'; font and plugin-pack are future work.
   role: Type.Union([Type.Literal('original'), Type.Literal('variant')]),
   toAdapterId: Type.String(),

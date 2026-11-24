@@ -125,9 +125,10 @@ async function currentFingerprintOrNull(pluginId: string): Promise<string | null
  * Decrypt a plugin's stored secrets into a plaintext record, keyed by
  * setting id.
  *
- * SERVER-SIDE RUNTIME USE ONLY. The returned record seeds the QuickJS
- * worker's `api.cms.settings.get` mirror and the `settings.changed` hook
- * payload — it must NEVER be serialised onto a browser-bound response.
+ * SERVER-SIDE RUNTIME USE ONLY. The returned record seeds the owning
+ * plugin's QuickJS worker (`api.cms.settings.get`) and nothing else — it must
+ * NEVER be serialised onto a browser-bound response, put on the hook bus, or
+ * handed to another plugin.
  * The `plugin-secrets-never-leak.test.ts` gate bans this import from every
  * HTTP handler.
  *

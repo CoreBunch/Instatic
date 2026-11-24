@@ -124,7 +124,7 @@ async function handleListStorage(req: Request, db: DbClient): Promise<Response> 
   })
 }
 
-const ElectAdapterBodySchema = Type.Object({
+export const ElectAdapterBodySchema = Type.Object({
   role: Type.Union([
     Type.Literal('original'),
     Type.Literal('variant'),
@@ -164,7 +164,7 @@ async function handleElectAdapter(req: Request, db: DbClient): Promise<Response>
   return jsonResponse({ election })
 }
 
-const ElectDelegateBodySchema = Type.Object({
+export const ElectDelegateBodySchema = Type.Object({
   delegateId: Type.Union([Type.String(), Type.Null()]),
 })
 

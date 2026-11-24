@@ -1931,6 +1931,73 @@ export const sqliteMigrations: Migration[] = [
     `,
   },
   {
+    id: '041_service_accounts',
+    sql: `
+      create table service_accounts (
+        id text primary key references users(id),
+        owner_id text not null references users(id),
+        label text not null,
+        capabilities_json text not null,
+        expires_at text not null,
+        revoked_at text,
+        token_hash text unique,
+        code_hash text unique,
+        code_challenge text,
+        code_expires_at text
+      );
+      create index service_accounts_owner_idx on service_accounts(owner_id);
+    `,
+  },
+  {
+    id: '042_service_account_step_up',
+    sql: `
+      alter table service_accounts add column pending_step_up_expires_at text;
+      alter table service_accounts add column token_step_up_expires_at text;
+    `,
+  },
+  {
+    id: '043_service_account_activity',
+    sql: `
+      create table service_account_activity (
+        id text primary key,
+        account_id text not null references service_accounts(id) on delete cascade,
+        title text not null,
+        scope text,
+        http_status integer not null,
+        occurred_at text not null
+      );
+      create index service_account_activity_account_idx on service_account_activity(account_id, occurred_at desc, id);
+    `,
+  },
+  {
+    id: '044_service_account_capability_arrays',
+    sql: `
+      select 1; -- SQLite already stores these grants as JSON arrays.
+    `,
+  },
+  {
+    id: '045_member_app_pairing',
+    sql: `
+      create table if not exists member_app_pairs (
+        request_hash text primary key references member_app_requests(id_hash) on delete cascade,
+        device_hash text unique not null,
+        display_code text not null,
+        email_hash text,
+        email_member_id text references members(id) on delete cascade,
+        email_address text,
+        decision text
+      );
+    `,
+  },
+  {
+    id: '046_disabled_mail_templates',
+    sql: `
+      create table disabled_mail_templates (
+        template_key text primary key
+      );
+    `,
+  },
+  {
     // Existing avatars predate anything writing `media_usage_refs`, so the
     // first build that warns before a delete would still have said nothing
     // about the avatar already set — the one case the feature exists for.
@@ -1941,11 +2008,12 @@ export const sqliteMigrations: Migration[] = [
     // what makes the id itself safe to change: an installation that recorded
     // it under another number runs it again and inserts nothing.
     //
-    // `041` follows upstream's `040_media_content_hash`. This migration
-    // shipped under earlier ids (`032_…`, then `034_…`) while upstream kept
-    // claiming them; being idempotent, an installation that recorded one of
-    // those ids runs it again under this one and inserts nothing.
-    id: '041_backfill_avatar_usage_refs',
+    // `047` follows upstream's `046_disabled_mail_templates`. This migration
+    // shipped under earlier ids (`032_…`, `034_…`, then `041_…`) while
+    // upstream kept claiming them; being idempotent, an installation that
+    // recorded one of those ids runs it again under this one and inserts
+    // nothing.
+    id: '047_backfill_avatar_usage_refs',
     sql: `
       insert into media_usage_refs (asset_id, ref_kind, ref_id, ref_path)
       select u.avatar_media_id, 'user.avatar', u.id, ''

@@ -6,9 +6,9 @@
  * custom roles and the audit log. The page itself is a thin shell: it
  * figures out which tabs the current admin is allowed to see
  * (`users.manage`, `members.read` / `members.manage`, `roles.manage`,
- * `audit.read`), loads the admin-side data once via `useUsersPageData`, and
- * delegates rendering to the per-tab components in `./tabs/`. The members
- * tab loads its own data: it is searched and paged on the server.
+ * `audit.read`), loads role options via `useUsersPageData`, and
+ * delegates rendering to the per-tab components in `./tabs/`. Both directories
+ * load their own server-paged results.
  *
  * Each tab owns its own form state, busy flag, and dialog open/close
  * state — only the loaded data, the shared error string, and the
@@ -26,7 +26,8 @@ import { RolesTab } from './tabs/RolesTab'
 import { UsersTab } from './tabs/UsersTab'
 import { useUsersPageData } from './hooks/useUsersPageData'
 import { tabLabel } from './utils/format'
-import type { Tab as UsersPageTab, UsersPageLoadAccess } from './types'
+import type { Tab as UsersPageTab } from './types'
+import directory from '@admin/shared/Directory/Directory.module.css'
 import styles from './UsersPage.module.css'
 
 export function UsersPage() {
@@ -39,9 +40,6 @@ export function UsersPage() {
   const canManageMembers = unrestricted || hasCapability(currentUser, 'members.manage')
   const canReadMembers = canManageMembers || hasCapability(currentUser, 'members.read')
 
-  const loadAccess: UsersPageLoadAccess = { canManageUsers, canReadRoleOptions, canReadAudit }
-  const data = useUsersPageData(loadAccess)
-
   const availableTabs: UsersPageTab[] = []
   if (canManageUsers) availableTabs.push('users')
   if (canReadMembers) availableTabs.push('members')
@@ -50,6 +48,8 @@ export function UsersPage() {
 
   const [tab, setTab] = useState<UsersPageTab>('users')
   const activeTab = availableTabs.includes(tab) ? tab : availableTabs[0] ?? 'users'
+
+  const data = useUsersPageData(canReadRoleOptions)
 
   // Cross-workspace spotlight actions can target this page. Peek (don't
   // consume) at the pending action so the appropriate tab is selected before
@@ -88,14 +88,14 @@ export function UsersPage() {
   return (
     <Tabs value={activeTab} onChange={setTab}>
       <AdminPageLayout workspace="users" mode="workspace">
-        <div className={styles.body}>
+        <div className={directory.workspace}>
           {tabs}
           {data.error && <p className={styles.error} role="alert">{data.error}</p>}
 
           <TabPanel value="users"><UsersTab data={data} canManageUsers={canManageUsers} /></TabPanel>
-          <TabPanel value="members"><MembersTab canManage={canManageMembers} onChanged={() => void data.refresh()} /></TabPanel>
+          <TabPanel value="members"><MembersTab canManage={canManageMembers} /></TabPanel>
           <TabPanel value="roles"><RolesTab data={data} canManageRoles={canManageRoles} /></TabPanel>
-          <TabPanel value="audit"><AuditTab data={data} /></TabPanel>
+          <TabPanel value="audit"><AuditTab roles={data.roles} /></TabPanel>
         </div>
       </AdminPageLayout>
     </Tabs>

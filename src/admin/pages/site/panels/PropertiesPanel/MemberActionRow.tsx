@@ -10,13 +10,14 @@ import { ControlRow } from '@ui/components/ControlRow'
 import { Select } from '@ui/components/Select'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import type { FormContextSummary } from './formSettingsAnalysis'
-import type { MemberFormMissing } from './memberFormParts'
+import type { MemberFormMissing } from '@core/memberForms'
 import styles from './FormSettingsPanel.module.css'
 
 const MEMBER_FORM_GROUPS: readonly MemberFormGroup[] = ['entry', 'emailLink', 'account']
 
 /** What the member form still needs, in words, or '' when it is complete. */
 function memberMissingText(missing: MemberFormMissing, action: MemberFormAction): string {
+  if (missing.states?.length) return 'approval states'
   const parts = [
     ...missing.fields.map((field) => field.label.toLowerCase()),
     ...(missing.messages ? [action.successMessage ? 'messages' : 'an error message'] : []),

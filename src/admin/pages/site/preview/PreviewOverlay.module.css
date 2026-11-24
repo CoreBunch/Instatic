@@ -36,7 +36,7 @@
     padding: 0 var(--space-s) 0 var(--space-2xl);
     height: 44px;
     background: var(--bg-body);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
     flex-shrink: 0;
     gap: var(--space-m);
 }

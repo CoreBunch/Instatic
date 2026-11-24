@@ -24,6 +24,14 @@ function submitNodeOf(html: string) {
 }
 
 describe('submit buttons with element children recurse', () => {
+  it('preserves button captions separately from submitted values', () => {
+    const { node } = submitNodeOf('<form><button name="action" value="allow">Allow access</button></form>')
+    expect(node.props.label).toBe('Allow access')
+    expect(node.props.value).toBe('allow')
+    const { node: input } = submitNodeOf('<input type="submit" value="Send request">')
+    expect(input.props.label).toBe('Send request')
+  })
+
   it('keeps an inline <svg> arrow as a base.svg child', () => {
     const { node, kids } = submitNodeOf(
       '<form><button type="submit" style="width:45px">' +

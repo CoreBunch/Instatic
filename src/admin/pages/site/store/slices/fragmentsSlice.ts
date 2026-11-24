@@ -27,6 +27,9 @@
  */
 
 import {
+  finishFragmentAssets,
+  type FragmentInsertPlan,
+  type ImportedFragmentAssets,
   applyResolvedFragment,
   applyResolvedTheme,
   type FragmentApplyResult,
@@ -46,7 +49,10 @@ import { reconcileFrameworkClasses } from './site/framework/reconcile'
 import { buildSiteHelpers, resolveActiveTreeTarget } from './site/helpers'
 import { isSameActiveDocument } from './uiSlice'
 
+export type EditorFragmentPlacement = FragmentInsertPlacement | InsertLocation
+
 interface FragmentsSlice {
+  finishFragmentAssets: (plan: FragmentInsertPlan, assets: ImportedFragmentAssets) => void
   /** Whether the Insert fragment dialog is open. */
   insertFragmentModalOpen: boolean
   openInsertFragmentModal: () => void
@@ -60,7 +66,7 @@ interface FragmentsSlice {
    * one, there is nowhere to place the fragment, or the collab write gate
    * refused the edit.
    */
-  insertFragment: (plan: ResolvedFragmentPlan, placement?: FragmentInsertPlacement) => FragmentApplyResult | null
+  insertFragment: (plan: ResolvedFragmentPlan, placement?: EditorFragmentPlacement) => FragmentApplyResult | null
 
   /**
    * Apply a resolved theme in ONE undo step. Returns false when no site is
@@ -90,8 +96,11 @@ export function fragmentInsertDocument(
 function fragmentInsertLocation(
   tree: NodeTree<PageNode>,
   selectedNodeId: string | null,
-  placement: FragmentInsertPlacement,
+  placement: EditorFragmentPlacement,
 ): InsertLocation | null {
+  if (typeof placement === 'object') {
+    return tree.nodes[placement.parentId] ? placement : null
+  }
   const selected = selectedNodeId && tree.nodes[selectedNodeId] ? selectedNodeId : tree.rootNodeId
   if (placement === 'end') return resolveInsertLocation(tree, tree.rootNodeId)
   if (placement === 'inside-selection') return resolveInsertLocation(tree, selected)
@@ -102,6 +111,14 @@ export const createFragmentsSlice: EditorStoreSliceCreator<FragmentsSlice> = (se
   const { mutateSite, mutateActiveTreeAndSite } = buildSiteHelpers(set, get)
 
   return {
+    finishFragmentAssets: (plan, assets) => {
+      let changed = false
+      const accepted = mutateSite(site => {
+        changed = finishFragmentAssets(site, plan, assets)
+        return changed
+      }, { trackUndo: false })
+      if (changed && !accepted) throw new Error('The editor could not attach the imported assets to the draft.')
+    },
     insertFragmentModalOpen: false,
     openInsertFragmentModal: () => set({ insertFragmentModalOpen: true }),
     closeInsertFragmentModal: () => set({ insertFragmentModalOpen: false }),

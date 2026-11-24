@@ -363,9 +363,13 @@ test.describe.serial('media capability boundaries', () => {
       const trashMenu = personaPage.getByRole('menu', { name: 'Media item options' })
       await expect(trashMenu.getByText('Restore')).toHaveCount(0)
       await expect(trashMenu.getByRole('menuitem', { name: 'Delete' })).toBeVisible()
+      // Purging cannot be undone, so the Trash menu asks before it happens.
+      await trashMenu.getByRole('menuitem', { name: 'Delete' }).click()
+      const purgeConfirm = personaPage.getByRole('alertdialog', { name: `Delete "${deleteFilename}" permanently?` })
+      await expect(purgeConfirm).toBeVisible()
       await Promise.all([
         waitForMediaDelete(personaPage),
-        trashMenu.getByRole('menuitem', { name: 'Delete' }).click(),
+        purgeConfirm.getByRole('button', { name: 'Delete permanently' }).click(),
       ])
       await expect(personaPage.getByRole('button', { name: `Open ${deleteFilename}` })).toHaveCount(0)
       await expect(personaPage.getByText('Trash is empty')).toBeVisible()
@@ -1217,7 +1221,7 @@ async function openPluginsWorkspace(page: Page): Promise<void> {
 
 async function openAiWorkspace(page: Page): Promise<void> {
   await page.goto('/admin/ai')
-  await expect(page.getByRole('heading', { name: 'AI', exact: true })).toBeVisible({
+  await expect(page.getByRole('tablist', { name: 'AI settings' })).toBeVisible({
     timeout: 20_000,
   })
 }

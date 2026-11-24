@@ -154,7 +154,7 @@ await api.cms.mail.send({
 })
 ```
 
-The site owner can reword each template under Email → Templates. `send` resolves once the email is queued; listen for `mail.delivered` and `mail.failed` (with `cms.hooks`) to learn how it went. This is for transactional email to one recipient at a time, not newsletters. Templates are Markdown: raw HTML is stripped, images are not allowed, and links you write out must be `https`. Declare a variable that carries an address with `"kind": "link"`: it must stand alone in the template or be the whole address of a link (`[Open]({link})`), and `instatic-plugin lint` refuses a template that glues one into text. Other variables are text: they may sit anywhere, but a value that contains an address is refused when you send. The owner reads each template before installing, and again when an update changes one.
+The site owner can reword or turn off each template under Email → Templates. A disabled template returns `disabled` without queuing a message. For queued mail, listen for `mail.delivered` and `mail.failed` (with `cms.hooks`) to learn how it went. This is for transactional email to one recipient at a time, not newsletters. Templates are Markdown: raw HTML is stripped, images are not allowed, and links you write out must be `https`. Declare a variable that carries an address with `"kind": "link"`: it must stand alone in the template or be the whole address of a link (`[Open]({link})`), and `instatic-plugin lint` refuses a template that glues one into text. Other variables are text: they may sit anywhere, but a value that contains an address is refused when you send. The owner reads each template before installing, and again when an update changes one.
 
 ## Storing records safely
 
@@ -248,3 +248,7 @@ The path is package-relative. Plugins cannot read arbitrary host filesystem path
 ## Further reading
 
 - [Plugin system docs](../../../docs/features/plugin-system.md)
+
+For optional signed package updates, see the signed plugin updates section in [the plugin system guide](../../../docs/features/plugin-system.md).
+
+Use `showInSiteDock: true` on a direct editor command to open an overlay from the Site dock. The [fragment API](../../../docs/features/plugin-system.md#inserting-site-fragments-and-applying-themes-editorfragments) supports dropping content at a position in the live canvas.

@@ -4,6 +4,7 @@
  * from `@core/branches` outside this folder.
  */
 export {
+  BRANCH_HEADER,
   BRANCH_ID_PATTERN,
   BRANCH_NAME_MAX_LENGTH,
   MAIN_BRANCH_ID,

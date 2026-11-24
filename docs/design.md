@@ -126,12 +126,16 @@ All tokens live in `src/styles/globals.css`. Anywhere you need a color, radius, 
 
 ### Color tokens
 
+Use `--divider` for one-pixel rules between admin rows, sections, and toolbar groups. Its translucent tone follows the local surface in each theme. Use the border tokens for control outlines.
+
+Audit tables use a single `--overlay-5` rule below the column headings. Spacing separates records and the metadata rows in directory inspectors.
+
 ```text
 Base surfaces (achromatic):
   --bg-body, --bg-surface-3
   --bg-surface, --bg-surface-2..5
   --border, --border-muted
-  --border-subtle
+  --border-subtle, --divider
   --scrollbar-track, --scrollbar-thumb,
   --scrollbar-thumb-hover
 

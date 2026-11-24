@@ -1,20 +1,19 @@
 /**
  * Audit tab — site-wide AI usage rollups.
  *
- * Three rollups stitched into one view:
+ * Usage rollups stitched into one view:
  *   • Totals strip            — tokens in/out, USD cost, distinct chats.
  *   • Top users               — table sorted by cost.
  *   • Per-surface breakdown   — table with one row per chat scope.
  *   • Daily bars              — sparkline-style cost-per-day bar list.
  *
- * Sourced from `GET /admin/api/ai/audit?since=ISO`. Time window driven by
- * the same `RangeTabs` primitive the dashboard uses (Today / 7d / 30d /
- * All), so the data feels coherent across the admin.
+ * Sourced from the audit endpoint for the selected time range.
  */
 
 import { useState, type CSSProperties } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
-import { RangeTabs } from '@ui/components/RangeTabs'
+import { Select } from '@ui/components/Select'
+import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
 import {
   listAiAudit,
   type AiAuditResponse,
@@ -29,7 +28,7 @@ import styles from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css
 
 type Range = 'today' | '7d' | '30d' | 'all'
 
-const RANGE_OPTIONS: ReadonlyArray<{ value: Range; label: string }> = [
+const RANGE_OPTIONS: Array<{ value: Range; label: string }> = [
   { value: 'today', label: 'Today' },
   { value: '7d', label: '7 days' },
   { value: '30d', label: '30 days' },
@@ -60,7 +59,6 @@ function rangeToSinceIso(range: Range): string {
   return start.toISOString()
 }
 
-
 export function AuditTab() {
   const [range, setRange] = useState<Range>('30d')
   // Pass the viewer's IANA zone so the server buckets the daily rollup into
@@ -74,22 +72,16 @@ export function AuditTab() {
   )
 
   return (
-    <section className={styles.section}>
-      <div className={styles.sectionHeader}>
-        <div>
-          <h2>Usage audit</h2>
-          <p>Per-user and per-surface AI usage with token + cost rollups.</p>
-        </div>
-        <div className={styles.auditHeaderActions}>
-          <RangeTabs<Range>
-            value={range}
-            options={RANGE_OPTIONS}
-            onChange={setRange}
-            ariaLabel="Audit range"
-          />
-        </div>
+    <WorkspaceSection title="Usage audit" actions={
+      <div className={styles.auditRange}>
+        <Select aria-label="Audit range" fieldSize="sm" value={range} options={RANGE_OPTIONS}
+          onChange={(event) => {
+            const option = RANGE_OPTIONS.find(({ value }) => value === event.currentTarget.value)
+            if (option) setRange(option.value)
+          }}
+        />
       </div>
-
+    }>
       {error && <p role="alert" className={styles.errorAlert}>{error}</p>}
 
       {loading && !data && (
@@ -107,7 +99,7 @@ export function AuditTab() {
           <DaysPanel rows={data.byDay} />
         </>
       )}
-    </section>
+    </WorkspaceSection>
   )
 }
 
@@ -115,14 +107,20 @@ const PROVIDER_LABEL: Record<string, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
   ollama: 'Ollama',
+  openrouter: 'OpenRouter',
+  'openai-compatible': 'Custom endpoint',
   unknown: 'Unknown (deleted credential)',
+}
+
+function countLabel(count: number, noun: string) {
+  return `${formatNumber(count)} ${noun}${count === 1 ? '' : 's'}`
 }
 
 function ModelsPanel({ rows }: { rows: AiUsageByModelRow[] }) {
   return (
     <UsageTablePanel<AiUsageByModelRow>
       title="By model"
-      hint={`${rows.length} models`}
+      hint={countLabel(rows.length, 'model')}
       rows={rows}
       rowKey={(row) => `${row.providerId}:${row.modelId}`}
       emptyLabel="No model activity yet."
@@ -196,7 +194,7 @@ function UsersPanel({ rows }: { rows: AiUsageByUserRow[] }) {
   return (
     <UsageTablePanel<AiUsageByUserRow>
       title="Top users by cost"
-      hint={`${rows.length} users`}
+      hint={countLabel(rows.length, 'user')}
       rows={rows}
       rowKey={(row) => row.userId}
       emptyLabel="No AI activity in this range yet."
@@ -215,7 +213,7 @@ function ScopesPanel({ rows }: { rows: AiUsageByScopeRow[] }) {
   return (
     <UsageTablePanel<AiUsageByScopeRow>
       title="By surface"
-      hint={`${rows.length} scopes`}
+      hint={countLabel(rows.length, 'scope')}
       rows={rows}
       rowKey={(row) => row.scope}
       emptyLabel="No surface activity yet."
@@ -242,7 +240,7 @@ function DaysPanel({ rows }: { rows: AiUsageByDayRow[] }) {
     <div className={styles.auditPanel}>
       <div className={styles.auditPanelHeader}>
         <h3 className={styles.auditPanelTitle}>Daily spend</h3>
-        <span className={styles.auditPanelHint}>{rows.length} days</span>
+        <span className={styles.auditPanelHint}>{countLabel(rows.length, 'day')}</span>
       </div>
       <div className={styles.auditChartShell}>
         {rows.length === 0 ? (

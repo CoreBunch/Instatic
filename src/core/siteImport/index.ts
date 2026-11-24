@@ -116,3 +116,9 @@ export {
   TooManyFilesError,
   PathTraversalError,
 } from './errors'
+
+export {
+  findReimportedStyleRule, indexStyleRulesByName, indexStyleRulesByOrigin,
+  linkImportedClassNames, registerStyleRuleOrigin,
+} from './importLinking'
+export { insertImportedFragment, type FragmentInsertOptions } from './insertImportedFragment'

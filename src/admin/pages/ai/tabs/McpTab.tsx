@@ -9,7 +9,6 @@ import { Input } from '@ui/components/Input'
 import { Select } from '@ui/components/Select'
 import { pushToast } from '@ui/components/Toast'
 import { cn } from '@ui/cn'
-import { ArrowRightIcon } from 'pixel-art-icons/icons/arrow-right'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
 import { CopySolidIcon } from 'pixel-art-icons/icons/copy-solid'
@@ -35,7 +34,9 @@ import {
   availableMcpCapabilityGroups,
   defaultMcpReadCapabilities,
 } from './mcpCapabilities'
-import { SettingsListSection } from '@admin/shared/SettingsWorkspace/SettingsListSection'
+import { WorkspaceChoice, WorkspaceChoices } from '@admin/shared/SettingsWorkspace/WorkspaceChoices'
+import layout from '@admin/shared/SettingsWorkspace/WorkspaceSection.module.css'
+import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
 import dialogStyles from '../../../shared/dialogs/SiteCreateDialog/SiteCreateDialog.module.css'
 import styles from '@admin/shared/SettingsWorkspace/SettingsWorkspace.module.css'
 import mcpStyles from './McpTab.module.css'
@@ -102,88 +103,50 @@ export function McpTab() {
   }
 
   return (
-    <section className={styles.settingsWorkspace} aria-labelledby="mcp-heading">
-      <aside className={styles.settingsBrowser} aria-label="MCP connection browser">
-        <div className={styles.settingsBrowserHeader}>
-          <h2 id="mcp-heading">MCP connections</h2>
-        </div>
-
-        {loadError && <p role="alert" className={styles.settingsBrowserError}>{loadError}</p>}
-
-        <div className={styles.settingsBrowserSections}>
-          {(loading || connections.length > 0) && (
-            <SettingsListSection label="Authorized">
-              {loading && connections.length === 0 ? (
-                <p className={styles.settingsBrowserEmpty}>Loading connections…</p>
-              ) : (
-                connections.map((connection) => {
-                  const active = effectiveSelection.kind === 'connection'
-                    && effectiveSelection.id === connection.id
-                  return (
-                    <Button
-                      key={connection.id}
-                      type="button"
-                      variant="ghost"
-                      size="md"
-                      fullWidth
-                      active={active}
-                      align="start"
-                      className={styles.settingsListItem}
-                      onClick={() => setSelection({ kind: 'connection', id: connection.id })}
-                      aria-current={active ? 'true' : undefined}
-                    >
-                      <McpMark mode={connection.authMode === 'oauth' ? 'oauth' : 'token'} />
-                      <span className={styles.settingsListIdentity}>
-                        <span className={styles.settingsListLabel}>{connection.label}</span>
-                        <span className={styles.settingsListMeta}>
-                          {connection.revoked
-                            ? 'Revoked'
-                            : `${connection.capabilities.length} permissions`}
-                        </span>
-                      </span>
-                      {!active && <ArrowRightIcon size={13} aria-hidden="true" />}
-                    </Button>
-                  )
-                })
-              )}
-            </SettingsListSection>
-          )}
-
-          <SettingsListSection label="Add connection">
-            {(['oauth', 'token'] as const).map((mode) => {
-              const active = effectiveSelection.kind === 'setup' && effectiveSelection.mode === mode
-              const oauth = mode === 'oauth'
+    <WorkspaceSection title="MCP connections">
+      {(loading || connections.length > 0) && (
+        <WorkspaceChoices title="Authorized">
+          {loading && connections.length === 0 ? (
+            <p className={styles.settingsBrowserEmpty}>Loading connections…</p>
+          ) : (
+            connections.map((connection) => {
+              const active = effectiveSelection.kind === 'connection'
+                && effectiveSelection.id === connection.id
               return (
-                <Button
-                  key={mode}
-                  type="button"
-                  variant="ghost"
-                  size="md"
-                  fullWidth
+                <WorkspaceChoice
+                  key={connection.id}
+                  icon={<McpMark mode={connection.authMode === 'oauth' ? 'oauth' : 'token'} />}
+                  label={connection.label}
+                  description={connection.revoked
+                        ? 'Revoked'
+                        : `${connection.capabilities.length} permissions`}
                   active={active}
-                  align="start"
-                  className={styles.settingsListItem}
-                  onClick={() => setSelection({ kind: 'setup', mode })}
-                  aria-current={active ? 'true' : undefined}
-                >
-                  <McpMark mode={mode} />
-                  <span className={styles.settingsListIdentity}>
-                    <span className={styles.settingsListLabel}>
-                      {oauth ? 'Remote OAuth' : 'Personal token'}
-                    </span>
-                    <span className={styles.settingsListMeta}>
-                      {oauth ? 'Hosted clients' : 'Local and CLI clients'}
-                    </span>
-                  </span>
-                  {!active && <ArrowRightIcon size={13} aria-hidden="true" />}
-                </Button>
+                  onSelect={() => setSelection({ kind: 'connection', id: connection.id })}
+                />
               )
-            })}
-          </SettingsListSection>
-        </div>
-      </aside>
+            })
+          )}
+        </WorkspaceChoices>
+      )}
 
-      <div className={styles.settingsDetailCanvas}>
+      <WorkspaceChoices title="Add connection">
+        {(['oauth', 'token'] as const).map((mode) => {
+          const active = effectiveSelection.kind === 'setup' && effectiveSelection.mode === mode
+          const oauth = mode === 'oauth'
+          return (
+            <WorkspaceChoice
+              key={mode}
+              icon={<McpMark mode={mode} />}
+              label={oauth ? 'Remote OAuth' : 'Personal token'}
+              description={oauth ? 'Hosted clients' : 'Local and CLI clients'}
+              active={active}
+              onSelect={() => setSelection({ kind: 'setup', mode })}
+            />
+          )
+        })}
+      </WorkspaceChoices>
+
+      <div className={layout.detailCard}>
         {loading ? (
           <div className={styles.emptyState}>Loading connections…</div>
         ) : loadError ? (
@@ -208,7 +171,7 @@ export function McpTab() {
           onCreated={refresh}
         />
       )}
-    </section>
+    </WorkspaceSection>
   )
 }
 
@@ -320,11 +283,9 @@ function TokenSetupPanel({ onCreate }: { onCreate: () => void }) {
       <header className={styles.settingsDetailHeader}>
         <McpMark mode="token" large />
         <div className={styles.settingsDetailIdentity}>
-          <span className={styles.detailEyebrow}>Local and CLI</span>
           <h2 id="mcp-token-title">Create a personal token</h2>
           <p>Connect Claude Code, Codex, Cursor, Desktop, or another local client.</p>
         </div>
-        <span className={mcpStyles.tokenBadge}>Token</span>
       </header>
 
       <section className={styles.settingsDetailSection}>

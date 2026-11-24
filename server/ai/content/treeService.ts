@@ -9,24 +9,18 @@
  * the `content.entry.cells` filter pipeline, persists a draft, and emits the
  * `content.entry.updated` hook.
  *
- * Access control is the CALLER's responsibility, injected via `assertAccess`:
- *   - the plugin handler passes its per-table manifest allowlist check;
- *   - MCP relies on capability gating at the tool/auth layer and passes none.
+ * Access control is the CALLER's responsibility and happens BEFORE the call:
+ * the plugin handler decides it against the plugin's content access before
+ * anything about the entry is said (`assertTreeReach`).
  */
 import { applyTreeOperation, parsePageNodeTree, type TreeOperation } from '@core/page-tree'
-import { hookBus } from '@core/plugins/hookBus'
 import type { ContentEntryActor } from '@core/plugin-sdk'
 import type { DataRow, DataTable } from '@core/data/schemas'
 import type { DbClient } from '../../db/client'
 import type { BranchScope } from '../../branches/scope'
 import { getDataRow, getDataTable, saveDataRowDraft } from '../../repositories/data'
-import { applyContentEntryCellsFilter } from '../../publish/contentEvents'
+import { announceEntryUpdated, applyContentEntryCellsFilter } from '../../publish/contentEvents'
 import { keepPageStructuralCells } from '../../writePolicy/pageStructuralCells'
-
-export interface PageTreeAccessOptions {
-  /** Invoked after the field resolves, before any read/mutation. Throw to deny. */
-  assertAccess?: (table: DataTable) => void
-}
 
 async function resolvePageTreeField(
   db: DbClient,
@@ -58,10 +52,8 @@ export async function readPageTree(
   scope: BranchScope,
   entryId: string,
   fieldId: string,
-  options: PageTreeAccessOptions = {},
 ): Promise<unknown> {
-  const { row, table } = await resolvePageTreeField(db, scope, entryId, fieldId)
-  options.assertAccess?.(table)
+  const { row } = await resolvePageTreeField(db, scope, entryId, fieldId)
   return row.cells[fieldId] ?? null
 }
 
@@ -72,10 +64,8 @@ export async function mutatePageTree(
   fieldId: string,
   operations: readonly TreeOperation[],
   actor: ContentEntryActor,
-  options: PageTreeAccessOptions = {},
 ): Promise<{ tree: unknown; affectedNodeIds: string[] }> {
   const { row, table } = await resolvePageTreeField(db, scope, entryId, fieldId)
-  options.assertAccess?.(table)
 
   const initial = row.cells[fieldId]
   if (!initial || typeof initial !== 'object') {
@@ -94,7 +84,7 @@ export async function mutatePageTree(
 
   const nextCells = await applyContentEntryCellsFilter(
     { ...row.cells, [fieldId]: tree },
-    { tableSlug: table.slug, entryId, actor },
+    { scope, table, entryId, actor },
   )
   const { actorUserId, pluginActorId } = actorToSaveArgs(actor)
   const updated = await saveDataRowDraft(
@@ -108,12 +98,7 @@ export async function mutatePageTree(
   )
   if (!updated) throw new Error(`Entry "${entryId}" could not be updated after tree mutation`)
 
-  await hookBus.emit('content.entry.updated', {
-    tableSlug: table.slug,
-    entryId,
-    changedFieldIds: [fieldId],
-    actor,
-  })
+  await announceEntryUpdated(table, entryId, [fieldId], actor)
 
   return { tree, affectedNodeIds }
 }

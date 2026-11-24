@@ -13,7 +13,14 @@
 import type { DbClient } from '../../db/client'
 import type { DataTable } from '@core/data/schemas'
 import type { PluginManifest, PluginPermission } from '@core/plugin-sdk'
-import { OWN_CREATED_TABLES_MARKER, type ContentAccessEntry, type ContentAccessMode } from '@core/plugin-sdk/contentSchemas'
+import {
+  CONTENT_ACCESS_MODE_PERMISSIONS,
+  OWN_CREATED_TABLES_MARKER,
+  type ContentAccessEntry,
+  type ContentAccessMode,
+} from '@core/plugin-sdk/contentSchemas'
+import { isInPluginNamespace, owningPluginId } from '@core/plugins/namespaceOwnership'
+import { listInstalledPluginIds } from '../../repositories/plugins'
 import type { HostPluginRecord } from './types'
 
 export const hostPlugins = new Map<string, HostPluginRecord>()
@@ -39,6 +46,9 @@ export function assertHostPluginPermission(
   }
 }
 
+/** What a content-access decision reads of a table. */
+export type ContentAccessTable = Pick<DataTable, 'slug' | 'createdByPluginId'>
+
 /**
  * Every manifest `contentAccess[]` entry that covers `table`. Two match forms:
  *
@@ -54,7 +64,7 @@ export function assertHostPluginPermission(
  */
 function matchingContentAccessEntries(
   manifest: PluginManifest,
-  table: DataTable,
+  table: ContentAccessTable,
 ): ContentAccessEntry[] {
   return (manifest.contentAccess ?? []).filter((row) =>
     row.table === OWN_CREATED_TABLES_MARKER
@@ -64,41 +74,63 @@ function matchingContentAccessEntries(
 }
 
 /**
- * Whether `table` is covered by any `contentAccess[]` entry, regardless of
- * mode. Drives result filtering in `tables.list` / `search`, which show
- * every declared table (same as always — mode narrowing applies to the
- * per-table operations, not to list membership).
+ * Whether the plugin may use every one of `modes` on `table`: each mode's
+ * permission was granted AND a `contentAccess[]` entry covering the table
+ * declares it. The ONE check of content table access: every
+ * `api.cms.content.*` handler decides with it (on the resolved table, before
+ * any repository read or write), and so does everything the hook bus hands a
+ * plugin. Entries combine as a union: a mode is allowed when ANY matching
+ * entry declares it.
  */
-export function hasContentTableAccess(
-  manifest: PluginManifest,
-  table: DataTable,
+export function pluginHasContentTableAccess(
+  entry: HostPluginRecord,
+  table: ContentAccessTable,
+  modes: readonly ContentAccessMode[],
 ): boolean {
-  return matchingContentAccessEntries(manifest, table).length > 0
+  const matches = matchingContentAccessEntries(entry.manifest, table)
+  return modes.every((mode) =>
+    hasGrantedPermission(entry.manifest, CONTENT_ACCESS_MODE_PERMISSIONS[mode]) &&
+    matches.some((row) => row.modes.includes(mode)),
+  )
 }
 
 /**
- * Authoritative check for `api.cms.content.*` table access. Each handler
- * runs this on the RESOLVED table before any repository read/write, so a
- * plugin that holds the permission but didn't cover the table (or the
- * mode) in its manifest's `contentAccess[]` fails closed. Entries combine
- * as a union: the operation is allowed when ANY matching entry declares
- * the mode.
+ * Whether any table at all could pass `pluginHasContentTableAccess` for
+ * `modes`: every mode is declared by some `contentAccess[]` entry. (The
+ * permissions are the caller's to check.) False means the plugin can never
+ * qualify, whatever table comes along.
  */
-export function assertContentTableAccess(
+export function pluginDeclaresContentAccessModes(
   entry: HostPluginRecord,
-  table: DataTable,
-  mode: ContentAccessMode,
-): void {
-  const matches = matchingContentAccessEntries(entry.manifest, table)
-  if (matches.length === 0) {
-    throw new Error(
-      `Plugin "${entry.manifest.id}" does not have contentAccess declared for table "${table.slug}"`,
-    )
+  modes: readonly ContentAccessMode[],
+): boolean {
+  const declared = entry.manifest.contentAccess ?? []
+  return modes.every((mode) => declared.some((row) => row.modes.includes(mode)))
+}
+
+/**
+ * Refuse an id that is not this plugin's to register. It must sit in the
+ * plugin's namespace (`<pluginId>.<name>`), and no other plugin may own it
+ * more specifically: with `acme.vault` and `acme.vault.x` both present,
+ * `acme.vault.x.files` belongs to the second, though it starts with both ids.
+ *
+ * "Present" means INSTALLED (the database), not merely loaded: a disabled
+ * plugin keeps its namespace. Nested ids can no longer be installed side by
+ * side (`nestedPluginId` at install); this check is what protects a site
+ * that already has such a pair.
+ */
+export async function assertOwnsNamespacedId(
+  db: DbClient,
+  pluginId: string,
+  id: string,
+  what: string,
+): Promise<void> {
+  if (!isInPluginNamespace(id, pluginId)) {
+    throw new Error(`${what} id "${id}" must start with the plugin id "${pluginId}.".`)
   }
-  if (!matches.some((row) => row.modes.includes(mode))) {
-    throw new Error(
-      `Plugin "${entry.manifest.id}" has contentAccess for table "${table.slug}" but not for mode "${mode}"`,
-    )
+  const owner = owningPluginId(id, [...(await listInstalledPluginIds(db)), ...hostPlugins.keys()])
+  if (owner !== null && owner !== pluginId) {
+    throw new Error(`${what} id "${id}" belongs to plugin "${owner}", not "${pluginId}".`)
   }
 }
 

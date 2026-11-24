@@ -178,12 +178,12 @@ export function remapTableRefs(node: PageNode, tableIdMap: Map<string, string>):
     if (filters && typeof filters === 'object' && !Array.isArray(filters)) {
       const tableId = (filters as Record<string, unknown>).tableId
       const mapped = typeof tableId === 'string' ? tableIdMap.get(tableId) : undefined
-      if (mapped) return { ...node, props: { ...node.props, filters: { ...filters, tableId: mapped } } }
+      if (mapped !== undefined) return { ...node, props: { ...node.props, filters: { ...filters, tableId: mapped } } }
     }
   }
   if (node.moduleId === 'base.form' && typeof node.props.targetTableId === 'string') {
     const mapped = tableIdMap.get(node.props.targetTableId)
-    if (mapped) return { ...node, props: { ...node.props, targetTableId: mapped } }
+    if (mapped !== undefined) return { ...node, props: { ...node.props, targetTableId: mapped } }
   }
   return node
 }
