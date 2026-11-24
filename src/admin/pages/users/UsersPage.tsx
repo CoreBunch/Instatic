@@ -15,6 +15,7 @@
  * mutation refresh callback live here.
  */
 import { useEffect, useEffectEvent, useState } from 'react'
+import { useLocation, useNavigate } from '@admin/lib/routing'
 import { peekPendingAction } from '@admin/spotlight/pendingAction'
 import { Tab, TabList, TabPanel, Tabs } from '@ui/components/Tabs'
 import { AdminPageLayout } from '@admin/layouts/AdminPageLayout'
@@ -47,7 +48,16 @@ export function UsersPage() {
   if (canReadAudit) availableTabs.push('audit')
 
   const [tab, setTab] = useState<UsersPageTab>('users')
-  const activeTab = availableTabs.includes(tab) ? tab : availableTabs[0] ?? 'users'
+  const location = useLocation()
+  const navigate = useNavigate()
+  const inviting = canManageUsers && new URLSearchParams(location.search).has('invite')
+  const requestedTab = inviting ? 'users' : tab
+  const activeTab = availableTabs.includes(requestedTab) ? requestedTab : availableTabs[0] ?? 'users'
+
+  function closeInvite() {
+    setTab('users')
+    navigate('/admin/users', { replace: true })
+  }
 
   const data = useUsersPageData(canReadRoleOptions)
 
@@ -61,15 +71,7 @@ export function UsersPage() {
   // making the effect dependent on it (rebinding tabs while the page is
   // already mounted shouldn't re-trigger the pending-action routing).
   const consumePendingTabSelection = useEffectEvent(() => {
-    const newRolePending =
-      peekPendingAction('users.newRole') && availableTabs.includes('roles')
-    const invitePending =
-      peekPendingAction('users.invite') && availableTabs.includes('users')
-    if (!newRolePending && !invitePending) return
-    queueMicrotask(() => {
-      if (newRolePending) setTab('roles')
-      else if (invitePending) setTab('users')
-    })
+    if (peekPendingAction('users.newRole') && availableTabs.includes('roles')) queueMicrotask(() => setTab('roles'))
   })
   useEffect(() => {
     consumePendingTabSelection()
@@ -92,7 +94,10 @@ export function UsersPage() {
           {tabs}
           {data.error && <p className={styles.error} role="alert">{data.error}</p>}
 
-          <TabPanel value="users"><UsersTab data={data} canManageUsers={canManageUsers} /></TabPanel>
+          <TabPanel value="users">
+            <UsersTab data={data} canManageUsers={canManageUsers} inviting={inviting}
+              onOpenInvite={() => navigate('/admin/users?invite')} onCloseInvite={closeInvite} />
+          </TabPanel>
           <TabPanel value="members"><MembersTab canManage={canManageMembers} /></TabPanel>
           <TabPanel value="roles"><RolesTab data={data} canManageRoles={canManageRoles} /></TabPanel>
           <TabPanel value="audit"><AuditTab roles={data.roles} /></TabPanel>

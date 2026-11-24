@@ -99,6 +99,10 @@ function actionVerb(action: string): string {
       return 'added a member sign-in app'
     case 'member.app.delete':
       return 'removed a member sign-in app'
+    case 'user.invite':
+      return 'invited user'
+    case 'user.invite.accept':
+      return 'accepted an admin invitation'
     case 'user.create':
       return 'added user'
     case 'user.update':

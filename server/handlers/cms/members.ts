@@ -50,7 +50,7 @@ import {
   setMemberSuspended,
   signOutMemberEverywhere,
 } from '../../members/admin'
-import { memberLinkOrigin, memberMailAvailable } from '../../members/mail'
+import { memberMailAvailable } from '../../members/mail'
 import { createMemberApp, deleteMemberApp, findMemberApp, listMemberApps } from '../../members/apps/store'
 import { isAvailableMemberAppScope, listAvailableMemberAppScopes } from '../../members/apps/scopes'
 import { memberSettingsView } from '../../members/settingsView'
@@ -66,7 +66,7 @@ import {
 import { parseAllowedRedirectUri } from '../../oauth/protocol'
 import { exportMemberDataWithPlugins } from '../../plugins/host/memberExport'
 import { memberLimits } from '../../members/limits'
-import { isCrossSiteFetch } from '../../auth/security'
+import { accountLinkOrigin, isCrossSiteFetch } from '../../auth/security'
 import { createAuditEvent, type AuditAction } from '../../repositories/audit'
 import type { AuthUser } from '../../repositories/users'
 import { CMS_API_PREFIX, requestAuditContext } from './shared'
@@ -161,7 +161,7 @@ async function handleInvite(req: Request, db: DbClient): Promise<Response> {
     const stepUp = await requireStepUp(req, db, user)
     if (stepUp) return stepUp
   }
-  const linkOrigin = memberLinkOrigin(req)
+  const linkOrigin = accountLinkOrigin(req)
   if (!linkOrigin) {
     return jsonResponse(
       { error: 'The site does not know its public address, so it cannot make an invitation link. Set PUBLIC_ORIGIN on the server.' },

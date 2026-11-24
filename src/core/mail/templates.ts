@@ -80,6 +80,18 @@ registerMailTemplate({
     'This is a test email from **{site.name}**.\n\nIf you are reading it, outgoing email works.',
 })
 
+export const ADMIN_INVITE_TEMPLATE_KEY = 'user.invite'
+
+registerMailTemplate({
+  key: ADMIN_INVITE_TEMPLATE_KEY,
+  label: 'Admin user invitation',
+  description: 'Sent when someone is invited to sign in to the admin.',
+  group: 'Admin users',
+  variables: [{ name: 'link', label: 'Invitation link', kind: 'link', sample: 'https://example.com/admin/invitation#invite=sample' }],
+  defaultSubject: 'Your invitation to the {site.name} admin',
+  defaultBody: 'Choose a password to access the **{site.name}** admin. This invitation works once and expires in 7 days.\n\n[Accept invitation]({link})',
+})
+
 // ─── Rendering ─────────────────────────────────────────────────────────────
 
 const VARIABLE = /\{([a-zA-Z][a-zA-Z0-9_.]{0,60})\}/g

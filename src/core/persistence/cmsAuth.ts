@@ -111,6 +111,13 @@ const CmsLoginResponseSchema = Type.Object({
   mfaRequired: Type.Optional(Type.Boolean()),
 })
 
+export async function acceptCmsUserInvitation(token: string, password: string) {
+  return apiRequest('/admin/api/cms/auth/invitations/accept', {
+    method: 'POST', body: { token, password }, schema: Type.Object({ email: Type.String() }),
+    fallbackMessage: 'Could not accept invitation',
+  })
+}
+
 export async function getCmsSetupStatus(
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',

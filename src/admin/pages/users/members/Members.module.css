@@ -149,13 +149,6 @@
 }
 
 /* An invitation link beside its Copy button. */
-.linkRow {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-s);
-}
-
 /* ── Apps dialog ── */
 .apps {
     display: grid;

@@ -96,3 +96,10 @@
         grid-template-columns: 1fr;
     }
 }
+
+.linkRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-s);
+}

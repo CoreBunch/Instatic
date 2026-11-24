@@ -33,7 +33,8 @@ const CmsAuditEventSchema = Type.Object({
 
 export type CmsAuditEvent = Static<typeof CmsAuditEventSchema>
 
-const UsersEnvelope = Type.Object({ users: Type.Array(CmsCurrentUserSchema), ...directoryPageFields })
+const DirectoryUser = Type.Composite([CmsCurrentUserSchema, Type.Object({ invitationPending: Type.Boolean() })])
+const UsersEnvelope = Type.Object({ users: Type.Array(DirectoryUser), ...directoryPageFields, inviteByEmail: Type.Boolean() })
 const UserEnvelope = Type.Object({ user: Type.Optional(CmsCurrentUserSchema) }, { additionalProperties: true })
 const RolesEnvelope = Type.Object({ roles: Type.Optional(Type.Array(CmsRoleSchema)) }, { additionalProperties: true })
 const RoleEnvelope = Type.Object({ role: Type.Optional(CmsRoleSchema) }, { additionalProperties: true })
@@ -50,6 +51,14 @@ export async function listCmsUsers(
     signal,
     fetchImpl,
     fallbackMessage: 'CMS users request failed',
+  })
+}
+
+export async function inviteCmsUser(input: { email: string; roleId: string; delivery: 'link' | 'email' }) {
+  return apiRequest('/admin/api/cms/users/invite', {
+    method: 'POST', body: input,
+    schema: Type.Union([Type.Object({ link: Type.String() }), Type.Object({ queued: Type.Literal(true) })]),
+    fallbackMessage: 'Could not invite user',
   })
 }
 

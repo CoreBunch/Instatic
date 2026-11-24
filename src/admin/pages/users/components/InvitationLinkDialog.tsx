@@ -9,7 +9,7 @@ import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { CopySolidIcon } from 'pixel-art-icons/icons/copy-solid'
-import styles from './Members.module.css'
+import styles from '../UsersPage.module.css'
 
 export function InvitationLinkDialog({ email, link, onClose }: { email: string; link: string; onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null)

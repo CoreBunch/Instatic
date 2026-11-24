@@ -38,7 +38,6 @@ const PENDING_ACTION_TYPES = [
   'content.newCollection',
   'content.newDocument',
   'data.newTable',
-  'users.invite',
   'users.newRole',
   'media.upload',
   'media.newFolder',

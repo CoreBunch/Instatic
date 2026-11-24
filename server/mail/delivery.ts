@@ -34,7 +34,7 @@
  */
 import { announceOutcome, type MailFailureReason } from './outcomes'
 import type { DbClient } from '../db/client'
-import { getMailTemplateDefinition } from '@core/mail'
+import { ADMIN_INVITE_TEMPLATE_KEY, getMailTemplateDefinition } from '@core/mail'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { CORE_MAIL_SOURCE, markMailSent, recordMail, updateMailProgress } from './activity'
 import { connectorPauseReason, pauseConnectorDelivery, takeConnectorProbe } from './connectors'
@@ -129,7 +129,10 @@ export interface QueueTemplateMailInput {
 export async function queueTemplateMail(
   db: DbClient,
   input: QueueTemplateMailInput,
-  deps: Pick<SendDeps, 'env'> = {},
+  deps: Pick<SendDeps, 'env'> & {
+    /** Commit together with real delivery. Capture is unavailable because it exposes the body in Activity. */
+    onQueued?: (tx: DbClient) => Promise<void>
+  } = {},
 ): Promise<'queued' | 'captured' | 'disabled'> {
   // Rendering now proves the template exists and gives the log its subject.
   // The email is rendered again when it is sent, with the wording of then.
@@ -144,7 +147,10 @@ export async function queueTemplateMail(
   const log = {
     kind: mail.kind,
     to: mail.to,
-    subject: mail.subject,
+    // A customised subject can include the invitation URL. Activity must never expose that credential.
+    subject: input.key === ADMIN_INVITE_TEMPLATE_KEY && input.variables.link
+      ? mail.subject.replaceAll(input.variables.link, '[invitation link]')
+      : mail.subject,
     source: input.source,
     sourceLabel: input.sourceLabel,
   }
@@ -157,7 +163,7 @@ export async function queueTemplateMail(
   const recipient = input.memberId !== undefined ? { member: input.memberId } : { address: input.to }
   const defaults = await getMailDefaults(db)
   if (!readyToSend(defaults)) {
-    if (!captureAllowed(deps.env ?? process.env)) throw new MailNotConfiguredError()
+    if (deps.onQueued || !captureAllowed(deps.env ?? process.env)) throw new MailNotConfiguredError()
     await db.transaction(async (tx) => {
       if (limited) await reserveRecipientSlot(tx, limited, recipient)
       await recordMail(tx, { ...log, status: 'captured', body: mail.text, error: mail.note })
@@ -177,6 +183,7 @@ export async function queueTemplateMail(
       await reserveRecipientSlot(tx, limited, recipient)
       await reserveBacklogSlot(tx, limited)
     }
+    await deps.onQueued?.(tx)
     const outboxId = await recordMail(tx, { ...log, status: 'queued', error: waitingFor })
     await enqueueMail(tx, {
       outboxId,

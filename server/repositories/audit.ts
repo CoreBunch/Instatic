@@ -11,6 +11,8 @@ const AuditActionSchema = Type.Union([
   Type.Literal('login.rate_limited'),
   Type.Literal('logout'),
   Type.Literal('user.create'),
+  Type.Literal('user.invite'),
+  Type.Literal('user.invite.accept'),
   Type.Literal('user.update'),
   Type.Literal('user.delete'),
   Type.Literal('user.suspend'),

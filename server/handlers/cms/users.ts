@@ -3,6 +3,7 @@
  *
  *   GET    /admin/api/cms/users      — list every user with their role
  *   POST   /admin/api/cms/users      — create a user (rejects role=owner)
+ *   POST   /admin/api/cms/users/invite — invite a user by email or link
  *   PATCH  /admin/api/cms/users/:id  — update fields, change password, change role
  *   DELETE /admin/api/cms/users/:id  — soft delete a user
  *
@@ -14,7 +15,14 @@
  * owns its own method-routing, body-parsing, and audit emission.
  */
 import type { DbClient } from '../../db/client'
-import { hashPassword } from '../../auth/tokens'
+import { isValidEmail } from '@core/utils/email'
+import { ADMIN_INVITE_TEMPLATE_KEY } from '@core/mail'
+import { accountLinkOrigin } from '../../auth/security'
+import { getMailDefaults } from '../../mail/defaults'
+import { readyToSend, MailNotConfiguredError } from '../../mail/send'
+import { queueTemplateMail } from '../../mail/delivery'
+import { storeUserInvitation } from '../../repositories/userInvitations'
+import { createSessionToken, hashSessionToken, hashPassword } from '../../auth/tokens'
 import {
   capabilitiesUserCannotGrant,
   getSessionHash,
@@ -53,6 +61,12 @@ export const UserCreateBodySchema = Type.Object({
   status: Type.Optional(UserStatusSchema),
 })
 
+export const UserInviteBodySchema = Type.Object({
+  email: Type.String(),
+  roleId: Type.String(),
+  delivery: Type.Union([Type.Literal('email'), Type.Literal('link')]),
+}, { additionalProperties: false })
+
 export const UserPatchBodySchema = Type.Partial(Type.Object({
   email: Type.String(),
   displayName: Type.String(),
@@ -78,17 +92,12 @@ async function rejectsLastOwnerRemoval(
   return (removesOwnerRole || deactivatesOwner) && await countActiveOwners(db) <= 1
 }
 
-function rejectsOwnerRoleAssignment(roleId: string | undefined): Response | null {
-  return roleId === 'owner'
-    ? jsonResponse({ error: 'Owner role is setup-only' }, { status: 400 })
-    : null
-}
-
-async function rejectsRoleCapabilityEscalation(
+async function rejectsRoleAssignment(
   db: DbClient,
   actor: AuthUser,
   roleId: string,
 ): Promise<Response | null> {
+  if (roleId === 'owner') return badRequest('Owner role is setup-only')
   const role = await findRoleById(db, roleId)
   if (!role) return jsonResponse({ error: 'Role not found' }, { status: 404 })
 
@@ -120,7 +129,8 @@ function rejectsShortPassword(password: string | undefined): Response | null {
 
 async function handleListUsers(req: Request, db: DbClient): Promise<Response> {
   const query = new URL(req.url).searchParams
-  return jsonResponse(await listUsers(db, query.get('q') ?? '', Number(query.get('offset'))))
+  const directory = await listUsers(db, query.get('q') ?? '', Number(query.get('offset')))
+  return jsonResponse({ ...directory, inviteByEmail: readyToSend(await getMailDefaults(db)) })
 }
 
 async function handleCreateUser(
@@ -136,9 +146,7 @@ async function handleCreateUser(
   if (!body) return badRequest('Invalid user payload')
   const passwordError = rejectsShortPassword(body.password)
   if (passwordError) return passwordError
-  const ownerRoleError = rejectsOwnerRoleAssignment(body.roleId)
-  if (ownerRoleError) return ownerRoleError
-  const roleCapabilityError = await rejectsRoleCapabilityEscalation(db, actor, body.roleId)
+  const roleCapabilityError = await rejectsRoleAssignment(db, actor, body.roleId)
   if (roleCapabilityError) return roleCapabilityError
 
   try {
@@ -159,6 +167,50 @@ async function handleCreateUser(
     })
     return jsonResponse({ user }, { status: 201 })
   } catch (err) {
+    return mutationErrorResponse(err)
+  }
+}
+
+async function handleInviteUser(req: Request, db: DbClient, _params: RouteParams, actor: AuthUser): Promise<Response> {
+  const stepUp = await requireStepUp(req, db, actor)
+  if (stepUp) return stepUp
+  const body = await readValidatedBody(req, UserInviteBodySchema)
+  if (!body || !isValidEmail(body.email.trim())) return badRequest('Enter a valid email address')
+  const roleError = await rejectsRoleAssignment(db, actor, body.roleId)
+  if (roleError) return roleError
+  const origin = accountLinkOrigin(req)
+  if (!origin) return jsonResponse({ error: 'Set PUBLIC_ORIGIN on the server to create invitation links.' }, { status: 409 })
+
+  const email = body.email.trim()
+  const token = createSessionToken()
+  const link = new URL('/admin/invitation', origin)
+  link.hash = `invite=${token}`
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+  const tokenHash = await hashSessionToken(token)
+  // Login always verifies a valid password hash, including for suspended users.
+  const passwordHash = await hashPassword(createSessionToken())
+  const { roleId, delivery } = body
+  async function issue(tx: DbClient) {
+    const id = await storeUserInvitation(tx, { email, roleId, tokenHash, passwordHash, expiresAt })
+    await createAuditEvent(tx, {
+      actorUserId: actor.id, action: 'user.invite', targetType: 'user', targetId: id,
+      metadata: { roleId, delivery }, ...requestAuditContext(req),
+    })
+  }
+  try {
+    if (delivery === 'link') {
+      await db.transaction(issue)
+      return jsonResponse({ link: link.href }, { status: 201, headers: { 'cache-control': 'no-store' } })
+    }
+    const outcome = await queueTemplateMail(db, {
+      key: ADMIN_INVITE_TEMPLATE_KEY, to: email, variables: { link: link.href }, deliverBefore: expiresAt.getTime(),
+    }, { onQueued: issue })
+    if (outcome === 'disabled') return jsonResponse({ error: 'The admin invitation email is disabled. Create an invitation link instead.' }, { status: 409 })
+    return jsonResponse({ queued: true }, { status: 201 })
+  } catch (err) {
+    if (err instanceof MailNotConfiguredError) {
+      return jsonResponse({ error: 'Outgoing email is not set up. Create an invitation link instead.' }, { status: 409 })
+    }
     return mutationErrorResponse(err)
   }
 }
@@ -195,10 +247,8 @@ async function handleUserPatch(
     return jsonResponse({ error: 'Cannot change login credentials for a more privileged account' }, { status: 403 })
   }
 
-  const ownerRoleError = rejectsOwnerRoleAssignment(body.roleId)
-  if (ownerRoleError) return ownerRoleError
   if (body.roleId !== undefined) {
-    const roleCapabilityError = await rejectsRoleCapabilityEscalation(db, actor, body.roleId)
+    const roleCapabilityError = await rejectsRoleAssignment(db, actor, body.roleId)
     if (roleCapabilityError) return roleCapabilityError
   }
 
@@ -332,6 +382,7 @@ const USER_ITEM_PATTERN = /^\/admin\/api\/cms\/users\/([^/]+)$/
 export const USERS_ROUTES: readonly Route<[AuthUser]>[] = [
   { method: 'GET', pattern: USERS_PATH, handler: handleListUsers },
   { method: 'POST', pattern: USERS_PATH, handler: handleCreateUser },
+  { method: 'POST', pattern: `${USERS_PATH}/invite`, handler: handleInviteUser },
   {
     method: 'PATCH',
     pattern: new RegExp(`^${USERS_PATH}/(?<id>[^/]+)$`),

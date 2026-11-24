@@ -63,6 +63,7 @@ export {
 export {
   createCmsRole,
   createCmsUser,
+  inviteCmsUser,
   deleteCmsRole,
   deleteCmsUser,
   listCmsAuditEvents,

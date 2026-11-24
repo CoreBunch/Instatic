@@ -38,7 +38,7 @@ Every event has a typed `action` string. The closed union is the source of truth
 | Group           | Actions                                                                                   |
 |-----------------|-------------------------------------------------------------------------------------------|
 | Authentication  | `login.success`, `login.failure`, `login.locked`, `login.unlocked`, `login.rate_limited`, `logout` |
-| Users           | `user.create`, `user.update`, `user.delete`, `user.suspend`, `password.change`            |
+| Users           | `user.invite`, `user.invite.accept`, `user.create`, `user.update`, `user.delete`, `user.suspend`, `password.change`            |
 | Roles           | `role.create`, `role.update`, `role.delete`, `role.assign`                                |
 | Data            | `data.table.create`, `data.table.update`, `data.table.delete`, `data.row.create`, `data.row.update`, `data.row.delete`, `data.row.publish`, `data.row.schedule`, `data.row.schedule.cancel`, `data.row.status`, `data.row.move`, `data.author.assign` |
 | Publishing      | `publish`                                                                                 |

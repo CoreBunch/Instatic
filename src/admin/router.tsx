@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from './lib/routing'
 import { useLocation } from './lib/routing'
 import { ErrorBoundary } from '@ui/components/ErrorBoundary'
 import { AppLoadingScreen } from './AppLoadingScreen'
+import { AcceptUserInvitation } from './preauth/AcceptUserInvitation'
 import AdminEntry from './AdminEntry'
 
 // AdminEntry is eager-imported (not behind `React.lazy`) so the cold load
@@ -53,6 +54,7 @@ export function AdminRoutes() {
     <Routes>
       <Route path="/" element={<Navigate to="/admin/dashboard" replace />} />
       <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+      <Route path="/admin/invitation" element={withRouteBoundary(<AcceptUserInvitation />)} />
       <Route path="/admin/dashboard" element={withRouteBoundary(<AdminEntry section="dashboard" />)} />
       <Route path="/admin/site" element={withRouteBoundary(<AdminEntry section="site" />)} />
       <Route path="/admin/content" element={withRouteBoundary(<AdminEntry section="content" />)} />

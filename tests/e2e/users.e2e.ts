@@ -34,6 +34,36 @@ test.describe('users and roles', () => {
     await expect(page.getByText(email)).toBeVisible()
   })
 
+  test('invited admin user chooses a password and signs in (USERS-004)', async ({ page, browser }) => {
+    await login(page)
+    const email = `invite-${Date.now()}@example.com`
+    const password = 'invitation-test-password'
+    await page.goto('/admin/users')
+    await page.getByRole('button', { name: 'Invite user', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Invite user' })
+    await dialog.getByLabel('Email address').fill(email)
+    await dialog.getByRole('combobox', { name: 'Role' }).click()
+    await page.getByRole('option', { name: 'Client', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Create invitation link' }).click()
+    await completeStepUp(page)
+    const link = await page.getByLabel(`Link for ${email}`).inputValue()
+    await page.getByRole('button', { name: 'Done', exact: true }).click()
+    await expect(userRow(page, email)).toContainText('Pending')
+
+    const context = await browser.newContext()
+    try {
+      const recipient = await context.newPage()
+      await recipient.goto(link)
+      await recipient.getByLabel('Choose a password').fill(password)
+      await recipient.getByRole('button', { name: 'Accept invitation' }).click()
+      await expect(recipient.getByRole('heading', { name: 'Invitation accepted' })).toBeVisible()
+      await loginAs(recipient, email, password)
+    } finally { await context.close() }
+    await page.reload()
+    await expect(userRow(page, email)).toContainText('Active')
+    await expect(userRow(page, email)).toContainText('Client')
+  })
+
   test('owner edits, suspends, resets, activates, and deletes a non-owner user (USERS-001)', async ({
     page,
     browser,

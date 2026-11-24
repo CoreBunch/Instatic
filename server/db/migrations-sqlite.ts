@@ -1997,4 +1997,12 @@ export const sqliteMigrations: Migration[] = [
       );
     `,
   },
+  {
+    id: '047_admin_user_invitations',
+    sql: `
+      alter table users add column invitation_hash text;
+      alter table users add column invitation_expires_at text;
+      create unique index users_invitation_hash_idx on users (invitation_hash) where invitation_hash is not null;
+    `,
+  },
 ]

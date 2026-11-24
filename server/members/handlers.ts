@@ -48,14 +48,14 @@
 import type { DbClient } from '../db/client'
 import type { MemberErrorCode } from '@core/members'
 import { Type, safeParseValue } from '@core/utils/typeboxHelpers'
-import { clientIp, isCrossSiteFetch, isSiteOrigin, originAllowed } from '../auth/security'
+import { accountLinkOrigin, clientIp, isCrossSiteFetch, isSiteOrigin, originAllowed } from '../auth/security'
 import { jsonResponse, readTextBodyWithLimit, RequestBodyTooLargeError, setCookieHeader } from '../http'
 import { answerAppSignIn, disconnectApp } from './apps/approval'
 import { handleMemberOAuthRequest } from './apps/handler'
 import { exportMemberDataWithPlugins } from '../plugins/host/memberExport'
 import { MEMBER_OAUTH_PATH_PREFIX } from './apps/protocol'
 import { memberLimits } from './limits'
-import { memberLinkOrigin, memberMailAvailable } from './mail'
+import { memberMailAvailable } from './mail'
 import { toCurrentMember } from './repository'
 import {
   changePassword,
@@ -292,7 +292,7 @@ async function buildContext(db: DbClient, req: Request): Promise<MemberActionCon
     db,
     ipAddress: clientIp(req),
     userAgent: req.headers.get('user-agent'),
-    linkOrigin: memberLinkOrigin(req),
+    linkOrigin: accountLinkOrigin(req),
     mailAvailable: await memberMailAvailable(db, req),
   }
 }
