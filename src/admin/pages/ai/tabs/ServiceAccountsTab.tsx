@@ -21,6 +21,7 @@ import { Heading } from '@ui/components/Heading'
 import { Text } from '@ui/components/Text'
 import { pushToast } from '@ui/components/Toast'
 import { CreateServiceAccountDialog } from './CreateServiceAccountDialog'
+import { RecentActivity } from './RecentActivity'
 import styles from './ServiceAccounts.module.css'
 import directory from '@admin/shared/Directory/Directory.module.css'
 import layout from '@admin/shared/SettingsWorkspace/WorkspaceSection.module.css'
@@ -49,7 +50,7 @@ function agentPrompt(origin: string, account: string, filename: string) {
   const quote = (s: string) => "'" + s.replaceAll("'", "'\\''") + "'"
   return [
     'Check whether the Instatic CLI is installed with instatic --version.',
-    'If it is missing or older than ' + filename.slice('instatic-cli-'.length, -'.tgz'.length) + ', ask me for approval before installing this version:',
+    'If its version does not match ' + filename.slice('instatic-cli-'.length, -'.tgz'.length) + ' or it is missing, ask me for approval before installing this version:',
     'bun add --global ' + quote(origin + base + '/' + filename),
     'Then run this command and wait for me to approve the connection in my browser:',
     'instatic connect ' + quote(origin) + ' --account ' + account,
@@ -72,11 +73,11 @@ function AccountFacts({ account }: { account: ServiceAccount }) {
   </dl>
 }
 
-export function ServiceAccountsTab({ initialAccount }: { initialAccount?: string | null }) {
+export function ServiceAccountsTab({ accountId, onSelect }: { accountId: string | null; onSelect: (id?: string) => void }) {
   const overview = useOverview()
   const { runStepUp } = useStepUp()
   const pairing = new URLSearchParams(useLocation().search).get('pairing')
-  const [id, setId] = useState(pairing ? '' : initialAccount ?? '')
+  const id = pairing ? null : accountId
   const selectedRow = useRef<HTMLButtonElement>(null)
   const [dialog, setDialog] = useState<'create' | 'revoke' | null>(null)
   const [busy, setBusy] = useState(false)
@@ -122,7 +123,7 @@ export function ServiceAccountsTab({ initialAccount }: { initialAccount?: string
           </DataTableRow></DataTableHead>
           <DataTableBody>{overview.data.accounts.map(a => <DataTableRow key={a.id} aria-current={id === a.id}>
             <DataTableCell><Button className={directory.select} variant="ghost" aria-controls={id === a.id ? inspectorId : undefined}
-              aria-expanded={id === a.id} ref={id === a.id ? selectedRow : undefined} onClick={() => setId(a.id)}>
+              aria-expanded={id === a.id} ref={id === a.id ? selectedRow : undefined} onClick={() => onSelect(a.id)}>
               <span className={directory.identityText}><strong>{a.label}</strong></span>
             </Button></DataTableCell>
             <DataTableCell className={directory.accessColumn}>{a.capabilities.length}</DataTableCell>
@@ -135,24 +136,25 @@ export function ServiceAccountsTab({ initialAccount }: { initialAccount?: string
     </div>
     {account && <DirectoryInspector key={account.id} id={inspectorId} label="Connection details" onClose={() => {
       selectedRow.current?.focus({ preventScroll: true })
-      setId('')
+      onSelect()
     }}
       heading={<div className={directory.identityText}><Heading level={3}>{account.label}</Heading></div>}
       status={<AccountStatus account={account} />}>
       <AccountFacts account={account} />
       {active && <div className={styles.stack}>
         {!account.connected && prompt && <Text variant="muted" size="sm">Paste the prompt into your agent, then approve its connection in your browser.</Text>}
-        {account.connected && initialAccount === account.id && <Text variant="muted">Return to your agent to start working.</Text>}
+        {account.connected && <Text variant="muted">Return to your agent to start working.</Text>}
         <div className={styles.actions}>
           {prompt && <Button variant={account.connected ? 'secondary' : 'primary'} onClick={copy}><CopySolidIcon size={14} />Copy agent prompt</Button>}
           <Button variant="ghost" dangerHover onClick={() => setDialog('revoke')}>Revoke access</Button>
         </div>
       </div>}
+      <RecentActivity account={account} refreshStatus={overview.refresh} />
     </DirectoryInspector>}
     {dialog === 'create' && <CreateServiceAccountDialog onClose={() => setDialog(null)} onCreate={async grant => {
       try {
         const result = await runStepUp(() => apiRequest(base, { method: 'POST', schema: IdSchema, body: grant }))
-        setId(result.id)
+        onSelect(result.id)
         setDialog(null)
         overview.refresh()
       } catch (err) { report('Could not create CLI connection', err) }

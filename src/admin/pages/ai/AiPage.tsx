@@ -9,10 +9,9 @@
  *   - `ai.audit.read`        → Audit tab (read site-wide usage)
  */
 
-import { useState } from 'react'
 import { Tabs, TabList, Tab, TabPanel } from '@ui/components/Tabs'
 import { AdminPageLayout } from '@admin/layouts/AdminPageLayout'
-import { useLocation } from '@admin/lib/routing'
+import { useLocation, useNavigate } from '@admin/lib/routing'
 import { hasCapability } from '@admin/access'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import { ProvidersTab } from './tabs/ProvidersTab'
@@ -44,11 +43,20 @@ export function AiPage() {
   if (canManage) availableSections.push('providers', 'defaults', 'mcp', 'service')
   if (canReadAudit) availableSections.push('audit')
 
-  const initialAccount = new URLSearchParams(location.search).get('service-account')
-  const [section, setSection] = useState<Section>(initialAccount ? 'service' : 'providers')
-  const activeSection = availableSections.includes(section)
-    ? section
-    : availableSections[0] ?? 'providers'
+  const navigate = useNavigate()
+  const query = new URLSearchParams(location.search)
+  const accountId = query.get('service-account')
+  const requested = accountId || query.has('cli') ? 'service' : query.get('tab')
+  const activeSection = availableSections.find(item => item === requested) ?? availableSections[0] ?? 'providers'
+  function selectSection(section: Section, account?: string) {
+    const next = new URLSearchParams(location.search)
+    for (const key of ['cli', 'service-account', 'pairing', 'tab']) next.delete(key)
+    if (section === 'service') {
+      if (account) next.set('service-account', account)
+      else next.set('cli', '')
+    } else if (section !== 'providers') next.set('tab', section)
+    navigate('/admin/ai' + (next.size ? '?' + next.toString() : ''))
+  }
 
   if (location.pathname === '/admin/ai/cli/authorize') return <ServiceConsent />
 
@@ -58,7 +66,7 @@ export function AiPage() {
 
   return (
     <AdminPageLayout workspace="ai" mode="workspace">
-      <Tabs value={activeSection} onChange={setSection}>
+      <Tabs value={activeSection} onChange={selectSection}>
         <div className={directory.workspace}>
           <TabList ariaLabel="AI settings">
             {availableSections.map((item) => (
@@ -66,10 +74,10 @@ export function AiPage() {
             ))}
           </TabList>
           {canManage && <>
-            <TabPanel value="providers"><ProvidersTab onNavigateToDefaults={() => setSection('defaults')} /></TabPanel>
-            <TabPanel value="defaults"><DefaultsTab onNavigateToProviders={() => setSection('providers')} /></TabPanel>
+            <TabPanel value="providers"><ProvidersTab onNavigateToDefaults={() => selectSection('defaults')} /></TabPanel>
+            <TabPanel value="defaults"><DefaultsTab onNavigateToProviders={() => selectSection('providers')} /></TabPanel>
             <TabPanel value="mcp"><McpTab /></TabPanel>
-            <TabPanel value="service"><ServiceAccountsTab initialAccount={initialAccount} /></TabPanel>
+            <TabPanel value="service"><ServiceAccountsTab accountId={accountId} onSelect={id => selectSection('service', id)} /></TabPanel>
           </>}
           {canReadAudit && <TabPanel value="audit"><AuditTab /></TabPanel>}
         </div>

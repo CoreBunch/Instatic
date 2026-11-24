@@ -5,6 +5,7 @@ import { jsonResponse, badRequest, readValidatedBody, methodNotAllowed } from '.
 import { oauthIssuerOrigin } from '../oauth/protocol'
 import { createAuditEvent } from '../repositories/audit'
 import { listAccounts, createAccount, issueCode, exchangeCode, revokeAccount } from './store'
+import { recentServiceActivity } from './activity'
 import { cliFilename, cliPackageResponse } from './package'
 
 const SERVICE_BASE = '/admin/api/cms/service-accounts'
@@ -25,6 +26,7 @@ export async function handleServiceAccounts(req: Request, db: DbClient): Promise
   }
   const user = await requireCapability(req, db, 'ai.providers.manage')
   if (user instanceof Response) return user
+  if (action === 'activity' && req.method === 'GET') return jsonResponse(await recentServiceActivity(db, user.id, id))
   if (!part && req.method === 'GET') return jsonResponse({ accounts: await listAccounts(db, user.id), origin: issuer, cliFilename })
   if (!part && req.method === 'POST') {
     if (!issuer) return badRequest('Configure PUBLIC_ORIGIN to connect a CLI')

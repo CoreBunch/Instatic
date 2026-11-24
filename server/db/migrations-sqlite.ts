@@ -1955,4 +1955,18 @@ export const sqliteMigrations: Migration[] = [
       alter table service_accounts add column token_step_up_expires_at text;
     `,
   },
+  {
+    id: '043_service_account_activity',
+    sql: `
+      create table service_account_activity (
+        id text primary key,
+        account_id text not null references service_accounts(id) on delete cascade,
+        title text not null,
+        scope text,
+        http_status integer not null,
+        occurred_at text not null
+      );
+      create index service_account_activity_account_idx on service_account_activity(account_id, occurred_at desc, id);
+    `,
+  },
 ]

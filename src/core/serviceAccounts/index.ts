@@ -21,3 +21,11 @@ export const ExchangeServiceSchema = Type.Object({
   code: Type.String({ minLength: 43, maxLength: 90 }), verifier: Type.String({ pattern: '^[A-Za-z0-9._~-]{43,128}$' }),
 })
 export const ServiceCodeSchema = Type.Object({ code: Type.String() })
+
+export const ServiceActivitySchema = Type.Object({
+  events: Type.Array(Type.Object({
+    id: Type.String(), title: Type.String(), agent: Type.String(), at: Type.String(),
+    scope: Type.Union([Type.String(), Type.Null()]), status: Type.Union([Type.Integer(), Type.Null()]),
+  })),
+})
+export type ServiceActivity = Static<typeof ServiceActivitySchema>['events'][number]

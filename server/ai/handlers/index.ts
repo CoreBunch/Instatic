@@ -7,6 +7,7 @@
  * matches before `/credentials/:id`.
  */
 
+import { recordServiceResponse } from '../../serviceAccounts/activity'
 import { tryAuthorizeServiceRequest } from '../../serviceAccounts/access'
 import type { DbClient } from '../../db/client'
 import { jsonResponse } from '../../http'
@@ -39,8 +40,11 @@ export function tryHandleAi(
 
   const serviceRequest = tryAuthorizeServiceRequest(req, db)
   if (serviceRequest) {
-    return serviceRequest.then(authorized =>
-      authorized instanceof Response ? authorized : dispatchAi(authorized, db, url) ?? jsonResponse({ error: 'Not found' }, { status: 404 }))
+    return serviceRequest.then(async authorized => {
+      if (authorized instanceof Response) return authorized
+      const response = await dispatchAi(authorized, db, url) ?? jsonResponse({ error: 'Not found' }, { status: 404 })
+      return recordServiceResponse(authorized, db, response)
+    })
   }
   return dispatchAi(req, db, url)
 }
