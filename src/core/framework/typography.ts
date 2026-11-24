@@ -22,7 +22,7 @@ import type {
   FrameworkTypographyGroup,
   FrameworkTypographySettings,
 } from '@core/framework-schema'
-import { createFrameworkScaleModule } from './scaleModule'
+import { createFrameworkScaleModule, type FrameworkScaleModule } from './scaleModule'
 
 const PROPERTY_KEYMAP: Record<string, keyof CSSPropertyBag> = {
   'font-size': 'fontSize',
@@ -31,10 +31,11 @@ const PROPERTY_KEYMAP: Record<string, keyof CSSPropertyBag> = {
   'font-weight': 'fontWeight',
 }
 
-const typographyModule = createFrameworkScaleModule<
+// Annotated for the same reason as `spacingModule` in `spacing.ts`.
+const typographyModule: FrameworkScaleModule<
   FrameworkTypographyGroup,
   FrameworkTypographyClassGenerator
->({
+> = createFrameworkScaleModule({
   family: 'typography',
   getMinBaseSize: (group) => group.min.fontSize,
   getMaxBaseSize: (group) => group.max.fontSize,

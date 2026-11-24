@@ -60,6 +60,12 @@ export interface EditorStore {}
  * draft, to harvest the patches that feed the collab write path.)
  */
 import type { Mutate, StateCreator, StoreApi } from 'zustand'
+// The `'zustand/mutative'` mutator key used below is declared by this package's
+// augmentation of zustand. Importing it here keeps these types valid for any
+// program that loads this file without also loading `store.ts`, such as a
+// plugin typechecking against the published SDK declarations. It has to be a
+// plain import: an empty type-only import is dropped from declaration output.
+import 'zustand-mutative'
 export type EditorStoreSliceCreator<T> = StateCreator<
   EditorStore,
   [['zustand/mutative', never]],
