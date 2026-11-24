@@ -38,7 +38,7 @@ export function PluginUpdate({ plugin, onReview }: {
     }
   }
 
-  return <Button size="sm" variant={offer ? 'primary' : 'secondary'} disabled={busy} title={offer?.notes} onClick={() => void check()}>
+  return <Button size="sm" variant={offer ? 'primary' : 'secondary'} disabled={busy} tooltip={offer?.notes} onClick={() => void check()}>
     {offer ? 'Update to ' + offer.version : 'Check for updates'}
   </Button>
 }
