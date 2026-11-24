@@ -676,10 +676,11 @@ describe('LayerNodeContextMenu — Hide / Unhide', () => {
       slug: 'index',
       rootNodeId: 'root',
       nodes: {
-        root: makeNode({ id: 'root', moduleId: 'base.body', children: ['a', 'b', 'c'] }),
+        root: makeNode({ id: 'root', moduleId: 'base.body', children: ['a', 'b', 'c', 'd'] }),
         a: makeNode({ id: 'a', moduleId: 'base.text' }),
         b: makeNode({ id: 'b', moduleId: 'base.text', hidden: true }),
         c: makeNode({ id: 'c', moduleId: 'base.text', hidden: true }),
+        d: makeNode({ id: 'd', moduleId: 'base.text', locked: true }),
       },
     })
     useEditorStore.setState({
@@ -724,7 +725,7 @@ describe('LayerNodeContextMenu — Hide / Unhide', () => {
     expect(useEditorStore.getState().site?.pages[0].nodes.a.hidden).toBe(true)
   })
 
-  it('places Hide first with a divider before the rest of the menu', () => {
+  it('places Hide then Lock, each with their own divider, before the rest of the menu', () => {
     setupHideMenuPage()
     renderHideMenu('a')
 
@@ -733,7 +734,9 @@ describe('LayerNodeContextMenu — Hide / Unhide', () => {
 
     expect(children[0].textContent).toBe('Hide')
     expect(children[1].getAttribute('aria-hidden')).toBe('true')
-    expect(children[2].textContent).toBe('Rename')
+    expect(children[2].textContent).toBe('Lock')
+    expect(children[3].getAttribute('aria-hidden')).toBe('true')
+    expect(children[4].textContent).toBe('Rename')
   })
 
   it('shows Unhide for a hidden node and marks it visible when clicked', () => {
@@ -751,6 +754,32 @@ describe('LayerNodeContextMenu — Hide / Unhide', () => {
 
     expect(screen.queryByRole('menuitem', { name: /^hide$/i })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: /^unhide$/i })).toBeNull()
+  })
+
+  it('shows Lock for an unlocked node and marks it locked when clicked', () => {
+    setupHideMenuPage()
+    renderHideMenu('a')
+
+    fireEvent.click(screen.getByRole('menuitem', { name: /^lock$/i }))
+
+    expect(useEditorStore.getState().site?.pages[0].nodes.a.locked).toBe(true)
+  })
+
+  it('shows Unlock for a locked node and marks it unlocked when clicked', () => {
+    setupHideMenuPage()
+    renderHideMenu('d')
+
+    fireEvent.click(screen.getByRole('menuitem', { name: /^unlock$/i }))
+
+    expect(useEditorStore.getState().site?.pages[0].nodes.d.locked).toBe(false)
+  })
+
+  it('does not show Lock for the structural root node', () => {
+    setupHideMenuPage()
+    renderHideMenu('root')
+
+    expect(screen.queryByRole('menuitem', { name: /^lock$/i })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: /^unlock$/i })).toBeNull()
   })
 
   it('hides every selected node when a multi-selection contains a visible node', () => {
