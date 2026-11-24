@@ -4,6 +4,8 @@
  * tables their schema, the shell its settings, files a line diff. A change
  * with a conflict carries the decision strip on top.
  */
+import { useState } from 'react'
+import { Button } from '@ui/components/Button'
 import type { MergeChange, MergeFieldChange, MergeResolution } from '@core/branches'
 import { countDiffLines, diffLines } from '@core/utils/lineDiff'
 import { SegmentedControl } from '@ui/components/SegmentedControl'
@@ -59,7 +61,10 @@ function ConflictStrip({ change, resolution, canResolve, onResolve }: Omit<Revie
   )
 }
 
+const FIELD_PAGE_SIZE = 25
+
 function FieldTable({ fields, action }: { fields: MergeFieldChange[]; action: MergeChange['action'] }) {
+  const [visibleCount, setVisibleCount] = useState(FIELD_PAGE_SIZE)
   if (fields.length === 0) return <p className={styles.cardEmpty}>No field-level difference to show.</p>
   return (
     <table className={styles.fieldTable}>
@@ -71,18 +76,29 @@ function FieldTable({ fields, action }: { fields: MergeFieldChange[]; action: Me
         </tr>
       </thead>
       <tbody>
-        {fields.map((field) => (
+        {fields.slice(0, visibleCount).map((field) => (
           <tr key={field.id} className={styles.fieldRow} data-changed="true" data-conflict={field.conflict ? 'true' : 'false'}>
             <td className={styles.fieldName}>{field.label}</td>
-            <td className={styles.cellBefore} data-structured={field.structured ? 'true' : 'false'}>
+            <td className={styles.cellBefore}>
               {field.before ?? <span className={styles.cellEmpty}>{action === 'create' ? 'none' : 'empty'}</span>}
             </td>
-            <td className={styles.cellAfter} data-structured={field.structured ? 'true' : 'false'}>
+            <td className={styles.cellAfter}>
               {field.after ?? <span className={styles.cellEmpty}>{action === 'delete' ? 'removed' : 'empty'}</span>}
             </td>
           </tr>
         ))}
       </tbody>
+      {visibleCount < fields.length && (
+        <tfoot>
+          <tr>
+            <td colSpan={3}>
+              <Button variant="ghost" size="sm" onClick={() => setVisibleCount(count => count + FIELD_PAGE_SIZE)}>
+                Show more changes ({fields.length - visibleCount} remaining)
+              </Button>
+            </td>
+          </tr>
+        </tfoot>
+      )}
     </table>
   )
 }

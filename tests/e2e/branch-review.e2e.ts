@@ -88,6 +88,22 @@ async function saveHome(page: Page, home: HomeRow, cells: HomeRow['cells'], bran
   expect(status).toBe(200)
 }
 
+async function saveReviewStyle(page: Page, color: string, branch?: string): Promise<void> {
+  const { body: { site, seq } } = await api<{ site: { styleRules: Record<string, unknown> }; seq: number }>(page, '/admin/api/cms/site', { branch })
+  const id = 'review-style'
+  site.styleRules[id] = {
+    id, name: 'review-heading', selector: '.review-heading', kind: 'class', order: 1,
+    styles: { backgroundColor: color }, contextStyles: {}, createdAt: 1, updatedAt: 1,
+  }
+  const { status } = await api(page, '/admin/api/cms/site-document', {
+    method: 'PUT', branch, body: {
+      mode: 'incremental', site, shellBaseSeq: seq, baseSeqs: {}, changedPages: [], deletedPageIds: [],
+      changedComponents: [], deletedComponentIds: [], changedLayouts: [], deletedLayoutIds: [],
+    },
+  })
+  expect(status).toBe(200)
+}
+
 async function editorPage(browser: Browser): Promise<Page> {
   const context = await browser.newContext({ storageState: ANONYMOUS_STATE, viewport: VIEWPORT })
   const page = await context.newPage()
@@ -130,7 +146,7 @@ test('owner prepares a branch and an editor without merge rights', async ({ page
     body: { email: EDITOR.email, displayName: EDITOR.name, password: EDITOR.password, roleId },
   })
   if (user.status !== 201) {
-    const users = await api<{ users: Array<{ id: string; email: string }> }>(page, '/admin/api/cms/users')
+    const users = await api<{ users: Array<{ id: string; email: string }> }>(page, `/admin/api/cms/users?q=${encodeURIComponent(EDITOR.email)}`)
     const existing = users.body.users.find((entry) => entry.email === EDITOR.email)
     expect(existing, `user create answered ${user.status}: ${JSON.stringify(user.body)}`).toBeDefined()
     const patched = await api(page, `/admin/api/cms/users/${existing!.id}`, { method: 'PATCH', body: { roleId } })
@@ -150,6 +166,8 @@ test('owner prepares a branch and an editor without merge rights', async ({ page
     'review-cta': node('review-cta', 'base.button', { label: 'Get started', href: '/pricing' }),
   }
   await saveHome(page, home, { ...home.cells, title: 'Home', body: { ...home.cells.body, nodes } })
+
+  await saveReviewStyle(page, 'ivory')
 
   // A clean branch for this run.
   await api(page, `/admin/api/cms/branches/${BRANCH_ID}`, { method: 'DELETE' })
@@ -172,6 +190,8 @@ test('the editor edits the branch, reads the review, comments and requests a mer
   }
   await saveHome(page, home, { ...home.cells, title: BRANCH_TITLE, body: { ...home.cells.body, nodes } }, BRANCH_ID)
 
+  await saveReviewStyle(page, 'gold', BRANCH_ID)
+
   // Without merge rights the strip's action reads as a request, not a merge,
   // and it lands on the review page.
   await page.goto(`/admin/site?branch=${BRANCH_ID}`)
@@ -179,6 +199,10 @@ test('the editor edits the branch, reads the review, comments and requests a mer
   await page.getByTestId('branch-strip-merge').click()
   await expect(page).toHaveURL(new RegExp(`/admin/branches/${BRANCH_ID}/review`))
   await expect(page.getByTestId('branch-review-title')).toHaveText(/Merge Launch review into main/)
+  const styleCard = page.getByTestId('review-change-site:default')
+  const styleRow = styleCard.getByRole('row', { name: /\.review-heading.*background-color/ })
+  await expect(styleRow.getByRole('cell')).toHaveText(['Style rules › .review-heading › background-color', 'ivory', 'gold'])
+  await styleCard.screenshot({ path: `${EVIDENCE_DIR}/branch-review-style.png` })
   const strip = page.getByTestId('branch-strip')
   await expect(strip).toContainText('Launch review')
   // The review page carries the request itself; the strip's button steps aside.
@@ -203,10 +227,13 @@ test('the editor edits the branch, reads the review, comments and requests a mer
   // render, found by their node ids.
   await expect(homeChange.locator('[data-tone="changed"]')).toHaveCount(1)
   await expect(homeChange.locator('[data-tone="added"]')).toHaveCount(1)
-  // The badge carries the node's editor name; a bare module id stays hidden.
-  await expect(homeChange.locator('[data-tone="changed"]')).toContainText('Headline')
-  await expect(homeChange.locator('[data-tone="added"]')).toHaveText('Added')
+  await expect(homeChange.locator('[data-tone="changed"]')).toBeEmpty()
+  await expect(homeChange.locator('[data-tone="added"]')).toBeEmpty()
   await shot(page, '1-editor-review')
+
+  await homeChange.getByRole('button', { name: 'What changed' }).click()
+  await expect(homeChange.getByText(/Changed Headline:.*Launch week starts Monday/)).toBeVisible()
+  await homeChange.getByRole('button', { name: 'Side by side' }).click()
 
   await page.getByTestId(`review-thread-row:${home.id}-input`).fill('New headline for launch week; the rest of the page is untouched.')
   await page.getByTestId(`review-thread-row:${home.id}-submit`).click()

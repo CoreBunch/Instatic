@@ -46,6 +46,7 @@ COPY --from=production-deps --chown=bun:bun /app/node_modules ./node_modules
 COPY --from=build --chown=bun:bun /app/dist ./dist
 COPY --chown=bun:bun package.json bun.lock ./
 COPY --chown=bun:bun tsconfig*.json ./
+COPY --chown=bun:bun cli ./cli
 COPY --chown=bun:bun server ./server
 COPY --chown=bun:bun src ./src
 

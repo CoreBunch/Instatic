@@ -71,7 +71,7 @@ globalThis.__buildApi = function buildApi() {
   //       declare cms.routes.public in its permissions so the operator
   //       sees the warning at install time.
   function makeRoute(method: string) {
-    return function (path: unknown, capability: unknown, handler: unknown) {
+    return function (path: unknown, capability: unknown, handler: unknown, documentation?: unknown) {
       assertTargetPermission('cms.routes.register')
       if (typeof handler !== 'function') throw new TypeError('Route handler must be a function')
       const routeKey = method + ':' + normalizePath(path)
@@ -81,11 +81,12 @@ globalThis.__buildApi = function buildApi() {
         path: normalizePath(path),
         access: { kind: 'capability', capability: capability },
         routeKey: routeKey,
+        ...(documentation === undefined ? {} : { documentation }),
       }])
     }
   }
   function registerAuthenticated(method: string) {
-    return function (path: unknown, handler: unknown) {
+    return function (path: unknown, handler: unknown, documentation?: unknown) {
       assertTargetPermission('cms.routes.register')
       if (typeof handler !== 'function') throw new TypeError('Route handler must be a function')
       const routeKey = method + ':' + normalizePath(path)
@@ -95,11 +96,12 @@ globalThis.__buildApi = function buildApi() {
         path: normalizePath(path),
         access: { kind: 'authenticated' },
         routeKey: routeKey,
+        ...(documentation === undefined ? {} : { documentation }),
       }])
     }
   }
   function registerPublic(method: string) {
-    return function (path: unknown, handler: unknown) {
+    return function (path: unknown, handler: unknown, documentation?: unknown) {
       assertTargetPermission('cms.routes.register')
       // Conditional extra grant — not expressible in the static map.
       assertPermission('cms.routes.public')
@@ -111,6 +113,7 @@ globalThis.__buildApi = function buildApi() {
         path: normalizePath(path),
         access: { kind: 'public' },
         routeKey: routeKey,
+        ...(documentation === undefined ? {} : { documentation }),
       }])
     }
   }
@@ -469,7 +472,7 @@ globalThis.__buildApi = function buildApi() {
       // recipient. `{ member }` needs mail.send; `{ address }` needs
       // mail.send.external.
       mail: {
-        // api.cms.mail.send({ template, to, variables?, reference? }) → 'queued' | 'captured'
+        // The host returns the delivery decision for this template.
         send: function (input: unknown) {
           const mail = (input && typeof input === 'object' ? input : {}) as {
             template?: unknown

@@ -7,8 +7,9 @@ import {
 describe('CMS users client', () => {
   it('rejects malformed user list payloads at the HTTP boundary', async () => {
     await expect(
-      listCmsUsers(async () =>
+      listCmsUsers({}, async () =>
         new Response(JSON.stringify({
+          matching: 1, offset: 0,
           users: [{
             id: 'user_1',
             email: 'owner@example.com',

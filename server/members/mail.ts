@@ -125,6 +125,8 @@ interface MemberMailInput {
   link?: string
   /** The app a notice is about. */
   appName?: string
+  /** An app approval link shares the deadline of its pending request. */
+  deliverBefore?: number
 }
 
 const pending = new Set<Promise<void>>()
@@ -153,7 +155,7 @@ function isLinkKind(kind: MemberMailKind): kind is MemberTokenKind {
 export function queueMemberMail(db: DbClient, input: MemberMailInput): void {
   const key = MEMBER_MAIL_KEYS[input.kind]
   // The token was issued a moment ago, so its life is counted from now.
-  const deliverBefore = isLinkKind(input.kind) ? Date.now() + TOKEN_LIFETIME_MS[input.kind] : undefined
+  const deliverBefore = input.deliverBefore ?? (isLinkKind(input.kind) ? Date.now() + TOKEN_LIFETIME_MS[input.kind] : undefined)
   const task = queueTemplateMail(db, {
     key,
     to: input.to,

@@ -10,7 +10,7 @@
 .rowWrapper {
   display: flex;
   flex-direction: column;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--divider);
 }
 
 .rowWrapperDefault {
@@ -182,7 +182,7 @@
   gap: var(--space-xs);
   padding: var(--space-xs) var(--space-s) var(--space-s);
   background: var(--bg-surface-2);
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--divider);
 }
 
 .rowWrapperDefault .advanced {

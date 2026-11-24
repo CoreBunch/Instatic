@@ -12,7 +12,7 @@ import type { DbClient } from '../db/client'
 import { isoDate, nowIso } from '@core/utils/isoDate'
 import { createSessionToken, hashSessionToken } from '../auth/tokens'
 import { publicOriginIsHttps } from '../auth/security'
-import type { MemberEventContext } from './repository'
+import { findMemberById, type MemberRecord, type MemberEventContext } from './repository'
 
 const ABSOLUTE_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000
 const IDLE_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000
@@ -271,4 +271,20 @@ export async function listMemberSessions(db: DbClient, memberId: string): Promis
     ipAddress: row.ip_address,
     userAgent: row.user_agent,
   }))
+}
+
+/** A signed-in caller: the member and the session they came in on. */
+export interface SignedInMember {
+  member: MemberRecord
+  session: MemberSession
+}
+
+/** The signed-in member behind this request, or null. */
+export async function resolveSignedInMember(db: DbClient, req: Request): Promise<SignedInMember | null> {
+  const token = readMemberSessionToken(req)
+  if (!token) return null
+  const session = await findMemberSession(db, token)
+  if (!session) return null
+  const member = await findMemberById(db, session.memberId)
+  return member ? { member, session } : null
 }

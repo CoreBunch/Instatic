@@ -170,7 +170,7 @@
     flex-direction: column;
     gap: var(--space-s);
     padding-top: var(--space-s);
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--divider);
 }
 
 .networkHeader {

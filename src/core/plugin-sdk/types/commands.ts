@@ -32,6 +32,8 @@ export interface PluginCommand {
   id: string
   label: string
   run: () => PluginCommandResult | Promise<PluginCommandResult>
+  /** Also show this direct command in the editable Site dock. Requires no arguments or confirmation. */
+  showInSiteDock?: boolean
   /** Shown beneath the label in the palette result row. */
   subtitle?: string
   /** Pixel-art-icon name; falls back to a generic plug icon. */

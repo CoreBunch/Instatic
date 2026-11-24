@@ -204,6 +204,7 @@ describe('merge review', () => {
     expect((await harness.cms(`${review}/request`, { method: 'POST', cookie: editor.cookie, json: { note: 'again' } })).status).toBe(409)
 
     // Comments: editor on the request, owner on a change; outsiders cannot.
+    expect((await harness.cms(`${review}/comments`, { method: 'POST', cookie: editor.cookie, json: { entityKey: 'page title', body: 'Check the hero.' } })).status).toBe(400)
     const onRequest = await harness.cms(`${review}/comments`, { method: 'POST', cookie: editor.cookie, json: { entityKey: '', body: 'Please look at the hero.' } })
     expect(onRequest.status).toBe(201)
     const [home] = await listDataRows(harness.db, MAIN_SCOPE, 'pages')

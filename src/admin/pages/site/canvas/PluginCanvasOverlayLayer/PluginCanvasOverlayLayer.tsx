@@ -28,7 +28,7 @@ const subscribePluginRuntime = (cb: () => void) => pluginRuntime.subscribe(cb)
 const getOverlaysSnapshot = () => pluginRuntime.getCanvasOverlays()
 const SERVER_OVERLAYS_SNAPSHOT: RegisteredPluginCanvasOverlay[] = []
 
-export function PluginCanvasOverlayLayer() {
+export function PluginCanvasOverlayLayer({ live = false }: { live?: boolean }) {
   const overlays = useSyncExternalStore(
     subscribePluginRuntime,
     getOverlaysSnapshot,
@@ -44,7 +44,7 @@ export function PluginCanvasOverlayLayer() {
       {...{ [CANVAS_OVERLAY_LAYER_ATTRIBUTE]: 'true' }}
       aria-hidden="true"
     >
-      {overlays.map((overlay) => (
+      {overlays.filter(overlay => !live || overlay.showInLiveMode).map((overlay) => (
         <PluginCanvasOverlaySlot key={overlay.id} overlay={overlay} />
       ))}
     </div>

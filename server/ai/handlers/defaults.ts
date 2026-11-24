@@ -17,7 +17,7 @@ import type { ToolScope } from '../runtime/types'
 
 const VALID_SCOPES: ToolScope[] = ['site', 'content', 'data', 'plugin']
 
-const PutBodySchema = Type.Object({
+export const PutBodySchema = Type.Object({
   credentialId: Type.String({ minLength: 1 }),
   modelId: Type.String({ minLength: 1 }),
 })

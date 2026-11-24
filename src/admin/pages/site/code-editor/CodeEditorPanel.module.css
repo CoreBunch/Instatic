@@ -79,7 +79,7 @@
   max-height: 116px;
   display: flex;
   flex-direction: column;
-  border-top: 1px solid var(--border-muted);
+  border-top: 1px solid var(--divider);
   background: var(--bg-surface-2);
 }
 
@@ -94,7 +94,7 @@
   justify-content: space-between;
   gap: var(--space-s);
   padding: 0 var(--space-s) 0 var(--space-m);
-  border-bottom: 1px solid var(--border-muted);
+  border-bottom: 1px solid var(--divider);
 }
 
 .problemsCollapsed .problemsHeader {
@@ -217,7 +217,7 @@
   width: 36px;
   flex-shrink: 0;
   background: var(--bg-surface);
-  border-right: 1px solid var(--border-muted);
+  border-right: 1px solid var(--divider);
   padding: var(--space-l) var(--space-xs);
   display: flex;
   flex-direction: column;

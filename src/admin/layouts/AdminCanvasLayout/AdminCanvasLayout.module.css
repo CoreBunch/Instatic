@@ -117,7 +117,7 @@
 }
 
 .importHtmlLoadingPreviewColumn {
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--divider);
 }
 
 .importHtmlLoadingColumnHeader {
@@ -127,7 +127,7 @@
   align-items: center;
   gap: var(--space-m);
   padding: 0 var(--space-xl);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--divider);
   background: var(--bg-surface-2);
 }
 
@@ -191,7 +191,7 @@
   .importHtmlLoadingPreviewColumn {
     min-height: 190px;
     border-right: 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
   }
 }
 

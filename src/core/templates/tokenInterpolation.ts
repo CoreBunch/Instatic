@@ -209,6 +209,7 @@ export function readFrame(
     case 'route':
       return (context.route as unknown as Record<string, unknown>) ?? null
     case 'member':
+      if (context.approval) return { ...context.member, appRequest: context.approval }
       return (context.member as unknown as Record<string, unknown>) ?? null
     default:
       return null

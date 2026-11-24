@@ -21,16 +21,21 @@
     min-width: 150px;
 }
 
-.sectionHeading, .listFooter, .disclosure span {
+.sectionHeading, .disclosure span {
     display: flex;
     align-items: center;
     gap: var(--space-s);
 }
 
 .sectionHeading { justify-content: space-between; }
-.listFooter, .disclosure span { color: var(--text-subtle); font-size: var(--text-xs); }
+.disclosure span { color: var(--text-subtle); font-size: var(--text-xs); }
 .disclosures { display: grid; gap: var(--space-s); }
-.disclosure.disclosure { padding-inline: 0; font-size: var(--text-s); border-radius: var(--radius); }
+.disclosures .disclosure {
+    margin-inline: calc(-1 * var(--space-l));
+    padding-inline: var(--space-l);
+    font-size: var(--text-s);
+    border-radius: var(--radius);
+}
 
 .plain {
     margin: 0;

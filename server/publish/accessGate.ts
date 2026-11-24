@@ -17,17 +17,19 @@
  */
 import type { DbClient } from '../db/client'
 import { accessAllows, LOCKED_ACCESS, parseAccessRule, type AccessRule, type CurrentMember } from '@core/members'
+import type { DataTable } from '@core/data/schemas'
 import type { Page } from '@core/page-tree'
 import {
   buildMemberFrame,
   isTemplatePage,
+  normalizeRouteBase,
   type MemberAppRequestFrame,
   type MemberFrame,
 } from '@core/templates'
-import { resolveSignedInMember } from '../members/handlers'
+import { resolveSignedInMember } from '../members/sessions'
 import { getMemberPagePaths } from '../members/pages'
 import { toCurrentMember } from '../members/repository'
-import { listProtectedTables, listTableIdsBySlug } from '../repositories/data/tableAccess'
+import { listProtectedTables, listTableIdsBySlug, type ProtectedTable } from '../repositories/data/tableAccess'
 import { listPublishedPageAccess } from '../repositories/publish'
 import type { ClosedContent } from '@core/loops/types'
 import { createVersionedSingleFlight } from './publishState'
@@ -60,21 +62,40 @@ const indexMemo = createVersionedSingleFlight<AccessIndex>()
  * bump that the cached index is keyed by.
  */
 export async function loadAccessIndex(db: DbClient): Promise<AccessIndex> {
+  const [pages, tables, tableIdsBySlug] = await Promise.all([
+    listPublishedPageAccess(db), listProtectedTables(db), listTableIdsBySlug(db),
+  ])
+  return buildAccessIndex(pages, tables, tableIdsBySlug)
+}
+
+/** Draft routes and page rules come from the branch. Table protection is a live setting keyed by logical ID. */
+export async function draftAccessIndex(db: DbClient, pages: Page[], tables: DataTable[]): Promise<AccessIndex> {
+  const live = new Map((await listProtectedTables(db)).map(table => [table.id, table.rule]))
+  const protectedTables = tables.flatMap(table => {
+    const rule = live.get(table.id)
+    return rule ? [{ id: table.id, routeBase: table.routeBase ? normalizeRouteBase(table.routeBase) : null, rule }] : []
+  })
+  return buildAccessIndex(pages.filter(page => !isTemplatePage(page)), protectedTables,
+    new Map(tables.map(table => [table.slug, table.id])))
+}
+
+function buildAccessIndex(pageRows: { slug: string; access?: unknown }[],
+  tables: Pick<ProtectedTable, 'id' | 'routeBase' | 'rule'>[], tableIdsBySlug: Map<string, string>): AccessIndex {
   const pages = new Map<string, AccessRule>()
-  for (const row of await listPublishedPageAccess(db)) {
+  for (const row of pageRows) {
     const rule = parseAccessRule(row.access)
     if (rule.level !== 'public') pages.set(row.slug, rule)
   }
   const routeBases = new Map<string, AccessRule[]>()
   const tableIds = new Map<string, AccessRule>()
-  for (const table of await listProtectedTables(db)) {
+  for (const table of tables) {
     if (table.routeBase !== null) {
       const key = table.routeBase.toLowerCase()
       routeBases.set(key, [...(routeBases.get(key) ?? []), table.rule])
     }
     tableIds.set(table.id, table.rule)
   }
-  return { pages, routeBases, tableIds, tableIdsBySlug: await listTableIdsBySlug(db) }
+  return { pages, routeBases, tableIds, tableIdsBySlug }
 }
 
 /**

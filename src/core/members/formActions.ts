@@ -6,6 +6,8 @@
  * `action` is the path under `/_instatic/members/`.
  */
 
+import { PAIR_FORM_ACTION } from './appPairing'
+
 export interface MemberFormField {
   /** The field's `name`, as the endpoint reads it. */
   name: string
@@ -221,6 +223,13 @@ export const MEMBER_FORM_ACTIONS: readonly MemberFormAction[] = [
     successMessage: 'Your account is deleted.',
   },
   {
+    action: PAIR_FORM_ACTION,
+    label: 'Connect an app by code',
+    group: 'emailLink',
+    description: 'Ask for an email, show the matching code and let the member approve or decline the request.',
+    fields: [], linkParam: null, signedIn: false, submitLabel: 'Connect app', successMessage: '',
+  },
+  {
     action: 'apps/approve',
     label: 'Approve an app',
     group: 'account',
@@ -259,6 +268,7 @@ export const MEMBER_PAGE_FORM_ACTIONS = {
   invite: ['invite/accept'],
   emailChange: ['email/confirm'],
   appSignIn: ['apps/approve'],
+  appPair: [PAIR_FORM_ACTION],
 } as const satisfies Record<string, readonly string[]>
 
 export const DEFAULT_MEMBER_FORM_ACTION = 'login'

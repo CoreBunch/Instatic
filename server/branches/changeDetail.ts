@@ -1,8 +1,7 @@
 /**
  * The diff helpers behind a planned change's `detail` on the review page:
- * which fields moved (as display text), which page nodes were added, changed
- * or removed, how a table's schema differs. Each entity adapter's
- * `describe` (`./entities/`) builds its kind's detail from these, over the
+ * which page nodes were added, changed or removed, and how a table's schema
+ * differs. The row and table adapters use these alongside fieldChanges, over the
  * same content projections the merge compares, so the review never
  * disagrees with the plan.
  *
@@ -11,59 +10,9 @@
  * update.
  */
 import { parsePageNode } from '@core/page-tree'
+import { isRecord } from '@core/utils/isRecord'
 import { canonicalJson } from '@core/utils/canonicalJson'
-import type { MergeFieldChange, MergeSchemaField, MergeTreeDiff } from '@core/branches'
-
-const PREVIEW_LIMIT = 240
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function displayValue(value: unknown): { text: string | null; structured: boolean } {
-  if (value === undefined || value === null) return { text: null, structured: false }
-  if (typeof value === 'string') return { text: value, structured: false }
-  if (typeof value === 'number' || typeof value === 'boolean') return { text: String(value), structured: false }
-  const json = canonicalJson(value)
-  return { text: json.length > PREVIEW_LIMIT ? `${json.slice(0, PREVIEW_LIMIT)}…` : json, structured: true }
-}
-
-export interface FieldChangeOptions {
-  /** Prefix that turns a key into the conflict path the merge reports. */
-  prefix: string
-  conflicts: ReadonlySet<string>
-  skip?: ReadonlySet<string>
-  labels?: Readonly<Record<string, string>>
-}
-
-/** Field-by-field difference of two flat records, as the review displays it. */
-export function fieldChanges(
-  before: Record<string, unknown>,
-  after: Record<string, unknown>,
-  options: FieldChangeOptions,
-): MergeFieldChange[] {
-  const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort()
-  const out: MergeFieldChange[] = []
-  for (const key of keys) {
-    if (options.skip?.has(key)) continue
-    const a = before[key]
-    const b = after[key]
-    if (canonicalJson(a ?? null) === canonicalJson(b ?? null)) continue
-    const shownBefore = displayValue(a)
-    const shownAfter = displayValue(b)
-    const path = `${options.prefix}${key}`
-    out.push({
-      id: key,
-      label: options.labels?.[key] ?? key,
-      before: shownBefore.text,
-      after: shownAfter.text,
-      structured: shownBefore.structured || shownAfter.structured,
-      // A conflict deeper inside a structured value still belongs to this field.
-      conflict: [...options.conflicts].some((conflict) => conflict === path || conflict.startsWith(`${path}.`)),
-    })
-  }
-  return out
-}
+import type { MergeSchemaField, MergeTreeDiff } from '@core/branches'
 
 /**
  * What "the same node" means for the diff: the node as the editor would load

@@ -9,8 +9,8 @@
  * the published snapshots, the render caches, or the disk slots — a preview
  * is a render, never a publish.
  *
- * Every response is `no-store` and `noindex`, and carries a banner naming
- * the branch with an exit link.
+ * Rendered documents are `no-store` and `noindex`. Reviewers get a branch
+ * banner. CLI visitor checks apply signed-out access rules.
  */
 import '../../src/modules/base'
 import '@core/loops/sources'
@@ -27,6 +27,8 @@ import {
   resolveTemplateChain,
   type TemplateRenderDataContext,
 } from '@core/templates'
+import { closedContentFor, decideAccess, draftAccessIndex, pageRouteRules, rowRouteRules } from './accessGate'
+import { jsonResponse } from '../http'
 import { sourceRequestFor, type LoopRequestScope } from './loopSourceRequest'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { readEntrySeoOverride, readFeaturedMediaCell } from '@core/data/cells'
@@ -54,6 +56,7 @@ interface ResolvedPreview {
   merged: Page
   /** The page whose scripts run — the routed page, or the entry template. */
   scriptPage: Page
+  entryTableId?: string
   templateContext: TemplateRenderDataContext
   /** An entry's SEO title and description; they reach the head only. */
   documentMeta?: DocumentMetaOverride
@@ -104,6 +107,7 @@ async function resolvePreview(
   scope: BranchScope,
   site: SiteDocument,
   url: URL,
+  draftTables?: DataTable[],
 ): Promise<ResolvedPreview | null> {
   const slug = publicSlugFromPath(url.pathname)
   const page = site.pages.find((candidate) => candidate.slug === slug && !isTemplatePage(candidate))
@@ -120,7 +124,7 @@ async function resolvePreview(
   const route = contentRouteFromPath(url.pathname)
   if (!route) return null
   const routeBase = normalizeRouteBase(route.tableRouteBase)
-  const tables = await listDataTables(db, scope)
+  const tables = draftTables ?? await listDataTables(db, scope)
   const table = tables.find((candidate) => normalizeRouteBase(candidate.routeBase) === routeBase)
   if (!table) return null
   const row = await getDataRowBySlug(db, scope, table.id, route.rowSlug)
@@ -133,6 +137,7 @@ async function resolvePreview(
   const published = await draftRowAsPublished(db, row, table)
   return {
     merged,
+    entryTableId: table.id,
     scriptPage: chain[chain.length - 1] ?? merged,
     templateContext: {
       entryStack: [await publishedDataRowToEntryItem(db, published, table.fields)],
@@ -197,14 +202,26 @@ export async function renderBranchPreview(
   db: DbClient,
   branchId: string,
   url: URL,
+  audience: 'reviewer' | 'signed-out' = 'reviewer',
 ): Promise<Response | null> {
   const scope: BranchScope = { branchId }
   const [branch, site] = await Promise.all([getBranch(db, branchId), getDraftSiteDocument(db, scope)])
   if (!branch || !site) return null
-  const resolved = await resolvePreview(db, scope, site, url)
+  const tables = audience === 'signed-out' ? await listDataTables(db, scope) : undefined
+  const resolved = await resolvePreview(db, scope, site, url, tables)
   if (!resolved) return null
 
   const { merged, scriptPage, templateContext, documentMeta } = resolved
+  let closed
+  if (tables) {
+    const index = await draftAccessIndex(db, site.pages, tables)
+    const rules = resolved.entryTableId ? rowRouteRules(index, resolved.entryTableId, url.pathname)
+      : pageRouteRules(index, scriptPage, url.pathname)
+    const decision = await decideAccess(rules)
+    if (decision === 'hide') return null
+    if (decision !== 'allow') return jsonResponse({ error: 'Member sign-in required for this branch route' }, { status: 403 })
+    closed = closedContentFor(index, null)
+  }
   const { runtimeAssets, runtimePackageImportmap } = await buildPreviewRuntime(site, scriptPage)
   // A preview is one uncached render with the request in hand, so
   // request-dependent nodes resolve inline instead of becoming holes that
@@ -221,11 +238,12 @@ export async function renderBranchPreview(
   }
   const loopData = await prefetchLoopData(merged, site, db, url, {
     branchId,
+    closed,
     requestFor: (source) => sourceRequestFor(source, requestScope),
   })
   const mediaAssets = await prefetchMediaAssets(merged, site, registry, db, { templateContext, loopData })
   const rendered = publishPage(merged, site, registry, {
-    templateContext,
+    templateContext: audience === 'signed-out' ? { ...templateContext, member: null } : templateContext,
     ...(documentMeta ? { documentMeta } : {}),
     runtimeAssets,
     runtimePackageImportmap,
@@ -250,7 +268,7 @@ export async function renderBranchPreview(
     db,
     'preview',
   )
-  const banner = previewBanner(branch.name)
+  const banner = audience === 'reviewer' ? previewBanner(branch.name) : ''
   // A function replacement: a `$` in the branch name must not be read as a
   // replacement pattern.
   const html = finalHtml.includes('</body>')

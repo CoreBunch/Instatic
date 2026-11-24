@@ -80,6 +80,7 @@ interface RenderPublishedSnapshotContext {
    * then leave out whatever a signed-out visitor may not open, and anything
    * that depends on the member is deferred to a per-visitor fragment.
    */
+  approval?: TemplateRenderDataContext['approval']
   visitor?: CurrentMember | null
 }
 
@@ -112,12 +113,13 @@ async function renderMergedTemplate(
   const cssBundle = buildPublishedSiteCssBundle(snapshot.site, registry, merged, publishVersion, { mediaAssets })
   // A render for one visitor carries the member, so member bindings and
   // show-when rules resolve in place instead of becoming fragments.
-  const appRequest = ctx.visitor ? await pendingAppRequestOnPage(ctx.db, ctx.url) : null
+  const appRequest = ctx.visitor && !ctx.approval ? await pendingAppRequestOnPage(ctx.db, ctx.url) : null
   const visitorContext: TemplateRenderDataContext | undefined =
     ctx.visitor === undefined
       ? templateContext
       : {
           ...(templateContext ?? { entryStack: [] }),
+          approval: ctx.approval,
           member: memberFrameFor(ctx.visitor, appRequest?.frame ?? null),
         }
   const published = publishPage(merged, snapshot.site, registry, {

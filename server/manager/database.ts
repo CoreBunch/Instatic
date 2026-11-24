@@ -57,7 +57,7 @@ export function inspectStagedDatabase(file: string): StagedDatabaseReport {
 
 /**
  * Drop every login credential the server itself issued from a staged
- * database: browser sessions and MCP OAuth codes and tokens. Credentials
+ * database: browser sessions, paired CLI credentials and MCP OAuth codes and tokens. Credentials
  * minted on the source machine must not become valid on the host the data is
  * pushed to. Connector tokens an operator created on purpose are site
  * configuration and travel with the rest of the data.
@@ -71,6 +71,9 @@ export function revokeStagedSessions(file: string): void {
     for (const table of ['sessions', 'ai_mcp_oauth_tokens', 'ai_mcp_oauth_codes']) {
       // Table names are the fixed literals above, never caller input.
       if (tables.has(table)) db.exec(`delete from ${table}`)
+    }
+    if (tables.has('service_accounts')) {
+      db.exec('update service_accounts set token_hash = null, code_hash = null, code_challenge = null, code_expires_at = null')
     }
   } finally {
     db.close()

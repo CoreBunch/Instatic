@@ -154,6 +154,7 @@ export {
   resetCmsMailTemplate,
   saveCmsMailDefaults,
   saveCmsMailTemplate,
+  setCmsMailTemplateSending,
   setCmsMailConnectorSecret,
   testCmsMailConnector,
   testCmsMailTemplate,

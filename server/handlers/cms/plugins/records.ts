@@ -89,6 +89,8 @@ function duplicateRecord(err: PluginRecordDuplicateError): Response {
   return jsonResponse({ error: err.message }, { status: 409 })
 }
 
+export const PluginRecordBodySchema = Type.Object({ data: Type.Optional(Type.Unknown()) })
+
 export async function handlePluginRecordsCollection(
   req: Request,
   db: DbClient,
@@ -114,7 +116,6 @@ export async function handlePluginRecordsCollection(
   }
 
   if (req.method === 'POST') {
-    const PluginRecordBodySchema = Type.Object({ data: Type.Optional(Type.Unknown()) })
     const body = await readValidatedBody(req, PluginRecordBodySchema)
     if (!body) return badRequest('Invalid request body')
     try {
@@ -147,8 +148,7 @@ export async function handlePluginRecordItem(
   if (!resource) return pluginResourceNotFound()
 
   if (req.method === 'PATCH') {
-    const PluginRecordPatchBodySchema = Type.Object({ data: Type.Optional(Type.Unknown()) })
-    const body = await readValidatedBody(req, PluginRecordPatchBodySchema)
+    const body = await readValidatedBody(req, PluginRecordBodySchema)
     if (!body) return badRequest('Invalid request body')
     try {
       const data = validatePluginRecordData(resource, body.data ?? body)

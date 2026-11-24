@@ -1,53 +1,3 @@
-/* Settings workspace shell: a section rail beside a master-detail area.
-   Shared by the AI and Email workspaces. */
-
-.workspace {
-    display: grid;
-    grid-template-columns: 184px minmax(0, 1fr);
-    gap: var(--space-7xl);
-    min-height: calc(100vh - 116px);
-}
-
-.workspaceSidebar {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-}
-
-.workspaceIdentity {
-    display: grid;
-    gap: var(--space-s);
-    padding: 0 0 var(--space-4xl);
-}
-
-.workspaceIdentity h1 {
-    margin: 0;
-    color: var(--text-bright);
-    font-size: var(--text-4xl);
-    line-height: 1;
-}
-
-.workspaceIdentity p {
-    color: var(--text-subtle);
-    font-size: var(--text-m);
-    line-height: 1.5;
-}
-
-.workspaceNavigation {
-    display: grid;
-    gap: var(--space-xs);
-}
-
-.workspaceNavigationButton {
-    min-width: 0;
-}
-
-.workspaceContent {
-    min-width: 0;
-}
-
-/* Service identity mark (a provider, a connector) */
-
 /* Provider identity assets */
 
 .providerMark {
@@ -88,51 +38,11 @@
     mask-size: contain;
 }
 
-/* Shared nested master-detail layout */
-
-.settingsWorkspace {
-    display: grid;
-    grid-template-columns: 280px minmax(0, 1fr);
-    gap: var(--space-7xl);
-    min-height: 100%;
-}
-
-.settingsBrowser {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-l);
-    min-width: 0;
-}
-
-.settingsBrowserHeader {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-l);
-}
-
-.settingsBrowserHeader h2 {
-    margin: 0;
-    color: var(--text-bright);
-    font-size: var(--text-2xl);
-    line-height: 1.2;
-}
-
-.settingsBrowserError,
 .settingsBrowserEmpty {
     margin: 0;
     color: var(--text-subtle);
     font-size: var(--text-s);
     line-height: 1.45;
-}
-
-.settingsBrowserError {
-    color: var(--danger);
-}
-
-.settingsBrowserSections {
-    display: grid;
-    gap: var(--space-3xl);
 }
 
 .settingsListSection {
@@ -156,24 +66,6 @@
     gap: var(--space-px);
 }
 
-.settingsListItem {
-    display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    height: auto;
-    min-height: 44px;
-    padding: var(--space-3xs);
-    gap: var(--space-m);
-    border-radius: var(--card-radius);
-}
-
-.settingsListItem:hover {
-    background: var(--overlay-5);
-}
-
-.settingsListItem[data-active="true"] {
-    background: var(--overlay-10);
-}
-
 .settingsListIdentity {
     display: grid;
     gap: var(--space-4xs);
@@ -185,17 +77,6 @@
     color: var(--text-bright);
     font-size: var(--text-m);
     font-weight: 600;
-    text-overflow: ellipsis;
-}
-
-.settingsListMeta {
-    display: flex;
-    align-items: center;
-    gap: var(--space-xs);
-    overflow: hidden;
-    color: var(--text-subtle);
-    font-size: var(--text-s);
-    font-weight: 400;
     text-overflow: ellipsis;
 }
 
@@ -211,10 +92,6 @@
 
 .warningDot {
     background: var(--warning);
-}
-
-.settingsDetailCanvas {
-    min-width: 0;
 }
 
 .settingsItemIcon,
@@ -242,17 +119,14 @@
 .settingsDetail {
     display: grid;
     gap: var(--space-5xl);
-    max-width: 780px;
-    margin: 0 auto;
+    min-width: 0;
 }
 
 .settingsDetailHeader {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--space-2xl);
-    padding-bottom: var(--space-4xl);
-    border-bottom: 1px solid var(--overlay-10);
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    gap: var(--space-l);
 }
 
 .settingsDetailIdentity {
@@ -279,7 +153,7 @@
     display: grid;
     gap: var(--space-3xl);
     padding-bottom: var(--space-4xl);
-    border-bottom: 1px solid var(--overlay-10);
+    border-bottom: 1px solid var(--divider);
 }
 
 .settingsDetailSection:last-child {
@@ -319,8 +193,7 @@
 .providerSetup {
     display: grid;
     gap: var(--space-5xl);
-    max-width: 980px;
-    margin: 0 auto;
+    min-width: 0;
 }
 
 .credentialDetailHeader,
@@ -335,7 +208,7 @@
 .credentialDetailHeader {
     justify-content: space-between;
     padding-bottom: var(--space-4xl);
-    border-bottom: 1px solid var(--overlay-10);
+    border-bottom: 1px solid var(--divider);
 }
 
 .credentialDetailIdentity {
@@ -406,7 +279,7 @@
     display: grid;
     gap: var(--space-2xl);
     padding-bottom: var(--space-4xl);
-    border-bottom: 1px solid var(--overlay-10);
+    border-bottom: 1px solid var(--divider);
 }
 
 .detailSectionHeader {
@@ -468,7 +341,7 @@
     align-items: center;
     gap: var(--space-2xl);
     min-height: 54px;
-    border-bottom: 1px solid var(--overlay-10);
+    border-bottom: 1px solid var(--divider);
 }
 
 .modelsTableHeader {
@@ -526,16 +399,30 @@
     gap: var(--space-xs);
 }
 
-.providerSetup {
-    max-width: 780px;
+.providerSetup, .settingsDetail {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.65fr);
+    align-items: start;
+    column-gap: var(--space-7xl);
+}
+
+.settingsDetail > :not(header) {
+    grid-column: 2;
+}
+
+.settingsDetailHeader > :nth-child(3) {
+    grid-column: 2;
+    justify-self: start;
+}
+
+@media (max-width: 760px) {
+    .providerSetup, .settingsDetail { grid-template-columns: minmax(0, 1fr); }
+    .settingsDetail > :not(header) { grid-column: 1; }
 }
 
 .providerSetupHeader {
     display: flex;
-    align-items: center;
-    gap: var(--space-2xl);
-    padding-bottom: var(--space-4xl);
-    border-bottom: 1px solid var(--overlay-10);
+    align-items: flex-start;
+    gap: var(--space-l);
 }
 
 .providerSetupHeader > div {
@@ -592,34 +479,6 @@
 .section {
     display: grid;
     gap: var(--space-4xl);
-}
-
-.sectionHeader {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: var(--space-3xl);
-    padding-bottom: var(--space-4xl);
-    border-bottom: 1px solid var(--overlay-10);
-}
-
-.sectionHeader > div {
-    display: grid;
-    gap: var(--space-xs);
-}
-
-.sectionHeader h2 {
-    margin: 0;
-    color: var(--text-bright);
-    font-size: var(--text-4xl);
-    line-height: 1.1;
-}
-
-.sectionHeader p {
-    margin: 0;
-    color: var(--text-subtle);
-    font-size: var(--text-m);
-    line-height: 1.45;
 }
 
 .emptyState {
@@ -692,50 +551,7 @@
     text-align: right;
 }
 
-@media (max-width: 1180px) {
-    .workspace {
-        grid-template-columns: 168px minmax(0, 1fr);
-        gap: var(--space-5xl);
-    }
-
-    .settingsWorkspace {
-        grid-template-columns: 248px minmax(0, 1fr);
-        gap: var(--space-5xl);
-    }
-
-}
-
 @media (max-width: 900px) {
-    .workspace {
-        grid-template-columns: 48px minmax(0, 1fr);
-        gap: var(--space-3xl);
-    }
-
-    .workspaceIdentity {
-        padding: 0 0 var(--space-3xl);
-        text-align: center;
-    }
-
-    .workspaceIdentity p,
-    .workspaceNavigationButton span {
-        display: none;
-    }
-
-    .workspaceNavigationButton {
-        justify-content: center;
-        width: 32px;
-        padding: 0;
-    }
-
-    .settingsWorkspace {
-        grid-template-columns: 240px minmax(0, 1fr);
-        gap: var(--space-3xl);
-    }
-
-    .settingsBrowser {
-        padding: 0;
-    }
-
     .credentialDetailHeader,
     .settingsDetailHeader,
     .providerSetupHeader {
@@ -754,44 +570,7 @@
 }
 
 @media (max-width: 700px) {
-    .workspace {
-        grid-template-columns: 1fr;
-        min-height: 0;
-    }
-
-    .workspaceSidebar {
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr);
-        align-items: center;
-        gap: var(--space-2xl);
-        padding-bottom: var(--space-3xl);
-    }
-
-    .workspaceIdentity {
-        padding: var(--space-l);
-    }
-
-    .workspaceNavigation {
-        display: flex;
-        justify-content: flex-end;
-        overflow-x: auto;
-    }
-
-    .workspaceNavigationButton {
-        width: 32px;
-    }
-
-    .settingsWorkspace {
-        grid-template-columns: 1fr;
-    }
-
-    .settingsBrowser {
-        padding-bottom: var(--space-5xl);
-    }
-
     .credentialDetailHeader,
-    .settingsDetailHeader,
-    .sectionHeader,
     .defaultsSetupEmpty {
         grid-template-columns: 1fr;
         flex-direction: column;
@@ -800,15 +579,13 @@
 
     .credentialTitleRow h2,
     .settingsDetailIdentity h2,
-    .providerSetupHeader h2,
-    .sectionHeader h2 {
+    .providerSetupHeader h2 {
         font-size: var(--text-3xl);
     }
 
     .connectionDetailRow,
     .settingsFormRow,
-    .providerSetupField,
-    .settingsDetailHeader {
+    .providerSetupField {
         grid-template-columns: 1fr;
     }
 
@@ -834,22 +611,16 @@
 
 /* ── Audit tab ───────────────────────────────────────────────────────── */
 
-.auditHeaderActions {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-l);
-}
+.auditRange { width: 7rem; }
 
 .auditTotalsRow {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: var(--space-px);
-    background: var(--bg-surface);
-    border-radius: 16px;
-    overflow: hidden;
 }
 
 .auditTotalCard {
+    border-radius: var(--card-radius);
     padding: var(--space-2xl);
     background: var(--bg-surface-2);
     display: grid;
@@ -890,6 +661,7 @@
 }
 
 .auditPanel {
+    min-width: 0;
     background: var(--bg-surface-2);
     border-radius: 16px;
     padding: var(--space-2xl);
@@ -916,6 +688,12 @@
     font-size: var(--text-xs);
 }
 
+.auditTableScroll { overflow-x: auto; }
+
+@media (max-width: 700px) {
+    .auditTotalsRow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
 .auditTable {
     width: 100%;
     border-collapse: collapse;
@@ -929,7 +707,6 @@
     font-size: var(--text-xs);
     letter-spacing: 0.02em;
     padding: var(--space-xs) var(--space-s);
-    border-bottom: 1px solid var(--bg-surface);
 }
 
 .auditTable thead th.numeric {
@@ -938,18 +715,13 @@
 
 .auditTable tbody td {
     color: var(--text);
-    padding: var(--space-s);
-    border-bottom: 1px solid var(--bg-surface);
+    padding: var(--space-m) var(--space-s);
 }
 
 .auditTable tbody td.numeric {
     text-align: right;
     font-variant-numeric: tabular-nums;
     color: var(--text-bright);
-}
-
-.auditTable tbody tr:last-child td {
-    border-bottom: 0;
 }
 
 .auditEmptyRow {

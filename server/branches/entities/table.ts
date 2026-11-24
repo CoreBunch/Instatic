@@ -14,7 +14,8 @@ import {
   updateDataTable,
 } from '../../repositories/data'
 import { parseContent } from '../contentHash'
-import { fieldChanges, schemaDiff } from '../changeDetail'
+import { fieldChanges } from '../fieldChanges'
+import { schemaDiff } from '../changeDetail'
 import { MergeApplyError, type BranchEntityAdapter, type BranchEntityOf } from './adapter'
 import { isUniqueViolation } from '../../db/errors'
 

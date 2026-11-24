@@ -12,7 +12,7 @@
  */
 import {
   CORE_CAPABILITIES,
-  OWNER_ONLY_CAPABILITIES,
+  isDelegableCapability,
   type CoreCapability,
 } from '@core/capabilities'
 
@@ -138,8 +138,6 @@ export const SYSTEM_ROLES: SystemRoleDefinition[] = [
  */
 export const OWNER_ROLE_ID = 'owner'
 
-const OWNER_ONLY_CAPABILITY_SET = new Set<CoreCapability>(OWNER_ONLY_CAPABILITIES)
-
 /**
  * Normalize persisted role grants and enforce the Owner-only capability
  * invariant while reading. The forward migration removes legacy invalid
@@ -153,7 +151,7 @@ export function normalizeCapabilitiesForRole(
   const normalized = normalizeCapabilities(capabilities)
   return roleId === OWNER_ROLE_ID
     ? normalized
-    : normalized.filter((capability) => !OWNER_ONLY_CAPABILITY_SET.has(capability))
+    : normalized.filter(isDelegableCapability)
 }
 
 /**

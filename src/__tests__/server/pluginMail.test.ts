@@ -274,6 +274,34 @@ describe('email for plugins', () => {
       })
     })
 
+    it('keeps sending off through wording resets and upgrades, and suppresses member, external and test mail', async () => {
+      await install(BOTH)
+      const path = `/admin/api/cms/mail/templates/${REPLY_KEY}`
+      const toggle = (sendingEnabled: boolean) => h.cms(`${path}/sending`, {
+        method: 'PUT', cookie: owner, json: { sendingEnabled },
+      })
+      const member = await activeMember()
+      const variables = { subject: 'Hello', link: 'https://example.com/t/1' }
+      expect((await toggle(false)).status).toBe(200)
+      await h.cms(path, { method: 'PUT', cookie: owner, json: { subject: 'Edited', body: 'Edited' } })
+      await h.cms(path, { method: 'DELETE', cookie: owner })
+      expect((await install(BOTH, { version: '1.1.0' })).status).toBeLessThan(300)
+      expect((await templates()).find((template) => template.key === REPLY_KEY)).toMatchObject({
+        sendingEnabled: false, customised: false,
+      })
+      for (const to of [{ member }, { address: 'reader@example.com' }]) {
+        expect(await send({ template: 'ticket.reply', to, variables })).toEqual({ status: 'disabled' })
+      }
+      expect((await h.cms(`${path}/test`, {
+        method: 'POST', cookie: owner, json: { to: 'owner@example.com' },
+      })).status).toBe(422)
+      expect((await listMailActivity(h.db)).entries).toHaveLength(0)
+      expect(await send({ template: 'ticket.opened', to: { member }, variables: { subject: 'Hello' } }))
+        .toEqual({ status: 'captured' })
+      expect((await toggle(true)).status).toBe(200)
+      expect(await send({ template: 'ticket.reply', to: { member }, variables })).toEqual({ status: 'captured' })
+    })
+
     it('keeps the owner\'s wording across an upgrade and uses it when the plugin sends', async () => {
       await install(BOTH)
       const put = await h.cms(`/admin/api/cms/mail/templates/${REPLY_KEY}`, {

@@ -110,6 +110,20 @@ function runtimeRequestSite(raw: Record<string, unknown>): SiteDocument {
   return { ...shell, pages, visualComponents, layouts: [] }
 }
 
+export const RuntimeDependencyBodySchema = Type.Object({ packageJson: Type.Unknown() })
+
+export const RuntimeValidationBodySchema = Type.Object({
+  site: Type.Record(Type.String(), Type.Unknown()),
+})
+
+export const RuntimePreviewBodySchema = Type.Object({
+  pageId: Type.String(),
+  breakpointId: Type.Optional(Type.String()),
+  // templateContext is a complex TemplateRenderDataContext — unknown here, cast below
+  templateContext: Type.Optional(Type.Unknown()),
+  site: Type.Record(Type.String(), Type.Unknown()),
+})
+
 async function runtimeDependencyCache(site: SiteDocument) {
   const runtime = normalizeSiteRuntimeConfig(site.runtime)
   return Object.keys(runtime.dependencyLock.packages).length > 0
@@ -139,7 +153,6 @@ export async function handleRuntimeRoutes(
     if (user instanceof Response) return user
     if (req.method !== 'POST') return methodNotAllowed()
 
-    const RuntimeDependencyBodySchema = Type.Object({ packageJson: Type.Unknown() })
     const body = await readValidatedBody(req, RuntimeDependencyBodySchema)
     if (!body) return badRequest('Invalid request body')
     try {
@@ -185,9 +198,6 @@ export async function handleRuntimeRoutes(
     if (user instanceof Response) return user
     if (req.method !== 'POST') return methodNotAllowed()
 
-    const RuntimeValidationBodySchema = Type.Object({
-      site: Type.Record(Type.String(), Type.Unknown()),
-    })
     const body = await readValidatedBody(req, RuntimeValidationBodySchema)
     if (!body) return badRequest('Invalid request body')
 
@@ -217,13 +227,6 @@ export async function handleRuntimeRoutes(
     if (user instanceof Response) return user
     if (req.method !== 'POST') return methodNotAllowed()
 
-    const RuntimePreviewBodySchema = Type.Object({
-      pageId: Type.String(),
-      breakpointId: Type.Optional(Type.String()),
-      // templateContext is a complex TemplateRenderDataContext — unknown here, cast below
-      templateContext: Type.Optional(Type.Unknown()),
-      site: Type.Record(Type.String(), Type.Unknown()),
-    })
     const body = await readValidatedBody(req, RuntimePreviewBodySchema)
     if (!body) return badRequest('Invalid request body')
     const pageId = body.pageId.trim()

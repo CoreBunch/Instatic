@@ -57,7 +57,7 @@ interface DashboardEndpoint {
   capability: CoreCapability
 }
 
-const DASHBOARD_READERS: Record<string, DashboardEndpoint> = {
+export const DASHBOARD_READERS: Record<string, DashboardEndpoint> = {
   'pages':          { reader: (db, _options, ctx) => readPagesStats(db, ctx.principal),     capability: 'dashboard.read' },
   'posts':          { reader: (db, _options, ctx) => readPostsStats(db, ctx.principal, ctx.timeZone),     capability: 'dashboard.read' },
   'media':          { reader: readMediaStats,     capability: 'media.read' },

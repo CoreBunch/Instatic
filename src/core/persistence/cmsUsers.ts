@@ -1,4 +1,5 @@
 import { Type, type Static } from '@sinclair/typebox'
+import { directoryPageFields } from '@core/users/directoryPagination'
 import { apiRequest, type FetchLike } from '@core/http'
 import { CmsCurrentUserSchema, type CmsCurrentUser } from './cmsAuth'
 
@@ -32,22 +33,24 @@ const CmsAuditEventSchema = Type.Object({
 
 export type CmsAuditEvent = Static<typeof CmsAuditEventSchema>
 
-const UsersEnvelope = Type.Object({ users: Type.Optional(Type.Array(CmsCurrentUserSchema)) }, { additionalProperties: true })
+const UsersEnvelope = Type.Object({ users: Type.Array(CmsCurrentUserSchema), ...directoryPageFields })
 const UserEnvelope = Type.Object({ user: Type.Optional(CmsCurrentUserSchema) }, { additionalProperties: true })
 const RolesEnvelope = Type.Object({ roles: Type.Optional(Type.Array(CmsRoleSchema)) }, { additionalProperties: true })
 const RoleEnvelope = Type.Object({ role: Type.Optional(CmsRoleSchema) }, { additionalProperties: true })
 const AuditEnvelope = Type.Object({ events: Type.Optional(Type.Array(CmsAuditEventSchema)) }, { additionalProperties: true })
 
 export async function listCmsUsers(
+  { search = '', offset = 0, signal }: { search?: string; offset?: number; signal?: AbortSignal } = {},
   fetchImpl: FetchLike = globalThis.fetch.bind(globalThis),
   basePath = '/admin/api/cms',
-): Promise<CmsCurrentUser[]> {
-  const body = await apiRequest(`${basePath}/users`, {
+) {
+  return apiRequest(`${basePath}/users`, {
     schema: UsersEnvelope,
+    query: { ...(search && { q: search }), ...(offset && { offset: String(offset) }) },
+    signal,
     fetchImpl,
     fallbackMessage: 'CMS users request failed',
   })
-  return body.users ?? []
 }
 
 export async function createCmsUser(

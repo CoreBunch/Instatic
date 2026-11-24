@@ -18,12 +18,12 @@
     display: grid;
     gap: var(--space-3xs);
     padding-top: var(--space-4xs);
-    border-top: 1px solid var(--overlay-10);
+    border-top: 1px solid var(--divider);
 }
 
 .variantControl {
     display: grid;
     gap: var(--space-s);
     padding-top: var(--space-s);
-    border-top: 1px solid var(--overlay-10);
+    border-top: 1px solid var(--divider);
 }

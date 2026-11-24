@@ -39,7 +39,7 @@
 }
 
 .schemaPane {
-    border-left: 1px solid var(--border);
+    border-left: 1px solid var(--divider);
     background: var(--bg-surface-2);
 }
 
@@ -67,7 +67,7 @@
     gap: var(--space-xs);
     margin-bottom: var(--space-xs);
     padding-bottom: var(--space-xl);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
 }
 
 .labelGrid {
@@ -136,7 +136,7 @@
     }
 
     .setupPane {
-        border-bottom: 1px solid var(--border);
+        border-bottom: 1px solid var(--divider);
     }
 
     .schemaPane {

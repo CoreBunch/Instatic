@@ -2,7 +2,7 @@
 
 MCP connections let external AI clients operate an Instatic instance through the [Model Context Protocol](https://modelcontextprotocol.io). Instatic is the MCP server: clients list its capability-filtered tools, run headless reads, relay editing tools to the connection owner's open workspace, and explicitly publish completed drafts.
 
-This is the inverse of the **Providers** tab. Providers let Instatic call model APIs; MCP connections let outside clients call Instatic.
+In the AI workspace, **API** configures the model providers Instatic calls. **MCP** manages external clients that connect to Instatic.
 
 The wire server uses the stable split `@modelcontextprotocol/server` v2 package. That dependency remains allowed only under `server/ai/mcp/`; provider drivers continue to use their direct REST implementations.
 
@@ -54,7 +54,7 @@ Instatic implements the MCP authorization-server surface directly:
 | `/.well-known/oauth-protected-resource/_instatic/mcp` | Path-aware protected-resource discovery alias. |
 | `/.well-known/oauth-authorization-server` | Authorization-server metadata. |
 | `/_instatic/oauth/register` | Dynamic client registration for public clients. |
-| `/admin/ai/oauth/authorize` | Signed-in consent screen. |
+| `/admin/ai/oauth/authorize` | Signed-in consent screen. The client details and permission groups scroll above a persistent footer with the selection count, bulk toggle, and authorization decisions. |
 | `/_instatic/oauth/token` | Form-encoded authorization-code and refresh-token exchange. |
 
 The issuer, the `resource` value, and every URL in these documents come from the configured public origin (`PUBLIC_ORIGIN`, auto-detected from `RENDER_EXTERNAL_URL` / `RAILWAY_PUBLIC_DOMAIN` on Render and Railway), never from the inbound `Host` header. Remote OAuth connectors therefore require `PUBLIC_ORIGIN`. Without it, both discovery endpoints answer `503` with `{ "error": "MCP OAuth needs PUBLIC_ORIGIN to be configured for this deployment." }`, the token endpoint answers `503` with `temporarily_unavailable`, the `401` challenge on `/_instatic/mcp` carries `scope="mcp"` but no `resource_metadata`, and OAuth access tokens do not authenticate. Personal access tokens keep working. Requests addressed to a loopback host (`localhost`, `127.0.0.1`, `::1`) are exempt and use their own origin so local development keeps working; the server warns at boot when no public origin is configured.
