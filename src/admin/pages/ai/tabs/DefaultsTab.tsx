@@ -217,7 +217,7 @@ function ScopeDetail({
               <p>Model routing becomes available after at least one credential is ready.</p>
             </div>
             <Button type="button" variant="primary" size="md" onClick={onNavigateToProviders}>
-              Go to Providers
+              Go to API
             </Button>
           </div>
         ) : (

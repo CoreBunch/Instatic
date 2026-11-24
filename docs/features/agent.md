@@ -129,7 +129,7 @@ src/admin/pages/site/panels/AgentPanel/
 └── index.ts                — barrel export
 
 src/admin/pages/ai/
-├── AiPage.tsx              — /admin/ai workspace; four tabs gated by ai.providers.manage + ai.audit.read
+├── AiPage.tsx              — /admin/ai workspace; five tabs gated by ai.providers.manage + ai.audit.read
 ├── ProviderMark.module.css     (provider logos; layout styles live in @admin/shared/SettingsWorkspace)
 └── tabs/
     ├── ProvidersTab.tsx    — CRUD for ai_credentials rows (provider-derived API key or endpoint credential shape)
@@ -181,7 +181,7 @@ The provider-neutral v1 policy is defined once in `src/core/ai/userImage.ts` and
 
 ## Providers
 
-Each entry in **Settings → AI → Providers** stores one credential. The provider id is fixed; the auth mode and input fields are derived from it — the UI never asks you to choose.
+Each entry in **AI → API** stores one credential. The provider id is fixed; the auth mode and input fields are derived from it — the UI never asks you to choose.
 
 | Provider | Label in UI | Auth mode | Required field | Optional field | Model discovery |
 |---|---|---|---|---|---|
@@ -848,7 +848,7 @@ unblocks deletion of the credential that had been protected by the default FK.
   - `server/ai/audit/store.ts` — `getUsageTotals`, `getUsageByUser`, `getUsageByScope`, `getUsageByModel`, `getUsageByDay` (usage rollup queries)
   - `server/ai/handlers/audit.ts` — `GET /admin/api/ai/audit` handler
   - `server/time.ts` — `resolveTimeZone` + `localDayKeyFactory` (shared timezone day-bucketing utilities)
-  - `src/admin/pages/ai/AiPage.tsx` — `/admin/ai` workspace (Providers / Defaults / MCP connections / Audit tabs)
+  - `src/admin/pages/ai/AiPage.tsx` — `/admin/ai` workspace (API / CLI / MCP / Defaults / Audit tabs)
   - `src/admin/pages/ai/tabs/AuditTab.tsx` — usage audit view (totals strip, tables, daily bar chart)
   - `src/admin/pages/ai/tabs/UsageTablePanel.tsx` — shared table scaffolding for audit rollups
   - `src/admin/ai/usageFormat.ts` — shared `formatNumber` / `formatCost` helpers

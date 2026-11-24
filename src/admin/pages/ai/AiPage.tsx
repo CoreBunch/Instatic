@@ -2,10 +2,10 @@
  * AiPage — `/admin/ai`.
  *
  * Capability-gated workspace for managing AI provider credentials, per-scope
- * defaults, MCP connections, and the AI usage audit log.
+ * defaults, CLI and MCP connections, and the AI usage audit log.
  *
  * Capabilities consulted:
- *   - `ai.providers.manage`  → Providers, Defaults, and MCP connection management
+ *   - `ai.providers.manage`  → API, CLI, MCP, and Defaults tabs
  *   - `ai.audit.read`        → Audit tab (read site-wide usage)
  */
 
@@ -22,13 +22,13 @@ import { McpTab } from './tabs/McpTab'
 import { McpOAuthAuthorizePage } from './McpOAuthAuthorizePage'
 import directory from '@admin/shared/Directory/Directory.module.css'
 
-type Section = 'providers' | 'defaults' | 'mcp' | 'service' | 'audit'
+type Section = 'providers' | 'service' | 'mcp' | 'defaults' | 'audit'
 
 const SECTION_LABELS: Record<Section, string> = {
-  providers: 'Providers',
-  defaults: 'Defaults',
-  mcp: 'MCP connections',
+  providers: 'API',
   service: 'CLI',
+  mcp: 'MCP',
+  defaults: 'Defaults',
   audit: 'Audit',
 }
 
@@ -40,7 +40,7 @@ export function AiPage() {
   const canReadAudit = unrestricted || hasCapability(currentUser, 'ai.audit.read')
 
   const availableSections: Section[] = []
-  if (canManage) availableSections.push('providers', 'defaults', 'mcp', 'service')
+  if (canManage) availableSections.push('providers', 'service', 'mcp', 'defaults')
   if (canReadAudit) availableSections.push('audit')
 
   const navigate = useNavigate()
@@ -75,9 +75,9 @@ export function AiPage() {
           </TabList>
           {canManage && <>
             <TabPanel value="providers"><ProvidersTab onNavigateToDefaults={() => selectSection('defaults')} /></TabPanel>
-            <TabPanel value="defaults"><DefaultsTab onNavigateToProviders={() => selectSection('providers')} /></TabPanel>
-            <TabPanel value="mcp"><McpTab /></TabPanel>
             <TabPanel value="service"><ServiceAccountsTab accountId={accountId} onSelect={id => selectSection('service', id)} /></TabPanel>
+            <TabPanel value="mcp"><McpTab /></TabPanel>
+            <TabPanel value="defaults"><DefaultsTab onNavigateToProviders={() => selectSection('providers')} /></TabPanel>
           </>}
           {canReadAudit && <TabPanel value="audit"><AuditTab /></TabPanel>}
         </div>
