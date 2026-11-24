@@ -11,7 +11,7 @@ import { ANONYMOUS_STATE } from './helpers/constants'
 
 test.use({ storageState: ANONYMOUS_STATE })
 test('connect an external CLI, work on a branch, then revoke it (AI-013)', async ({ page, baseURL }, testInfo) => {
-  test.setTimeout(90000)
+  test.setTimeout(120000)
   await login(page)
   await page.goto('/admin/ai')
   await page.getByRole('tab', { name: 'CLI', exact: true }).click()
@@ -32,6 +32,8 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
   await form.getByRole('checkbox', { name: /^view site/i }).check()
   await form.getByRole('checkbox', { name: /^create branches/i }).check()
   await form.getByRole('checkbox', { name: /^edit site content/i }).check()
+  await form.getByRole('checkbox', { name: /^browse custom tables/i }).check()
+  await form.getByRole('checkbox', { name: /^edit site structure/i }).check()
   await form.getByRole('checkbox', { name: /^export data bundles/i }).check()
   await form.getByRole('checkbox', { name: /^import data bundles/i }).check()
   await form.getByRole('checkbox', { name: /^install or uninstall plugins/i }).check()
@@ -104,7 +106,7 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
     expect(await copyPrompt()).toBe(handoff)
     const context = JSON.parse((await run('whoami')).stdout)
     expect(context.account).toBe(id)
-    expect(context.capabilities.sort()).toEqual(['data.export', 'data.import', 'plugins.install', 'site.branches.create', 'site.content.edit', 'site.read'])
+    expect(context.capabilities.sort()).toEqual(['data.custom.tables.read', 'data.export', 'data.import', 'plugins.install', 'site.branches.create', 'site.content.edit', 'site.read', 'site.structure.edit'])
     const [forkOperation] = JSON.parse((await run('api', 'lookup', 'fork')).stdout)
     const forkContract = JSON.parse((await run('api', 'describe', forkOperation.method, forkOperation.path)).stdout)
     expect(forkContract.bodySchema.required).toContain('name')
@@ -147,14 +149,35 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
     expect((await readFile(bundle)).subarray(0, 4)).toEqual(Buffer.from([0x50, 0x4b, 0x03, 0x04]))
     await expect(run('api', 'POST', 'import/archive?strategy=replace', '--raw', bundle)).rejects.toThrow(/403/)
     const fixture = 'hero-' + Date.now()
+    const collectionSlug = 'walks-' + Date.now()
+    const created = await page.request.post('/admin/api/cms/data/tables', { data: {
+      name: 'Guided Walks', slug: collectionSlug, kind: 'postType', routeBase: '/' + collectionSlug,
+      fields: [{ id: 'starts', label: 'Starts', type: 'date' }],
+    } })
+    expect(created.ok(), await created.text()).toBe(true)
+    const { table } = await created.json()
+    for (const [slug, title] of [['marsh', 'Marsh walk'], ['fossils', 'Fossil walk']]) {
+      const added = await page.request.post('/admin/api/cms/data/tables/' + table.id + '/rows', { data: {
+        cells: { title, slug, starts: '2027-02-07' },
+      } })
+      expect(added.ok(), await added.text()).toBe(true)
+    }
     const { site, seq } = await (await page.request.get('/admin/api/cms/site')).json()
+    site.files.push({ id: fixture, path: 'scripts/' + fixture + '.js', type: 'script', createdAt: Date.now(), updatedAt: Date.now(),
+      content: "document.addEventListener('input', event => { for (const card of document.querySelectorAll('article')) card.hidden = !card.textContent.includes(event.target.value) })" })
+    site.runtime.scripts[fixture] = { enabled: true, runInCanvas: false, format: 'classic', placement: 'body-end', timing: 'dom-ready', scope: { type: 'pages', pageIds: [fixture] }, priority: 0 }
     const seed = await page.request.put('/admin/api/cms/site-document', { data: {
       mode: 'incremental', site, shellBaseSeq: seq, baseSeqs: {}, deletedPageIds: [],
       changedComponents: [], deletedComponentIds: [], changedLayouts: [], deletedLayoutIds: [],
       changedPages: [{ id: fixture, slug: fixture, title: 'Launch', rootNodeId: 'body', nodes: {
         body: { id: 'body', moduleId: 'base.body', props: {}, breakpointOverrides: {}, children: ['hero'] },
         hero: { id: 'hero', moduleId: 'base.text', props: { text: 'April launch', tag: 'h1' }, breakpointOverrides: {}, children: [] },
-      } }],
+      } }, { id: fixture + '-detail', slug: fixture + '-detail', title: 'Walk detail', rootNodeId: 'body',
+        template: { enabled: true, target: { kind: 'postTypes', tableSlugs: [collectionSlug] }, priority: 10 },
+        nodes: {
+          body: { id: 'body', moduleId: 'base.body', props: {}, breakpointOverrides: {}, children: ['name'] },
+          name: { id: 'name', moduleId: 'base.text', props: { tag: 'h1', text: '{currentEntry.title}' }, breakpointOverrides: {}, children: [] },
+        } }],
     } })
     expect(seed.ok()).toBe(true)
     const branch = 'cli-review-' + Date.now()
@@ -183,6 +206,22 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
     expect(after.revision).not.toBe(before.revision)
     expect(after.nodes[0].text).toBe('Summer launch')
     expect((await readOn('main')).changedPages[0].nodes.hero.props.text).toBe('April launch')
+    const loop = JSON.parse((await run('canvas', 'modules', 'base.loop')).stdout)
+    expect(loop.propsSchema.properties.filters).toBeDefined()
+    const scoped = (...args: string[]) => run(...args, '--branch', branch)
+    const { collection } = JSON.parse((await scoped('api', 'lookup', 'list guided walks')).stdout)
+    expect(collection.props).toMatchObject({ filters: { tableId: table.id }, orderBy: 'cell:starts' })
+    await expect(scoped('canvas', 'collection', 'posts')).rejects.toThrow(/404/)
+    await scoped('canvas', 'edit', fixture, '--revision', after.revision, '--json', JSON.stringify([
+      { op: 'insertHtml', parent: 'body', html: '<input type="search" aria-label="Search walks">' },
+      { ...collection.edit, parent: 'body' },
+    ]))
+    const detailPath = '/' + collectionSlug + '/fossils'
+    const visit = JSON.parse((await scoped('visit', '/' + fixture, '--viewport', '390x844', '--out', join(scratch, 'visitor.png'),
+      '--json', JSON.stringify([{ expectText: 'Marsh walk' }, { fillLabel: 'Search walks', value: 'Fossil' },
+        { expectHidden: 'Marsh walk' }, { clickLink: 'Fossil walk' }, { expectPath: detailPath }, { expectText: 'Fossil walk' }]))).stdout)
+    expect(visit).toMatchObject({ path: detailPath, stepsPassed: 6, errors: [] })
+    await expect(scoped('visit', '/no-such-' + fixture)).rejects.toThrow(/404/)
     const png = join(scratch, 'branch.png')
     await run('screenshot', fixture, '--branch', branch, '--viewport', '390x844', '--out', png)
     const image = await readFile(png)

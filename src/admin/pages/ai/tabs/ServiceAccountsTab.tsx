@@ -53,7 +53,7 @@ function agentPrompt(origin: string, account: string, filename: string) {
     'bun add --global ' + quote(origin + base + '/' + filename),
     'Then run this command and wait for me to approve the connection in my browser:',
     'instatic connect ' + quote(origin) + ' --account ' + account,
-    'Use --account ' + account + ' on subsequent commands. Run instatic whoami to check your permissions. Use instatic api lookup to find an operation, then instatic api describe METHOD PATH with the returned method and path to see its inputs and command. For page edits, use instatic canvas read with page IDs or /slugs and --branch ID to get revisions together. Use the revision from a save or read with instatic canvas edit. Use instatic canvas inspect PAGE --branch ID --viewport WIDTHxHEIGHT and open the PNG to check visual changes. Run instatic --help for syntax. Report the result here.',
+    'Use --account ' + account + ' on subsequent commands. Run instatic whoami to check your permissions. Use instatic api lookup to find an operation, then instatic api describe METHOD PATH with the returned method and path to see its inputs and command. For page edits, use instatic canvas read with page IDs or /slugs and --branch ID to get revisions together. Use the revision from a save or read with instatic canvas edit. Use instatic canvas inspect PAGE --branch ID --viewport WIDTHxHEIGHT and open the PNG to check visual changes. Use instatic canvas modules for module schemas and instatic canvas collection TABLE --branch ID for a bound listing example. Test search, detail links and scripts with instatic visit /PATH --branch ID. Run instatic --help for syntax. Report the result here.',
   ].join('\n')
 }
 

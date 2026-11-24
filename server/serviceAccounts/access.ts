@@ -39,7 +39,11 @@ async function authorize(req: Request, db: DbClient, token: string): Promise<Req
     return jsonResponse({
       account: actor.id, name: actor.displayName, scope: 'installation', expiresAt: grant.expiresAt, capabilities: actor.capabilities,
       guide: new URL(req.url).searchParams.get('guide') === 'membership' ? await membershipGuide(req, db, available) : undefined,
-      guides: [{ topic: 'membership', command: 'instatic api lookup "public signup"', summary: 'Build login, signup, verification and protected member pages.' }],
+      guides: [
+        { topic: 'membership', command: 'instatic api lookup "public signup"', summary: 'Build login, signup, verification and protected member pages.' },
+        ...(available.some(op => op.path === 'canvas/catalog') ? [{ topic: 'collections', command: 'instatic canvas collection --branch BRANCH', summary: 'Discover visible tables and generate a bound listing for a table.' }] : []),
+        ...(available.some(op => op.path === 'canvas/visitor') ? [{ topic: 'visitor', command: 'instatic visit /PATH --branch BRANCH', summary: 'Exercise scripts, search and entry links on your review branch.' }] : []),
+      ],
       operations: available.map(({ method, path, summary, permissions }) => ({ method, path, summary, permissions })),
     })
   }

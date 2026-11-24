@@ -32,6 +32,11 @@ export const siteOperations = [
   op('GET', 'pages', read, 'List page rows'),
   op('GET', 'layouts', read, 'List saved layouts'),
   op('GET', 'components', read, 'List visual components'),
+  op('GET', 'canvas/catalog', read, 'Discover canvas modules, property schemas, collection fields, row bindings and an editable listing example for your table.', { querySchema: Type.Partial(Type.Object({
+    module: Type.String({ description: 'Module ID for full props and defaults' }), table: Type.String({ description: 'Table ID or slug for a bound listing example' }),
+    collections: Type.String({ description: 'List visible tables and loop sources' }), search: Type.String({ description: 'Find a named table, e.g. list events' }),
+  })) }),
+  op('GET', 'canvas/visitor', [[read], ownBranch], 'Render a visitor route on your review branch with its runtime scripts. Use instatic visit PATH --branch BRANCH.', { querySchema: Type.Object({ path: Type.String({ description: 'Public path with optional query, including an entry permalink' }) }) }),
   op('GET', 'canvas/pages', read, 'Read editable pages and revisions in one snapshot. Repeat ref for each ID or /slug.', { querySchema: Type.Object({ ref: Type.Array(Type.String(), { minItems: 1, maxItems: 100, description: 'Repeated query parameter, e.g. ?ref=/&ref=/login' }) }) }),
   op('GET', 'canvas/pages/:id', read, 'Inspect the rendered canvas, editable nodes, shared styles and revision. Use instatic canvas inspect for a PNG and layout measurements.', { querySchema: Type.Partial(Type.Object({ width: Type.Integer({ minimum: 10, maximum: 4096 }), height: Type.Integer({ minimum: 10, maximum: 4096 }) })) }),
   op('PATCH', 'canvas/pages/:id', [[read], SITE_WRITE_CAPABILITIES], 'Apply targeted canvas edits atomically with an explicit --branch and the inspected revision. Rule edits affect the shared selector.', { bodySchema: CanvasEditSchema, example: { revision: 'FROM_INSPECT', edits: [{ op: 'text', node: 'NODE_ID', value: 'New heading' }] } }),

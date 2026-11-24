@@ -57,6 +57,13 @@ test('CLI approval grants an expiring, revocable identity that can fork and edit
     const fork = await h.cms(base + 'branches', { method: 'POST', headers, json: { name: 'review' } })
     expect(fork.status).toBe(201)
     expect((await fork.json()).branch.createdByUserId).toBe(id)
+    const visitor = base + 'canvas/visitor?path=/launch'
+    expect((await h.cms(visitor, { headers })).status).toBe(400)
+    expect((await h.cms(visitor, { headers: branch })).status).toBe(200)
+    const other = await h.cms(base + 'branches', { method: 'POST', cookie: owner, json: { name: 'other-review' } })
+    expect(other.status).toBe(201)
+    expect((await h.cms(visitor, { headers: { ...headers, 'X-Instatic-Branch': 'other-review' } })).status).toBe(403)
+    expect((await h.cms(base + 'canvas/visitor?path=/%25zz', { headers: branch })).status).toBe(400)
     const read = () => h.cms(base + 'draft-page/hero-page', { headers: branch })
     const payload = await (await read()).json()
     payload.changedPages[0].nodes.heading.props.text = 'May'
@@ -119,6 +126,7 @@ test('CLI approval grants an expiring, revocable identity that can fork and edit
     expect((await (await h.cms(canvas, { headers })).json()).html).not.toContain('See you there')
     await h.db`update roles set capabilities_json = ${JSON.stringify(['site.read', 'ai.providers.manage'])} where id = ${sponsor.roleId}`
     expect((await write()).status).toBe(403)
+    expect((await h.cms(visitor, { headers: branch })).status).toBe(403)
     const future = new Date(Date.now() + 7200000).toISOString()
     await h.db`update service_accounts set expires_at = ${new Date(0).toISOString()} where id = ${id}`
     expect((await read()).status).toBe(401)

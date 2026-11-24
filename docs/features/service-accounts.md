@@ -55,6 +55,25 @@ The membership check visits the published login, signup and verification forms i
 
 For live checks, set `INSTATIC_TEST_INBOX` to a private directory watched by your local mail-capture fixture. The CLI prints a unique test email address on stderr. Have the fixture write the captured verification URL to `<directory>/<that email>.url` within 30 seconds. The CLI checks the link’s origin and assigned verification path. The fixture can receive test mail independently of the service account’s permissions.
 
+## Discover canvas modules and build a collection listing
+
+`instatic canvas modules` lists insertable modules. Pass an ID such as `base.loop` for its defaults, property controls and registered property schema. Use `instatic canvas collection --branch review` to list collection IDs available on that branch. Pass a table ID or slug to get its field tokens, source options, loop properties and an `insertHtml` edit. For a named collection, `instatic api lookup "list events" --branch review` returns the same example.
+
+Set the returned edit’s `parent` to a container from `canvas read`, then pass the edit in an array to `canvas edit` with that page’s revision. Each row renders its primary field and, for routable tables, a detail link. The example sorts by the first date field ascending when present, or by creation date descending. Choose the field, direction and row limit for the task.
+
+## Check a branch as a visitor
+
+`instatic visit /events --branch review` opens a fresh Chromium context, runs the branch scripts, and reports visible text, input fields, links, script errors and blocked requests. The CLI renders each document at its public path, including query strings and entry permalinks. It uses the existing branch preview renderer and checks branch permissions on each navigation. The account needs **View site** and permission to preview that branch. Shared review links keep their current tokens.
+
+Pass ordered steps with `--json` or `--file`. Use `fill` with a CSS selector or `fillLabel` with an exact field label. `clickLink` follows an exact accessible link name. Text assertions match exact visible text. Path assertions include the query and fragment.
+
+```sh
+instatic visit /events --branch review --viewport 390x844 --out detail.png \
+  --json '[{"fillLabel":"Search walks","value":"fossil"},{"expectText":"Fossil walk"},{"expectHidden":"Marsh walk"},{"clickLink":"Fossil walk"},{"expectPath":"/events/fossils"}]'
+```
+
+A failed navigation or assertion exits nonzero and identifies the step. With `--out`, the CLI captures the final or failing viewport. The isolated browser receives rendered HTML and same-origin assets. The service credential stays in the CLI. Cross-origin resources, service workers, sockets, form submissions and background API calls are outside this read-only check. Use `check membership` for the published signup and login workflow.
+
 ## Permissions and lifecycle
 
 - A connector receives grants from the same capability list as a custom role. Role management is reserved for the installation owner. **Select all** grants the available capabilities you currently hold. The connector’s scope is installation-wide. A branch ID selects a draft. A connector with site-edit capabilities can also target main. The CLI requires an explicit branch for a site-document save.

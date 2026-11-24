@@ -1,14 +1,19 @@
+import type { AuthUser } from '../../repositories/users'
+import { canvasModules, canvasCollections } from '../../canvas/catalog'
+import { canReadTable, hasContentRowAccess } from '../../auth/dataAccess'
+import { getBranch } from '../../repositories/branches'
+import { renderBranchPreview } from '../../publish/branchPreview'
 import { Type } from '@sinclair/typebox'
 import { readEnvelope } from '@core/http'
 import { isGeneratedClassLocked, type Page } from '@core/page-tree'
-import { BRANCH_HEADER } from '@core/branches'
+import { canActOnBranch, isMainBranch, BRANCH_HEADER } from '@core/branches'
 import { composedNodeSourceId } from '@core/templates'
 import { requireCapability } from '../../auth/authz'
 import { canvasRevision } from '../../canvas/revision'
 import type { BranchScope } from '../../branches/scope'
 import type { DbClient } from '../../db/client'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
-import { listDataRowSeqs, getDataRowBySlug } from '../../repositories/data'
+import { listDataTablesWithCounts, listDataRowSeqs, getDataRowBySlug } from '../../repositories/data'
 import { getDraftSiteSeq } from '../../repositories/site'
 import { runPublishFlush } from '../../publish/publishFlush'
 import { getDraftSiteDocument } from '../../repositories/publish'
@@ -26,13 +31,46 @@ async function inspectRevision(db: DbClient, scope: BranchScope, pageId: string)
   return canvasRevision(scope.branchId, pageId, rows[0]?.seq, shell)
 }
 
+async function visitBranch(db: DbClient, scope: BranchScope, user: AuthUser, url: URL) {
+  if (isMainBranch(scope.branchId)) return badRequest('Choose a review branch to visit its draft')
+  const branch = await getBranch(db, scope.branchId)
+  if (!branch || !canActOnBranch(user, branch)) return jsonResponse({ error: 'Branch preview permission required' }, { status: 403 })
+  const path = url.searchParams.get('path')
+  if (!path?.startsWith('/') || path.startsWith('//') || path.includes('\\')) return badRequest('Expected a public site path')
+  let target: URL
+  try {
+    target = new URL(path, url.origin)
+    decodeURIComponent(target.pathname)
+  } catch { return badRequest('Invalid public site path') }
+  if (target.origin !== url.origin || /^\/(admin|_instatic)(\/|$)/.test(target.pathname)) return badRequest('Expected a public site path')
+  await runPublishFlush()
+  const page = await renderBranchPreview(db, scope.branchId, target)
+  return page ? jsonResponse({ html: await page.text() }, { headers: { 'Cache-Control': 'private, no-store' } }) : jsonResponse({ error: 'Branch route not found' }, { status: 404 })
+}
+
+async function readCatalog(db: DbClient, scope: BranchScope, user: AuthUser, params: URLSearchParams) {
+  if (params.has('table') || params.has('collections') || params.has('search')) {
+    const tables = await listDataTablesWithCounts(db, scope)
+    const visible = tables.filter(table => hasContentRowAccess(user) || canReadTable(user, table))
+    const result = canvasCollections(visible, params.get('table'), params.get('search') ?? '')
+    return result ? jsonResponse(result) : jsonResponse({ error: 'Collection not found' }, { status: 404 })
+  }
+  const modules = canvasModules(params.get('module'))
+  return modules ? jsonResponse(modules) : jsonResponse({ error: 'Module not found' }, { status: 404 })
+}
+
 export async function handleCanvas(req: Request, db: DbClient, scope: BranchScope) {
   const url = new URL(req.url)
   const match = /^\/admin\/api\/cms\/canvas\/pages\/([^/]+)$/.exec(url.pathname)
   const batch = url.pathname === '/admin/api/cms/canvas/pages'
-  if (!match && !batch) return null
+  const catalog = url.pathname === '/admin/api/cms/canvas/catalog'
+  const visitor = url.pathname === '/admin/api/cms/canvas/visitor'
+  if (!match && !batch && !catalog && !visitor) return null
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
+  if ((catalog || visitor) && req.method !== 'GET') return methodNotAllowed()
+  if (visitor) return visitBranch(db, scope, user, url)
+  if (catalog) return readCatalog(db, scope, user, url.searchParams)
   if (!match) {
     if (req.method !== 'GET') return methodNotAllowed()
     const refs = url.searchParams.getAll('ref')

@@ -11,6 +11,11 @@ import credentials from '../../cli/credentials.ts' with { type: 'text' }
 // @ts-expect-error Bun embeds this module in the downloadable CLI.
 import membership from '../../cli/membership.ts' with { type: 'text' }
 
+// @ts-expect-error Bun embeds this module in the downloadable CLI.
+import browser from '../../cli/browser.ts' with { type: 'text' }
+// @ts-expect-error Bun embeds this module in the downloadable CLI.
+import visitor from '../../cli/visitor.ts' with { type: 'text' }
+
 export const cliFilename = 'instatic-cli-' + manifest.version + '.tgz'
 let packed: Promise<Blob> | undefined
 export async function cliPackageResponse() {
@@ -18,6 +23,8 @@ export async function cliPackageResponse() {
     'package/package.json': JSON.stringify(manifest),
     'package/instatic.ts': cli,
     'package/canvas.ts': canvas,
+    'package/browser.ts': browser,
+    'package/visitor.ts': visitor,
     'package/credentials.ts': credentials,
     'package/membership.ts': membership,
   }, { compress: 'gzip' }).blob()

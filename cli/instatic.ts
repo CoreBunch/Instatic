@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { openChromium, parseViewport } from './browser'
 import { CanvasSnapshotSchema, inspectViewport } from './canvas'
 import { saveCredential, readCredential, forgetCredential } from './credentials'
 import manifest from './package.json' with { type: 'json' }
@@ -31,6 +32,11 @@ const help = `Instatic CLI
   instatic api METHOD PATH [--branch ID]      Call a CMS endpoint
     --json '{"name":"review"}' | --file changes.json | --upload FILE [--field NAME=VALUE] | --raw FILE
     --out FILE saves the response bytes
+  instatic canvas modules [MODULE_ID]           List modules or get one module's props schema and defaults
+  instatic canvas collection [TABLE_ID_OR_SLUG] --branch ID   Discover collections or get a bound repeating card ready for canvas edit
+  instatic visit /PATH --branch ID [--viewport 390x844] [--out visitor.png] [--json STEPS | --file STEPS.json]
+    Pass an array, e.g. --json '[{"fillLabel":"Search walks","value":"fossil"},{"expectText":"Fossils"},{"clickLink":"Fossils"},{"expectPath":"/events/fossils"}]'
+    Use fill with a CSS selector instead of fillLabel. Use expectHidden to check filtered results.
   instatic canvas read ID_OR_/SLUG [...] --branch ID   Return one editable document and page revisions without a screenshot
   instatic canvas inspect ID_OR_/SLUG --branch ID [--viewport 390x844] [--out before.png] [--node NODE_ID]
     Save a screenshot and return visible nodes, horizontal overflow, assigned CSS rules and a revision.
@@ -133,9 +139,7 @@ async function connect(origin: string, account: string) {
 
 async function capture(origin: string, token: string, pageId: string, inspect = false) {
   if (!values.branch || !pageId || (!inspect && !values.out)) throw new Error('Specify a page ID, --branch ID and --out FILE.png')
-  const viewport = /^(\d{2,4})x(\d{2,4})$/.exec(values.viewport ?? '1280x800')
-  if (!viewport || Number(viewport[1]) > 4096 || Number(viewport[2]) > 4096) throw new Error('Viewport must be WIDTHxHEIGHT, up to 4096x4096')
-  const width = Number(viewport[1]), height = Number(viewport[2])
+  const { width, height } = parseViewport(values.viewport)
   const headers = { Authorization: 'Bearer ' + token, 'X-Instatic-Branch': values.branch }
   const target = inspect ? 'canvas/pages/' + encodeURIComponent(pageId) : 'branches/' + encodeURIComponent(values.branch) + '/review/render'
   const url = apiUrl(origin, target)
@@ -148,11 +152,7 @@ async function capture(origin: string, token: string, pageId: string, inspect = 
   const snapshot = inspect ? checked(CanvasSnapshotSchema, await response.json()) : undefined
   const html = snapshot ? snapshot.html : await response.text()
   const path = resolve(values.out ?? 'canvas-' + randomBytes(5).toString('hex') + '.png')
-  const { chromium } = await import('playwright-core')
-  const browser = await chromium.launch({ executablePath: process.env.INSTATIC_CHROMIUM || undefined }).catch((err: unknown) => {
-    throw new Error('Could not launch Chromium. Set INSTATIC_CHROMIUM to your installed browser executable or install the matching Playwright Chromium with user approval. ' +
-      (err instanceof Error ? err.message : String(err)), { cause: err })
-  })
+  const browser = await openChromium()
   try {
     const page = await browser.newPage({ viewport: { width, height }, javaScriptEnabled: false, serviceWorkers: 'block' })
     const renderUrl = new URL('/_instatic/cli-capture', origin).href
@@ -196,6 +196,27 @@ async function main() {
   const { origin: savedOrigin, token } = checked(credentialSchema, JSON.parse(stored))
   const origin = siteOrigin(savedOrigin)
   const headers = new Headers({ Authorization: 'Bearer ' + token })
+  if (command === 'visit') {
+    if (!values.branch || !verb || (values.json !== undefined && values.file !== undefined)) throw new Error('Use visit /PATH --branch ID [--json STEPS | --file FILE]')
+    headers.set('X-Instatic-Branch', values.branch)
+    const { visit } = await import('./visitor')
+    const steps: unknown = JSON.parse(values.file ? await Bun.file(values.file).text() : values.json ?? '[]')
+    const result = await visit(origin, verb, values, steps, async path => {
+      const url = apiUrl(origin, 'canvas/visitor')
+      url.searchParams.set('path', path)
+      return checked(Type.Object({ html: Type.String() }), await (await request(url, { headers })).json()).html
+    })
+    output(JSON.stringify(result, null, 2))
+    return
+  }
+  if (command === 'canvas' && (verb === 'modules' || verb === 'collection')) {
+    const url = apiUrl(origin, 'canvas/catalog')
+    if (values.branch) headers.set('X-Instatic-Branch', values.branch)
+    if (verb === 'collection') url.searchParams.set(path ? 'table' : 'collections', path ?? '')
+    else if (path) url.searchParams.set('module', path)
+    output(await (await request(url, { headers })).text())
+    return
+  }
   if (command === 'check' && verb === 'membership') {
     const { checkMembership } = await import('./membership')
     const settings = await request(apiUrl(origin, 'members/settings'), { headers })
@@ -225,7 +246,16 @@ async function main() {
       const searchable = [op.method, pathname, op.summary, ...(op.permissions ?? []).flat()].join(' ').toLowerCase()
       return words.every(word => searchable.includes(word))
     })
-    output(JSON.stringify(guide ? { guide, operations: matches } : matches, null, 2))
+    const listingQuery = /\b(list|directories|directory|listings?|collections?|loops?|repeat(?:ing|er)?)\b/.test(query)
+    if (!guide && query && !query.includes('/') && (listingQuery || !matches.length) &&
+        operations.some(operation => operation.path === 'canvas/catalog')) {
+      const catalog = apiUrl(origin, 'canvas/catalog')
+      catalog.searchParams.set('search', query)
+      if (values.branch) headers.set('X-Instatic-Branch', values.branch)
+      const collection: unknown = await (await request(catalog, { headers })).json()
+      const foundTable = Value.Check(Type.Object({ table: Type.Object({ id: Type.String() }) }), collection)
+      output(JSON.stringify(listingQuery || foundTable ? { collection, operations: matches } : matches, null, 2))
+    } else output(JSON.stringify(guide ? { guide, operations: matches } : matches, null, 2))
     return
   }
   if (command === 'canvas' && verb === 'read') {

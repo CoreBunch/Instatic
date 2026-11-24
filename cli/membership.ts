@@ -3,7 +3,8 @@ import { mkdir, readFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { Type, type Static } from '@sinclair/typebox'
 import { Value } from '@sinclair/typebox/value'
-import { chromium, type Page } from 'playwright-core'
+import type { Page } from 'playwright-core'
+import { openChromium } from './browser'
 
 const Settings = Type.Object({
   settings: Type.Object({ signupMode: Type.String(), pages: Type.Record(Type.String(), Type.String()) }),
@@ -45,7 +46,7 @@ export async function checkMembership(origin: string, raw: unknown, live: boolea
   if (live && (!['127.0.0.1','localhost','[::1]'].includes(new URL(origin).hostname) || !inbox)) {
     throw new Error('Live signup requires a disposable loopback site and INSTATIC_TEST_INBOX containing captured verification links.')
   }
-  const browser = await chromium.launch({ executablePath: process.env.INSTATIC_CHROMIUM || undefined })
+  const browser = await openChromium()
   const screenshots: string[] = []
   const dir = resolve(output ?? 'membership-' + randomUUID())
   try {
