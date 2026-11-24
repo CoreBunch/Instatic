@@ -71,6 +71,8 @@ export type {
   PlannedTableReuse,
 } from './planTypes'
 
+export type { ImportedFragmentAssets } from './deferredAssets'
+export { placeFragmentLayout, loadFragmentAssets, finishFragmentAssets } from './deferredAssets'
 export { resolveFragmentPlan } from './resolve'
 export type { FragmentApplyResult, FragmentResolution, ResolvedFragmentPlan } from './resolve'
 export { applyResolvedFragment } from './apply'

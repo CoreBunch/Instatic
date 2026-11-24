@@ -19,6 +19,7 @@
  * so plugins that ship multiple overlays can branch on `overlay.id`.
  */
 export interface PluginCanvasOverlay {
+  showInLiveMode?: boolean
   id: string
   component: import('react').ComponentType<{
     overlay: { id: string; pluginId: string }

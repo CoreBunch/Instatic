@@ -47,6 +47,23 @@ beforeEach(() => {
 
 // ─── Basic PluginCommand → spotlight Command ──────────────────────────────────
 
+describe('Site dock commands', () => {
+  it('exposes only opted-in direct Site actions and updates on deactivation', () => {
+    const api = createEditorPluginApi(GRANTED, fetch)
+    const direct = { id: 'test.plugin.open', label: 'Open library', run() {}, showInSiteDock: true }
+    api.editor.palette.registerCommand(direct)
+    api.editor.palette.registerCommand({ ...direct, id: 'test.plugin.delete', destructive: true })
+    api.editor.palette.registerCommand({ ...direct, id: 'test.plugin.edit', args: [{ id: 'name', label: 'Name', type: 'text' }] })
+    api.editor.palette.registerCommand({ ...direct, id: 'test.plugin.content', workspaces: ['content'] })
+    api.editor.palette.registerCommand({ ...direct, id: 'test.plugin.hidden', showInSiteDock: false })
+    const commands = pluginRuntime.getSiteDockCommands()
+    expect(commands.map(command => command.id)).toEqual([direct.id])
+    expect(pluginRuntime.getSiteDockCommands()).toBe(commands)
+    pluginRuntime.deactivatePlugin(GRANTED.id)
+    expect(pluginRuntime.getSiteDockCommands()).toEqual([])
+  })
+})
+
 describe('basic PluginCommand auto-surfaces in the palette', () => {
   it('appears in getPluginsCommands() after registration', () => {
     pluginRuntime.registerCommand('test.plugin', {

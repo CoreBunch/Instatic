@@ -415,7 +415,7 @@ export interface SiteSliceHelpers {
   /** Mutate the site — commits undo history only on real changes. */
   mutateSite: (
     fn: (site: SiteDocument) => SiteMutationResult,
-    opts?: { coalesceKey?: string },
+    opts?: { coalesceKey?: string; trackUndo?: boolean },
   ) => boolean
 
   /** Mutate the site and reconcile Site Explorer organization after a real change. */

@@ -14,7 +14,6 @@
  * — not hardcoded here.
  */
 import { useMobileViewport } from '@admin/lib/mobileViewport'
-import { useEffect } from 'react'
 import { useCanUndo, useCanRedo, useUndo, useRedo } from '@site/store/store'
 import { UndoIcon } from 'pixel-art-icons/icons/undo'
 import { RedoIcon } from 'pixel-art-icons/icons/redo'
@@ -32,32 +31,6 @@ export function UndoRedoButtons() {
   const canRedo = useCanRedo()
   const undo = useUndo()
   const redo = useRedo()
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      const target = e.target as HTMLElement
-      if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
-      ) return
-
-      if (kbUndo?.match(e)) {
-        e.preventDefault()
-        undo()
-      } else if (kbRedo?.match(e)) {
-        e.preventDefault()
-        redo()
-      } else if ((e.metaKey || e.ctrlKey) && e.key === 'y') {
-        // Ctrl+Y is a Windows/Linux redo alias — not in the registry since
-        // ⌘⇧Z is the canonical binding, but handled here for convenience.
-        e.preventDefault()
-        redo()
-      }
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [undo, redo])
 
   // Shortcut labels from the registry — platform-aware.
   const undoHint = kbUndo ? formatShortcut(kbUndo.shortcut) : ''
