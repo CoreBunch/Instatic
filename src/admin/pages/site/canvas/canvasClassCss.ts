@@ -7,7 +7,7 @@ import {
 } from '@core/publisher'
 import { generateFrameworkRootCss } from '@core/framework'
 import { generateFontsCss } from '@core/fonts'
-import { styleRuleSelector } from '@core/page-tree'
+import { isGeneratedClass, styleRuleSelector } from '@core/page-tree'
 import type { StyleRule, ConditionDef } from '@core/page-tree'
 import type { SiteFontsSettings } from '@core/fonts'
 import type {
@@ -60,11 +60,29 @@ function buildCanvasClassCSS(
   // The registry CSS is the publisher's own generator — the canvas ships the
   // exact bytes a publish would (rule order, condition/viewport cascade, and
   // sanitized raw @keyframes rules included), so the preview cannot drift
-  // from the published output.
-  const classCss = generateClassCSS(classes, breakpoints, conditions, responsiveOptions)
+  // from the published output. Framework utility classes go first, as they
+  // do on the published page: there `framework.css` precedes `style.css`, so
+  // a site class wins over a utility of equal specificity.
+  const { utilities, authored } = splitFrameworkUtilities(classes)
+  const utilityCss = generateClassCSS(utilities, breakpoints, conditions, responsiveOptions)
+  if (utilityCss) blocks.push(utilityCss)
+  const classCss = generateClassCSS(authored, breakpoints, conditions, responsiveOptions)
   if (classCss) blocks.push(classCss)
 
   return blocks.join('\n\n')
+}
+
+function splitFrameworkUtilities(classes: Record<string, StyleRule>): {
+  utilities: Record<string, StyleRule>
+  authored: Record<string, StyleRule>
+} {
+  const utilities: Record<string, StyleRule> = {}
+  const authored: Record<string, StyleRule> = {}
+  for (const [id, rule] of Object.entries(classes)) {
+    if (isGeneratedClass(rule)) utilities[id] = rule
+    else authored[id] = rule
+  }
+  return { utilities, authored }
 }
 
 type CanvasClassCssGenerator = typeof buildCanvasClassCSS
