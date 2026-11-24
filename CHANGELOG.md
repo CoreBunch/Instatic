@@ -4,6 +4,41 @@ All notable changes to Instatic will be documented here.
 
 This project is pre-1.0. Breaking changes may appear in minor or patch releases until a stable release line exists.
 
+## 0.0.24 - 2026-11-24
+
+Instatic adds a CLI for external agents, signed plugin updates, and a branch review that shows exactly which styles and content changed. If you use Instatic Desktop or a standalone server, this release also restores plugins that failed to start on 0.0.23.
+
+### Features
+
+- **CLI for external agents.** In AI → CLI, give an agent an expiring service account and choose which CMS operations it can use. An agent can edit pages on a branch and check its work at a chosen viewport while you review its activity or revoke access.
+- **Signed plugin updates.** When a publisher offers a signed update, you can review and install it from Plugins. Instatic verifies the package against the installed publisher’s key, shows any new permissions, and preserves your settings.
+- **Plugins in the Site dock.** Plugins can open beside the live canvas and let you drop a fragment exactly where you want it. The insertion works with the editor’s usual Undo.
+- **Branch review.** Compare individual CSS properties, responsive styles, and content fields side by side before merging. Page previews outline changes without covering the content, and review comments stay available when an edit leaves the merge plan.
+- **Member app sign-in.** Members can open an approval email in a different browser or on another device, match the code shown in the app, and approve access on a page you design.
+- **Form settings.** Select a form to see where submissions go and what visitors see afterward. Open **Edit form settings** to change the destination, write a multiline response, or configure the fields a CMS or member form needs.
+- **Email controls.** Find built-in and plugin templates by name or source, then switch sending off for just one template. This also cancels its queued messages and records them in Activity.
+- **Account directories.** Search admin users and site members and browse 50 matching accounts at a time, with the visible range and total shown below the list.
+
+### Bug fixes
+
+- Server-backed plugins failed to start in the 0.0.23 standalone downloads used by Instatic Desktop. They now start correctly, and a successful startup clears the previous activation error.
+- Fixed a branch-switching bug that could overwrite the current branch’s styles, breakpoints, or settings when you saved site settings.
+- A branch can now replace a deleted page with another page at the same slug. After a successful merge, the editor returns to `main` and offers Undo if you kept the source branch.
+- Opening a second Site or Content tab could divert an MCP tool call to the wrong branch. Calls now stay with the first connected workspace tab until it closes or disconnects.
+- Imported sites now retain CSS images and other linked assets when the importer extracts color or font tokens from the stylesheet.
+- Saving Markdown links preserves URLs containing spaces, unmatched parentheses, or backslashes.
+- Permanently deleting a file from Media Trash now asks for confirmation and names the file before deleting the original and its generated sizes.
+- The plugin development watcher no longer rebuilds repeatedly after its own build writes files, including on Windows.
+
+### Other changes
+
+- Email, AI, and Account share a consistent tab layout. You can inspect a delivery beside the activity list, see sign-in outcomes on a phone, and sign out an active device with its action still in view.
+- MCP connection approvals keep the permission count and decision buttons visible while you scroll. Member details also give the device, connected app, and activity rows a larger click target.
+- The dashboard’s inactive **Publish all** button has been removed. Publish from the Site editor.
+- GitHub Releases now include these upgrade notes alongside contributor credits and the full comparison when available.
+
+**Deployment guides** · [Docker](https://github.com/CoreBunch/Instatic/blob/main/docs/deployment/docker-image.md) · [VPS](https://github.com/CoreBunch/Instatic/blob/main/docs/deployment/vps.md) · [Railway](https://github.com/CoreBunch/Instatic/blob/main/docs/deployment/railway.md) · [Render](https://github.com/CoreBunch/Instatic/blob/main/docs/deployment/render.md) · [Backup and restore](https://github.com/CoreBunch/Instatic/blob/main/docs/deployment/backup-restore.md)
+
 ## 0.0.23 - 2026-11-22
 
 Instatic adds site member accounts, transactional email, and reusable site fragments. This release also addresses five security advisories affecting self-hosted installations. Operators with third-party plugins or trusted reverse proxies should review the Security section before upgrading.
