@@ -163,6 +163,17 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
     const readOn = async (name: string) => JSON.parse((await run('api', 'GET', 'draft-page/' + fixture, '--branch', name)).stdout)
     expect((await readOn(branch)).changedPages[0].nodes.hero.props.text).toBe('May launch')
     expect((await readOn('main')).changedPages[0].nodes.hero.props.text).toBe('April launch')
+    const inspectHero = async (label: string) => JSON.parse((await run('canvas', 'inspect', fixture, '--branch', branch,
+      '--viewport', '390x844', '--node', 'hero', '--out', join(scratch, label + '.png'))).stdout)
+    const before = await inspectHero('before')
+    expect(before.nodes).toContainEqual(expect.objectContaining({ node: 'hero', text: 'May launch' }))
+    const change = await run('canvas', 'edit', fixture, '--branch', branch, '--revision', before.revision,
+      '--json', JSON.stringify([{ op: 'text', node: 'hero', value: 'Summer launch' }]))
+    expect(JSON.parse(change.stdout).changes[0]).toMatchObject({ before: 'May launch', after: 'Summer launch' })
+    const after = await inspectHero('after')
+    expect(after.revision).not.toBe(before.revision)
+    expect(after.nodes[0].text).toBe('Summer launch')
+    expect((await readOn('main')).changedPages[0].nodes.hero.props.text).toBe('April launch')
     const png = join(scratch, 'branch.png')
     await run('screenshot', fixture, '--branch', branch, '--viewport', '390x844', '--out', png)
     const image = await readFile(png)

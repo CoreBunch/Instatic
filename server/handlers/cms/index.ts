@@ -33,6 +33,7 @@ import { resolveBranchScope } from '../../branches/scope'
 import type { CmsHandlerOptions } from './shared'
 import { tryAuthorizeServiceRequest } from '../../serviceAccounts/access'
 import { handleServiceAccounts } from '../../serviceAccounts/management'
+import { handleCanvas } from './canvas'
 import { handleDraftPage } from '../../serviceAccounts/draftPage'
 import { handleBranchesRoutes } from './branches'
 import { handleSetupRoutes } from './setup'
@@ -126,6 +127,7 @@ export async function handleCmsRequest(
 
   const response =
     (await handleBranchesRoutes(req, db, options))
+    ?? (await handleCanvas(req, db, scope))
     ?? (await handleDraftPage(req, db, scope))
     ?? (await handleSiteRoutes(req, db, scope))
     // The transactional whole-document save — must run before the pages/

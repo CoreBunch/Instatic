@@ -9,7 +9,7 @@ An external agent can use the CMS API from an existing Codex or Claude Code sess
 3. Match the code in the terminal with the one shown in your browser, review permissions and expiry, and choose **Authorize CLI**. After pairing, the browser returns to the account and shows **Connected**. Creation and approval use admin step-up. Remote sites need an HTTPS public origin. A local loopback site can pair over HTTP.
 4. Give the session a task such as “Create a branch called review, fix the hero heading on the homepage, check it at mobile width, and tell me what you changed.” The agent reports back in that session.
 
-The CLI requires Bun 1.4 and a working OS credential store. Pair on the machine running the CLI. The connection uses a temporary listener bound to 127.0.0.1, a random state, and a one-minute single-use authorization code with an S256 proof. Use `connect --no-open` to open the printed URL yourself. The resulting opaque bearer credential expires with the connector (one hour to 30 days). The system credential store holds the token under the site account’s ID. The server stores its hash. Use **Copy agent prompt** again to pair another device. Reconnecting a device replaces the previous credential when the new device finishes the exchange.
+The CLI requires Bun 1.4 and a working OS credential store. Pair on the machine running the CLI. Sandboxed terminals need permission for the loopback callback and the OS credential store. If approval succeeds but storing the credential fails, allow credential-store access and pair again. The connection uses a temporary listener bound to 127.0.0.1, a random state, and a one-minute single-use authorization code with an S256 proof. Use `connect --no-open` to open the printed URL yourself. The resulting opaque bearer credential expires with the connector (one hour to 30 days). The system credential store holds the token under the site account’s ID. The server stores its hash. Use **Copy agent prompt** again to pair another device. Reconnecting a device replaces the previous credential when the new device finishes the exchange.
 
 ## Use the CLI
 
@@ -24,15 +24,16 @@ instatic api POST branches --json '{"name":"review"}'
 instatic api GET pages --branch review
 ```
 
-Choose the returned page ID, read a fresh editable payload, and modify the matching node in `changedPages[0].nodes`. Preserve the remaining fields and sequence numbers. If a write returns HTTP 409, reread the current draft and reconcile the intended change.
+Use the page ID from the branch’s page list. Inspect at the viewport where the problem occurs, then open the returned PNG. The JSON reports visible node IDs, bounds, horizontal overflow, inline styles and assigned rules. Each rule lists pages and components that reference its class directly. A rendered element with a null node ID has no editable target in this page.
 
 ```sh
-instatic api GET draft-page/PAGE_ID --branch review > change.json
-# Edit the relevant node in change.json.
-instatic api PUT site-document --branch review --file change.json
-instatic api GET branches/review/merge
-instatic screenshot PAGE_ID --branch review --viewport 390x844 --out hero.png
+instatic canvas inspect PAGE_ID --branch review --viewport 390x844 --out before.png
+instatic api describe PATCH canvas/pages/:id
+instatic canvas edit PAGE_ID --branch review --revision REVISION_FROM_INSPECT --json '[{"op":"rule","rule":"RULE_ID","context":"MOBILE_CONTEXT_ID","property":"white-space","value":"normal"}]'
+instatic canvas inspect PAGE_ID --branch review --viewport 390x844 --out after.png
 ```
+
+Use IDs and contexts from inspect. To focus the output, add `--node NODE_ID`. A batch accepts text on an unbound text node, an inline CSS declaration, a shared rule declaration (optionally in a responsive context), or an HTML fragment under a container using `insertHtml`. Set a CSS value to `null` to remove the declaration. A rule edit affects every use of that selector on the branch. The CMS checks the complete batch against normal role permissions and commits it atomically. After HTTP 409, inspect again and reconcile the change. For document-level edits the lower-level `draft-page/:id` and `site-document` operations remain available.
 
 Open the returned PNG in the agent’s image viewer to inspect the result. Capture uses the branch review renderer and script-disabled local Chromium. No admin tab needs to be open. Set `INSTATIC_CHROMIUM` to an installed Chromium executable, or approve installation of the matching Playwright Chromium. The screenshot result includes its absolute path, dimensions and count of skipped asset requests. Assets are fetched from the same origin without the CLI credential. Screens relying on external assets or runtime JavaScript can differ from the public page.
 

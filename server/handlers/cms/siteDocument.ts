@@ -46,6 +46,7 @@
  * stamped on the shell and every written/deleted row (conflict detection and
  * delta reconciliation substrate for the live-sync plan).
  */
+import type { AuthUser } from '../../repositories/users'
 import type { DbClient } from '../../db/client'
 import { isMainScope, type BranchScope } from '../../branches/scope'
 import { SITE_SHELL_LOGICAL_ID } from '@core/branches'
@@ -165,7 +166,10 @@ export async function handleSiteDocumentRoutes(
 
   const body = await readValidatedBody(req, SiteDocumentBodySchema)
   if (!body) return badRequest('Invalid request body')
+  return saveSiteDocument(db, scope, user, body)
+}
 
+export async function saveSiteDocument(db: DbClient, scope: BranchScope, user: AuthUser, body: SiteDocumentBody, checkShellRevision = false): Promise<Response> {
   if (
     body.mode === 'replace' &&
     (body.deletedPageIds.length > 0 || body.deletedComponentIds.length > 0 || body.deletedLayoutIds.length > 0)
@@ -339,7 +343,7 @@ export async function handleSiteDocumentRoutes(
       // Throwing rolls the transaction back, so nothing is written on 409.
       if (body.mode === 'incremental') {
         const conflicts: SaveConflict[] = []
-        if (shellChanged) {
+        if (shellChanged || checkShellRevision) {
           const storedShellSeq = await getDraftSiteSeq(tx, scope)
           if (storedShellSeq > body.shellBaseSeq) {
             conflicts.push({ table: 'site', rowId: SITE_SHELL_LOGICAL_ID, seq: storedShellSeq })

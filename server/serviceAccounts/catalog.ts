@@ -25,7 +25,7 @@ export function describeOperation(op: Operation) {
   const query = requiredQuery.map(key => key + '=' + key.toUpperCase()).join('&')
   const target = query ? path + '?' + query : path
   const args = ['instatic', 'api', method, /^[a-z0-9/:_.%-]+$/i.test(target) ? target : "'" + target.replaceAll("'", "'\\''") + "'"]
-  if (path === 'site-document') args.push('--branch', 'BRANCH_ID')
+  if (path === 'site-document' || path === 'canvas/pages/:id') args.push('--branch', 'BRANCH_ID')
   if (bodySchema) args.push('--file', 'request.json')
   if (multipart) {
     args.push('--upload', 'FILE')

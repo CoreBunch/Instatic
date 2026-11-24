@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { CanvasSnapshotSchema, inspectViewport } from './canvas'
 import manifest from './package.json' with { type: 'json' }
 import { parseArgs } from 'node:util'
 import { createHash, randomBytes } from 'node:crypto'
@@ -9,7 +10,7 @@ import { Value } from '@sinclair/typebox/value'
 const { positionals, values } = parseArgs({
   args: Bun.argv.slice(2), allowPositionals: true,
   options: {
-    account: { type: 'string' }, branch: { type: 'string' }, file: { type: 'string' }, upload: { type: 'string' },
+    node: { type: 'string' }, revision: { type: 'string' }, account: { type: 'string' }, branch: { type: 'string' }, file: { type: 'string' }, upload: { type: 'string' },
     field: { type: 'string', multiple: true }, raw: { type: 'string' },
     json: { type: 'string' }, out: { type: 'string' }, viewport: { type: 'string' },
     'no-open': { type: 'boolean' }, help: { type: 'boolean' }, version: { type: 'boolean' },
@@ -27,6 +28,11 @@ const help = `Instatic CLI
   instatic api METHOD PATH [--branch ID]      Call a CMS endpoint
     --json '{"name":"review"}' | --file changes.json | --upload FILE [--field NAME=VALUE] | --raw FILE
     --out FILE saves the response bytes
+  instatic canvas inspect PAGE_ID --branch ID [--viewport 390x844] [--out before.png] [--node NODE_ID]
+    Save a screenshot and return visible nodes, horizontal overflow, assigned CSS rules and a revision.
+  instatic canvas edit PAGE_ID --branch ID --revision REV --json '[{"op":"text","node":"NODE_ID","value":"Title"}]'
+    Or --file edits.json. Batch operations: text, inline, rule, insertHtml. CSS null removes a declaration.
+    Inspect first. Use api describe PATCH canvas/pages/:id for fields. Inspect again to verify.
   instatic screenshot PAGE_ID --branch ID --out hero.png [--viewport 1280x800]
   instatic forget                             Remove this machine's saved credential
 
@@ -113,7 +119,11 @@ async function connect(origin: string, account: string) {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, verifier }),
     })
     const { token } = checked(Type.Pick(credentialSchema, ['token']), await response.json())
-    await Bun.secrets.set({ service: 'Instatic CLI', name: account, value: JSON.stringify({ origin, token }) })
+    try {
+      await Bun.secrets.set({ service: 'Instatic CLI', name: account, value: JSON.stringify({ origin, token }) })
+    } catch (err) {
+      throw new Error('Browser approval succeeded, but the OS credential store could not save the connection. Allow this terminal to access the credential store, then run connect again.', { cause: err })
+    }
     paired.resolve(true)
     output('Connected. Run instatic whoami --account ' + account)
   } finally {
@@ -123,14 +133,23 @@ async function connect(origin: string, account: string) {
   }
 }
 
-async function capture(origin: string, token: string, pageId: string) {
-  if (!values.branch || !pageId || !values.out) throw new Error('Specify a page ID, --branch ID and --out FILE.png')
+async function capture(origin: string, token: string, pageId: string, inspect = false) {
+  if (!values.branch || !pageId || (!inspect && !values.out)) throw new Error('Specify a page ID, --branch ID and --out FILE.png')
   const viewport = /^(\d{2,4})x(\d{2,4})$/.exec(values.viewport ?? '1280x800')
   if (!viewport || Number(viewport[1]) > 4096 || Number(viewport[2]) > 4096) throw new Error('Viewport must be WIDTHxHEIGHT, up to 4096x4096')
   const width = Number(viewport[1]), height = Number(viewport[2])
-  const url = apiUrl(origin, 'branches/' + encodeURIComponent(values.branch) + '/review/render')
-  url.search = new URLSearchParams({ side: 'branch', row: pageId, width: String(width), height: String(height) }).toString()
-  const html = await (await request(url, { headers: { Authorization: 'Bearer ' + token } })).text()
+  const headers = { Authorization: 'Bearer ' + token, 'X-Instatic-Branch': values.branch }
+  const target = inspect ? 'canvas/pages/' + encodeURIComponent(pageId) : 'branches/' + encodeURIComponent(values.branch) + '/review/render'
+  const url = apiUrl(origin, target)
+  url.search = new URLSearchParams({ width: String(width), height: String(height) }).toString()
+  if (!inspect) {
+    url.searchParams.set('side', 'branch')
+    url.searchParams.set('row', pageId)
+  }
+  const response = await request(url, { headers })
+  const snapshot = inspect ? checked(CanvasSnapshotSchema, await response.json()) : undefined
+  const html = snapshot ? snapshot.html : await response.text()
+  const path = resolve(values.out ?? 'canvas-' + randomBytes(5).toString('hex') + '.png')
   const { chromium } = await import('playwright-core')
   const browser = await chromium.launch({ executablePath: process.env.INSTATIC_CHROMIUM || undefined }).catch((err: unknown) => {
     throw new Error('Could not launch Chromium. Set INSTATIC_CHROMIUM to your installed browser executable or install the matching Playwright Chromium with user approval. ' +
@@ -160,8 +179,9 @@ async function capture(origin: string, token: string, pageId: string) {
       return route.fulfill({ response: asset })
     })
     await page.goto(renderUrl, { waitUntil: 'networkidle', timeout: 30000 })
-    await page.screenshot({ path: values.out, type: 'png', timeout: 30000 })
-    output(JSON.stringify({ path: resolve(values.out), branch: values.branch, pageId, width, height, skippedResources }))
+    await page.screenshot({ path, type: 'png', timeout: 30000 })
+    const map = snapshot ? await inspectViewport(page, snapshot, values.node) : {}
+    output(JSON.stringify({ path, branch: values.branch, pageId, width, height, skippedResources, ...map }, null, 2))
   } finally { await browser.close() }
 }
 
@@ -174,7 +194,9 @@ async function main() {
   if (command === 'connect') return connect(siteOrigin(verb ?? prompt('Instatic site URL') ?? ''), account)
   const key = { service: 'Instatic CLI', name: account }
   if (command === 'forget') { await Bun.secrets.delete(key); return }
-  const stored = await Bun.secrets.get(key)
+  const stored = await Bun.secrets.get(key).catch((err: unknown) => {
+    throw new Error('Could not read the OS credential store. Allow this terminal to access it, then retry.', { cause: err })
+  })
   if (!stored) throw new Error('This account is not connected. Use the connection prompt from Instatic.')
   const { origin: savedOrigin, token } = checked(credentialSchema, JSON.parse(stored))
   const origin = siteOrigin(savedOrigin)
@@ -190,12 +212,27 @@ async function main() {
   }
   if (command === 'whoami' || (command === 'api' && verb === 'lookup')) {
     const result = checked(contextSchema, await (await request(apiUrl(origin, 'cli-context'), { headers })).json())
+    const { operations, ...identity } = result
     const words = positionals.slice(2).join(' ').toLowerCase().split(/\s+/).filter(Boolean)
-    output(JSON.stringify(command === 'whoami' ? { ...result, origin } : result.operations.filter(op => {
+    output(JSON.stringify(command === 'whoami' ? { ...identity, origin } : operations.filter(op => {
       const pathname = op.path.startsWith('/') ? op.path : endpoint + op.path
       const searchable = [op.method, pathname, op.summary, ...(op.permissions ?? []).flat()].join(' ').toLowerCase()
       return words.every(word => searchable.includes(word))
     }), null, 2))
+    return
+  }
+  if (command === 'canvas' && verb === 'inspect') return capture(origin, token, path, true)
+  if (command === 'canvas' && verb === 'edit') {
+    if (!path || !values.branch || !values.revision || Number(values.file !== undefined) + Number(values.json !== undefined) !== 1) {
+      throw new Error('Use canvas edit PAGE_ID --branch ID --revision REV and either --json EDIT_ARRAY or --file EDITS.json')
+    }
+    headers.set('X-Instatic-Branch', values.branch)
+    headers.set('Content-Type', 'application/json')
+    const edits: unknown = JSON.parse(values.file ? await Bun.file(values.file).text() : values.json!)
+    const response = await request(apiUrl(origin, 'canvas/pages/' + encodeURIComponent(path)), {
+      method: 'PATCH', headers, body: JSON.stringify({ revision: values.revision, edits }),
+    })
+    output(await response.text())
     return
   }
   if (command === 'screenshot') return capture(origin, token, verb)

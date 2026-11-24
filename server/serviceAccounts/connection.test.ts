@@ -61,6 +61,39 @@ test('CLI approval grants an expiring, revocable identity that can fork and edit
     expect((await (await read()).json()).changedPages[0].nodes.heading.props.text).toBe('May')
     const main = await h.cms(base + 'draft-page/hero-page', { headers })
     expect((await main.json()).changedPages[0].nodes.heading.props.text).toBe('April')
+    const canvas = base + 'canvas/pages/hero-page'
+    const inspection = await h.cms(canvas, { headers: branch })
+    expect(inspection.status).toBe(200)
+    const { revision, nodes } = await inspection.json()
+    expect(nodes).toContainEqual(expect.objectContaining({ node: 'heading', module: 'base.text' }))
+    const edit = (edits: unknown[], rev = revision, grant = branch as Record<string, string>) =>
+      h.cms(canvas, { headers: grant, method: 'PATCH', json: { revision: rev, edits } })
+    const title = { op: 'text', node: 'heading', value: 'June' }
+    expect((await edit([title], revision, headers)).status).toBe(400)
+    expect((await edit([title, { op: 'inline', node: 'heading', property: 'color', value: 'red' }])).status).toBe(403)
+    expect((await edit([title, { ...title, node: 'missing' }])).status).toBe(400)
+    expect((await (await read()).json()).changedPages[0].nodes.heading.props.text).toBe('May')
+    expect((await edit([title])).status).toBe(200)
+    expect((await edit([title])).status).toBe(409)
+    const ownerBranch = { 'X-Instatic-Branch': 'review' }
+    const current = await (await h.cms(canvas, { cookie: owner, headers: ownerBranch })).json()
+    const insert = await h.cms(canvas, { cookie: owner, headers: ownerBranch, method: 'PATCH', json: {
+      revision: current.revision, edits: [{ op: 'insertHtml', parent: 'body', html: '<style>.notice { color: red }</style><p class="notice">See you there</p>' }],
+    } })
+    expect(insert.status).toBe(200)
+    const imported = await (await h.cms(canvas, { headers: branch })).json()
+    expect(imported.html).toContain('See you there')
+    expect(imported.rules).toContainEqual(expect.objectContaining({ selector: '.notice', styles: expect.objectContaining({ color: 'red' }) }))
+    const rule = imported.rules.find((item: { selector: string }) => item.selector === '.notice')
+    const responsive = await h.cms(canvas, { cookie: owner, headers: ownerBranch, method: 'PATCH', json: {
+      revision: imported.revision, edits: [{ op: 'rule', rule: rule.id, context: 'mobile', property: 'white-space', value: 'normal' }],
+    } })
+    expect(responsive.status).toBe(200)
+    expect((await responsive.json()).changes[0]).toMatchObject({ property: 'whiteSpace', before: null, after: 'normal' })
+    const updated = await (await h.cms(canvas, { headers: branch })).json()
+    expect(updated.rules).toContainEqual(expect.objectContaining({ id: rule.id, contexts: { mobile: { whiteSpace: 'normal' } } }))
+    expect((await edit([title], imported.revision)).status).toBe(409)
+    expect((await (await h.cms(canvas, { headers })).json()).html).not.toContain('See you there')
     await h.db`update roles set capabilities_json = ${JSON.stringify(['site.read', 'ai.providers.manage'])} where id = ${sponsor.roleId}`
     expect((await write()).status).toBe(403)
     const future = new Date(Date.now() + 7200000).toISOString()

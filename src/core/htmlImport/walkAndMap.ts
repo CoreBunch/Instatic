@@ -480,7 +480,7 @@ export function walkAndMap(
  * surface a "Stripped: N scripts, M handlers" toast.
  */
 export function importHtml(source: string, options: ImportHtmlOptions = {}): ImportResult {
-  const doc = parseHtml(source)
+  const doc = (options.parseDocument ?? parseHtml)(source)
   // Sprite `<use>`s become real shapes before anything reads the SVG markup.
   const unresolvedSvgRefs = inlineSvgSpriteReferences(doc, options.loadSvgSprite)
   // Harvest inline styles + <style> CSS before stripUnsafe drops them.
@@ -492,6 +492,7 @@ export function importHtml(source: string, options: ImportHtmlOptions = {}): Imp
 }
 
 export interface ImportHtmlOptions {
+  parseDocument?: (source: string) => Document
   /**
    * Reads an external SVG sprite (`<use href="icons.svg#id">`, the part before
    * `#`) so its symbols can be copied inline. Without it, only same-page

@@ -12,6 +12,7 @@ import { RuntimeDependencyBodySchema, RuntimePreviewBodySchema, RuntimeValidatio
 import { GoogleFontSelectionBodySchema, CustomFontBodySchema } from '../../handlers/cms/fonts'
 import { SITE_WRITE_CAPABILITIES } from '../../handlers/cms/siteDocument'
 import { SearchQuerySchema } from '../../handlers/cms/registry'
+import { CanvasEditSchema } from '../../canvas/edit'
 import { operation as op } from './operation'
 
 const read = 'site.read'
@@ -31,6 +32,8 @@ export const siteOperations = [
   op('GET', 'pages', read, 'List page rows'),
   op('GET', 'layouts', read, 'List saved layouts'),
   op('GET', 'components', read, 'List visual components'),
+  op('GET', 'canvas/pages/:id', read, 'Inspect the rendered canvas, editable nodes, shared styles and revision. Use instatic canvas inspect for a PNG and layout measurements.', { querySchema: Type.Partial(Type.Object({ width: Type.Integer({ minimum: 10, maximum: 4096 }), height: Type.Integer({ minimum: 10, maximum: 4096 }) })) }),
+  op('PATCH', 'canvas/pages/:id', [[read], SITE_WRITE_CAPABILITIES], 'Apply targeted canvas edits atomically with an explicit --branch and the inspected revision. Rule edits affect the shared selector.', { bodySchema: CanvasEditSchema, example: { revision: 'FROM_INSPECT', edits: [{ op: 'text', node: 'NODE_ID', value: 'New heading' }] } }),
   op('GET', 'draft-page/:id', read, 'Read an editable page payload with base sequences'),
   op('PUT', 'site-document', SITE_WRITE_CAPABILITIES, 'Save a document with an explicit --branch. Start from draft-page/:id and retain the base sequences. The CMS checks permissions for each change.', { bodySchema: Type.Object({ ...SiteDocumentBodySchema.properties, site: SiteShellSchema, changedPages: Type.Array(PageSchema) }, { additionalProperties: false }) }),
   op('GET', 'branches', read, 'List branch IDs and names'),
