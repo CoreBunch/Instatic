@@ -23,7 +23,7 @@
  * engine saved layouts use, so paste and layout insertion cannot drift.
  */
 
-import type { StyleRule, Page, PageNode } from '@core/page-tree'
+import type { NodeTree, StyleRule, PageNode } from '@core/page-tree'
 import { getParent } from '@core/page-tree'
 import { firstOutletId, treeHasOutlet } from '@core/templates'
 import { pushToast } from '@ui/components/Toast'
@@ -41,7 +41,7 @@ import {
 } from '@site/store/clipboard/clipboardStorage'
 import { resolveInsertLocation } from '@site/store/insertLocation'
 import type { EditorStoreSliceCreator } from '@site/store/types'
-import { buildSiteHelpers } from './site/helpers'
+import { buildSiteHelpers, resolveActiveTreeTarget } from './site/helpers'
 
 /**
  * In-memory snapshot of the latest copy/cut. Mirrors the persisted payload
@@ -97,13 +97,18 @@ declare module '@site/store/types' {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Find the active Page document on the store, ignoring VC mode. */
-function getActivePage(state: {
-  site: { pages: Page[] } | null
-  activePageId: string | null
-}): Page | null {
-  if (!state.site || !state.activePageId) return null
-  return state.site.pages.find((p) => p.id === state.activePageId) ?? null
+/**
+ * Resolve the active NodeTree the clipboard operates on — a Page/template OR
+ * a Visual Component's tree, whichever `activeDocument` points at. Routes
+ * through `resolveActiveTreeTarget`, the same VC-aware resolution every named
+ * tree-mutation action uses (see `mutateActiveTree`), so copy/cut/paste work
+ * identically regardless of which kind of document is open. A page-only
+ * lookup here (the previous implementation) silently resolved to whatever
+ * page was active *before* switching into VC mode, since `activePageId` is
+ * left untouched on VC entry — breaking every clipboard op against a VC.
+ */
+function getActiveTree(state: Parameters<typeof resolveActiveTreeTarget>[0]): NodeTree<PageNode> | null {
+  return resolveActiveTreeTarget(state)?.tree ?? null
 }
 
 /**
@@ -112,18 +117,18 @@ function getActivePage(state: {
  *
  * Returned ids preserve input order.
  */
-function topLevelOnly(page: Page, ids: string[]): string[] {
+function topLevelOnly(tree: NodeTree<PageNode>, ids: string[]): string[] {
   const idSet = new Set(ids)
   const result: string[] = []
   for (const id of ids) {
-    let ancestor = getParent(page, id)
+    let ancestor = getParent(tree, id)
     let dominated = false
     while (ancestor) {
       if (idSet.has(ancestor.id)) {
         dominated = true
         break
       }
-      ancestor = getParent(page, ancestor.id)
+      ancestor = getParent(tree, ancestor.id)
     }
     if (!dominated) result.push(id)
   }
@@ -166,17 +171,18 @@ export const createClipboardSlice: EditorStoreSliceCreator<ClipboardSlice> = (
   /** Shared implementation for `copyNode` / `copyNodes`. */
   function copyImpl(nodeIds: string[]): boolean {
     const state = get()
-    const page = getActivePage(state)
-    if (!page) return false
+    const tree = getActiveTree(state)
+    if (!tree) return false
     if (nodeIds.length === 0) return false
 
-    // Refuse to include the page root — duplicating "the entire page body" has
-    // no meaningful target placement and matches existing root-guard policy.
-    const filtered = nodeIds.filter((id) => id !== page.rootNodeId)
+    // Refuse to include the tree root — duplicating "the entire document
+    // body" has no meaningful target placement and matches existing
+    // root-guard policy.
+    const filtered = nodeIds.filter((id) => id !== tree.rootNodeId)
     if (filtered.length === 0) return false
 
-    const tops = topLevelOnly(page, filtered)
-    const subtrees = collectSubtreeNodes(page, tops)
+    const tops = topLevelOnly(tree, filtered)
+    const subtrees = collectSubtreeNodes(tree, tops)
     if (!subtrees) return false
 
     const siteClasses = state.site?.styleRules ?? {}
@@ -201,9 +207,9 @@ export const createClipboardSlice: EditorStoreSliceCreator<ClipboardSlice> = (
 
     cutNode: (nodeId) => {
       const state = get()
-      const page = getActivePage(state)
-      if (!page) return false
-      if (page.rootNodeId === nodeId) return false
+      const tree = getActiveTree(state)
+      if (!tree) return false
+      if (tree.rootNodeId === nodeId) return false
 
       // Copy first; if copy fails (orphan node), don't delete.
       if (!state.copyNode(nodeId)) return false
@@ -215,8 +221,8 @@ export const createClipboardSlice: EditorStoreSliceCreator<ClipboardSlice> = (
 
     cutNodes: (nodeIds) => {
       const state = get()
-      const page = getActivePage(state)
-      if (!page) return false
+      const tree = getActiveTree(state)
+      if (!tree) return false
       if (nodeIds.length === 0) return false
       if (!state.copyNodes(nodeIds)) return false
       // Single undo step for the whole multi-cut. `deleteNodes` orders by
@@ -230,16 +236,16 @@ export const createClipboardSlice: EditorStoreSliceCreator<ClipboardSlice> = (
       const entry = state.clipboardEntry
       if (!entry || entry.rootNodeIds.length === 0) return null
 
-      const page = getActivePage(state)
-      if (!page) return null
-      const location = resolveInsertLocation(page, targetNodeId)
+      const tree = getActiveTree(state)
+      if (!tree) return null
+      const location = resolveInsertLocation(tree, targetNodeId)
       if (!location) return null
 
       // One-outlet-per-document invariant: a copied payload can carry a
       // base.outlet (e.g. a whole template section). Pasting it into a
       // document that already has an outlet would mint a second, dead one —
       // same guard as the store's insertNode / duplicateNode chokepoints.
-      if (firstOutletId(entry.nodes) !== null && treeHasOutlet(page)) {
+      if (firstOutletId(entry.nodes) !== null && treeHasOutlet(tree)) {
         pushToast({
           kind: 'warning',
           title: 'Only one content outlet',
@@ -257,11 +263,15 @@ export const createClipboardSlice: EditorStoreSliceCreator<ClipboardSlice> = (
       // snapshot engine.
       const newRootIds: string[] = []
       mutateSiteState((draft, site) => {
-        const draftPage = site.pages.find((p) => p.id === draft.activePageId)
-        if (!draftPage) return false
+        // Re-resolve against the draft rather than reusing the frozen `tree`
+        // above — this must read/write the draft's own tree object (a Page OR
+        // a Visual Component's tree; VCs live in `site.visualComponents`, not
+        // `site.pages`, so this can't be a plain page lookup).
+        const draftTree = resolveActiveTreeTarget(draft)?.tree
+        if (!draftTree) return false
 
         newRootIds.push(...insertSnapshotSubtrees(
-          draftPage,
+          draftTree,
           site,
           { rootNodeIds: entry.rootNodeIds, nodes: entry.nodes, classes: entry.classes },
           location,
