@@ -17,7 +17,8 @@ import {
   upsertDataRowDraft,
 } from '../../repositories/data'
 import { parseContent } from '../contentHash'
-import { fieldChanges, treeDiff } from '../changeDetail'
+import { fieldChanges } from '../fieldChanges'
+import { treeDiff } from '../changeDetail'
 import type { BranchEntityAdapter, BranchEntityOf } from './adapter'
 
 const RowContentSchema = Type.Object({
