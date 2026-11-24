@@ -20,6 +20,7 @@ import {
   getOpenMergeRequest,
   insertMergeRequest,
   insertReviewComment,
+  listReviewAssignees,
   listReviewComments,
 } from '../repositories/branchReviews'
 
@@ -50,16 +51,17 @@ export async function branchContentHash(db: DbClient, branchId: string): Promise
   return digest.digest('hex')
 }
 
-export async function readBranchReviewState(db: DbClient, branch: SiteBranch): Promise<BranchReviewState> {
+export async function readBranchReviewState(db: DbClient, branch: SiteBranch, owner: string | null, run: string | null): Promise<BranchReviewState> {
   // Same reason as the plan: the hash must see what the editors see.
   await runPublishFlush()
-  const [request, comments, hash, lastMerge] = await Promise.all([
+  const [request, comments, hash, lastMerge, assignees] = await Promise.all([
     getLatestMergeRequest(db, branch.id),
     listReviewComments(db, branch.id),
     branchContentHash(db, branch.id),
     getLatestBranchMerge(db, branch.id, 'merge'),
+    listReviewAssignees(db, branch.id, owner, run),
   ])
-  return { branch, request, comments, contentHash: hash, lastMerge }
+  return { branch, request, comments, contentHash: hash, lastMerge, assignees }
 }
 
 /** True when the error is the partial unique index on open requests firing. */
@@ -115,7 +117,7 @@ export async function markMergeRequestMerged(
 
 export async function addReviewComment(
   db: DbClient,
-  input: { branchId: string; authorUserId: string; entityKey: string; body: string },
+  input: { branchId: string; authorUserId: string; entityKey: string; body: string; assigneeAccountId?: string },
 ): Promise<BranchReviewComment> {
   const open = await getOpenMergeRequest(db, input.branchId)
   return insertReviewComment(db, {
@@ -124,5 +126,6 @@ export async function addReviewComment(
     entityKey: input.entityKey,
     authorUserId: input.authorUserId,
     body: input.body.trim(),
+    assigneeAccountId: input.assigneeAccountId,
   })
 }

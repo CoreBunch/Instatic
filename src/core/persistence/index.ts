@@ -135,6 +135,7 @@ export {
   withdrawCmsBranchMergeRequest,
   declineCmsBranchMergeRequest,
   addCmsBranchReviewComment,
+  resolveCmsReviewComment,
   cmsBranchReviewRenderUrl,
 } from './cmsBranches'
 export {

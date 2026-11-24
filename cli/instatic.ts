@@ -13,7 +13,7 @@ const { positionals, values } = parseArgs({
   args: Bun.argv.slice(2), allowPositionals: true,
   options: {
     node: { type: 'string' }, revision: { type: 'string' }, account: { type: 'string' }, branch: { type: 'string' }, file: { type: 'string' }, upload: { type: 'string' },
-    field: { type: 'string', multiple: true }, raw: { type: 'string' },
+    field: { type: 'string', multiple: true }, raw: { type: 'string' }, 'group-run': { type: 'string' },
     json: { type: 'string' }, out: { type: 'string' }, viewport: { type: 'string' },
     live: { type: 'boolean' }, 'no-open': { type: 'boolean' }, help: { type: 'boolean' }, version: { type: 'boolean' },
   },
@@ -24,6 +24,7 @@ function output(text: string) {
 
 const help = `Instatic CLI
   instatic connect SITE --account ID          Authorize this machine in your browser
+  instatic connect SITE --account ID --group-run RUN_ID   Use INSTATIC_ENROLLMENT_KEY and wait for the group owner's approval
   instatic check membership [--live] [--out DIRECTORY]    Check published forms and anonymous access; --live exercises a disposable signup
   instatic api lookup "public signup"          Get the membership workflow, live settings and native form operations
   instatic whoami                             Show the current grant
@@ -84,6 +85,29 @@ async function connect(origin: string, account: string) {
   const state = randomBytes(32).toString('base64url')
   const verifier = randomBytes(32).toString('base64url')
   const challenge = createHash('sha256').update(verifier).digest('base64url')
+  const runId = values['group-run']
+  if (runId !== undefined) {
+    const enrollmentKey = process.env.INSTATIC_ENROLLMENT_KEY
+    if (!runId || !enrollmentKey) throw new Error('Use the run ID and INSTATIC_ENROLLMENT_KEY from your group prompt.')
+    const call = (action: string, body: Record<string, string>) => request(apiUrl(origin, 'service-accounts/' + account + '/' + action), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    })
+    const enrollment = await call('enroll', { runId, enrollmentKey, challenge })
+    checked(Type.Object({ ok: Type.Literal(true) }), await enrollment.json())
+    process.stderr.write('Pairing code ' + challenge.slice(0, 8) + ' for ' + account + '. Waiting for approval in the group run.\n')
+    for (;;) {
+      const response = await call('poll', { verifier })
+      if (response.status === 202) {
+        checked(Type.Object({ pending: Type.Literal(true) }), await response.json())
+        await Bun.sleep(2000)
+        continue
+      }
+      const { token } = checked(Type.Pick(credentialSchema, ['token']), await response.json())
+      await saveCredential(account, JSON.stringify({ origin, token }))
+      output('Connected. Run instatic whoami --account ' + account)
+      return
+    }
+  }
   const approval = Promise.withResolvers<string>()
   const paired = Promise.withResolvers<boolean>()
   function returnToAccount(outcome?: 'declined' | 'failed') {

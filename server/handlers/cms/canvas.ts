@@ -1,4 +1,5 @@
 import type { AuthUser } from '../../repositories/users'
+import { servicePrincipal } from '../../auth/servicePrincipal'
 import { canvasModules, canvasCollections } from '../../canvas/catalog'
 import { canReadTable, hasContentRowAccess } from '../../auth/dataAccess'
 import { getBranch } from '../../repositories/branches'
@@ -31,10 +32,11 @@ async function inspectRevision(db: DbClient, scope: BranchScope, pageId: string)
   return canvasRevision(scope.branchId, pageId, rows[0]?.seq, shell)
 }
 
-async function visitBranch(db: DbClient, scope: BranchScope, user: AuthUser, url: URL) {
+async function visitBranch(req: Request, db: DbClient, scope: BranchScope, user: AuthUser, url: URL) {
   if (isMainBranch(scope.branchId)) return badRequest('Choose a review branch to visit its draft')
   const branch = await getBranch(db, scope.branchId)
-  if (!branch || !canActOnBranch(user, branch)) return jsonResponse({ error: 'Branch preview permission required' }, { status: 403 })
+  const assigned = servicePrincipal(req)?.group?.branchId === scope.branchId
+  if (!branch || (!assigned && !canActOnBranch(user, branch))) return jsonResponse({ error: 'Branch preview permission required' }, { status: 403 })
   const path = url.searchParams.get('path')
   if (!path?.startsWith('/') || path.startsWith('//') || path.includes('\\')) return badRequest('Expected a public site path')
   let target: URL
@@ -69,7 +71,7 @@ export async function handleCanvas(req: Request, db: DbClient, scope: BranchScop
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
   if ((catalog || visitor) && req.method !== 'GET') return methodNotAllowed()
-  if (visitor) return visitBranch(db, scope, user, url)
+  if (visitor) return visitBranch(req, db, scope, user, url)
   if (catalog) return readCatalog(db, scope, user, url.searchParams)
   if (!match) {
     if (req.method !== 'GET') return methodNotAllowed()

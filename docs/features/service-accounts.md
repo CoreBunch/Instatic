@@ -5,13 +5,33 @@ An external agent can use the CMS API from an existing Codex or Claude Code sess
 ## Connect an agent
 
 1. Open **AI → CLI → Create CLI connection**. Enter a name, choose the connection lifetime, and select permissions you hold. The Roles picker groups supported permissions by feature and offers **Select all** and **Clear all** across the form or within each group. For a copy-editing agent that can create its own branch, choose **View site**, **Create branches**, and **Edit site content**. Add **Edit site styles** or **Edit site structure** if its job includes those changes.
-2. The new connection opens in the inspector. Choose **Copy agent prompt** and paste it into the agent session. The prompt asks the agent to check the installed CLI, obtain your approval if installation is needed, then run the connection command. The versioned package comes from your installation. The command contains the origin and public account ID.
+2. The new connection opens on its detail screen. Choose **Copy agent prompt** and paste it into the agent session. The prompt asks the agent to check the installed CLI, obtain your approval if installation is needed, then run the connection command. The versioned package comes from your installation. The command contains the origin and public account ID.
 3. Match the code in the terminal with the one shown in your browser, review permissions and expiry, and choose **Authorize CLI**. After pairing, the browser returns to the connection and shows **Connected**. Creation and approval use admin step-up. Remote sites need an HTTPS public origin. A local loopback site can pair over HTTP.
 4. Give the session a task such as “Create a branch called review, fix the hero heading on the homepage, check it at mobile width, and tell me what you changed.” The agent reports back in that session.
 
 The CLI requires Bun 1.4. Pair on the machine running the agent. A sandboxed terminal needs permission to listen on loopback and write to its private credential directory. Pairing uses a temporary listener on 127.0.0.1, a random state, a one-minute single-use authorization code and an S256 proof. Use `connect --no-open` to open the printed URL yourself.
 
 CLI 1.4 stores the opaque bearer credential in the current user’s profile. On Unix, the default directory is `~/.instatic/credentials` (0700), with one file per account (0600). On Windows the default is the Instatic credentials directory under Local AppData and it inherits the profile’s ACL. Set `INSTATIC_CREDENTIAL_DIR` to an absolute private directory for an isolated agent workspace. Protect this directory as a secret. Upgrading from the keychain-backed CLI requires one new pairing. Completing the exchange replaces the previous device credential. The CMS retains only its hash.
+
+## Agent groups and activity
+
+**AI → CLI** lists individual connections and reusable groups. Both open the same Activity, Access and Agents view. Expand a member to see their permissions and responsibilities. The owner-only activity feed combines connection lifecycle events with the most recent authenticated CMS operations. It shows the agent, branch when supplied, time and unsuccessful HTTP status. Request bodies, query strings, tokens and rendered content are excluded. Each account retains its latest 100 operation entries. This is an operational history, not a complete audit trail.
+
+**Create group** defines a template of up to 16 named roles. **Start run** selects a non-main branch the owner can manage, a task and a lifetime. Each run snapshots the roster, with a separate expiring identity for each member. Editing the template affects future runs. **End run** revokes the entire roster. Run history remains available after access ends.
+
+## Pair each member of a group run
+
+CLI 1.6 accepts a run ID and a one-time enrollment key for each member. Run each command in its assigned agent session with that member's account ID. The generated group prompt supplies the values.
+
+```sh
+INSTATIC_ENROLLMENT_KEY='MEMBER_ENROLLMENT_KEY' instatic connect 'SITE_ORIGIN' --account MEMBER_ACCOUNT_ID --group-run RUN_ID
+```
+
+The CLI generates a private verifier, enrolls its SHA-256 challenge, displays the first eight characters of that challenge and waits. The owner compares each code with its named member in the run and approves the roster. Each CLI then exchanges its verifier once and saves the returned credential under its own account. Group pairing works across machines without a loopback callback.
+
+`instatic whoami --account MEMBER_ACCOUNT_ID` returns the shared branch, task, responsibility and effective permissions. Pass `--branch BRANCH_ID` to every canvas and review command for the run. Members can inspect pages and visitor previews, compare their branch with main, comment, request review and withdraw their own request. Canvas edits require the corresponding site edit permission. The owner can end a run to revoke its members together.
+
+`server/serviceAccounts/groupScope.ts` restricts group discovery and requests to reviewed operations. It verifies the branch header, the branch in review URLs and the branch side for rendered screenshots. The server rechecks the sponsor's current authority over that branch and intersects member grants with their sponsor's current permissions on every call.
 
 ## Use the CLI
 
@@ -76,7 +96,7 @@ A failed navigation or assertion exits nonzero and identifies the step. With `--
 
 ## Permissions and lifecycle
 
-- A connector receives grants from the same capability list as a custom role. Role management is reserved for the installation owner. **Select all** grants the available capabilities you currently hold. The connector’s scope is installation-wide. A branch ID selects a draft. A connector with site-edit capabilities can also target main. The CLI requires an explicit branch for a site-document save.
+- A connector receives grants from the same capability list as a custom role. Role management is reserved for the installation owner. **Select all** grants the available capabilities you currently hold. An individual connector’s scope is installation-wide. A branch ID selects a draft. A connector with site-edit capabilities can also target main. The CLI requires an explicit branch for a site-document save.
 - Each CLI connection uses a distinct service account in the CMS. Content ownership, branch ownership and existing mutation audit records identify that actor. It has no interactive login. The creating administrator owns management and approval of its connection.
 - Every authenticated call checks the connector’s expiry and revocation, its creator’s current account status and connector-management permission, and the intersection of the selected capabilities with the creator’s current capabilities. The target handler enforces its own row, branch, role and write-diff policies.
 - The CLI can call operational HTTP endpoints under `/admin/api/cms/` and `/admin/api/ai/`, including plugin installation, user administration, exports and publishing. Each handler applies its normal capability and ownership checks. Login, personal security, connector issuance and browser workspace callbacks require a browser session. Omit `--branch` for installation-wide changes such as plugin installation.

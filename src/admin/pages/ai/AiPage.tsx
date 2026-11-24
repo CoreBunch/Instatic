@@ -44,8 +44,9 @@ export function AiPage() {
   if (canManage) availableSections.push('providers', 'defaults', 'mcp', 'service')
   if (canReadAudit) availableSections.push('audit')
 
-  const initialAccount = new URLSearchParams(location.search).get('service-account')
-  const [section, setSection] = useState<Section>(initialAccount ? 'service' : 'providers')
+  const query = new URLSearchParams(location.search)
+  const initialAccount = query.get('service-account')
+  const [section, setSection] = useState<Section>(initialAccount || query.has('group') || query.has('cli') ? 'service' : 'providers')
   const activeSection = availableSections.includes(section)
     ? section
     : availableSections[0] ?? 'providers'

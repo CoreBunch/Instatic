@@ -47,6 +47,7 @@ const AuditActionSchema = Type.Union([
   Type.Literal('branch.review.withdraw'),
   Type.Literal('branch.review.decline'),
   Type.Literal('branch.review.comment'),
+  Type.Literal('branch.review.resolve'),
   Type.Literal('version.restore'),
   Type.Literal('plugin.install'),
   Type.Literal('plugin.update'),

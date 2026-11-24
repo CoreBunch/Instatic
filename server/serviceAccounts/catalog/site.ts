@@ -55,11 +55,12 @@ export const siteOperations = [
   op('GET', 'branches/:id/update', read, 'Plan an update from main'),
   op('POST', 'branches/:id/update', ownBranch, 'Update the branch from main using the current plan', { bodySchema: ApplyMergeBodySchema }),
   op('POST', 'branches/:id/update/undo', ownBranch, 'Undo the latest branch update'),
-  op('GET', 'branches/:id/review', read, 'Read the merge request and review comments'),
+  op('GET', 'branches/:id/review', read, 'Read the merge request, review comments, and available assignees'),
   op('POST', 'branches/:id/review/request', read, 'Request review of a branch', { bodySchema: CreateMergeRequestBodySchema }),
   op('POST', 'branches/:id/review/withdraw', read, 'Withdraw your review request, or any request with branch management'),
   op('POST', 'branches/:id/review/decline', manage, 'Decline a review request', { bodySchema: DeclineMergeRequestBodySchema }),
   op('POST', 'branches/:id/review/comments', read, 'Comment on a branch review', { bodySchema: CreateReviewCommentBodySchema }),
+  op('POST', 'branches/:id/review/comments/:commentId/resolve', read, 'Resolve a review comment after checking the correction. The owner or original reviewer may resolve it.'),
   op('GET', 'branches/:id/review/render', read, 'Render a page for review. Use instatic screenshot to capture it.', { querySchema: Type.Object({
     row: Type.String({ description: 'Page row ID' }), side: Type.Union([Type.Literal('branch'), Type.Literal('main')]),
     width: Type.Optional(Type.Integer({ minimum: 10, maximum: 4096 })), height: Type.Optional(Type.Integer({ minimum: 10, maximum: 4096 })),

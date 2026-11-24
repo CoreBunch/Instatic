@@ -231,10 +231,76 @@ test('connect an external CLI, work on a branch, then revoke it (AI-013)', async
     await page.getByRole('button', { name: 'Launch editor', exact: true }).click()
     await page.getByRole('button', { name: 'Revoke access' }).click()
     await page.getByRole('alertdialog').getByRole('button', { name: 'Revoke access' }).click()
-    await expect(page.getByRole('row').filter({ hasText: 'Launch editor' }).getByText('Revoked', { exact: true })).toBeVisible()
+    await expect(details).toContainText('Revoked')
     await expect(run('whoami')).rejects.toThrow(/401/)
   } finally {
     child.kill()
     await import('node:fs/promises').then(fs => fs.rm(credentials, { recursive: true, force: true }))
   }
+})
+
+test('review a team roster, approve its devices together and end the run (AI-014)', async ({ page, baseURL }) => {
+  const { createHash, randomBytes } = await import('node:crypto')
+  const base = '/admin/api/cms/service-accounts'
+  await login(page)
+  const branch = 'cli-team-' + Date.now()
+  const fork = await page.request.post('/admin/api/cms/branches', { headers: { origin: baseURL! }, data: { name: branch } })
+  expect(fork.ok()).toBe(true)
+  await page.goto('/admin/ai?cli')
+  await page.getByRole('button', { name: 'Create group' }).click()
+  const name = 'Team ' + branch
+  await page.getByLabel('Group name').fill(name)
+  await page.getByRole('button', { name: 'Use sample team' }).click()
+  await page.getByRole('button', { name: 'Create group', exact: true }).click()
+  const detail = page.getByRole('article', { name: 'Connection details' })
+  await detail.getByRole('button', { name: 'Start run' }).click()
+  const form = page.getByRole('dialog', { name: 'Start a team run' })
+  await form.getByLabel('Branch', { exact: true }).click()
+  await page.getByRole('option', { name: branch, exact: true }).click()
+  await form.getByLabel('Task', { exact: true }).fill('Review the homepage together.')
+  const created = page.waitForResponse(r => r.url().endsWith('/runs') && r.status() === 201)
+  await form.getByRole('button', { name: 'Create run' }).click()
+  await completeStepUp(page)
+  const { run, invites } = await (await created).json()
+  const devices = invites.map((invite: { accountId: string; enrollmentKey: string }) => {
+    const verifier = randomBytes(32).toString('base64url')
+    return { ...invite, verifier, challenge: createHash('sha256').update(verifier).digest('base64url') }
+  })
+  const anonymous = await page.context().browser()!.newContext({ baseURL })
+  try {
+    for (const device of devices) {
+      const res = await anonymous.request.post(base + '/' + device.accountId + '/enroll', { headers: { origin: baseURL! },
+        data: { runId: run.id, enrollmentKey: device.enrollmentKey, challenge: device.challenge } })
+      expect(res.ok()).toBe(true)
+    }
+    await detail.getByRole('button', { name: /Review requests/ }).click()
+    const consent = page.getByRole('dialog', { name: 'Approve team access' })
+    for (const device of devices) await expect(consent.getByText(device.challenge.slice(0, 8), { exact: true })).toBeVisible({ timeout: 15000 })
+    await consent.getByRole('button', { name: 'Approve 3 agents' }).click()
+    await completeStepUp(page)
+    const tokens: string[] = []
+    for (const device of devices) {
+      const result = await anonymous.request.post(base + '/' + device.accountId + '/poll', {
+        headers: { origin: baseURL! }, data: { verifier: device.verifier } })
+      expect(result.status()).toBe(200)
+      const { token } = await result.json()
+      tokens.push(token)
+      const review = await anonymous.request.get('/admin/api/cms/branches/' + branch + '/review',
+        { headers: { authorization: 'Bearer ' + token, 'X-Instatic-Branch': branch } })
+      expect(review.ok()).toBe(true)
+    }
+    await expect(detail.getByText('Read the branch review', { exact: true })).toHaveCount(3, { timeout: 15000 })
+    for (const title of ['Activity', 'Access', 'Agents']) await expect(detail.getByRole('heading', { name: title, exact: true })).toBeVisible()
+    for (const title of ['Open branch review', 'Edit group', 'End run']) {
+      const action = detail.getByRole('button', { name: title, exact: true })
+      await expect(action).toBeVisible()
+      await expect(action).not.toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+    }
+    await detail.getByRole('button', { name: 'End run' }).click()
+    await page.getByRole('alertdialog').getByRole('button', { name: 'End run' }).click()
+    await expect(detail).toContainText('Run ended')
+    for (const token of tokens) {
+      expect((await anonymous.request.get('/admin/api/cms/cli-context', { headers: { authorization: 'Bearer ' + token } })).status()).toBe(401)
+    }
+  } finally { await anonymous.close() }
 })

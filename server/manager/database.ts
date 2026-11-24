@@ -72,6 +72,11 @@ export function revokeStagedSessions(file: string): void {
       // Table names are the fixed literals above, never caller input.
       if (tables.has(table)) db.exec(`delete from ${table}`)
     }
+    if (tables.has('service_account_runs')) {
+      const now = new Date().toISOString()
+      db.query('update service_account_runs set revoked_at = ? where revoked_at is null').run(now)
+      db.query('update service_accounts set enrollment_key_hash = null, revoked_at = ? where group_run_id is not null and revoked_at is null').run(now)
+    }
     if (tables.has('service_accounts')) {
       db.exec('update service_accounts set token_hash = null, code_hash = null, code_challenge = null, code_expires_at = null')
     }

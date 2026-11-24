@@ -1884,4 +1884,51 @@ export const pgMigrations: Migration[] = [
       alter table service_accounts add column token_step_up_expires_at text;
     `,
   },
+  {
+    id: '043_service_account_groups',
+    sql: `
+      create table service_account_groups (
+        id text primary key,
+        owner_id text not null references users(id),
+        label text not null,
+        members_json jsonb not null
+      );
+      create index service_account_groups_owner_idx on service_account_groups(owner_id);
+      create table service_account_runs (
+        id text primary key,
+        group_id text not null references service_account_groups(id),
+        branch_id text references site_branches(id) on delete set null,
+        task text not null,
+        created_at text not null,
+        expires_at text not null,
+        approved_at text,
+        revoked_at text
+      );
+      create index service_account_runs_group_idx on service_account_runs(group_id, created_at);
+      create index service_account_runs_branch_idx on service_account_runs(branch_id);
+      alter table service_accounts add column group_run_id text references service_account_runs(id);
+      alter table service_accounts add column group_position integer;
+      alter table service_accounts add column responsibility text;
+      alter table service_accounts add column enrollment_key_hash text;
+      create unique index service_accounts_roster_idx on service_accounts(group_run_id, group_position);
+
+      create table service_account_activity (
+        id text primary key,
+        account_id text not null references service_accounts(id) on delete cascade,
+        title text not null,
+        scope text,
+        http_status integer not null,
+        occurred_at text not null
+      );
+      create index service_account_activity_account_idx on service_account_activity(account_id, occurred_at desc, id);
+    `,
+  },
+  {
+    id: '044_branch_review_assignments',
+    sql: `
+      alter table site_branch_review_comments add column assignee_account_id text references service_accounts(id);
+      alter table site_branch_review_comments add column resolved_at text;
+      alter table site_branch_review_comments add column resolved_by_user_id text references users(id);
+    `,
+  },
 ]

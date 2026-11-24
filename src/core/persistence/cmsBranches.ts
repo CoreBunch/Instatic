@@ -184,6 +184,15 @@ export async function addCmsBranchReviewComment(id: string, body: CreateReviewCo
   return payload.comment
 }
 
+export async function resolveCmsReviewComment(branchId: string, commentId: string): Promise<BranchReviewComment> {
+  const payload = await apiRequest(`${reviewPath(branchId)}/comments/${encodeURIComponent(commentId)}/resolve`, {
+    method: 'POST',
+    schema: ReviewCommentEnvelopeSchema,
+    fallbackMessage: 'Failed to resolve the correction',
+  })
+  return payload.comment
+}
+
 /** URL of one page's HTML as `side` renders it — for a sandboxed iframe, not for fetch. */
 export function cmsBranchReviewRenderUrl(id: string, rowId: string, side: ReviewRenderSide): string {
   return `${reviewPath(id)}/render?row=${encodeURIComponent(rowId)}&side=${side}`

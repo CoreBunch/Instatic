@@ -1,25 +1,27 @@
-import { useEffect, useRef, useState } from 'react'
-import { CodeIcon } from 'pixel-art-icons/icons/code'
+import { useEffect, useState, type ReactNode } from 'react'
+import { ChevronRightIcon } from 'pixel-art-icons/icons/chevron-right'
+import { CliIdentityIcon } from './CliIdentityIcon'
 import { CopySolidIcon } from 'pixel-art-icons/icons/copy-solid'
 import { apiRequest } from '@core/http'
-import { ServiceOverviewSchema, ServiceCodeSchema, type ServiceAccount } from '@core/serviceAccounts'
+import { ServiceOverviewSchema, ServiceCodeSchema, ServiceGroupRunCreatedSchema, ServiceGroupOverviewSchema, type ServiceAccount, type ServiceGroupRun } from '@core/serviceAccounts'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { Type } from '@core/utils/typeboxHelpers'
+import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { AdminPageLayout } from '@admin/layouts/AdminPageLayout'
-import { useLocation } from '@admin/lib/routing'
+import { useLocation, useNavigate } from '@admin/lib/routing'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { capabilityLabel } from '@admin/shared/CapabilityPicker'
-import { DirectoryInspector } from '@admin/shared/Directory/DirectoryInspector'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { cn } from '@ui/cn'
 import { Alert } from '@ui/components/Alert'
 import { Button } from '@ui/components/Button'
-import { DataTable, DataTableHead, DataTableBody, DataTableRow, DataTableHeader, DataTableCell } from '@ui/components/DataTable'
 import { Dialog } from '@ui/components/Dialog'
-import { EmptyState } from '@ui/components/EmptyState'
 import { Heading } from '@ui/components/Heading'
 import { Text } from '@ui/components/Text'
 import { pushToast } from '@ui/components/Toast'
+import { ConnectionDetail } from './ConnectionDetail'
+import { AgentGroupEditor, StartTeamRunDialog, TeamRunControls } from './AgentGroupForms'
+import { FormField } from '@ui/components/FormField'
+import { Select } from '@ui/components/Select'
 import { CreateServiceAccountDialog } from './CreateServiceAccountDialog'
 import styles from './ServiceAccounts.module.css'
 import directory from '@admin/shared/Directory/Directory.module.css'
@@ -58,12 +60,6 @@ function agentPrompt(origin: string, account: string, filename: string) {
 }
 
 const expires = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-const inspectorId = 'service-account-inspector'
-
-function AccountStatus({ account }: { account: ServiceAccount }) {
-  const inactive = account.revoked || account.expired
-  return <span className={directory.status} data-tone={inactive ? 'neutral' : account.connected ? undefined : 'warning'}>{status(account)}</span>
-}
 
 function AccountFacts({ account }: { account: ServiceAccount }) {
   return <dl className={directory.facts}>
@@ -72,98 +68,134 @@ function AccountFacts({ account }: { account: ServiceAccount }) {
   </dl>
 }
 
+function runState(run: ServiceGroupRun | undefined) {
+  if (!run) return 'Ready to run'
+  if (run.revoked) return 'Run ended'
+  if (run.expired) return 'Expired'
+  if (!run.approved) return 'Awaiting approval'
+  return 'Run active'
+}
+function DirectorySection({ title, description, create, rows, group, open }: {
+  title: string; description: string; create: ReactNode; group?: boolean
+  rows: { id: string; label: string; summary: string; status: string }[]; open: (id: string) => void
+}) {
+  return <section aria-label={title} className={cn(layout.detailCard, styles.directoryCard)}>
+    <div className={layout.sectionHeader}>
+      <div><Heading level={3}>{title}</Heading><Text variant="muted" size="sm">{description}</Text></div>
+      {create}
+    </div>
+    {rows.length > 0 && <ul className={styles.directoryList}>{rows.map(row => (
+      <li key={row.id}>
+        <Button variant="ghost" align="start" fullWidth className={styles.directoryRow}
+          aria-labelledby={row.id + '-label'} aria-describedby={row.id + '-summary ' + row.id + '-status'} onClick={() => open(row.id)}>
+          {group ? <CliIdentityIcon group /> : <CliIdentityIcon agent={row.label} />}
+          <span className={cn(directory.identityText, styles.identity)}>
+            <strong id={row.id + '-label'}>{row.label}</strong>
+            <small id={row.id + '-summary'}>{row.summary}</small>
+          </span>
+          <span className={styles.directoryStatus} id={row.id + '-status'}>{row.status}</span>
+          <ChevronRightIcon size={14} aria-hidden="true" />
+        </Button>
+      </li>
+    ))}</ul>}
+  </section>
+}
+
 export function ServiceAccountsTab({ initialAccount }: { initialAccount?: string | null }) {
   const overview = useOverview()
+  const teams = useAsyncResource(signal => apiRequest(base + '/groups', { schema: ServiceGroupOverviewSchema, signal }), [])
   const { runStepUp } = useStepUp()
-  const pairing = new URLSearchParams(useLocation().search).get('pairing')
-  const [id, setId] = useState(pairing ? '' : initialAccount ?? '')
-  const selectedRow = useRef<HTMLButtonElement>(null)
-  const [dialog, setDialog] = useState<'create' | 'revoke' | null>(null)
+  const query = new URLSearchParams(useLocation().search)
+  const pairing = query.get('pairing')
+  const navigate = useNavigate()
+  const id = pairing ? '' : query.get('group') ?? initialAccount ?? ''
+  const [dialog, setDialog] = useState<'create' | 'revoke' | 'create-group' | 'edit-group' | 'start' | 'end' | null>(null)
   const [busy, setBusy] = useState(false)
+  const [created, setCreated] = useState<Static<typeof ServiceGroupRunCreatedSchema> | null>(null)
+  const [selectedRun, setSelectedRun] = useState('')
   const account = overview.data?.accounts.find(a => a.id === id)
-  const origin = overview.data?.origin
-  const prompt = account && origin && overview.data ? agentPrompt(origin, account.id, overview.data.cliFilename) : ''
-  const active = account && !account.revoked && !account.expired
-  const create = <Button variant="primary" disabled={!origin} onClick={() => setDialog('create')}>Create CLI connection</Button>
+  const group = teams.data?.groups.find(g => g.id === id)
+  const runs = teams.data?.runs.filter(r => r.groupId === id) ?? []
+  const run = runs.find(r => r.id === selectedRun) ?? runs[0]
+  const activeRun = runs.find(r => !r.revoked && !r.expired)
+  const live = !!run && !run.revoked && !run.expired
+  const { refresh: refreshTeams } = teams
+  const { refresh: refreshAccounts } = overview
+  useEffect(() => {
+    if (!id) return
+    const timer = window.setInterval(() => {
+      if (!document.hidden) { refreshTeams(); refreshAccounts() }
+    }, 4000)
+    return () => window.clearInterval(timer)
+  }, [id, refreshTeams, refreshAccounts])
 
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(prompt)
-      pushToast({ kind: 'success', title: 'Agent prompt copied' })
-    } catch (err) {
-      report('Could not copy the prompt. Allow clipboard access and try again.', err)
-    }
+  const origin = overview.data?.origin
+  const active = account && !account.revoked && !account.expired
+  function open(next: string) {
+    const key = next.startsWith('svc_') ? 'service-account' : 'group'
+    navigate(next ? '/admin/ai?' + key + '=' + encodeURIComponent(next) : '/admin/ai?cli')
+    setSelectedRun(''); setDialog(null)
   }
-  async function revoke() {
-    if (!account) return
+  async function copy() {
+    if (!account || !origin || !overview.data) return
+    try {
+      await navigator.clipboard.writeText(agentPrompt(origin, account.id, overview.data.cliFilename))
+      pushToast({ kind: 'success', title: 'Agent prompt copied' })
+    } catch (err) { report('Could not copy the agent prompt', err) }
+  }
+  async function closeAccess() {
+    if (!account && !run) return
     setBusy(true)
     try {
-      await apiRequest(base + '/' + account.id, { method: 'DELETE' })
-      setDialog(null)
-      overview.refresh()
-    } catch (err) { report('Could not revoke CLI connection', err) }
+      await apiRequest(account ? base + '/' + account.id : base + '/runs/' + run!.id, { method: 'DELETE' })
+      setDialog(null); refreshAccounts(); refreshTeams()
+    } catch (err) { report('Could not close access', err) }
     setBusy(false)
   }
-  return <div className={directory.directory} data-split={Boolean(account)}>
-    <div className={directory.list}>
-      {pairing === 'failed' && <Alert tone="danger">The CLI could not finish connecting. Check the terminal and run the connection command again.</Alert>}
-      {pairing === 'declined' && <Text variant="muted">CLI connection request declined.</Text>}
-      {overview.error && <Alert tone="danger">{overview.error}</Alert>}
-      {overview.loading && !overview.data && <div role="status"><Text variant="muted">Loading CLI connections…</Text></div>}
-      {overview.data && !origin && <Alert tone="warning">Set PUBLIC_ORIGIN to the HTTPS address of this installation to enable CLI connections.</Alert>}
-      {overview.data && (overview.data.accounts.length ? <>
-        <div className={directory.toolbar}>{create}</div>
-        <DataTable aria-label="CLI connections" className={directory.table} density="compact">
-          <DataTableHead><DataTableRow>
-            <DataTableHeader>Connection</DataTableHeader>
-            <DataTableHeader className={directory.accessColumn}>Permissions</DataTableHeader>
-            <DataTableHeader className={directory.statusColumn}>Status</DataTableHeader>
-            <DataTableHeader className={directory.loginColumn}>Expires</DataTableHeader>
-          </DataTableRow></DataTableHead>
-          <DataTableBody>{overview.data.accounts.map(a => <DataTableRow key={a.id} aria-current={id === a.id}>
-            <DataTableCell><Button className={directory.select} variant="ghost" aria-controls={id === a.id ? inspectorId : undefined}
-              aria-expanded={id === a.id} ref={id === a.id ? selectedRow : undefined} onClick={() => setId(a.id)}>
-              <span className={directory.identityText}><strong>{a.label}</strong></span>
-            </Button></DataTableCell>
-            <DataTableCell className={directory.accessColumn}>{a.capabilities.length}</DataTableCell>
-            <DataTableCell className={directory.statusColumn}><AccountStatus account={a} /></DataTableCell>
-            <DataTableCell className={directory.loginColumn}>{expires.format(new Date(a.expiresAt))}</DataTableCell>
-          </DataTableRow>)}</DataTableBody>
-        </DataTable>
-      </> : <EmptyState variant="centered" icon={<CodeIcon size={22} />} title="Connect an external agent"
-        description="Choose what the agent can do and when its access expires." action={create} />)}
-    </div>
-    {account && <DirectoryInspector key={account.id} id={inspectorId} label="Connection details" onClose={() => {
-      selectedRow.current?.focus({ preventScroll: true })
-      setId('')
-    }}
-      heading={<div className={directory.identityText}><Heading level={3}>{account.label}</Heading></div>}
-      status={<AccountStatus account={account} />}>
-      <AccountFacts account={account} />
-      {active && <div className={styles.stack}>
-        {!account.connected && prompt && <Text variant="muted" size="sm">Paste the prompt into your agent, then approve its connection in your browser.</Text>}
-        {account.connected && initialAccount === account.id && <Text variant="muted">Return to your agent to start working.</Text>}
-        <div className={styles.actions}>
-          {prompt && <Button variant={account.connected ? 'secondary' : 'primary'} onClick={copy}><CopySolidIcon size={14} />Copy agent prompt</Button>}
-          <Button variant="ghost" dangerHover onClick={() => setDialog('revoke')}>Revoke access</Button>
-        </div>
-      </div>}
-    </DirectoryInspector>}
+  if (dialog === 'create-group' || dialog === 'edit-group') {
+    return <AgentGroupEditor group={dialog === 'edit-group' ? group : undefined}
+      onCancel={() => setDialog(null)} onSaved={groupId => { open(groupId); refreshTeams() }} />
+  }
+  return <div className={styles.stack}>
+    {pairing === 'failed' && <Alert tone="danger">Connection failed. Run the CLI connect command again.</Alert>}
+    {pairing === 'declined' && <Text variant="muted">CLI connection request declined.</Text>}
+    {(overview.error || teams.error) && <Alert tone="danger">{overview.error ?? teams.error}</Alert>}
+    {overview.data && !origin && <Alert tone="warning">Configure PUBLIC_ORIGIN to enable CLI connections.</Alert>}
+    {account ? <ConnectionDetail title={account.label} type="Individual connection" status={status(account)}
+      scope="Entire site" expiry={account.expiresAt} agents={[account]} activityId={account.id} live={Boolean(active)}
+      onBack={() => open('')} guidance={active && !account.connected && <Text variant="muted">Paste the prompt into your agent, then approve its connection in your browser.</Text>}
+      actions={active && <><Button variant="primary" disabled={!origin} onClick={copy}><CopySolidIcon size={14}/>Copy agent prompt</Button>
+        <Button variant="secondary" tone="danger" onClick={() => setDialog('revoke')}>Revoke access</Button></>} />
+    : group ? <ConnectionDetail title={group.label} type="Agent group" status={runState(run)} scope={run ? (run.branchId ? 'Branch · ' + run.branchId : 'Deleted branch') : 'Set when starting a run'}
+      expiry={run?.expiresAt} agents={run?.members ?? group.members} task={run?.task} activityId={run?.id} live={live} onBack={() => open('')}
+      history={runs.length > 1 && <FormField label="Run" htmlFor="cli-run-history"><Select id="cli-run-history" value={run?.id ?? ''} options={runs.map(r => ({ value:r.id, label:(r.branchId ?? 'Deleted branch')+' · '+runState(r)+' · '+expires.format(new Date(r.expiresAt)) }))} onChange={e=>setSelectedRun(e.currentTarget.value)}/></FormField>}
+      actions={<>{!activeRun && <Button variant="primary" disabled={!origin} onClick={() => setDialog('start')}>Start run</Button>}
+        {live && origin && overview.data && <TeamRunControls run={run} origin={origin} cliFilename={overview.data.cliFilename} invites={created?.run.id === run.id ? created.invites : []} onChange={refreshTeams}/>}
+        {run?.approved && run.branchId && <Button variant={live ? 'primary' : 'secondary'} onClick={() => navigate('/admin/branches/' + encodeURIComponent(run.branchId!) + '/review?branch=' + encodeURIComponent(run.branchId!))}>Open branch review</Button>}
+        <Button variant="secondary" onClick={() => setDialog('edit-group')}>Edit group</Button>
+        {live && <Button variant="secondary" tone="danger" onClick={() => setDialog('end')}>End run</Button>}</>} />
+    : <><Heading level={2}>CLI connections</Heading>
+      <div className={styles.directoryGrid}>
+      <DirectorySection title="Individual connections" description="Give one external agent access to this site."
+        create={<Button variant="primary" disabled={!origin} onClick={() => setDialog('create')}>Create CLI connection</Button>}
+        rows={(overview.data?.accounts ?? []).map(a=>({ ...a, summary:a.capabilities.length+(a.capabilities.length === 1 ? ' permission' : ' permissions'), status:status(a) }))} open={open}/>
+      <DirectorySection group title="Agent groups" description="Run a team together on one branch."
+        create={<Button variant="secondary" disabled={!origin} onClick={() => setDialog('create-group')}>Create group</Button>}
+        rows={(teams.data?.groups ?? []).map(g=>({ ...g, summary:g.members.map(m=>m.label).join(' · '), status:runState(teams.data?.runs.find(r=>r.groupId===g.id)) }))} open={open}/></div></>}
     {dialog === 'create' && <CreateServiceAccountDialog onClose={() => setDialog(null)} onCreate={async grant => {
       try {
-        const result = await runStepUp(() => apiRequest(base, { method: 'POST', schema: IdSchema, body: grant }))
-        setId(result.id)
-        setDialog(null)
-        overview.refresh()
+        const result = await runStepUp(() => apiRequest(base, { method:'POST', schema:IdSchema, body:grant }))
+        open(result.id); refreshAccounts()
       } catch (err) { report('Could not create CLI connection', err) }
-    }} />}
-    {dialog === 'revoke' && account && <Dialog open tone="danger" size="sm" title="Revoke access?" onClose={() => { if (!busy) setDialog(null) }}
-      footer={<>
-        <Button variant="secondary" disabled={busy} onClick={() => setDialog(null)}>Cancel</Button>
-        <Button variant="destructive" disabled={busy} onClick={revoke}>Revoke access</Button>
-      </>}>
-      <Text>The CLI for <strong>{account.label}</strong> will lose access immediately.</Text>
-    </Dialog>}
+    }}/>}
+
+    {dialog === 'start' && group && <StartTeamRunDialog group={group} onClose={()=>setDialog(null)} onCreated={result=>{
+      setCreated(result); setSelectedRun(result.run.id); setDialog(null); refreshTeams()
+    }}/>}
+    {(dialog==='revoke'||dialog==='end') && <Dialog open tone="danger" size="sm" title={account?'Revoke access?':'End run?'} onClose={()=>{if(!busy)setDialog(null)}}
+      footer={<><Button variant="secondary" disabled={busy} onClick={()=>setDialog(null)}>Cancel</Button>
+        <Button variant="destructive" busy={busy} onClick={closeAccess}>{account?'Revoke access':'End run'}</Button></>}>
+      <Text>{account?account.label+' will lose CLI access immediately.':'All agents in this run will lose access. Its review and activity stay available.'}</Text></Dialog>}
   </div>
 }
 

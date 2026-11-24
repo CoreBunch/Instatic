@@ -253,12 +253,16 @@ export const BranchMergeRequestSchema = Type.Object({
 export type BranchMergeRequest = Static<typeof BranchMergeRequestSchema>
 
 /** Comments attach to the request itself (`entityKey: ''`) or to one change key. */
+const assignedAgent = Type.Object({ accountId: Type.String(), label: Type.String(), ownerId: Type.String() })
 export const BranchReviewCommentSchema = Type.Object({
   id: Type.String(),
   branchId: Type.String(),
   requestId: Type.Union([Type.String(), Type.Null()]),
   entityKey: Type.String(),
   author: Type.Union([ReviewUserLabelSchema, Type.Null()]),
+  assignedTo: Type.Union([assignedAgent, Type.Null()]),
+  resolvedAt: Type.Union([Type.String(), Type.Null()]),
+  resolvedByUserId: Type.Union([Type.String(), Type.Null()]),
   body: Type.String(),
   createdAt: Type.String(),
 })
@@ -268,6 +272,7 @@ export const BranchReviewStateSchema = Type.Object({
   branch: SiteBranchSchema,
   request: Type.Union([BranchMergeRequestSchema, Type.Null()]),
   comments: Type.Array(BranchReviewCommentSchema),
+  assignees: Type.Array(Type.Object({ accountId: Type.String(), label: Type.String(), groupLabel: Type.String(), runId: Type.String() })),
   /** Hash of the branch's content right now (compare with `request.contentHash`). */
   contentHash: Type.String(),
   /** The newest merge into main that has not been undone, if any. */
@@ -294,7 +299,8 @@ export const DeclineMergeRequestBodySchema = Type.Object({
 export type DeclineMergeRequestBody = Static<typeof DeclineMergeRequestBodySchema>
 
 export const CreateReviewCommentBodySchema = Type.Object({
-  entityKey: Type.String({ maxLength: 400 }),
+  assigneeAccountId: Type.Optional(Type.String({ pattern: '^svc_[a-f0-9-]{36}$', description: 'Choose an accountId from assignees in GET branches/:id/review.' })),
+  entityKey: Type.String({ maxLength: 400, pattern: '^(?:|(row|table|site|file):.+)$', description: 'Copy the exact plan.changes[].key from GET branches/:id/merge, or use an empty string for the general conversation.' }),
   body: Type.String({ minLength: 1, maxLength: REVIEW_COMMENT_MAX_LENGTH }),
 }, { additionalProperties: false })
 export type CreateReviewCommentBody = Static<typeof CreateReviewCommentBodySchema>

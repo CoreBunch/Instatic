@@ -14,6 +14,7 @@ import {
   getCmsBranchMergePlan,
   getCmsBranchReview,
   requestCmsBranchMerge,
+  resolveCmsReviewComment,
   withdrawCmsBranchMergeRequest,
 } from '@core/persistence'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -28,7 +29,8 @@ export interface BranchReviewData {
   request: (note: string) => Promise<BranchMergeRequest>
   withdraw: () => Promise<BranchMergeRequest>
   decline: (note: string) => Promise<BranchMergeRequest>
-  comment: (entityKey: string, body: string) => Promise<BranchReviewComment>
+  resolveComment: (commentId: string) => Promise<void>
+  comment: (entityKey: string, body: string, assigneeAccountId?: string) => Promise<BranchReviewComment>
   /** Reverse the latest merge into main, then reload: the plan is live again. */
   undo: () => Promise<UndoMergeEnvelope>
 }
@@ -108,8 +110,12 @@ export function useBranchReview(branchId: string): BranchReviewData {
       replaceRequest(request)
       return request
     },
-    comment: async (entityKey, body) => {
-      const comment = await addCmsBranchReviewComment(branchId, { entityKey, body })
+    resolveComment: async (commentId) => {
+      const resolved = await resolveCmsReviewComment(branchId, commentId)
+      setReview(current => current ? { ...current, comments: current.comments.map(c => c.id === commentId ? resolved : c) } : current)
+    },
+    comment: async (entityKey, body, assigneeAccountId) => {
+      const comment = await addCmsBranchReviewComment(branchId, { entityKey, body, assigneeAccountId })
       setReview((current) => (current ? { ...current, comments: [...current.comments, comment] } : current))
       return comment
     },

@@ -5,6 +5,7 @@ import type { AuthUser } from '../repositories/users'
 // the opaque credential that proved its identity.
 interface ServicePrincipal {
   user: AuthUser
+  group?: { runId: string; branchId: string }
 }
 const actors = new WeakMap<Request, ServicePrincipal>()
 

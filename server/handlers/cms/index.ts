@@ -32,6 +32,7 @@ import { isStateChangingMethod, originAllowed } from '../../auth/security'
 import { resolveBranchScope } from '../../branches/scope'
 import type { CmsHandlerOptions } from './shared'
 import { tryAuthorizeServiceRequest } from '../../serviceAccounts/access'
+import { handleServiceActivity, recordServiceResponse } from '../../serviceAccounts/activity'
 import { handleServiceAccounts } from '../../serviceAccounts/management'
 import { handleCanvas } from './canvas'
 import { handleDraftPage } from '../../serviceAccounts/draftPage'
@@ -97,8 +98,12 @@ export async function handleCmsRequest(
   // session.)
   const authorized = await tryAuthorizeServiceRequest(req, db)
   if (authorized instanceof Response) return authorized
-  if (authorized) req = authorized
-  const serviceResponse = await handleServiceAccounts(req, db)
+  if (authorized) return recordServiceResponse(authorized, db, await dispatchCms(authorized, db, options))
+  return dispatchCms(req, db, options)
+}
+
+async function dispatchCms(req: Request, db: DbClient, options: CmsHandlerOptions): Promise<Response> {
+  const serviceResponse = await handleServiceActivity(req, db) ?? await handleServiceAccounts(req, db)
   if (serviceResponse) return serviceResponse
 
   const accountResponse =

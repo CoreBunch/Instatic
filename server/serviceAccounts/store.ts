@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto'
+import { canActOnBranch, isMainBranch } from '@core/branches'
 import { ServiceCapabilitySchema, type ServiceAccount, type ServiceAccountInputSchema } from '@core/serviceAccounts'
 import { filterArray, type Static } from '@core/utils/typeboxHelpers'
-import { createUser, findUserById, type AuthUser } from '../repositories/users'
+import { createUser, findUserById } from '../repositories/users'
 import type { DbClient } from '../db/client'
 import { generateOpaqueToken, hashOpaqueToken } from '../oauth/secrets'
 
@@ -24,7 +25,7 @@ export async function listAccounts(db: DbClient, owner: string) {
   const { rows } = await db<AccountRow>`
     select id, owner_id, label, capabilities_json, expires_at, revoked_at,
       case when token_hash is null then 0 else 1 end as connected
-    from service_accounts where owner_id = ${owner} order by expires_at desc, id`
+    from service_accounts where owner_id = ${owner} and group_run_id is null order by expires_at desc, id`
   return rows.map(view)
 }
 
@@ -45,7 +46,7 @@ export async function revokeAccount(db: DbClient, id: string, owner: string) {
   const result = await db`update service_accounts set revoked_at = ${new Date().toISOString()}, token_hash = null,
     code_hash = null, code_challenge = null, code_expires_at = null,
     pending_step_up_expires_at = null, token_step_up_expires_at = null
-    where id = ${id} and owner_id = ${owner} and revoked_at is null`
+    where id = ${id} and owner_id = ${owner} and group_run_id is null and revoked_at is null`
   return result.rowCount > 0
 }
 
@@ -55,7 +56,7 @@ export async function issueCode(db: DbClient, id: string, owner: string, challen
   const result = await db`update service_accounts set code_hash = ${await hashOpaqueToken(code)},
     code_challenge = ${challenge},
     code_expires_at = ${new Date(now.getTime() + 60000).toISOString()}
-    where id = ${id} and owner_id = ${owner} and revoked_at is null and expires_at > ${now.toISOString()}`
+    where id = ${id} and owner_id = ${owner} and group_run_id is null and revoked_at is null and expires_at > ${now.toISOString()}`
   return result.rowCount ? code : null
 }
 
@@ -69,25 +70,38 @@ export async function exchangeCode(db: DbClient, id: string, code: string, verif
     if (sponsor?.status !== 'active' || !sponsor.capabilities.includes('ai.providers.manage')) return null
     const result = await tx`update service_accounts set token_hash = ${await hashOpaqueToken(token)},
       code_hash = null, code_challenge = null, code_expires_at = null where id = ${id}
-      and code_hash = ${codeHash} and code_challenge = ${await hashOpaqueToken(verifier)}
+      and group_run_id is null and code_hash = ${codeHash} and code_challenge = ${await hashOpaqueToken(verifier)}
       and code_expires_at > ${now} and expires_at > ${now} and revoked_at is null`
     return result.rowCount ? token : null
   })
 }
 
-export async function resolveServiceActor(db: DbClient, token: string): Promise<{ user: AuthUser; expiresAt: string } | null> {
-  const { rows } = await db<AccountRow>`select id, owner_id, label, capabilities_json, expires_at, revoked_at
-    from service_accounts where token_hash = ${await hashOpaqueToken(token)} and revoked_at is null
-    and expires_at > ${new Date().toISOString()}`
+export async function resolveServiceActor(db: DbClient, token: string) {
+  const now = new Date().toISOString()
+  const { rows } = await db<{
+    id: string; owner_id: string; capabilities_json: unknown; expires_at: string
+    group_run_id: string | null; group_id: string; branch_id: string; branch_owner: string | null
+    responsibility: string; task: string
+  }>`select a.id, a.owner_id, a.capabilities_json, a.expires_at, a.group_run_id, a.responsibility,
+      r.group_id, r.task, b.id as branch_id, b.created_by_user_id as branch_owner
+    from service_accounts a left join service_account_runs r on r.id = a.group_run_id
+    left join site_branches b on b.id = r.branch_id
+    where a.token_hash = ${await hashOpaqueToken(token)} and a.revoked_at is null and a.expires_at > ${now}
+      and (a.group_run_id is null or (r.approved_at is not null and r.revoked_at is null
+        and r.expires_at > ${now} and b.id is not null))`
   const account = rows[0]
   if (!account) return null
   const owner = await findUserById(db, account.owner_id)
   if (owner?.status !== 'active' || !owner.capabilities.includes('ai.providers.manage')) return null
   const actor = await findUserById(db, account.id)
   if (!actor || actor.status !== 'suspended') return null
+  const group = account.group_run_id ? { runId: account.group_run_id, branchId: account.branch_id,
+    groupId: account.group_id, task: account.task, responsibility: account.responsibility } : undefined
+  if (group && (isMainBranch(group.branchId) || !canActOnBranch(owner, { createdByUserId: account.branch_owner }))) return null
   const capabilities = filterArray(ServiceCapabilitySchema, account.capabilities_json).filter(c => owner.capabilities.includes(c))
   return {
     user: { ...actor, capabilities, role: { ...actor.role, capabilities } },
     expiresAt: account.expires_at,
+    group,
   }
 }

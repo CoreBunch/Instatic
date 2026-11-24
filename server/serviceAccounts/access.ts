@@ -1,4 +1,5 @@
 import { membershipGuide } from './membershipGuide'
+import { availableGroupOperations, permitsGroupRequest } from './groupScope'
 import type { DbClient } from '../db/client'
 import { jsonResponse } from '../http'
 import { resolveServiceActor } from './store'
@@ -25,22 +26,26 @@ async function authorize(req: Request, db: DbClient, token: string): Promise<Req
   const grant = await resolveServiceActor(db, token)
   if (!grant) return jsonResponse({ error: 'Service connection expired, revoked or unavailable' }, { status: 401 })
   const actor = grant.user
+  if (grant.group && !permitsGroupRequest(req, grant.group.branchId, actor.capabilities)) {
+    return jsonResponse({ error: 'This group connection requires a permitted operation on its assigned branch.' }, { status: 403 })
+  }
   if (req.headers.has('X-Instatic-Branch') && !['GET', 'HEAD'].includes(req.method) &&
       (namespace === 'ai' || installationWrites.has(group))) {
     return jsonResponse({ error: 'This write is installation-wide. Omit the branch to target the installation explicitly.' }, { status: 400 })
   }
   if (pathname === '/admin/api/cms/cli-context' && req.method === 'GET') {
-    const available = availableOperations(actor.capabilities)
+    const available = grant.group ? availableGroupOperations(actor.capabilities) : availableOperations(actor.capabilities)
     const describe = new URL(req.url).searchParams.get('describe')
     if (describe) {
       const operation = available.find(op => op.method + ' ' + op.path === describe)
-      return operation ? jsonResponse(describeOperation(operation)) : jsonResponse({ error: 'Unknown or unavailable operation' }, { status: 404 })
+      return operation ? jsonResponse(describeOperation(operation, grant.group?.branchId)) : jsonResponse({ error: 'Unknown or unavailable operation' }, { status: 404 })
     }
     return jsonResponse({
-      account: actor.id, name: actor.displayName, scope: 'installation', expiresAt: grant.expiresAt, capabilities: actor.capabilities,
-      guide: new URL(req.url).searchParams.get('guide') === 'membership' ? await membershipGuide(req, db, available) : undefined,
+      account: actor.id, name: actor.displayName, scope: grant.group ? 'branch' : 'installation',
+      group: grant.group, expiresAt: grant.expiresAt, capabilities: actor.capabilities,
+      guide: !grant.group && new URL(req.url).searchParams.get('guide') === 'membership' ? await membershipGuide(req, db, available) : undefined,
       guides: [
-        { topic: 'membership', command: 'instatic api lookup "public signup"', summary: 'Build login, signup, verification and protected member pages.' },
+        ...(grant.group ? [] : [{ topic: 'membership', command: 'instatic api lookup "public signup"', summary: 'Build login, signup, verification and protected member pages.' }]),
         ...(available.some(op => op.path === 'canvas/catalog') ? [{ topic: 'collections', command: 'instatic canvas collection --branch BRANCH', summary: 'Discover visible tables and generate a bound listing for a table.' }] : []),
         ...(available.some(op => op.path === 'canvas/visitor') ? [{ topic: 'visitor', command: 'instatic visit /PATH --branch BRANCH', summary: 'Exercise scripts, search and entry links on your review branch.' }] : []),
       ],

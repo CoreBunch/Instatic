@@ -17,7 +17,7 @@ export function availableOperations(capabilities: readonly CoreCapability[]) {
     : [op])
 }
 
-export function describeOperation(op: Operation) {
+export function describeOperation(op: Operation, branchId?: string) {
   const { method, path, summary, permissions, querySchema, bodySchema, multipart, example, raw, pluginInput, outputFile } = op
   const pathParameters = path.split('/').filter(part => part.startsWith(':')).map(part => part.slice(1))
   const body = bodySchema ? 'json' : multipart ? 'multipart/form-data' : raw ? 'binary' : pluginInput ? 'plugin-defined' : 'none'
@@ -25,7 +25,7 @@ export function describeOperation(op: Operation) {
   const query = requiredQuery.map(key => key + '=' + key.toUpperCase()).join('&')
   const target = query ? path + '?' + query : path
   const args = ['instatic', 'api', method, /^[a-z0-9/:_.%-]+$/i.test(target) ? target : "'" + target.replaceAll("'", "'\\''") + "'"]
-  if (path === 'site-document' || path.startsWith('canvas/')) args.push('--branch', 'BRANCH_ID')
+  if ((branchId && path !== 'cli-context') || path === 'site-document' || path.startsWith('canvas/')) args.push('--branch', branchId ?? 'BRANCH_ID')
   if (bodySchema) args.push('--file', 'request.json')
   if (multipart) {
     args.push('--upload', 'FILE')

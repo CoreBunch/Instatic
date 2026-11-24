@@ -42,6 +42,7 @@ import {
   isValidBranchId,
   slugifyBranchName,
   type MergeDirection,
+  type SiteBranch,
 } from '@core/branches'
 import {
   MergeRequestAlreadyOpenError,
@@ -53,7 +54,8 @@ import {
   readBranchReviewState,
 } from '../../branches/review'
 import { renderBranchReviewPage } from '../../publish/branchReviewRender'
-import { getOpenMergeRequest, reopenMergedRequest } from '../../repositories/branchReviews'
+import { servicePrincipal } from '../../auth/servicePrincipal'
+import { getOpenMergeRequest, listReviewAssignees, reopenMergedRequest, resolveAssignedComment } from '../../repositories/branchReviews'
 import { requireAuthenticatedUser, userHasCapability } from '../../auth/authz'
 import { canReadTable } from '../../auth/dataAccess'
 import { listDataTables } from '../../repositories/data'
@@ -123,6 +125,9 @@ export async function handleBranchesRoutes(
       if (segments[2] === 'decline') return handleReviewDecline(req, db, branchId)
       if (segments[2] === 'comments') return handleReviewComment(req, db, branchId)
       return null
+    }
+    if (segments.length === 5 && segments[2] === 'comments' && segments[4] === 'resolve') {
+      return req.method === 'POST' ? handleResolveComment(req, db, branchId, segments[3]) : methodNotAllowed()
     }
     if (segments.length === 3 && segments[2] === 'render') {
       if (req.method === 'GET') return handleReviewRender(req, db, branchId, url)
@@ -320,7 +325,8 @@ async function handleReviewState(req: Request, db: DbClient, branchId: string): 
   if (isMainBranch(branchId)) return badRequest('Main is the live site; it is what branches merge into')
   const branch = await getBranch(db, branchId)
   if (!branch) return branchNotFound(branchId)
-  return jsonResponse(await readBranchReviewState(db, branch))
+  const { owner, run } = reviewAssignmentScope(req, user, branch)
+  return jsonResponse(await readBranchReviewState(db, branch, owner, run))
 }
 
 async function handleReviewRequest(req: Request, db: DbClient, branchId: string): Promise<Response> {
@@ -407,6 +413,12 @@ async function handleReviewDecline(req: Request, db: DbClient, branchId: string)
   return jsonResponse({ request })
 }
 
+function reviewAssignmentScope(req: Request, user: AuthUser, branch: SiteBranch) {
+  const actor = servicePrincipal(req)
+  const owner = !actor && userHasCapability(user, 'ai.providers.manage') && canActOnBranch(user, branch) ? user.id : null
+  return { owner, run: actor?.group?.runId ?? null }
+}
+
 async function handleReviewComment(req: Request, db: DbClient, branchId: string): Promise<Response> {
   const user = await requireCapability(req, db, 'site.read')
   if (user instanceof Response) return user
@@ -415,21 +427,38 @@ async function handleReviewComment(req: Request, db: DbClient, branchId: string)
   if (!branch) return branchNotFound(branchId)
   const body = await readValidatedBody(req, CreateReviewCommentBodySchema)
   if (!body || body.body.trim().length === 0) return badRequest('A comment needs some text')
-  const comment = await addReviewComment(db, {
-    branchId,
-    authorUserId: user.id,
-    entityKey: body.entityKey,
-    body: body.body,
+  return db.transaction(async tx => {
+    if (body.assigneeAccountId) {
+      const { owner, run } = reviewAssignmentScope(req, user, branch)
+      const eligible = await listReviewAssignees(tx, branchId, owner, run)
+      if (!eligible.some(a => a.accountId === body.assigneeAccountId)) return forbidden()
+    }
+    const comment = await addReviewComment(tx, { ...body, branchId, authorUserId: user.id })
+    await createAuditEvent(tx, {
+      actorUserId: user.id, action: 'branch.review.comment', targetType: 'branch', targetId: branchId,
+      metadata: { name: branch.name, commentId: comment.id, entityKey: comment.entityKey, assigneeAccountId: body.assigneeAccountId ?? null },
+      ...requestAuditContext(req),
+    })
+    return jsonResponse({ comment }, { status: 201 })
   })
-  await createAuditEvent(db, {
-    actorUserId: user.id,
-    action: 'branch.review.comment',
-    targetType: 'branch',
-    targetId: branchId,
-    metadata: { name: branch.name, commentId: comment.id, entityKey: comment.entityKey },
-    ...requestAuditContext(req),
+}
+
+async function handleResolveComment(req: Request, db: DbClient, branchId: string, commentId: string): Promise<Response> {
+  const user = await requireCapability(req, db, 'site.read')
+  if (user instanceof Response) return user
+  if (isMainBranch(branchId)) return badRequest('Choose a review branch')
+  const branch = await getBranch(db, branchId)
+  if (!branch) return branchNotFound(branchId)
+  const { owner } = reviewAssignmentScope(req, user, branch)
+  return db.transaction(async tx => {
+    const comment = await resolveAssignedComment(tx, branchId, commentId, user.id, owner)
+    if (!comment) return jsonResponse({ error: 'No open correction you can resolve' }, { status: 404 })
+    await createAuditEvent(tx, {
+      actorUserId: user.id, action: 'branch.review.resolve', targetType: 'branch', targetId: branchId,
+      metadata: { commentId }, ...requestAuditContext(req),
+    })
+    return jsonResponse({ comment })
   })
-  return jsonResponse({ comment }, { status: 201 })
 }
 
 async function handleReviewRender(req: Request, db: DbClient, branchId: string, url: URL): Promise<Response> {

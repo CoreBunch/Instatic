@@ -58,6 +58,11 @@ interface CommentRow extends UserLabelColumns {
   branch_id: string
   request_id: string | null
   entity_key: string
+  assignee_account_id: string | null
+  assignee_label: string
+  assignee_owner_id: string
+  resolved_at: string | null
+  resolved_by_user_id: string | null
   body: string
   created_at: string | Date
 }
@@ -187,6 +192,9 @@ function mapComment(row: CommentRow): BranchReviewComment {
     requestId: row.request_id ?? null,
     entityKey: row.entity_key,
     author: userLabel(row.user_id, row.user_email, row.user_display_name, row.user_avatar_path),
+    assignedTo: row.assignee_account_id ? { accountId: row.assignee_account_id, label: row.assignee_label, ownerId: row.assignee_owner_id } : null,
+    resolvedAt: row.resolved_at,
+    resolvedByUserId: row.resolved_by_user_id,
     body: row.body,
     createdAt: isoDate(row.created_at),
   }
@@ -194,9 +202,11 @@ function mapComment(row: CommentRow): BranchReviewComment {
 
 const COMMENT_SELECT = `
   select c.id, c.branch_id, c.request_id, c.entity_key, c.body, c.created_at,
+         c.assignee_account_id, a.label as assignee_label, a.owner_id as assignee_owner_id, c.resolved_at, c.resolved_by_user_id,
          u.id as user_id, u.email as user_email, u.display_name as user_display_name,
          m.public_path as user_avatar_path
   from site_branch_review_comments c
+  left join service_accounts a on a.id = c.assignee_account_id
   left join users u on u.id = c.author_user_id
   left join media_assets m on m.id = u.avatar_media_id
 `
@@ -216,16 +226,39 @@ export async function listReviewComments(db: DbClient, branchId: string): Promis
 
 export async function insertReviewComment(
   db: DbClient,
-  input: { branchId: string; requestId: string | null; entityKey: string; authorUserId: string; body: string },
+  input: { branchId: string; requestId: string | null; entityKey: string; authorUserId: string; body: string; assigneeAccountId?: string },
 ): Promise<BranchReviewComment> {
   const id = sortableId()
   await db`
-    insert into site_branch_review_comments (id, branch_id, request_id, entity_key, author_user_id, body, created_at)
-    values (${id}, ${input.branchId}, ${input.requestId}, ${input.entityKey}, ${input.authorUserId}, ${input.body}, ${nowIso()})
+    insert into site_branch_review_comments (id, branch_id, request_id, entity_key, author_user_id, body, created_at, assignee_account_id)
+    values (${id}, ${input.branchId}, ${input.requestId}, ${input.entityKey}, ${input.authorUserId}, ${input.body}, ${nowIso()}, ${input.assigneeAccountId ?? null})
   `
   const [comment] = await selectComments(db, `where c.id = ${placeholder(db.dialect, 1)} limit 1`, [id])
   if (!comment) throw new Error('[branches] review comment vanished after insert')
   return comment
+}
+
+/** Only the author or the assigned agent's sponsoring branch operator may close its correction. */
+export async function resolveAssignedComment(db: DbClient, branchId: string, commentId: string, reviewer: string, owner: string | null) {
+  const result = await db`update site_branch_review_comments set resolved_at = ${nowIso()}, resolved_by_user_id = ${reviewer}
+    where id = ${commentId} and branch_id = ${branchId} and resolved_at is null and assignee_account_id is not null
+      and (author_user_id = ${reviewer} or assignee_account_id in (select id from service_accounts where owner_id = ${owner}))`
+  if (!result.rowCount) return null
+  const [comment] = await selectComments(db, `where c.id = ${placeholder(db.dialect, 1)}`, [commentId])
+  return comment
+}
+
+export async function listReviewAssignees(db: DbClient, branchId: string, owner: string | null, run: string | null) {
+  if (!owner && !run) return []
+  const now = nowIso()
+  const { rows } = await db<{ id: string; label: string; group_label: string; run_id: string }>`
+    select a.id, a.label, g.label as group_label, r.id as run_id from service_accounts a
+    join service_account_runs r on r.id = a.group_run_id join service_account_groups g on g.id = r.group_id
+    where r.branch_id = ${branchId} and (r.id = ${run} or g.owner_id = ${owner})
+    and r.approved_at is not null and r.revoked_at is null and r.expires_at > ${now}
+    and a.revoked_at is null and a.expires_at > ${now}
+    order by g.label, r.created_at desc, a.group_position`
+  return rows.map(a => ({ accountId: a.id, label: a.label, groupLabel: a.group_label, runId: a.run_id }))
 }
 
 /** After an undone merge, the request that merge answered is open again. */

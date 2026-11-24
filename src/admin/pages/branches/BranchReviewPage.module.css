@@ -232,6 +232,8 @@
 .threadItemHead strong { color: var(--text); font-weight: 600; }
 .threadItemText { margin: 2px 0 0; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
 
+.assignment { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-s); color: var(--text-subtle); font-size: var(--text-xs); }
+
 .threadComposer { display: flex; flex-direction: column; gap: var(--space-s); padding: var(--space-s) var(--space-2xl) var(--space-2xl); }
 .threadComposerRow { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: var(--space-s); align-items: start; }
 .threadComposerActions { display: flex; align-items: center; gap: var(--space-xs); padding-left: calc(22px + var(--space-s)); }

@@ -4,10 +4,11 @@
  * review's `comment` action; the list re-renders from the server's copy.
  */
 import { useState, type KeyboardEvent, type ReactNode } from 'react'
-import type { BranchReviewComment, ReviewUserLabel } from '@core/branches'
+import type { BranchReviewComment, BranchReviewState, ReviewUserLabel } from '@core/branches'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { Button } from '@ui/components/Button'
 import { Textarea } from '@ui/components/Input'
+import { Select } from '@ui/components/Select'
 import { pushToast } from '@ui/components/Toast'
 import { UserAvatar } from '@admin/shared/UserAvatar/UserAvatar'
 import { relativeIso } from './reviewFormat'
@@ -18,7 +19,10 @@ interface ReviewThreadProps {
   comments: BranchReviewComment[]
   me: ReviewUserLabel
   placeholder: string
-  onPost: (body: string) => Promise<unknown>
+  assignees: BranchReviewState['assignees']
+  canManageAssignments: boolean
+  onResolve: (commentId: string) => Promise<void>
+  onPost: (body: string, assigneeAccountId?: string) => Promise<unknown>
   testId: string
 }
 
@@ -29,10 +33,12 @@ function submitOnCmdEnter(event: KeyboardEvent<HTMLTextAreaElement>, submit: () 
   }
 }
 
-export function ReviewThread({ title, comments, me, placeholder, onPost, testId }: ReviewThreadProps) {
+export function ReviewThread({ title, comments, me, assignees, canManageAssignments, placeholder, onResolve, onPost, testId }: ReviewThreadProps) {
   const [text, setText] = useState('')
   const [focused, setFocused] = useState(false)
   const [posting, setPosting] = useState(false)
+  const [assignee, setAssignee] = useState('')
+  const [resolving, setResolving] = useState<string | null>(null)
   const expanded = focused || text.trim().length > 0
 
   async function submit(): Promise<void> {
@@ -40,7 +46,8 @@ export function ReviewThread({ title, comments, me, placeholder, onPost, testId 
     if (!body || posting) return
     setPosting(true)
     try {
-      await onPost(body)
+      await onPost(body, assignee || undefined)
+      setAssignee('')
       setText('')
       setFocused(false)
     } catch (err) {
@@ -48,6 +55,18 @@ export function ReviewThread({ title, comments, me, placeholder, onPost, testId 
       pushToast({ kind: 'error', title: 'Could not post the comment', body: getErrorMessage(err, 'Unknown review error') })
     } finally {
       setPosting(false)
+    }
+  }
+
+  async function resolve(commentId: string) {
+    setResolving(commentId)
+    try {
+      await onResolve(commentId)
+    } catch (err) {
+      console.error('[branch-review] resolve failed:', err)
+      pushToast({ kind: 'error', title: 'Could not resolve the correction', body: getErrorMessage(err, 'Unknown review error') })
+    } finally {
+      setResolving(null)
     }
   }
 
@@ -72,6 +91,15 @@ export function ReviewThread({ title, comments, me, placeholder, onPost, testId 
                   <span>{relativeIso(comment.createdAt)}</span>
                 </div>
                 <p className={styles.threadItemText}>{comment.body}</p>
+                {comment.assignedTo && (
+                  <div className={styles.assignment}>
+                    <span>Assigned to {comment.assignedTo.label}</span>
+                    {comment.resolvedAt ? <span>Resolved</span> :
+                      (comment.author?.id === me.id || (canManageAssignments && comment.assignedTo.ownerId === me.id)) &&
+                        <Button variant="ghost" size="xs" busy={resolving === comment.id} disabled={resolving !== null}
+                          onClick={() => void resolve(comment.id)}>Resolve</Button>}
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -95,6 +123,12 @@ export function ReviewThread({ title, comments, me, placeholder, onPost, testId 
             data-testid={`${testId}-input`}
           />
         </div>
+        {expanded && assignees.length > 0 && (
+          <Select fieldSize="sm" aria-label="Assign correction to an agent" value={assignee}
+            options={[{ label: 'No assignee', value: '' }, ...assignees.map(a => ({
+              label: a.groupLabel + ' · ' + a.label + ' · ' + a.runId.slice(-6), value: a.accountId,
+            }))]} onChange={event => setAssignee(event.currentTarget.value)} />
+        )}
         {expanded && (
           <div className={styles.threadComposerActions}>
             <span className={styles.threadComposerHint}>Enter with Cmd or Ctrl posts</span>
@@ -106,6 +140,7 @@ export function ReviewThread({ title, comments, me, placeholder, onPost, testId 
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
                 setText('')
+                setAssignee('')
                 setFocused(false)
               }}
             >

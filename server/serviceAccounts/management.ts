@@ -5,6 +5,7 @@ import { jsonResponse, badRequest, readValidatedBody, methodNotAllowed } from '.
 import { oauthIssuerOrigin } from '../oauth/protocol'
 import { createAuditEvent } from '../repositories/audit'
 import { listAccounts, createAccount, issueCode, exchangeCode, revokeAccount } from './store'
+import { handleGroupDevice, handleGroupManagement } from './groupManagement'
 import { cliFilename, cliPackageResponse } from './package'
 
 const SERVICE_BASE = '/admin/api/cms/service-accounts'
@@ -15,7 +16,9 @@ export async function handleServiceAccounts(req: Request, db: DbClient): Promise
   const issuer = oauthIssuerOrigin(req)
   const part = path.slice(SERVICE_BASE.length + 1)
   const [id, action, extra] = part.split('/')
+  if (id === 'groups' || id === 'runs') return handleGroupManagement(req, db, part, issuer)
   if (extra !== undefined || (id && !/^svc_[a-f0-9-]{36}$/.test(id))) return badRequest('Unknown service account')
+  if (action === 'enroll' || action === 'poll') return handleGroupDevice(req, db, id, action, issuer)
   if (action === 'exchange' && req.method === 'POST') {
     const body = await readValidatedBody(req, ExchangeServiceSchema)
     if (!issuer || !body) return badRequest('Invalid connection request')

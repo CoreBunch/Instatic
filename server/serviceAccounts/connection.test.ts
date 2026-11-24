@@ -95,6 +95,12 @@ test('CLI approval grants an expiring, revocable identity that can fork and edit
     expect((await (await read()).json()).changedPages[0].nodes.heading.props.text).toBe('May')
     expect((await edit([title])).status).toBe(200)
     expect((await edit([title])).status).toBe(409)
+    const activity = path + '/' + id + '/activity'
+    const recorded = await (await h.cms(activity, { cookie })).json()
+    expect(recorded.events).toContainEqual(expect.objectContaining({ title: 'Edited a page', scope: 'review', status: 200, agent: 'Launch editor' }))
+    expect(recorded.events).toContainEqual(expect.objectContaining({ status: 409 }))
+    expect(JSON.stringify(recorded)).not.toContain('April')
+    expect((await (await h.cms(activity, { cookie: owner })).json()).events).toEqual([])
     const ownerBranch = { 'X-Instatic-Branch': 'review' }
     const current = await (await h.cms(canvas, { cookie: owner, headers: ownerBranch })).json()
     const insert = await h.cms(canvas, { cookie: owner, headers: ownerBranch, method: 'PATCH', json: {
