@@ -92,7 +92,7 @@ function FieldTable({ fields, action }: { fields: MergeFieldChange[]; action: Me
         <tfoot>
           <tr>
             <td colSpan={3}>
-              <Button variant="ghost" size="sm" onClick={() => setVisibleCount(visibleCount + FIELD_PAGE_SIZE)}>
+              <Button variant="ghost" size="sm" onClick={() => setVisibleCount(count => count + FIELD_PAGE_SIZE)}>
                 Show more changes ({fields.length - visibleCount} remaining)
               </Button>
             </td>
