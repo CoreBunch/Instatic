@@ -85,8 +85,6 @@ export const MergeFieldChangeSchema = Type.Object({
   before: Type.Union([Type.String(), Type.Null()]),
   /** Value on the contributing side (`from`), null when absent there. */
   after: Type.Union([Type.String(), Type.Null()]),
-  /** True when either value is an object or array shown as a JSON preview. */
-  structured: Type.Boolean(),
   /** True when this field is one both sides changed differently. */
   conflict: Type.Boolean(),
 })

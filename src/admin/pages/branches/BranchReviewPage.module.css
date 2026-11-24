@@ -335,7 +335,7 @@
 
 .fieldTable { width: 100%; border-collapse: separate; border-spacing: 0 var(--space-px); font-size: var(--text-s); table-layout: fixed; }
 .fieldTable th { text-align: left; padding: 0 var(--space-l) var(--space-2xs); font-size: var(--text-2xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-subtle); }
-.fieldTable th:first-child { width: 160px; }
+.fieldTable th:first-child { width: 38%; }
 .fieldTable td { padding: var(--space-s) var(--space-l); vertical-align: top; background: var(--bg-surface-3); line-height: 1.5; overflow-wrap: anywhere; }
 .fieldTable td:first-child { border-top-left-radius: var(--radius); border-bottom-left-radius: var(--radius); }
 .fieldTable td:last-child { border-top-right-radius: var(--radius); border-bottom-right-radius: var(--radius); }
@@ -343,7 +343,6 @@
 .fieldRow[data-conflict="true"] .fieldName { color: var(--warning-text); }
 .cellBefore { background: var(--danger-5); color: var(--text-muted); text-decoration: line-through; text-decoration-color: var(--danger-text); }
 .cellAfter { background: var(--success-10); }
-.cellBefore[data-structured="true"], .cellAfter[data-structured="true"] { font-family: var(--font-mono); font-size: var(--text-xs); }
 .cellEmpty { color: var(--text-subtle); font-style: italic; text-decoration: none; }
 
 .schemaList { display: grid; gap: var(--space-px); margin: 0; padding: 0; list-style: none; }
