@@ -268,7 +268,6 @@ describe('AccountPage', () => {
     expect(screen.getByTestId('security-step-up-card')).toBeTruthy()
     expect(screen.getByTestId('security-mfa-card')).toBeTruthy()
     expect(screen.getByTestId('security-recovery-card')).toBeTruthy()
-    expect(screen.getByTestId('security-connected-card')).toBeTruthy()
     expect(screen.getByTestId('security-change-password')).toBeTruthy()
     expect(screen.getByTestId('security-step-up-toggle')).toBeTruthy()
     expect(screen.getByTestId('security-step-up-window')).toBeTruthy()

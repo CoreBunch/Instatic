@@ -40,6 +40,9 @@ import {
   type CmsSession,
 } from '@core/persistence'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
+import { cn } from '@ui/cn'
+import auditTable from '@admin/shared/AuditTable/AuditTable.module.css'
+import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
 import styles from '../AccountPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { EmptyState } from '@ui/components/EmptyState'
@@ -141,24 +144,18 @@ export function SessionsTab() {
   const otherCount = sessions.filter((s) => !s.isCurrent).length
 
   return (
-    <section className={styles.section} aria-labelledby="account-sessions-title">
-      <div className={styles.sectionHeader}>
-        <div>
-          <h2 id="account-sessions-title">Active devices</h2>
-          <p>Devices currently signed in to your account. Sign any out individually or all at once. For a record of past sign-in attempts (including failures), see Sign-in history.</p>
-        </div>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          disabled={busy !== null || otherCount === 0}
-          onClick={() => void handleRevokeAllOthers()}
-          data-testid="account-sessions-sign-out-others"
-        >
-          <span>{busy === 'all' ? 'Signing out…' : 'Sign out everywhere else'}</span>
-        </Button>
-      </div>
-
+    <WorkspaceSection title="Active devices" actions={
+      <Button
+        type="button"
+        variant="secondary"
+        size="sm"
+        disabled={busy !== null || otherCount === 0}
+        onClick={() => void handleRevokeAllOthers()}
+        data-testid="account-sessions-sign-out-others"
+      >
+        <span>{busy === 'all' ? 'Signing out…' : 'Sign out everywhere else'}</span>
+      </Button>
+    }>
       {error && <p className={styles.error} role="alert">{error}</p>}
       {status && <p className={styles.cardStatus} role="status">{status}</p>}
 
@@ -176,32 +173,36 @@ export function SessionsTab() {
           description="Devices signed in to your account appear here."
         />
       ) : (
-        <DataTable aria-label="Active sessions" density="compact">
+        <DataTable className={cn(auditTable.table, styles.recordTable)} aria-label="Active sessions" density="compact">
           <DataTableHead>
             <DataTableRow>
               <DataTableHeader scope="col">Device</DataTableHeader>
-              <DataTableHeader scope="col">IP</DataTableHeader>
-              <DataTableHeader scope="col">Last active</DataTableHeader>
+              <DataTableHeader scope="col" className={styles.wideColumn}>IP</DataTableHeader>
+              <DataTableHeader scope="col" className={styles.wideColumn}>Last active</DataTableHeader>
               <DataTableHeader scope="col" className={styles.actionsHeader}>Actions</DataTableHeader>
             </DataTableRow>
           </DataTableHead>
           <DataTableBody>
             {sessions.map((session) => {
               const labelText = session.deviceLabel || 'Unknown device'
+              const ip = session.ipAddress ?? 'unknown'
+              const lastActive = session.isCurrent ? 'This device' : formatLastSeen(session.lastSeenAt)
               return (
                 <DataTableRow key={session.id} aria-label={`Session ${labelText}`}>
                   <DataTableCell>
                     <div className={styles.deviceLabel}>
                       <strong>{labelText}</strong>
                       <span>Signed in {formatDateTime(session.createdAt)}</span>
+                      <span className={styles.mobileMeta}>IP {ip}</span>
+                      {!session.isCurrent && <span className={styles.mobileMeta}>Last active {lastActive}</span>}
                     </div>
                   </DataTableCell>
-                  <DataTableCell>
-                    <span className={styles.secondaryText}>{session.ipAddress ?? 'unknown'}</span>
+                  <DataTableCell className={styles.wideColumn}>
+                    <span className={styles.secondaryText}>{ip}</span>
                   </DataTableCell>
-                  <DataTableCell>
+                  <DataTableCell className={styles.wideColumn}>
                     <span className={styles.secondaryText}>
-                      {session.isCurrent ? 'This device' : formatLastSeen(session.lastSeenAt)}
+                      {lastActive}
                     </span>
                   </DataTableCell>
                   <DataTableCell className={styles.actionsCell}>
@@ -226,6 +227,6 @@ export function SessionsTab() {
           </DataTableBody>
         </DataTable>
       )}
-    </section>
+    </WorkspaceSection>
   )
 }
