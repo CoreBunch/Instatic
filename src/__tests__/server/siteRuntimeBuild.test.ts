@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'bun:test'
 import type { SiteDocument } from '@core/page-tree'
+import { publishPage } from '@core/publisher'
 import { normalizeSiteRuntimeConfig } from '@core/site-runtime'
 import { buildRuntimePreviewDocument } from '../../../server/publish/runtime/previewRuntime'
 import { buildSiteRuntimeScripts } from '../../../server/publish/runtime/bundleScripts'
@@ -60,6 +61,40 @@ function runtimeSite(overrides: Partial<SiteDocument> = {}): SiteDocument {
 }
 
 describe('site runtime build', () => {
+  for (const format of ['module', 'classic'] as const) {
+    it(`grants resource origins only for a successful scoped ${format} entry`, async () => {
+      const site = runtimeSite()
+      site.files[0]!.content = 'window.runtimeReady = true'
+      site.runtime.scripts.entry = normalizeSiteRuntimeConfig({ scripts: { entry: {
+        format, scope: { type: 'pages', pageIds: [page.id] },
+        resourceOrigins: { scripts: ['https://challenges.cloudflare.com'], frames: ['https://challenges.cloudflare.com'], connections: ['https://forms.example'], styles: ['https://styles.example'], fonts: ['https://fonts.example'] },
+      } } }).scripts.entry!
+      const build = () => buildSiteRuntimeScripts({ site, page, target: 'publish', assetBasePath: '/_runtime' })
+      const successful = await build()
+      const csp = publishPage(page, site, registry, { runtimeAssets: successful.runtimeAssets }).html
+      expect(csp).toContain('frame-src https://challenges.cloudflare.com;')
+      expect(csp).toContain("connect-src 'self' https://forms.example;")
+      expect(csp).toContain("script-src 'self' https://challenges.cloudflare.com;")
+      expect(csp).toContain("style-src 'self' 'unsafe-inline' https://styles.example;")
+      expect(csp).toContain("font-src 'self' https://fonts.example;")
+
+      for (const patch of [{ enabled: false }, { enabled: true, scope: { type: 'pages' as const, pageIds: [] } }]) {
+        Object.assign(site.runtime.scripts.entry!, patch)
+        const excluded = await build()
+        expect(excluded.runtimeAssets.scripts).toHaveLength(0)
+        expect(publishPage(page, site, registry, { runtimeAssets: excluded.runtimeAssets }).html).not.toContain('challenges.cloudflare.com')
+        expect(publishPage(page, site, registry, { runtimeAssets: excluded.runtimeAssets }).html).not.toContain('styles.example')
+        expect(publishPage(page, site, registry, { runtimeAssets: excluded.runtimeAssets }).html).not.toContain('fonts.example')
+      }
+      if (format === 'module') {
+        site.runtime.scripts.entry!.scope = { type: 'all-pages' }
+        site.files[0]!.content = 'const broken = ;'
+        const failed = await build()
+        expect(failed.diagnostics.some((d) => d.severity === 'error')).toBe(true)
+        expect(failed.runtimeAssets.scripts).toHaveLength(0)
+      }
+    })
+  }
   it('bundles enabled site script entrypoints and returns self-hosted runtime assets', async () => {
     const result = await buildSiteRuntimeScripts({
       site: runtimeSite(),

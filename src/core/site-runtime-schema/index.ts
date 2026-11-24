@@ -22,6 +22,7 @@ export type {
   SiteScriptPlacement,
   SiteScriptRuntimeConfig,
   SiteScriptTiming,
+  SiteScriptResourceOrigins,
   SiteStyleRuntimeConfig,
 } from '../site-runtime/schemas'
 
