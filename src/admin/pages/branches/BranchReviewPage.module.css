@@ -316,9 +316,6 @@
 .highlight { position: absolute; left: var(--hl-x); top: var(--hl-y); width: var(--hl-w); height: var(--hl-h); border: 3px solid var(--warning); border-radius: var(--radius); background: var(--warning-10); pointer-events: none; box-sizing: border-box; }
 .highlight[data-tone="added"] { border-color: var(--success); background: var(--success-10); }
 .highlight[data-tone="removed"] { border-color: var(--danger-light); background: var(--danger-10); }
-.highlightLabel { position: absolute; right: 6px; top: 6px; padding: 2px 10px; border-radius: var(--radius-pill); background: var(--warning); color: var(--bg-body); font-size: calc(var(--text-s) * 2); font-weight: 700; white-space: nowrap; opacity: 0.92; }
-.highlight[data-tone="added"] .highlightLabel { background: var(--success); }
-.highlight[data-tone="removed"] .highlightLabel { background: var(--danger-light); }
 
 .swipe { display: grid; gap: var(--space-xs); }
 .swipeStack { position: relative; cursor: ew-resize; touch-action: none; user-select: none; border-radius: var(--panel-radius); overflow: hidden; }
