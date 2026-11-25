@@ -216,7 +216,7 @@ export async function getCurrentCmsUser(
   return body.user
 }
 
-// ─── Self-profile mutations (Account → Profile tab) ─────────────────────────
+// ─── Self-profile mutations (Account → Edit profile) ─────────────────────────
 
 const MeAvatarEnvelope = Type.Object(
   { user: CmsCurrentUserSchema },

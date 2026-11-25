@@ -31,7 +31,7 @@ test.describe('admin navigation', () => {
       await page.getByTestId('account-menu-trigger').click()
       await page.getByTestId('account-menu-go-to-account').click()
       await expect(page).toHaveURL(/\/admin\/account$/)
-      await expect(page.getByRole('tab', { name: 'Profile' })).toBeVisible()
+      await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible()
     })
   })
 

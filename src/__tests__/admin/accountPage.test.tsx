@@ -1,22 +1,7 @@
-/**
- * AccountPage — `/admin/account` self-targeted user settings.
- *
- * Verifies:
- *   - All four tab buttons render (Profile / Active devices / Security /
- *     Sign-in history)
- *   - Profile tab is the default and shows the current user's identity
- *   - Switching to Active devices renders the live session list (current pinned)
- *   - Switching to Security renders the four placeholder cards
- *   - Switching to Sign-in history renders the empty state when there's
- *     nothing to show, surfaces the suspicious banner on `locked` /
- *     `rate_limited` events,
- *     and shows the failed-attempt chip when there are recent failures
- *   - The Account workspace is accessible to a viewer-role user (no
- *     capability gating — self-targeted)
- */
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { canAccessWorkspace } from '@admin/access'
+import { ToastProvider } from '@ui/components/Toast'
 import { AccountPage } from '@admin/pages/account/AccountPage'
 import { AdminSessionProvider } from '@admin/session'
 import { StepUpProvider } from '@admin/shared/StepUp'
@@ -164,6 +149,7 @@ function renderWithUser(user: CmsCurrentUser) {
       <AdminSessionProvider user={user}>
         <StepUpProvider>
           <AccountPage />
+          <ToastProvider />
         </StepUpProvider>
       </AdminSessionProvider>
     </MemoryRouter>,
@@ -215,19 +201,22 @@ describe('AccountPage', () => {
     expect(eventSourceUrls).toEqual([])
   })
 
-  it('renders all four tabs and defaults to Profile', () => {
+  it('opens Overview with identity and sign-in settings', () => {
     globalThis.fetch = makeAccountFetch((url) => {
       if (url.endsWith('/admin/api/cms/auth/sessions')) return jsonResponse({ sessions: [] })
       return undefined
     })
     renderWithUser(makeUser())
-    expect(screen.getByTestId('account-tab-profile')).toBeTruthy()
+    expect(screen.getByTestId('account-tab-overview')).toBeTruthy()
     expect(screen.getByTestId('account-tab-sessions')).toBeTruthy()
-    expect(screen.getByTestId('account-tab-security')).toBeTruthy()
+    expect(screen.getAllByRole('tab')).toHaveLength(3)
     expect(screen.getByTestId('account-tab-activity')).toBeTruthy()
-    // Default tab is Profile — identity values are loaded into editable fields.
+    expect(screen.getByRole('heading', { name: 'Olivia Owner' })).toBeTruthy()
+    expect(screen.getByText('owner@example.com')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Change password' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit profile' }))
     expect(screen.getByTestId('profile-display-name').getAttribute('value')).toBe('Olivia Owner')
-    expect(screen.getByTestId('profile-email').getAttribute('value')).toBe('owner@example.com')
+    expect(screen.queryByLabelText('Email address')).toBeNull()
   })
 
   it('Sessions tab renders the device list with the current session pinned', async () => {
@@ -256,26 +245,26 @@ describe('AccountPage', () => {
     expect(screen.getByTestId('account-sessions-sign-out-sess_b')).toBeTruthy()
   })
 
-  it('Security tab renders active security actions', () => {
+  it('Overview renders active security actions', () => {
     globalThis.fetch = makeAccountFetch((url) => {
       if (url.endsWith('/admin/api/cms/auth/sessions')) return jsonResponse({ sessions: [] })
       return undefined
     })
     renderWithUser(makeUser())
-    fireEvent.click(screen.getByTestId('account-tab-security'))
 
     expect(screen.getByTestId('security-password-card')).toBeTruthy()
     expect(screen.getByTestId('security-step-up-card')).toBeTruthy()
     expect(screen.getByTestId('security-mfa-card')).toBeTruthy()
     expect(screen.getByTestId('security-recovery-card')).toBeTruthy()
     expect(screen.getByTestId('security-change-password')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit sensitive action confirmation' }))
     expect(screen.getByTestId('security-step-up-toggle')).toBeTruthy()
     expect(screen.getByTestId('security-step-up-window')).toBeTruthy()
     expect(screen.getByTestId('security-mfa-enable')).toBeTruthy()
     expect(screen.getByTestId('security-recovery-regenerate')).toBeTruthy()
   })
 
-  it('Security tab disables step-up through the shared step-up flow', async () => {
+  it('Overview disables step-up through the shared step-up flow', async () => {
     let settingsPatchCalls = 0
     let lastBody: unknown = null
     globalThis.fetch = makeAccountFetch((url, init) => {
@@ -297,7 +286,7 @@ describe('AccountPage', () => {
     })
 
     renderWithUser(makeUser())
-    fireEvent.click(screen.getByTestId('account-tab-security'))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit sensitive action confirmation' }))
     fireEvent.click(screen.getByTestId('security-step-up-toggle'))
 
     await waitFor(() => {
@@ -316,7 +305,7 @@ describe('AccountPage', () => {
     expect(screen.getByText('Disabled')).toBeTruthy()
   })
 
-  it('Security tab configures the step-up window', async () => {
+  it('Overview configures the step-up window', async () => {
     let lastBody: unknown = null
     globalThis.fetch = makeAccountFetch((url, init) => {
       if (url.endsWith('/admin/api/cms/me/security/step-up') && init?.method === 'PATCH') {
@@ -332,7 +321,7 @@ describe('AccountPage', () => {
     })
 
     renderWithUser(makeUser())
-    fireEvent.click(screen.getByTestId('account-tab-security'))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit sensitive action confirmation' }))
     fireEvent.click(screen.getByTestId('security-step-up-window'))
     fireEvent.click(screen.getByRole('option', { name: '30 minutes' }))
 
@@ -342,7 +331,7 @@ describe('AccountPage', () => {
     expect(lastBody).toEqual({ mode: 'required', windowMinutes: 30 })
   })
 
-  it('Security tab changes password through the shared step-up flow', async () => {
+  it('Overview changes password through the shared step-up flow', async () => {
     let passwordPatchCalls = 0
     globalThis.fetch = makeAccountFetch((url, init) => {
       if (url.endsWith('/admin/api/cms/me/password') && init?.method === 'PATCH') {
@@ -357,7 +346,6 @@ describe('AccountPage', () => {
     })
 
     renderWithUser(makeUser())
-    fireEvent.click(screen.getByTestId('account-tab-security'))
     fireEvent.click(screen.getByTestId('security-change-password'))
 
     fireEvent.change(screen.getByTestId('security-password-new'), {
@@ -382,7 +370,7 @@ describe('AccountPage', () => {
     expect(passwordPatchCalls).toBe(2)
   })
 
-  it('Security tab enables MFA and shows one-time recovery codes', async () => {
+  it('Overview enables MFA and shows one-time recovery codes', async () => {
     globalThis.fetch = makeAccountFetch((url, init) => {
       if (url.endsWith('/admin/api/cms/me/mfa/totp/start') && init?.method === 'POST') {
         return jsonResponse({
@@ -404,7 +392,6 @@ describe('AccountPage', () => {
     })
 
     renderWithUser(makeUser())
-    fireEvent.click(screen.getByTestId('account-tab-security'))
     fireEvent.click(screen.getByTestId('security-mfa-enable'))
 
     await waitFor(() => {
@@ -428,7 +415,7 @@ describe('AccountPage', () => {
     expect(screen.getByText('dddd-eeee-ffff')).toBeTruthy()
   })
 
-  it('Security tab keeps manual MFA setup usable when QR rendering fails', async () => {
+  it('Overview keeps manual MFA setup usable when QR rendering fails', async () => {
     const originalEncodeURIComponent = globalThis.encodeURIComponent
     const originalConsoleError = console.error
     const qrLogs: unknown[][] = []
@@ -466,7 +453,6 @@ describe('AccountPage', () => {
       })
 
       renderWithUser(makeUser())
-      fireEvent.click(screen.getByTestId('account-tab-security'))
       fireEvent.click(screen.getByTestId('security-mfa-enable'))
 
       await waitFor(() => {

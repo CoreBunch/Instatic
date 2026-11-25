@@ -66,7 +66,7 @@ test.describe('keyboard shell navigation', () => {
     await expect(accountItem).toBeFocused()
     await page.keyboard.press('Enter')
     await expect(page).toHaveURL(/\/admin\/account$/)
-    await expect(page.getByRole('tab', { name: 'Profile' })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible()
 
     await activateToolbarLink(page, 'Site', /\/admin\/site$/)
     await expectEditorReady(page)
