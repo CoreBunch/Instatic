@@ -16,6 +16,7 @@ import {
   type ResolvedFloatingSide,
 } from '@ui/lib/floatingPosition'
 import { collectSameOriginDocuments, isNode } from '@ui/lib/sameOriginDocuments'
+import { ContextMenuSubmenuContext } from './ContextMenuSubmenuContext'
 import { useDeferredClose } from './useDeferredClose'
 import { useAnchorPosition } from './useAnchorPosition'
 import { usePointPosition } from './usePointPosition'
@@ -160,6 +161,7 @@ export function ContextMenu({
   ...domProps
 }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const submenuPanels = useRef(new Set<HTMLElement>())
   const setMenuRef = (node: HTMLDivElement | null) => {
     menuRef.current = node
     if (typeof ref === 'function') ref(node)
@@ -244,6 +246,9 @@ export function ContextMenu({
       // realm's `instanceof Node` is false. `isNode` checks structurally.
       if (!isNode(target)) return
       if (menuRef.current?.contains(target)) return
+      for (const panel of submenuPanels.current) {
+        if (panel.contains(target)) return
+      }
       if (triggerRef?.current?.contains(target)) return
       if (anchorRef?.current?.contains(target)) return
       beginClose()
@@ -274,7 +279,7 @@ export function ContextMenu({
     onKeyDown?.(event)
   }
 
-  return createPortal(
+  const menu = createPortal(
     <div
       ref={setMenuRef}
       role="menu"
@@ -309,5 +314,10 @@ export function ContextMenu({
       )}
     </div>,
     document.body,
+  )
+  return (
+    <ContextMenuSubmenuContext.Provider value={submenuPanels}>
+      {menu}
+    </ContextMenuSubmenuContext.Provider>
   )
 }

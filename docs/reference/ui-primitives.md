@@ -448,7 +448,7 @@ const triggerRef = useRef<HTMLButtonElement>(null)
 
 **Dismiss handling.** Outside `mousedown` and `contextmenu` events (capture phase) dismiss the menu without cancelling the underlying event — the first outside click both closes the menu and reaches the clicked element. Dismiss listeners attach to the parent document **and every same-origin iframe document** (`collectSameOriginDocuments` in `src/ui/lib/sameOriginDocuments.ts`), so clicking inside the canvas's per-breakpoint iframes correctly dismisses open menus. `anchorRef` gates dismiss handling (clicks inside the anchor element don't close the menu) and provides the rect for auto-flip positioning. `triggerRef` is dismiss-gate only — use it when the trigger is an editable input that must stay focused while the menu is open (e.g. `ClassPicker`). Items use `ContextMenuItem`, separators use `ContextMenuSeparator`, and nested menus use `ContextMenuSubmenu`.
 
-**Submenus (`ContextMenuSubmenu`).** Opens a positioned flyout to the right of the trigger row (flips left when it doesn't fit). Hover or `ArrowRight` opens; `ArrowLeft` / `Escape` closes the submenu only (not the parent). Clicking a submenu item calls `onClose` to close the parent menu:
+**Submenus (`ContextMenuSubmenu`).** Opens a positioned flyout to the right of the trigger row (flips left when it doesn't fit). Hover or `ArrowRight` opens; `ArrowLeft` / `Escape` closes the submenu only (not the parent). For outside-click dismissal, the flyout belongs to its nearest `ContextMenu` even though it renders in `document.body`. Clicking a submenu item calls `onClose` to close the parent menu:
 
 ```tsx
 import { ContextMenu, ContextMenuItem, ContextMenuSubmenu } from '@ui/components/ContextMenu'
