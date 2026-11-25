@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, mock } from 'bun:test'
 import React, { useRef, useState } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { ContextMenu, ContextMenuItem } from '@ui/components/ContextMenu'
+import { ContextMenu, ContextMenuItem, ContextMenuSubmenu } from '@ui/components/ContextMenu'
 
 afterEach(cleanup)
 
@@ -32,7 +32,9 @@ function PointContextMenuHarness({
             setOpen(false)
           }}
         >
-          <ContextMenuItem onClick={() => {}}>Rename</ContextMenuItem>
+          <ContextMenuSubmenu label="More actions">
+            <ContextMenuItem onClick={() => {}}>Rename</ContextMenuItem>
+          </ContextMenuSubmenu>
         </ContextMenu>
       )}
     </>
@@ -71,16 +73,39 @@ describe('ContextMenu', () => {
       />,
     )
 
-    expect(screen.getByRole('menu', { name: /node options/i })).toBeDefined()
+    fireEvent.mouseEnter(screen.getByRole('menuitem', { name: 'More actions' }))
+    expect(screen.getByRole('menu', { name: 'More actions' })).toBeDefined()
 
     const target = screen.getByRole('button', { name: /different element/i })
     fireEvent.mouseDown(target)
+    fireEvent.mouseUp(target)
     fireEvent.click(target)
 
     // Default (no animateExit): close is synchronous.
     expect(onClose).toHaveBeenCalledTimes(1)
     expect(onTargetClick).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('menu', { name: /node options/i })).toBeNull()
+    expect(screen.queryByRole('menu', { name: 'More actions' })).toBeNull()
+  })
+
+  it('dismisses a nested ContextMenu when the press lands in a sibling submenu', () => {
+    const closeParent = mock(() => {})
+    const closeOther = mock(() => {})
+    render(
+      <ContextMenu x={24} y={32} ariaLabel="Parent" onClose={closeParent}>
+        <ContextMenuSubmenu label="More actions">
+          <ContextMenuItem>Rename</ContextMenuItem>
+        </ContextMenuSubmenu>
+        <ContextMenu x={80} y={32} ariaLabel="Other options" onClose={closeOther}>
+          <ContextMenuItem>Copy</ContextMenuItem>
+        </ContextMenu>
+      </ContextMenu>,
+    )
+    fireEvent.mouseEnter(screen.getByRole('menuitem', { name: 'More actions' }))
+    fireEvent.mouseDown(screen.getByRole('menuitem', { name: 'Rename' }))
+
+    expect(closeParent).not.toHaveBeenCalled()
+    expect(closeOther).toHaveBeenCalledTimes(1)
   })
 
   it('defers close behind an exit animation when animateExit is set', async () => {

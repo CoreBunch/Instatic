@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useContext,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -16,6 +17,7 @@ import {
   computeFloatingPosition,
   type ResolvedFloatingSide,
 } from '@ui/lib/floatingPosition'
+import { ContextMenuSubmenuContext } from './ContextMenuSubmenuContext'
 import styles from './ContextMenu.module.css'
 
 interface ContextMenuSubmenuProps {
@@ -94,9 +96,18 @@ export function ContextMenuSubmenu({
   } | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const submenuRef = useRef<HTMLDivElement>(null)
+  const ownerPanels = useContext(ContextMenuSubmenuContext)
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const resolvedMinWidth = minWidth ?? width
+
+  useLayoutEffect(() => {
+    const panel = submenuRef.current
+    const panels = ownerPanels?.current
+    if (!open || !panel || !panels) return
+    panels.add(panel)
+    return () => { panels.delete(panel) }
+  }, [open, ownerPanels])
 
   // Measure trigger + submenu and pick the side with the most space.
   // Mirrors the ContextMenu (anchored mode) and Tooltip auto-flip strategy

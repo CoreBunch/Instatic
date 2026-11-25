@@ -124,25 +124,24 @@ describe('LayerNodeContextMenu — Insert module here', () => {
     expect(screen.getByRole('searchbox', { name: 'Search modules' })).toBeDefined()
   })
 
-  it('inserts a base module into the right-clicked node when picked', () => {
+  it('inserts a Container into the right-clicked container on a submenu click', () => {
     renderMenu('container-node')
     openInsertSubmenu()
 
+    const menu = screen.getByRole('menu', { name: 'Node options' })
     const submenu = screen.getByRole('menu', { name: 'Insert module here' })
-    const textOption = within(submenu).getAllByRole('menuitem').find(
-      (el) => el.getAttribute('data-module-id') === 'base.text',
-    )
-    expect(textOption).toBeDefined()
-    fireEvent.click(textOption!)
+    const option = within(submenu).getByRole('menuitem', { name: 'Container' })
+    fireEvent.mouseDown(option)
+    // Starting the exit here would unmount the picker during a held click.
+    expect(menu.hasAttribute('data-closing')).toBe(false)
+    fireEvent.mouseUp(option)
+    fireEvent.click(option)
 
-    const state = useEditorStore.getState()
-    const page = state.site?.pages.find((p) => p.id === 'page-home')
-    const container = page?.nodes['container-node']
-    expect(container?.children.length).toBe(1)
-
-    const insertedId = container?.children[0]
-    const inserted = insertedId ? page?.nodes[insertedId] : null
-    expect(inserted?.moduleId).toBe('base.text')
+    const nodes = useEditorStore.getState().site!.pages[0].nodes
+    const children = nodes['container-node'].children
+    expect(children).toHaveLength(1)
+    expect(nodes[children[0]].moduleId).toBe('base.container')
+    expect(screen.queryByRole('menu', { name: 'Insert module here' })).toBeNull()
   })
 
   it('inserts a Visual Component into the right-clicked node when picked', () => {
