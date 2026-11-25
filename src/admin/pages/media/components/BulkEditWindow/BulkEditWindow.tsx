@@ -9,6 +9,7 @@
  * the user composes a batch, hits "Apply", and we run them in series with
  * a small progress badge.
  */
+import { Alert } from '@ui/components/Alert'
 import { useState } from 'react'
 import { Button } from '@ui/components/Button'
 import { Input, Textarea } from '@ui/components/Input'
@@ -201,15 +202,15 @@ export function BulkEditWindow({ workspace, open, onClose }: BulkEditWindowProps
       </p>
 
       {!canWrite && (
-        <p className={styles.notice} role="status">
+        <Alert className={styles.noticeSpacing}>
           Media metadata and folder edits are read-only for your role.
-        </p>
+        </Alert>
       )}
 
       {canWrite && !allImages && (
-        <p className={styles.notice} role="status">
+        <Alert className={styles.noticeSpacing}>
           Alt text is only applied to image assets in the selection.
-        </p>
+        </Alert>
       )}
 
       {canWrite && (

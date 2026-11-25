@@ -1,3 +1,4 @@
+import { Alert } from '@ui/components/Alert'
 import { useId, useRef, useState, type ChangeEvent, type ReactNode, type FormEvent } from 'react'
 import type { DataField, DataTable, DataTableListItem } from '@core/data/schemas'
 import { isFormSubmissionTargetTable } from '@core/forms'
@@ -8,7 +9,6 @@ import { createCmsDataTable, getCmsDataTable, listCmsDataTables } from '@core/pe
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { useEditorStore } from '@site/store/store'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
-import { cn } from '@ui/cn'
 import { Button } from '@ui/components/Button'
 import { ControlRow } from '@ui/components/ControlRow'
 import { Dialog } from '@ui/components/Dialog'
@@ -229,15 +229,15 @@ export function FormSettingsPanelView({
       )}
 
       {tablesError && (
-        <div className={cn(styles.warning, styles.danger)} role="alert">
+        <Alert tone="danger">
           {tablesError}
-        </div>
+        </Alert>
       )}
 
       {error && (
-        <div className={cn(styles.warning, styles.danger)} role="alert">
+        <Alert tone="danger">
           {error}
-        </div>
+        </Alert>
       )}
 
       {analysis.kind === 'form' && analysis.form && (
@@ -294,13 +294,9 @@ export function FormSettingsPanelView({
       {analysis.warnings.length > 0 && (
         <div className={styles.warnings}>
           {analysis.warnings.map((warning) => (
-            <div
-              key={`${warning.code}:${warning.message}`}
-              className={cn(styles.warning, warning.tone === 'danger' && styles.danger)}
-              role={warning.tone === 'danger' ? 'alert' : 'status'}
-            >
+            <Alert key={`${warning.code}:${warning.message}`} tone={warning.tone} role={warning.tone === 'danger' ? 'alert' : 'status'}>
               {warning.message}
-            </div>
+            </Alert>
           ))}
         </div>
       )}

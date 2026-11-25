@@ -1,9 +1,0 @@
-.sourceUnavailable {
-    border-radius: var(--radius);
-    background: var(--warning-10);
-    color: var(--warning);
-    font-size: var(--text-xs);
-    line-height: 1.4;
-    margin: 0;
-    padding: var(--space-s);
-}

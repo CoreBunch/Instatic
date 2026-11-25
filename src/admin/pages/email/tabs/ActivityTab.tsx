@@ -5,6 +5,7 @@
  * shows the period's numbers and volume chart.
  * The numbers describe the whole period; the filters only narrow the list.
  */
+import { Alert } from '@ui/components/Alert'
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
@@ -206,7 +207,7 @@ export function ActivityTab({
         </div>
     }>
 
-      {error && <p role="alert" className={ws.errorAlert}>{error}</p>}
+      {error && <Alert tone="danger">{error}</Alert>}
       {loading && !data && <div className={ws.emptyState}>Loading…</div>}
 
       {data && (
@@ -494,56 +495,54 @@ function Detail({
       status={<span className={directory.status} data-tone={toneOf(entry) ?? 'neutral'}>{statusLabel(entry)}</span>}
     >
       {entry.status === 'failed' && (
-        <div className={ld.notice} data-tone="danger" role="status">
-          <strong>{entry.error ?? 'Delivery failed'}</strong>
-          <span>
-            {entry.attempts > 1
-              ? `Nothing was delivered after ${entry.attempts} attempts, and the site has stopped trying.`
-              : 'Nothing was delivered, and the site is not trying again.'}{' '}
-            Check the connector, then send a test.
-          </span>
-          <div>
-            <Button type="button" variant="secondary" size="sm" onClick={onOpenConnectors}>Open connectors</Button>
-          </div>
-        </div>
+        <Alert
+          tone="danger"
+          role="status"
+          title={entry.error ?? 'Delivery failed'}
+          action={<Button variant="secondary" size="sm" onClick={onOpenConnectors}>Open connectors</Button>}
+        >
+          {entry.attempts > 1
+            ? `Nothing was delivered after ${entry.attempts} attempts, and the site has stopped trying.`
+            : 'Nothing was delivered, and the site is not trying again.'}{' '}
+          Check the connector, then send a test.
+        </Alert>
       )}
       {entry.status === 'queued' && (
-        <div className={ld.notice} data-tone={entry.error !== null ? 'warning' : undefined} role="status">
-          {entry.error !== null && <strong>{entry.error}</strong>}
-          <span>
-            {entry.error === null
-              ? 'Accepted and waiting for its turn. It is sent as soon as the connector is free.'
-              : entry.nextAttemptAt
-                ? `Tried ${plural(entry.attempts, 'time')}. The next attempt is due ${formatFull(entry.nextAttemptAt)}. The site keeps trying until the email would be of no use any more.`
-                : 'Held while the connector is paused. The site tries one email every two minutes; this one is sent as soon as the connector works again.'}
-          </span>
-          {entry.error !== null && !entry.nextAttemptAt && (
-            <div>
-              <Button type="button" variant="secondary" size="sm" onClick={onOpenConnectors}>Open connectors</Button>
-            </div>
+        <Alert
+          tone={entry.error !== null ? 'warning' : 'info'}
+          role="status"
+          title={entry.error}
+          action={entry.error !== null && !entry.nextAttemptAt && (
+            <Button variant="secondary" size="sm" onClick={onOpenConnectors}>Open connectors</Button>
           )}
-        </div>
+        >
+          {entry.error === null
+            ? 'Accepted and waiting for its turn. It is sent as soon as the connector is free.'
+            : entry.nextAttemptAt
+              ? `Tried ${plural(entry.attempts, 'time')}. The next attempt is due ${formatFull(entry.nextAttemptAt)}. The site keeps trying until the email would be of no use any more.`
+              : 'Held while the connector is paused. The site tries one email every two minutes; this one is sent as soon as the connector works again.'}
+        </Alert>
       )}
       {(entry.status === 'sent' || entry.status === 'captured') && entry.error !== null && (
-        <div className={ld.notice} data-tone="warning" role="status">
-          <strong>{entry.error}</strong>
-          {entry.template && (
-            <div>
-              <Button type="button" variant="secondary" size="sm" onClick={() => onOpenTemplate(entry.kind)}>Open the template</Button>
-            </div>
+        <Alert
+          tone="warning"
+          role="status"
+          title={entry.error}
+          action={entry.template && (
+            <Button variant="secondary" size="sm" onClick={() => onOpenTemplate(entry.kind)}>Open the template</Button>
           )}
-        </div>
+        />
       )}
       {entry.status === 'sent' && (
-        <p className={ld.notice}>
+        <Alert tone="success">
           {entry.connectorLabel ?? 'The connector'} accepted this email. Check the provider’s delivery log for inbox delivery or bounces.
-        </p>
+        </Alert>
       )}
       {entry.status === 'captured' && (
-        <p className={ld.notice} data-tone="warning">
+        <Alert tone="warning" role="status">
           This email never left the server. A development server with no connector and sender keeps emails here so
           you can read them.
-        </p>
+        </Alert>
       )}
 
       <dl className={ld.facts}>

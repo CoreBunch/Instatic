@@ -106,18 +106,6 @@
     color: var(--danger);
 }
 
-/* ── Error banner ────────────────────────────────────────────────────────── */
-
-.errorBanner {
-    font-size: var(--text-xs);
-    color: var(--danger);
-    padding: var(--space-xs) var(--space-s);
-    background: var(--danger-10);
-    border: 1px solid var(--danger-20);
-    border-radius: var(--radius-sm);
-    line-height: 1.4;
-}
-
 /* ── Row header card (postType / page / component) ───────────────────────── */
 
 .rowHeaderCard {

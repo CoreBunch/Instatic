@@ -1,33 +1,3 @@
-/* Delivery notices and selectable metadata in record inspectors. */
-.notice {
-  display: grid;
-  gap: var(--space-xs);
-  margin: 0;
-  padding: var(--space-l);
-  border-radius: var(--radius);
-  background: var(--overlay-5);
-  color: var(--text-muted);
-  font-size: var(--text-s);
-  line-height: 1.5;
-}
-
-.notice strong {
-  color: var(--text-bright);
-  font-weight: 600;
-}
-
-.notice[data-tone="danger"] {
-  background: var(--danger-10);
-}
-
-.notice[data-tone="danger"] strong {
-  color: var(--danger-text);
-}
-
-.notice[data-tone="warning"] {
-  background: var(--warning-10);
-}
-
 .facts {
   display: grid;
   gap: var(--space-m);

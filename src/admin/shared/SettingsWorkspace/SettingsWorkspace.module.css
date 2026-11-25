@@ -258,23 +258,6 @@
     color: var(--warning-text);
 }
 
-.connectionResultSuccess,
-.connectionResultError,
-.detailInlineError {
-    margin: 0;
-    padding: var(--space-s) var(--space-l);
-    border-radius: var(--radius);
-    background: var(--success-10);
-    color: var(--success-text);
-    font-size: var(--text-s);
-}
-
-.connectionResultError,
-.detailInlineError {
-    background: var(--danger-10);
-    color: var(--danger-text);
-}
-
 .detailSection {
     display: grid;
     gap: var(--space-2xl);
@@ -487,15 +470,6 @@
     color: var(--text-subtle);
     background: var(--bg-surface-2);
     border-radius: var(--card-radius);
-}
-
-.errorAlert {
-    margin: 0;
-    padding: var(--space-l) var(--space-2xl);
-    border-radius: var(--radius);
-    background: var(--danger-10);
-    color: var(--danger-text);
-    font-size: var(--text-m);
 }
 
 .defaultsSetupEmpty {

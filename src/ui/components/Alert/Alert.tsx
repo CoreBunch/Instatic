@@ -1,55 +1,29 @@
-/**
- * Alert — shared inline message primitive for the editor UI.
- *
- * One bordered panel-surface box with a tone-coloured border (`info`,
- * `success`, `warning`, `danger`). Used by plugin admin apps and any host
- * surface that needs to surface a non-blocking message inline.
- *
- * ARIA: `tone="danger"` / `tone="warning"` render with `role="alert"`
- * (assertive); `info` / `success` use `role="status"` (polite).
- *
- * Constraints:
- *   - CSS Modules only — no Tailwind, no inline styles
- *   - Border colours come from semantic `direct global design tokens` tokens; background
- *     comes from `--bg-surface`
- */
 import type { ReactNode } from 'react'
 import { cn } from '@ui/cn'
 import styles from './Alert.module.css'
 
-type AlertTone = 'info' | 'success' | 'warning' | 'danger'
-
 interface AlertProps {
-  /** Visual tone. Defaults to `'info'`. */
-  tone?: AlertTone
-  /** Optional bold title rendered above the body. */
+  tone?: 'info' | 'success' | 'warning' | 'danger'
   title?: ReactNode
-  /** Optional className for layout escape hatches. */
-  className?: string
   children?: ReactNode
+  action?: ReactNode
+  /** Use status for persistent warnings when inspecting an existing record. */
+  role?: 'alert' | 'status'
+  className?: string
+  'data-testid'?: string
 }
 
-const toneClass: Record<AlertTone, string> = {
-  info: 'alertInfo',
-  success: 'alertSuccess',
-  warning: 'alertWarning',
-  danger: 'alertDanger',
-}
-
-export function Alert({
-  tone = 'info',
-  title,
-  className,
-  children,
-}: AlertProps) {
-  const role = tone === 'danger' || tone === 'warning' ? 'alert' : 'status'
+export function Alert({ tone = 'info', title, children, action, role, className, 'data-testid': testId }: AlertProps) {
   return (
     <div
-      className={cn(styles.alert, styles[toneClass[tone]], className)}
-      role={role}
+      className={cn(styles.alert, className)}
+      data-tone={tone}
+      data-testid={testId}
+      role={role ?? (tone === 'warning' || tone === 'danger' ? 'alert' : 'status')}
     >
-      {title ? <strong className={styles.alertTitle}>{title}</strong> : null}
-      <div className={styles.alertBody}>{children}</div>
+      {title && <strong>{title}</strong>}
+      {children != null && <div>{children}</div>}
+      {action && <div>{action}</div>}
     </div>
   )
 }

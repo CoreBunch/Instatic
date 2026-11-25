@@ -17,6 +17,7 @@
  * `rate_limited` event in the last 24 h — a low-cost nudge for the user to
  * review the attempt and change their password in Security.
  */
+import { Alert } from '@ui/components/Alert'
 import { useState } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import {
@@ -28,7 +29,6 @@ import {
   DataTableRow,
 } from '@ui/components/DataTable'
 import { SkeletonRows } from '@ui/components/Skeleton'
-import { CircleAlertSolidIcon } from 'pixel-art-icons/icons/circle-alert-solid'
 import {
   listCmsLoginActivity,
   type CmsLoginActivityEvent,
@@ -115,13 +115,12 @@ export function ActivityTab() {
       {error && <p className={styles.error} role="alert">{error}</p>}
 
       {showSuspiciousBanner && (
-        <div className={styles.suspiciousBanner} role="status" data-testid="account-activity-suspicious">
-          <CircleAlertSolidIcon size={14} aria-hidden="true" />
+        <Alert tone="warning" role="status" data-testid="account-activity-suspicious">
           <span>
             Suspicious activity in the last 24 hours. Review the entries below — if any are unfamiliar,
             change your password in Security.
           </span>
-        </div>
+        </Alert>
       )}
 
       {loading ? (

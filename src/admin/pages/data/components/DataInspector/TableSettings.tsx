@@ -1,3 +1,4 @@
+import { Alert } from '@ui/components/Alert'
 import { useState, type ReactElement } from 'react'
 import { Button } from '@ui/components/Button'
 import { Input } from '@ui/components/Input'
@@ -188,7 +189,7 @@ export function TableSettings({
       {/* ── Save status banner (above all sections) ── */}
       {saveError && (
         <div className={styles.statusBanner}>
-          <p role="alert" className={styles.errorBanner}>{saveError}</p>
+          <Alert tone="danger">{saveError}</Alert>
         </div>
       )}
       {saving && (

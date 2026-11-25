@@ -11,6 +11,10 @@
     padding: var(--space-3xs) var(--space-4xs) var(--space-l);
 }
 
+.noticeInset {
+    margin-inline: var(--space-s);
+}
+
 .section {
     display: flex;
     flex-direction: column;
@@ -118,16 +122,6 @@
     color: var(--success);
     font-size: var(--text-xs);
     line-height: 1.5;
-}
-
-.errorBanner {
-    margin: 0 var(--space-s);
-    padding: var(--space-s) var(--space-m);
-    border-radius: var(--radius-sm);
-    background: color-mix(in oklab, var(--danger) 12%, transparent);
-    color: var(--danger);
-    font-size: var(--text-xs);
-    line-height: 1.4;
 }
 
 .empty {
