@@ -229,6 +229,7 @@
     --panel-radius: 12px;
     --input-radius: 1em;
     --segment-track-radius: var(--panel-radius);
+    --segment-track-padding-block: 3px;
     --segment-radius: calc(var(--segment-track-radius) - var(--space-4xs));
     --radius-pill: 999px;
     --tooltip-radius: 6px;

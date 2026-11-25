@@ -16,7 +16,7 @@
     align-items: stretch;
     gap: var(--space-4xs);
     border-radius: var(--segment-track-radius);
-    padding: 3px var(--space-4xs);
+    padding: var(--segment-track-padding-block) var(--space-4xs);
     border: var(--space-px) solid var(--overlay-20);
     background: var(--overlay-5);
 }
