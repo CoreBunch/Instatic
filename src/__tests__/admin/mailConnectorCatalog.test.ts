@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test'
-import { looksLikeLocalMailHost } from '@admin/pages/email/connectorCatalog'
+import { addableConnectorSpecs, connectorTakesSecret, looksLikeLocalMailHost } from '@admin/pages/email/connectorCatalog'
 
 describe('looksLikeLocalMailHost', () => {
   it('reads names and addresses of this machine or network as local', () => {
@@ -12,5 +12,15 @@ describe('looksLikeLocalMailHost', () => {
     for (const host of ['', 'smtp.gmail.com', 'smtp.example.com', '8.8.8.8', '172.32.0.1', 'mail.localhost.example.com']) {
       expect(looksLikeLocalMailHost(host)).toBe(false)
     }
+  })
+})
+
+describe('sendmail connector kind', () => {
+  it('is offered only when the server enables it, and takes no secret', () => {
+    expect(addableConnectorSpecs(false).map((spec) => spec.kind)).not.toContain('sendmail')
+    expect(addableConnectorSpecs(true).map((spec) => spec.kind)).toContain('sendmail')
+    expect(addableConnectorSpecs(false)[0].kind).toBe('resend')
+    expect(connectorTakesSecret('sendmail')).toBe(false)
+    expect(connectorTakesSecret('smtp')).toBe(true)
   })
 })

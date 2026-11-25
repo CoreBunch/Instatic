@@ -537,6 +537,39 @@ describe('site mail', () => {
       expect(after.defaults.defaultConnectorId).toBeNull()
     })
 
+    it('adds a sendmail connector only when the operator named a command', async () => {
+      const SENDMAIL = { kind: 'sendmail' as const, label: 'Host relay', config: {}, secret: '' }
+      const previous = process.env.MAIL_SENDMAIL_PATH
+      try {
+        delete process.env.MAIL_SENDMAIL_PATH
+        const before = await readJson<{ overview: MailOverview }>(await h.cms('/admin/api/cms/mail', { cookie: owner }))
+        expect(before.overview.sendmailAvailable).toBe(false)
+        const refused = await h.cms('/admin/api/cms/mail/connectors', { method: 'POST', cookie: owner, json: SENDMAIL })
+        expect(refused.status).toBe(400)
+        expect((await readJson<{ error: string }>(refused)).error).toContain('MAIL_SENDMAIL_PATH')
+
+        process.env.MAIL_SENDMAIL_PATH = '/usr/sbin/sendmail'
+        const after = await readJson<{ overview: MailOverview }>(await h.cms('/admin/api/cms/mail', { cookie: owner }))
+        expect(after.overview.sendmailAvailable).toBe(true)
+        const created = await h.cms('/admin/api/cms/mail/connectors', { method: 'POST', cookie: owner, json: SENDMAIL })
+        expect(created.status).toBe(201)
+        const { connector } = await readJson<{ connector: MailConnector }>(created)
+        expect(connector).toMatchObject({ kind: 'sendmail', config: {}, hasSecret: false })
+
+        // No secret may be stored, and a command or secret cannot ride in the input.
+        const secret = await h.cms(`/admin/api/cms/mail/connectors/${connector.id}/secret`, {
+          method: 'PUT', cookie: owner, json: { secret: 'x' },
+        })
+        expect(secret.status).toBe(400)
+        for (const bad of [{ ...SENDMAIL, secret: 'x' }, { ...SENDMAIL, config: { path: '/bin/sh' } }]) {
+          expect((await h.cms('/admin/api/cms/mail/connectors', { method: 'POST', cookie: owner, json: bad })).status).toBe(400)
+        }
+      } finally {
+        if (previous === undefined) delete process.env.MAIL_SENDMAIL_PATH
+        else process.env.MAIL_SENDMAIL_PATH = previous
+      }
+    })
+
     it('rejects malformed connectors and defaults', async () => {
       for (const bad of [
         { ...SMTP, config: { ...SMTP.config, host: 'smtp.example.com/evil' } },

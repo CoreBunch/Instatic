@@ -57,7 +57,7 @@ export class MailSecretUnreadableError extends Error {
 type TypedConfig =
   | { kind: 'smtp'; config: SmtpConnectorConfig }
   | { kind: 'ses'; config: SesConnectorConfig }
-  | { kind: 'resend' | 'postmark' | 'brevo'; config: KeyOnlyConnectorConfig }
+  | { kind: 'resend' | 'postmark' | 'brevo' | 'sendmail'; config: KeyOnlyConnectorConfig }
   | { kind: 'mailgun'; config: MailgunConnectorConfig }
 
 function isConnectorKind(kind: string): kind is MailConnectorKind {
