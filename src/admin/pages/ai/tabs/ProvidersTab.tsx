@@ -1,4 +1,5 @@
 /** Provider management in the shared AI master-detail workspace. */
+import { Alert } from '@ui/components/Alert'
 import { useId, useState } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { Button } from '@ui/components/Button'
@@ -138,7 +139,7 @@ export function ProvidersTab({
 
   return (
     <WorkspaceSection title="Providers">
-      {error && <p role="alert" className={styles.errorAlert}>{error}</p>}
+      {error && <Alert tone="danger">{error}</Alert>}
       {(loading || credentials.length > 0) && (
         <WorkspaceChoices title="Credentials">
           {loading && credentials.length === 0 ? (
@@ -309,14 +310,11 @@ function CredentialDetail({
       </header>
 
       {testResult && (
-        <p
-          role="status"
-          className={testResult.ok ? styles.connectionResultSuccess : styles.connectionResultError}
-        >
+        <Alert tone={testResult.ok ? 'success' : 'danger'} role="status">
           {testResult.ok
             ? `Connection is healthy. ${testResult.modelCount ?? 0} models available.`
             : testResult.error ?? 'Connection test failed.'}
-        </p>
+        </Alert>
       )}
 
       <DetailSection title="Connection">
@@ -407,7 +405,7 @@ function ModelsTable({
   error: string | null
 }) {
   if (loading) return <p className={styles.detailEmpty}>Loading model catalogue…</p>
-  if (error) return <p role="alert" className={styles.detailInlineError}>{error}</p>
+  if (error) return <Alert tone="danger">{error}</Alert>
   if (models.length === 0) return <p className={styles.detailEmpty}>No models reported by this provider.</p>
 
   return (

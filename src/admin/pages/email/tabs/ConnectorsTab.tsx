@@ -1,4 +1,5 @@
 /** Connectors in the shared master-detail workspace: the accounts mail is sent through. */
+import { Alert } from '@ui/components/Alert'
 import { useId, useState } from 'react'
 import { useCurrentAdminUser } from '@admin/sessionContext'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
@@ -84,7 +85,7 @@ export function ConnectorsTab({
 
   return (
     <WorkspaceSection title="Connectors">
-      {error && <p role="alert" className={ws.errorAlert}>{error}</p>}
+      {error && <Alert tone="danger">{error}</Alert>}
       {(loading || connectors.length > 0) && (
         <WorkspaceChoices title="Connected">
           {loading && connectors.length === 0 ? (
@@ -286,16 +287,16 @@ function ConnectorDetail({
       </header>
 
       {connector.secretNeedsReentry && (
-        <p role="status" className={ws.connectionResultError}>
+        <Alert tone="danger" role="status">
           The server secret key changed, so the stored {secretName} can no longer be read. Enter it again.
-        </p>
+        </Alert>
       )}
-      {connector.lastError && <p role="status" className={ws.connectionResultError}>{connector.lastError}</p>}
+      {connector.lastError && <Alert tone="danger" role="status">{connector.lastError}</Alert>}
       {connector.deliveryPaused && (
-        <p role="status" className={ws.connectionResultError}>
+        <Alert tone="danger" role="status">
           Queued email is held. The site tries one email every two minutes and resumes by itself when one gets
           through; entering the {secretName} again or a test that works resumes it at once.
-        </p>
+        </Alert>
       )}
 
       <section className={ws.detailSection}>
@@ -364,7 +365,7 @@ function ConnectorDetail({
               <Input id={testInputId} type="email" value={testTo} onChange={(event) => setTestTo(event.currentTarget.value)} placeholder="you@example.com" />
               <p className={styles.hint}>Goes through {connector.label}, whether or not it is the connector the site sends through.</p>
             </div>
-            {testError && <p role="alert" className={ws.connectionResultError}>{testError}</p>}
+            {testError && <Alert tone="danger">{testError}</Alert>}
           </div>
         </Dialog>
       )}

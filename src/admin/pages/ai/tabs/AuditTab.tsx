@@ -10,6 +10,7 @@
  * Sourced from the audit endpoint for the selected time range.
  */
 
+import { Alert } from '@ui/components/Alert'
 import { useState, type CSSProperties } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { Select } from '@ui/components/Select'
@@ -82,7 +83,7 @@ export function AuditTab() {
         />
       </div>
     }>
-      {error && <p role="alert" className={styles.errorAlert}>{error}</p>}
+      {error && <Alert tone="danger">{error}</Alert>}
 
       {loading && !data && (
         <div className={styles.emptyState}>Loading…</div>

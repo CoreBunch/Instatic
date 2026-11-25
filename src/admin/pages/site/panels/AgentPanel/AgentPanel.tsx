@@ -19,6 +19,7 @@
  * @see Guideline #410 — 3 Self-Contained Independent Panels
  */
 
+import { Alert } from '@ui/components/Alert'
 import { useRef, useEffect, useState, memo } from 'react'
 import { useAgentStore, useAgentStoreApi } from '@admin/ai/useAgentStore'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
@@ -312,9 +313,9 @@ export function AgentPanel({
         {/* Generic error banner — only show when it's NOT the dedicated
             no-credential message (which renders via the setup empty state). */}
         {agentError && !noProviderError && (
-          <div role="alert" className={styles.errorBanner}>
+          <Alert tone="danger">
             {agentError}
-          </div>
+          </Alert>
         )}
       </div>
 
@@ -627,17 +628,13 @@ function AgentEmptyState({ mode }: { mode: ComposerLockReason | 'prompt' }) {
 
 function AgentCredentialAlert({ mode }: { mode: ComposerLockReason }) {
   return (
-    <div role="alert" className={styles.credentialAlert}>
-      <p className={styles.credentialAlertText}>
-        {mode === 'setup'
-          ? 'No AI provider credentials are configured yet.'
-          : 'Choose a model below, or set a default in AI settings.'}
-      </p>
-      <AgentSettingsButton
-        variant="inline"
-        label={mode === 'setup' ? 'Open AI settings' : 'Set a default'}
-      />
-    </div>
+    <Alert tone="warning" action={
+      <AgentSettingsButton variant="inline" label={mode === 'setup' ? 'Open AI settings' : 'Set a default'} />
+    }>
+      {mode === 'setup'
+        ? 'No AI provider credentials are configured yet.'
+        : 'Choose a model below, or set a default in AI settings.'}
+    </Alert>
   )
 }
 

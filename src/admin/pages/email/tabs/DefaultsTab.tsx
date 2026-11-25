@@ -1,4 +1,5 @@
 /** Defaults: which connector the site sends through, and who its email is from. */
+import { Alert } from '@ui/components/Alert'
 import { useId, useState } from 'react'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
@@ -59,7 +60,7 @@ export function DefaultsTab({
   }
   const [saving, setSaving] = useState(false)
 
-  if (error) return <p role="alert" className={ws.errorAlert}>{error}</p>
+  if (error) return <Alert tone="danger">{error}</Alert>
   if (!overview || !form) return <div className={ws.emptyState}>Loading…</div>
 
   const saved = overview.defaults
@@ -168,11 +169,11 @@ export function DefaultsTab({
           </div>
 
           {!overview.publicOrigin && (
-            <p className={styles.notice} role="status">
+            <Alert tone="warning" role="status">
               <strong>The site’s public address is not set.</strong> Links in emails are built from the{' '}
               <code>PUBLIC_ORIGIN</code> setting on the server. Set it to the address visitors use (for example{' '}
               <code>https://example.com</code>) so those links point at your site.
-            </p>
+            </Alert>
           )}
         </aside>
       </div>

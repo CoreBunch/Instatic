@@ -382,6 +382,21 @@ For inline page-level errors, prefer `role="alert"` content over a toast — toa
 
 ---
 
+## `Alert`
+
+Persistent inline notices use `Alert`. All four tones share the default button radius (`--input-radius`) and text size (`--text-s`). The background carries the tone.
+
+| Tone | Surface | Use |
+| --- | --- | --- |
+| `info` (default) | Neutral overlay | Context or instructions |
+| `success` | Green tint | A confirmed result or ready state |
+| `warning` | Amber tint | A consequence, limitation, or condition needing attention |
+| `danger` | Red tint | A failure or serious risk |
+
+Use `title` for an optional heading and `action` for a related control. Warning and danger default to `role="alert"`. Use `role="status"` for a previously recorded condition that can be announced politely. Keep component-local styling to placement.
+
+---
+
 ## `ContextMenu`
 
 Two positioning modes:

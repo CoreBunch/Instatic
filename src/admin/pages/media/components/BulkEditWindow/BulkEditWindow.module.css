@@ -5,13 +5,8 @@
   line-height: 1.4;
 }
 
-.notice {
-  margin: 0 0 var(--space-s) 0;
-  padding: var(--space-xs) var(--space-s);
-  background: var(--bg-surface-2);
-  border-radius: var(--radius-sm);
-  font-size: var(--text-xs);
-  color: var(--text-subtle);
+.noticeSpacing {
+  margin-bottom: var(--space-s);
 }
 
 .section {

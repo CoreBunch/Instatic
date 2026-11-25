@@ -147,22 +147,11 @@
   color: var(--text-bright);
 }
 
-.modeBody,
-.notice {
+.modeBody {
   margin: 0;
   font-size: var(--text-s);
   line-height: 1.5;
   color: var(--text-subtle);
-}
-
-.notice {
-  padding: var(--space-l) var(--space-2xl);
-  border-radius: var(--panel-radius);
-  background: var(--bg-surface-2);
-}
-
-.notice strong {
-  color: var(--warning-text);
 }
 
 .defaultsActions {

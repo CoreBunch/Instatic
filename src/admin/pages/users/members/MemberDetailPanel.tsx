@@ -2,6 +2,7 @@
  * One member: who they are, what they can open (tags), where they are signed
  * in, what they did, and what an administrator can do about it.
  */
+import { Alert } from '@ui/components/Alert'
 import { useId, useState, type ReactNode, type FormEvent } from 'react'
 import { ChevronDownIcon } from 'pixel-art-icons/icons/chevron-down'
 import { ChevronRightIcon } from 'pixel-art-icons/icons/chevron-right'
@@ -54,15 +55,15 @@ export function MemberDetailPanel({
   return (
     <>
       {member.status === 'pending' && (
-        <p className={ld.notice} data-tone="warning">
+        <Alert tone="warning" role="status">
           Not finished yet: this person has not confirmed their address. They were invited, signed up, or were given an
           account by a plugin. A sign-in link, a password reset or an invitation confirms it.
-        </p>
+        </Alert>
       )}
       {member.status === 'suspended' && (
-        <p className={ld.notice} data-tone="danger">
+        <Alert tone="danger" role="status">
           Suspended: this member cannot sign in, and anything they had open stopped working.
-        </p>
+        </Alert>
       )}
 
       {member.status === 'pending' && (

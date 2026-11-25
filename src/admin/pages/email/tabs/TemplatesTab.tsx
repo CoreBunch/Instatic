@@ -8,6 +8,7 @@
  * test" shows the email with sample values, rendered by the same code the
  * server sends with.
  */
+import { Alert } from '@ui/components/Alert'
 import { useId, useRef, useState } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useCurrentAdminUser } from '@admin/sessionContext'
@@ -65,7 +66,7 @@ export function TemplatesTab({ initialKey }: { initialKey: string | null }) {
 
   return (
     <WorkspaceSection title="Templates">
-      {error && <p role="alert" className={ws.errorAlert}>{error}</p>}
+      {error && <Alert tone="danger">{error}</Alert>}
       {loading && templates.length === 0 && <p className={ws.emptyState}>Loading templates…</p>}
       {selected && (
         <div className={styles.templatesLayout}>

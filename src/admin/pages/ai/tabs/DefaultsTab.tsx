@@ -1,4 +1,5 @@
 /** Per-surface model defaults in the shared AI master-detail workspace. */
+import { Alert } from '@ui/components/Alert'
 import { useState } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { Button } from '@ui/components/Button'
@@ -135,7 +136,7 @@ export function DefaultsTab({
         {loading ? (
           <div className={styles.emptyState}>Loading defaults…</div>
         ) : error ? (
-          <p role="alert" className={styles.errorAlert}>{error}</p>
+          <Alert tone="danger">{error}</Alert>
         ) : (
           <ScopeDetail
             key={selectedScope}

@@ -1,4 +1,5 @@
 /** MCP connection management in the shared AI master-detail workspace. */
+import { Alert } from '@ui/components/Alert'
 import { useId, useState } from 'react'
 import type { FormEvent } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
@@ -15,7 +16,6 @@ import { CopySolidIcon } from 'pixel-art-icons/icons/copy-solid'
 import { GlobeSolidIcon } from 'pixel-art-icons/icons/globe-solid'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
-import { WarningDiamondSolidIcon } from 'pixel-art-icons/icons/warning-diamond-solid'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import type { CoreCapability } from '@core/capabilities'
 import type {
@@ -150,7 +150,7 @@ export function McpTab() {
         {loading ? (
           <div className={styles.emptyState}>Loading connections…</div>
         ) : loadError ? (
-          <p role="alert" className={styles.errorAlert}>{loadError}</p>
+          <Alert tone="danger">{loadError}</Alert>
         ) : selectedConnection ? (
           <ConnectionDetail
             connection={selectedConnection}
@@ -222,17 +222,13 @@ function OAuthSetupPanel({
         />
         {overview && (
           overview.remoteAccess === 'local-only' ? (
-            <ReadinessNotice
-              tone="warning"
-              title="Available on this device only"
-              message="Hosted clients connect from the cloud. Publish Instatic at a public HTTPS URL before adding this connector."
-            />
+            <Alert tone="warning" role="status" title="Available on this device only">
+              Hosted clients connect from the cloud. Publish Instatic at a public HTTPS URL before adding this connector.
+            </Alert>
           ) : (
-            <ReadinessNotice
-              tone="success"
-              title="Public HTTPS is ready"
-              message="Hosted clients can reach this URL. Confirm your firewall allows incoming connector requests."
-            />
+            <Alert tone="success" role="status" title="Public HTTPS is ready">
+              Hosted clients can reach this URL. Confirm your firewall allows incoming connector requests.
+            </Alert>
           )
         )}
       </section>
@@ -251,29 +247,6 @@ function OAuthSetupPanel({
         </ol>
       </section>
     </article>
-  )
-}
-
-function ReadinessNotice({
-  tone,
-  title,
-  message,
-}: {
-  tone: 'warning' | 'success'
-  title: string
-  message: string
-}) {
-  const Icon = tone === 'warning' ? WarningDiamondSolidIcon : CheckIcon
-  return (
-    <div role="status" className={mcpStyles.readinessNotice} data-tone={tone}>
-      <span className={mcpStyles.readinessNoticeIcon} aria-hidden="true">
-        <Icon size={15} />
-      </span>
-      <span className={mcpStyles.readinessNoticeCopy}>
-        <strong>{title}</strong>
-        <span>{message}</span>
-      </span>
-    </div>
   )
 }
 
@@ -549,9 +522,9 @@ function AccessTokenResultDialog({
       }
     >
       <div className={mcpStyles.tokenBody}>
-        <p role="status" className={mcpStyles.tokenNotice}>
+        <Alert tone="warning" role="status">
           Copy this token now. Instatic stores only its hash and cannot show it again.
-        </p>
+        </Alert>
         <CopyField label="Personal access token" value={accessToken} copyLabel="Copy token" />
         <div className={mcpStyles.setupResult}>
           <h3>Claude Code and compatible CLIs</h3>
