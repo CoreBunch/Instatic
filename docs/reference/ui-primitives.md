@@ -185,7 +185,7 @@ import { Button } from '@ui/components/Button'
 
 ### Sizes
 
-Use the same size on adjacent controls. `Button` and `SegmentedControl` use `size`. `Input` and `Select` use `fieldSize`. All four share the `xs`, `sm`, and `md` height tokens and default to `md`. A segmented control's size includes its track border and padding. Pair a `SearchBar` with `sm` controls.
+Use the same size on adjacent controls. `Button` and `SegmentedControl` use `size`. `Input` and `Select` use `fieldSize`. All four share the `xs`, `sm`, and `md` height tokens and default to `md`. A segmented control's size includes its track border and padding. Pass `fullWidth` to distribute the options evenly across the track. Pair a `SearchBar` with `sm` controls.
 
 | Size    | Height | Use for                                                            |
 |---------|--------|--------------------------------------------------------------------|
