@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useId, useState, type ChangeEvent, type FormEvent } from 'react'
 import { deleteCurrentUserAvatar, updateCurrentUserProfile, uploadCurrentUserAvatar, type CmsCurrentUser } from '@core/persistence'
 import { userDisplayLabel } from '@core/users/displayName'
 import { getErrorMessage } from '@core/utils/errorMessage'
@@ -7,6 +7,7 @@ import { useStepUp } from '@admin/shared/StepUp'
 import { UserAvatar } from '@admin/shared/UserAvatar'
 import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
+import { FileUpload } from '@ui/components/FileUpload'
 import { Input } from '@ui/components/Input'
 import { pushToast } from '@ui/components/Toast'
 import { isStepUpCancelled } from './securityErrors'
@@ -31,9 +32,9 @@ export function ProfileHeader({ user }: { user: CmsCurrentUser }) {
 function ProfileDialog({ user, onClose }: { user: CmsCurrentUser; onClose: () => void }) {
   const setSessionUser = useAdminSessionSetter()
   const { runStepUp } = useStepUp()
-  const [name, setName] = useState(user.displayName)
+  const [nameDraft, setNameDraft] = useState<string | null>(null)
+  const name = nameDraft ?? user.displayName
   const [busy, setBusy] = useState(false)
-  const fileInput = useRef<HTMLInputElement>(null)
   const formId = useId()
   const nameId = useId()
   const dirty = name.trim() !== user.displayName
@@ -87,17 +88,23 @@ function ProfileDialog({ user, onClose }: { user: CmsCurrentUser; onClose: () =>
         <div className={styles.pictureEditor}>
           <UserAvatar key={user.avatarUrl} user={user} size={48} alt={null} className={styles.avatar} />
           <div className={styles.pictureActions}>
-            <Button type="button" variant="secondary" size="sm" disabled={busy} onClick={() => fileInput.current?.click()} data-testid="profile-avatar-upload">
+            <FileUpload
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              aria-label="Profile picture"
+              disabled={busy}
+              onChange={selectPicture}
+              data-testid="profile-avatar-file"
+              buttonProps={{ variant: 'secondary', size: 'sm', disabled: busy, 'data-testid': 'profile-avatar-upload' }}
+            >
               {user.avatarUrl ? 'Change picture' : 'Upload picture'}
-            </Button>
+            </FileUpload>
             {user.avatarUrl && <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void updatePicture(null)} data-testid="profile-avatar-remove">Remove</Button>}
           </div>
-          <input type="file" hidden ref={fileInput} accept="image/jpeg,image/png,image/gif,image/webp" onChange={selectPicture} data-testid="profile-avatar-file" />
         </div>
         <p className={styles.secondaryText}>JPEG, PNG, GIF, or WebP, 5 MB maximum.</p>
         <div className={styles.dialogField}>
           <label htmlFor={nameId} className={styles.dialogLabel}>Display name</label>
-          <Input id={nameId} autoComplete="name" value={name} onChange={e => setName(e.currentTarget.value)} disabled={busy} data-testid="profile-display-name" />
+          <Input id={nameId} autoComplete="name" value={name} onChange={e => setNameDraft(e.currentTarget.value === user.displayName ? null : e.currentTarget.value)} disabled={busy} data-testid="profile-display-name" />
         </div>
       </form>
     </Dialog>

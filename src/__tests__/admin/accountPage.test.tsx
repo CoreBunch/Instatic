@@ -219,6 +219,24 @@ describe('AccountPage', () => {
     expect(screen.queryByLabelText('Email address')).toBeNull()
   })
 
+  it.each([null, 'Unsaved name'])('refreshes the profile name while preserving a draft of %p', async (draft) => {
+    const updated = makeUser({ displayName: 'Updated name' })
+    globalThis.fetch = makeAccountFetch((url, init) => {
+      if (url.endsWith('/admin/api/cms/me/avatar') && init?.method === 'DELETE') {
+        return jsonResponse({ user: updated })
+      }
+      return undefined
+    })
+    renderWithUser(makeUser({ avatarUrl: '/uploads/avatar.png' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit profile' }))
+    const input = screen.getByRole('textbox', { name: 'Display name' })
+    if (draft) fireEvent.change(input, { target: { value: draft } })
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Updated name' })).toBeTruthy())
+    expect(screen.getByDisplayValue(draft ?? updated.displayName)).toBe(input)
+    expect(screen.getByTestId('profile-save').hasAttribute('disabled')).toBe(draft === null)
+  })
+
   it('Sessions tab renders the device list with the current session pinned', async () => {
     globalThis.fetch = makeAccountFetch((url) => {
       if (url.endsWith('/admin/api/cms/auth/sessions')) {

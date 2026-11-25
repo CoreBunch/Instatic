@@ -127,7 +127,12 @@ function SignInForm({ field, user, busy, setBusy, setSessionUser, runStepUp, id,
       aria-label={`Change ${field}`}
       className={styles.signInEditor}
       onSubmit={submit}
-      onKeyDown={event => { if (event.key === 'Escape' && !busy) onClose() }}
+      onKeyDown={event => {
+        if (event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing || busy) return
+        event.preventDefault()
+        event.stopPropagation()
+        onClose()
+      }}
     >
       <div className={styles.dialogField}>
         <label htmlFor={id + '-value'} className={styles.dialogLabel}>{isEmail ? 'New email address' : 'New password'}</label>
