@@ -117,6 +117,15 @@ export interface ImportResult extends WalkResult {
 // global (it runs in the browser bundle and under the happy-dom test polyfill).
 const ELEMENT_NODE = 1
 const TEXT_NODE = 3
+
+/**
+ * Phrasing elements that render inline by default, so whitespace at their
+ * edges is a visible word boundary (`<strong>Focus: </strong>Text`).
+ */
+const INLINE_TEXT_TAGS = new Set([
+  'a', 'abbr', 'b', 'bdi', 'bdo', 'cite', 'code', 'data', 'dfn', 'em', 'i', 'kbd', 'label',
+  'mark', 'q', 's', 'samp', 'small', 'span', 'strong', 'sub', 'sup', 'time', 'u', 'var',
+])
 const HTML_ATTRIBUTE_MODULES = new Set([
   'base.container',
   'base.text',
@@ -321,20 +330,31 @@ function mapChildNodes(parent: Element, ctx: WalkContext): string[] {
   //     between block elements → dropped,
   //   - a whitespace-only node WITHOUT a newline = a significant inline space
   //     (e.g. `</span> <span>`) → kept as one space,
+  //   - a space at an inline element's edge (`<strong>Focus: </strong>Text`) →
+  //     moved onto the neighbouring text, since the element's own text is trimmed,
   //   - leading/trailing space at the block's edges is insignificant → trimmed.
   // This keeps inline spacing intact (`Bold <strong>word</strong> here` →
   // "Bold word here") while not surfacing stray indentation in text fields.
   const items: ChildItem[] = []
   for (const child of Array.from(parent.childNodes)) {
     if (child.nodeType === ELEMENT_NODE) {
-      items.push({ kind: 'el', el: child as Element })
+      const el = child as Element
+      if (!INLINE_TEXT_TAGS.has(el.tagName.toLowerCase())) {
+        items.push({ kind: 'el', el })
+        continue
+      }
+      // Without this, `<strong>Focus: </strong>Text` would read "Focus:Text".
+      const text = el.textContent ?? ''
+      if (/^\s/.test(text)) pushText(items, ' ')
+      items.push({ kind: 'el', el })
+      if (/\S\s+$/.test(text)) pushText(items, ' ')
     } else if (child.nodeType === TEXT_NODE) {
       const raw = child.textContent ?? ''
       if (/^\s*$/.test(raw)) {
         if (/[\n\r]/.test(raw)) continue // indentation between block tags
-        items.push({ kind: 'text', text: ' ' }) // significant inline space
+        pushText(items, ' ') // significant inline space
       } else {
-        items.push({ kind: 'text', text: raw.replace(/\s+/g, ' ') })
+        pushText(items, raw.replace(/\s+/g, ' '))
       }
     }
   }
@@ -359,6 +379,20 @@ function mapChildNodes(parent: Element, ctx: WalkContext): string[] {
     }
   }
   return childIds
+}
+
+/**
+ * Append collapsed text to `items`, merging it into a preceding text item so a
+ * boundary space and the text after it become one node, and two spaces never
+ * stack up at the same boundary.
+ */
+function pushText(items: ChildItem[], text: string): void {
+  const last = items[items.length - 1]
+  if (last?.kind === 'text') {
+    items[items.length - 1] = { kind: 'text', text: (last.text + text).replace(/ {2,}/g, ' ') }
+  } else {
+    items.push({ kind: 'text', text })
+  }
 }
 
 /**

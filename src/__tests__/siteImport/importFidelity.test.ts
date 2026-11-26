@@ -41,6 +41,7 @@ const INDEX_HTML = `<!doctype html><html><head><title>Home</title>
 </form>
 <a class="btn" href="#" data-open-drawer>Buy</a>
 <a href="/pricing">Pricing</a>
+<p><strong>Focus: </strong>Controlling pain.</p>
 <script src="shared/app.js"></script>
 </body></html>`
 
@@ -134,6 +135,10 @@ describe('Site Import keeps what the page needs to work', () => {
     expect(html).toContain('<a class="btn" data-open-drawer="" href="#">Buy</a>')
     expect(html).toContain('<a href="/pricing">Pricing</a>')
     expect(html).not.toContain('target="_self"')
+  })
+
+  it('keeps the space after an inline element so the words do not run together', () => {
+    expect(html).toContain('<strong>Focus:</strong> Controlling pain.')
   })
 })
 
