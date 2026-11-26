@@ -23,6 +23,8 @@ import { LinkModule } from '@modules/base/link'
 import { ImageModule } from '@modules/base/image'
 import { ContainerModule } from '@modules/base/container'
 import { ListModule } from '@modules/base/list'
+import '@modules/base/forms'
+import '@modules/base/svg'
 import { registry } from '@core/module-engine'
 
 // Confirm real modules are registered
@@ -561,5 +563,42 @@ describe('publishPage() + real modules — end-to-end document', () => {
     const { html } = publishPage(page, site, REAL_REGISTRY, { mediaAssets })
     expect(html).toContain('alt="Cat &amp; Dog"')
     expect(html).not.toContain('alt="Cat &amp;amp; Dog"')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Custom HTML attributes reach every element type
+// ---------------------------------------------------------------------------
+
+describe('Publisher + real modules — custom HTML attributes', () => {
+  const htmlAttributes = { 'aria-label': 'Custom label', 'data-track': 'cta' }
+
+  for (const [moduleId, props, tag] of [
+    ['base.button', {}, 'button'],
+    ['base.input', {}, 'input'],
+    ['base.checkbox', {}, 'input'],
+    ['base.svg', { svg: '<svg viewBox="0 0 10 10"><path d="M0 0"/></svg>' }, 'svg'],
+  ] as const) {
+    it(`${moduleId} emits authored attributes on its <${tag}>`, () => {
+      const page = makePage({ root: { moduleId, props: { ...props, htmlAttributes } } })
+      const html = render('root', realCtx(page))
+      expect(html).toMatch(new RegExp(`^<${tag}\\b[^>]* aria-label="Custom label"`))
+      expect(html).toMatch(new RegExp(`^<${tag}\\b[^>]* data-track="cta"`))
+    })
+  }
+
+  it('base.svg keeps the sanitisation gate and the title label', () => {
+    const page = makePage({
+      root: {
+        moduleId: 'base.svg',
+        props: {
+          svg: '<svg viewBox="0 0 10 10"></svg>',
+          title: 'Logo',
+          htmlAttributes: { onclick: 'alert(1)', 'data-x': '"><script>', style: 'color:red' },
+        },
+      },
+    })
+    const html = render('root', realCtx(page))
+    expect(html).toBe('<svg role="img" aria-label="Logo" data-x="&quot;&gt;&lt;script&gt;" viewBox="0 0 10 10"></svg>')
   })
 })

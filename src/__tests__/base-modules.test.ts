@@ -859,8 +859,8 @@ describe('base.image — render() specifics', () => {
 // ---------------------------------------------------------------------------
 
 describe('base.svg — render() specifics', () => {
-  it('has only inline markup and accessible-label settings', () => {
-    expect(Object.keys(SvgModule.schema).sort()).toEqual(['svg', 'title'])
+  it('has only inline markup, accessible-label and HTML attribute settings', () => {
+    expect(Object.keys(SvgModule.schema).sort()).toEqual(['htmlAttributes', 'svg', 'title'])
     expect(SvgModule.canHaveChildren).toBe(false)
     expect(SvgModule.htmlTag).toBe('svg')
   })
@@ -928,6 +928,27 @@ describe('base.svg — render() specifics', () => {
     expect(svg?.classList.contains('ist-svg')).toBe(true)
     expect(svg?.innerHTML.toLowerCase()).not.toContain('<script')
     expect(svg?.innerHTML.toLowerCase()).not.toContain('onload')
+  })
+
+  it('applies authored HTML attributes to the editor preview root', () => {
+    const { container } = renderReact(
+      React.createElement(SvgModule.component, {
+        props: {
+          svg: '<svg viewBox="0 0 10 10" data-track="markup"><path d="M0 0"/></svg>',
+          title: '',
+          htmlAttributes: { 'aria-label': 'Custom label', 'data-track': 'cta', onclick: 'alert(1)' },
+        },
+        nodeId: 'svg-node',
+        isSelected: false,
+        mcClassName: 'ist-svg',
+        nodeWrapperProps: { 'data-node-id': 'svg-node', 'data-module-id': 'base.svg', tabIndex: 0 },
+      } as never),
+    )
+
+    const svg = container.querySelector('svg')
+    expect(svg?.getAttribute('aria-label')).toBe('Custom label')
+    expect(svg?.getAttribute('data-track')).toBe('cta')
+    expect(svg?.getAttribute('onclick')).toBeNull()
   })
 
   it('does not access DOM globals during publish render', () => {
