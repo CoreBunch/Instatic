@@ -218,7 +218,7 @@ interface CanvasDocumentDeleteShortcutDeps {
 /**
  * Delete / Backspace as a native `document` listener. Keystrokes from a
  * focused design frame reach the parent as clones dispatched on `document`
- * (see `IframeFrameSurface`), which never pass through the canvas root's
+ * (see `useIframeInputRelay`), which never pass through the canvas root's
  * React `onKeyDown`, so the delete binding is also handled here whenever the
  * event target or the focused element sits inside the canvas.
  */

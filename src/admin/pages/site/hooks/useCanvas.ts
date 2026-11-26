@@ -302,7 +302,7 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
       if (e.code === 'Space' && !e.repeat) {
         const target = e.target as HTMLElement
         // Don't intercept space in inputs/textareas. Inline-edit keystrokes
-        // never reach here: IframeFrameSurface's key forwarding stands down
+        // never reach here: useIframeInputRelay's key forwarding stands down
         // during a session, so no space clone is dispatched on this document.
         if (
           target.tagName === 'INPUT' ||

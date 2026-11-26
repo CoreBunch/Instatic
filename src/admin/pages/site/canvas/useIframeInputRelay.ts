@@ -183,9 +183,10 @@ export function useIframeInputRelay({ iframeDoc, iframeRef, isLive }: IframeInpu
       return Number.isFinite(id) ? { pointerId: id } : { pointerId: 0 }
     }
     // True while a pan gesture started inside this iframe is still in
-    // flight (space+left-click hold). We start a pan on pointerdown when
-    // the conditions match and keep forwarding every subsequent pointermove
-    // / pointerup for the same pointerId until the button comes back up.
+    // flight (Space + left-drag, middle-drag, or a Hand tool left-drag). We
+    // start a pan on pointerdown when the conditions match and keep
+    // forwarding every subsequent pointermove / pointerup for the same
+    // pointerId until the button comes back up.
     // This is the only way to know that a stray pointermove is "part of an
     // active pan" — `e.buttons` is 0 on the final pointerup, and using
     // `e.button === 0` to detect "left is down during move" matches every
