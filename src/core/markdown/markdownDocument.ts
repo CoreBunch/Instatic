@@ -131,6 +131,9 @@ function tokenToBlockNode(token: Token): JSONNode | JSONNode[] | null {
       // lose content. Sanitisation happens at publish time.
       const raw = (token as Tokens.HTML).raw.trim()
       if (!raw) return null
+      // A paragraph holding only a line break is saved as a lone `<br>`,
+      // which markdown reads as an HTML block.
+      if (htmlTokenIs(token, '<br>')) return { type: 'paragraph', content: [{ type: 'hardBreak' }] }
       return { type: 'paragraph', content: [{ type: 'text', text: raw }] }
     }
     default:
@@ -397,6 +400,11 @@ function pushInline(out: JSONNode[], token: Token, marks: JSONMark[]): void {
       out.push({ type: 'hardBreak' })
       return
     case 'html': {
+      // The serialiser writes a hard break as inline `<br>`.
+      if (htmlTokenIs(token, '<br>')) {
+        out.push({ type: 'hardBreak' })
+        return
+      }
       const raw = (token as Tokens.HTML).text
       if (raw) out.push(textNode(raw, marks))
       return
