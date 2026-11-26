@@ -1,6 +1,6 @@
 /**
- * CanvasModeToggle — Design / Live switch + the "Run scripts" control for the
- * canvas surface.
+ * CanvasModeToggle — Design / Live switch, the Hand tool, and the "Run
+ * scripts" control for the canvas surface.
  *
  * - Design mode: the multi-breakpoint editing canvas (pan/zoom, every frame
  *   side-by-side).
@@ -22,6 +22,8 @@ import type { RuntimeScriptStatus } from './useRuntimeScriptBuild'
 import { CursorMinimalSolidIcon } from 'pixel-art-icons/icons/cursor-minimal-solid'
 import { EyeSolidIcon } from 'pixel-art-icons/icons/eye-solid'
 import { CodeIcon } from 'pixel-art-icons/icons/code'
+import { HandGrabSolidIcon } from 'pixel-art-icons/icons/hand-grab-solid'
+import { formatShortcut, getKeybindingForCommand } from '@admin/spotlight/keybindings'
 import { ReloadIcon } from 'pixel-art-icons/icons/reload'
 import { SmartphoneSolidIcon } from 'pixel-art-icons/icons/smartphone-solid'
 import { TabletSolidIcon } from 'pixel-art-icons/icons/tablet-solid'
@@ -64,6 +66,10 @@ export function CanvasModeToggle({ scriptStatus, onRefreshScripts, scaleControl,
   const setActiveBreakpoint = useEditorStore((s) => s.setActiveBreakpoint)
   const runScripts = useEditorStore((s) => s.runScripts)
   const setRunScripts = useEditorStore((s) => s.setRunScripts)
+  const handToolActive = useEditorStore((s) => s.canvasMode === 'pan')
+  const toggleHandTool = useEditorStore((s) => s.toggleHandTool)
+  const handToolBinding = getKeybindingForCommand('preview.toggleHandTool')
+  const handToolShortcut = handToolBinding ? formatShortcut(handToolBinding.shortcut) : 'H'
 
   // The toggle lives inside the canvas surface, which has its own click /
   // keyboard handlers (deselect, shortcuts, etc.). Stop propagation so the
@@ -113,6 +119,27 @@ export function CanvasModeToggle({ scriptStatus, onRefreshScripts, scaleControl,
           </button>
         </Tooltip>
       </div>
+
+      {/* Hand tool — design canvas only (live frames scroll natively). While
+          on, a left-drag (or a pen-tip drag) pans instead of selecting. */}
+      {view === 'design' && (
+        <>
+          <span className={styles.divider} aria-hidden="true" />
+          <Tooltip content={`Hand tool: drag to pan the canvas (${handToolShortcut})`}>
+            <button
+              type="button"
+              aria-pressed={handToolActive}
+              aria-label="Hand tool"
+              aria-keyshortcuts={handToolBinding?.ariaKeyshortcuts}
+              data-testid="canvas-hand-tool-toggle"
+              className={cn(styles.tab, handToolActive && styles.tabActive)}
+              onClick={toggleHandTool}
+            >
+              <HandGrabSolidIcon size={14} aria-hidden="true" />
+            </button>
+          </Tooltip>
+        </>
+      )}
 
       {/* Run scripts toggle — injects the site's bundled runtime scripts into
           the editable frames so authored behaviour runs while editing. */}

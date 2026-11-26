@@ -337,7 +337,7 @@ The store is composed of **14 slices**, each created by a factory in `store/slic
 |------------------------|----------------------------------------------------------------------------|
 | `siteSlice`            | `SiteDocument` (pages, nodes, breakpoints, settings, classes, files). The page tree itself. |
 | `selectionSlice`       | `selectedNodeId`, `hoveredNodeId`                                          |
-| `canvasSlice`          | Zoom, pan, `activeBreakpointId`, `activeConditionId`, `canvasMode` ('select'|'pan'|'insert'), `canvasView` ('design'|'live'), `runScripts` |
+| `canvasSlice`          | Zoom, pan, `activeBreakpointId`, `activeConditionId`, `canvasMode` ('select'|'pan' — `pan` is the Hand tool, flipped by `toggleHandTool`), `canvasView` ('design'|'live'), `runScripts` |
 | `uiSlice`              | Site editor panel visibility, unsaved-changes flag, insert picker, `componentizeEditorRequest` |
 | `classSlice`           | Style-rule CRUD, node ↔ class assignment, ambient selector creation         |
 | `filesSlice`           | `SiteFile` CRUD                                                            |
@@ -495,6 +495,7 @@ Canvas-internal values are not CSS tokens — they are raw integers intentionall
 | `CanvasRoot.tsx`                | Top-level canvas mount                                          |
 | `BreakpointFrame.tsx`           | One iframe per active breakpoint                                |
 | `IframeFrameSurface.tsx`        | The iframe element + portal + style injectors                   |
+| `useIframeInputRelay.ts`        | Keyboard + pointer relay out of a frame: shortcut forwarding, Space / middle / Hand tool pans, canvas-drag forwarding |
 | `EditorChromeInjector.tsx`      | Unlayered editor-chrome CSS into each iframe head               |
 | `ClassStyleInjector.tsx`        | Class registry + publisher reset CSS into each iframe head      |
 | `UserStylesheetInjector.tsx`    | User-uploaded CSS into each iframe head                         |
@@ -505,7 +506,7 @@ Canvas-internal values are not CSS tokens — they are raw integers intentionall
 | `CanvasLiveSurface.tsx`         | "Live" view — single real-size editable frame, normal scroll    |
 | `RuntimeScriptInjector.tsx`     | Injects bundled runtime scripts into an editable iframe         |
 | `CanvasNotch.tsx`               | Top-center chrome: history controls + favorite insert shortcuts; peek mode in live view |
-| `CanvasModeToggle.tsx`          | Design/Live view toggle + Run-scripts toggle + breakpoint switch; peek mode in live view |
+| `CanvasModeToggle.tsx`          | Design/Live view toggle + Hand tool toggle (design view) + Run-scripts toggle + breakpoint switch; peek mode in live view |
 | `CanvasContextSelector.tsx`     | Editing-context switcher: viewports + custom conditions (@media/@container/@supports) |
 | `CanvasLayerContextMenu.tsx`    | Right-click on a layer                                          |
 | `canvasDnd.ts`                  | Drag-and-drop (insert / move / wrap)                            |
@@ -518,7 +519,7 @@ Canvas-internal values are not CSS tokens — they are raw integers intentionall
 | `CanvasTreeLadderOverlay.tsx`   | `useCanvasTreeLadderOverlay` — wires the ladder model to canvas events and portal |
 | `CanvasTreeLadderRowButton.tsx` | Single row button in the Alt/Option inspect ladder              |
 | `useCanvas.ts`                  | Pan/zoom gesture hook; `centerOnBreakpointFrame` for initial viewport focus |
-| `useCanvasKeyboardShortcuts.ts` | Editor keyboard shortcuts (delete, duplicate, wrap, …)          |
+| `useCanvasKeyboardShortcuts.ts` | Editor keyboard shortcuts (delete, duplicate, wrap, …); `useCanvasDocumentDeleteShortcut` handles Delete for keystrokes forwarded from frames |
 | `useRuntimeScriptBuild.ts`      | Builds the bundled runtime scripts for the Run-scripts toggle    |
 | `useIframeCursorBridge.ts`      | Bridges iframe-native cursor movement to parent-doc callbacks (used by breakpoint activation tooltip) |
 | `CanvasComposedTree.tsx`        | Renders the active document inside its matching template chain (wrappers read-only, active doc editable) |

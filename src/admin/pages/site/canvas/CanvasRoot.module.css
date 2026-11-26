@@ -23,6 +23,16 @@
     outline: none;
 }
 
+/* Hand tool: every left-drag pans. Frames set their own grab cursor
+   (iframeBodyReset), so this covers the empty canvas between them. */
+.canvas[data-canvas-tool="pan"] {
+    cursor: grab;
+}
+
+.canvas[data-canvas-tool="pan"]:active {
+    cursor: grabbing;
+}
+
 /* B1 — VC edit mode accent frame: inset ring using the canvas selection token.
    Achromatic only — uses existing --canvas-selection-ring; no new colors. */
 .canvas[data-vc-mode="true"] {

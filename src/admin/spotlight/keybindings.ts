@@ -173,6 +173,15 @@ export const KEYBINDINGS: ReadonlyArray<KeybindingDefinition> = [
   // ── Canvas + Layers tree (layer operations) ─────────────────────────────────
 
   {
+    commandId: 'preview.toggleHandTool',
+    shortcut: { mac: 'H', win: 'H' },
+    ariaKeyshortcuts: 'H',
+    match: (e) => !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'h',
+    scope: 'canvas',
+    ignoreInEditableField: true,
+  },
+
+  {
     commandId: 'layers.duplicate',
     shortcut: { mac: '⌘D', win: 'Ctrl+D' },
     match: (e) => (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd',

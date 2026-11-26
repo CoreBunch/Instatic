@@ -6,7 +6,8 @@ import {
   nearestZoomStep,
 } from '@site/canvas/math'
 
-type CanvasMode = 'select' | 'pan' | 'insert'
+/** `pan` is the Hand tool: a primary-button drag pans the design canvas instead of selecting. */
+type CanvasMode = 'select' | 'pan'
 
 interface AgentSnapshotCaptureRequest {
   requestId: string
@@ -55,7 +56,7 @@ interface CanvasSlice {
    * the default page canvas (activeDocument === null). Cleared on exit.
    */
   previousActivePageId: string | null
-  /** Current editor interaction mode */
+  /** Active canvas tool: `select` (default) or `pan` (Hand tool, design view only). */
   canvasMode: CanvasMode
   /** Current canvas render mode — 'design' (multi-breakpoint canvas) or 'live' (single real-size editable frame) */
   canvasView: CanvasView
@@ -90,7 +91,8 @@ interface CanvasSlice {
   /** Set (or clear, with null) the active custom-condition editing context. */
   setActiveConditionId: (id: string | null) => void
   setActivePage: (pageId: string) => void
-  setCanvasMode: (mode: CanvasMode) => void
+  /** Switch between the Select tool and the Hand tool. */
+  toggleHandTool: () => void
   setCanvasView: (view: CanvasView) => void
   /** Toggle (or set) whether runtime scripts run inside the editable iframes. */
   setRunScripts: (run: boolean) => void
@@ -149,7 +151,9 @@ export const createCanvasSlice: EditorStoreSliceCreator<CanvasSlice> = (set, get
 
   setActivePage: (pageId) => set({ activePageId: pageId }),
 
-  setCanvasMode: (mode) => set({ canvasMode: mode }),
+  toggleHandTool: () => set((s) => {
+    s.canvasMode = s.canvasMode === 'pan' ? 'select' : 'pan'
+  }),
 
   setCanvasView: (view) => set({ canvasView: view }),
 

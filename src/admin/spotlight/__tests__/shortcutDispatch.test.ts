@@ -165,6 +165,29 @@ describe('command shortcut dispatch', () => {
     ).toBe('layers.paste')
   })
 
+  it('resolves a bare H on the canvas to the Hand tool toggle', () => {
+    const ctx = context(['site.read'], {
+      selectedNodeIds: [],
+      activePageId: 'page-1',
+      activeDocument: { kind: 'page', pageId: 'page-1' },
+      canUndo: false,
+      canRedo: false,
+      activeBreakpointId: 'desktop',
+      activeInlineEdit: false,
+    })
+    const onCanvas = (key: string, overrides: Partial<KeyboardEvent> = {}) =>
+      findMatchingShortcutCommand(
+        eventLike(key, { target: canvasTarget() as EventTarget, ...overrides }) as KeyboardEvent,
+        ctx,
+      )
+
+    expect(onCanvas('h')?.id).toBe('preview.toggleHandTool')
+    expect(onCanvas('H')?.id).toBe('preview.toggleHandTool')
+    expect(onCanvas('h', { metaKey: true })).toBeNull()
+    expect(onCanvas('H', { shiftKey: true })).toBeNull()
+    expect(findMatchingShortcutCommand(eventLike('h') as KeyboardEvent, ctx)).toBeNull()
+  })
+
   it('does not run canvas shortcuts during inline text editing', () => {
     const ctx = context(['site.read', 'site.structure.edit'], {
       selectedNodeIds: ['node-1'],
