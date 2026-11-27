@@ -15,6 +15,8 @@ import { registry } from '@core/module-engine'
 import type { ModuleDefinition } from '@core/module-engine'
 import { ImageSolidIcon } from 'pixel-art-icons/icons/image-solid'
 import { Value } from '@core/utils/typeboxHelpers'
+import { htmlAttributesAttr } from '@core/publisher'
+import { htmlAttributesControl } from '@modules/base/shared/htmlAttributes'
 import { SvgEditor } from './SvgEditor'
 import { SvgPropsSchema, type SvgStoredProps } from './props'
 
@@ -40,6 +42,7 @@ export const SvgModule: ModuleDefinition<SvgStoredProps> = {
       category: 'content',
       placeholder: 'e.g. Company logo',
     },
+    htmlAttributes: htmlAttributesControl(),
   },
 
   propsSchema: SvgPropsSchema,
@@ -52,21 +55,17 @@ export const SvgModule: ModuleDefinition<SvgStoredProps> = {
 
   render: (props) => {
     // `props.svg` was already sanitised at the escapeProps boundary; this is
-    // the final, safe markup. An a11y label, when present, is added to the
-    // root element so the inline graphic announces itself.
+    // the final, safe markup. An a11y label, when present, and the authored
+    // HTML attributes are added to the root element. They go first so they
+    // win over same-named attributes already on the markup's root.
     const markup = String(props.svg ?? '')
     if (!markup.trim()) return { html: '' }
 
     const label = String(props.title ?? '').trim()
-    if (label) {
-      // Inject role/aria-label onto the opening <svg> tag.
-      const withLabel = markup.replace(
-        /^(\s*<svg\b)/i,
-        `$1 role="img" aria-label="${label}"`,
-      )
-      return { html: withLabel }
-    }
-    return { html: markup }
+    const labelAttrs = label ? ` role="img" aria-label="${label}"` : ''
+    const rootAttrs = `${labelAttrs}${htmlAttributesAttr(props.htmlAttributes)}`
+    if (!rootAttrs) return { html: markup }
+    return { html: markup.replace(/^(\s*<svg\b)/i, `$1${rootAttrs}`) }
   },
 }
 
