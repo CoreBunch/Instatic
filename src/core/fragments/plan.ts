@@ -101,8 +101,8 @@ export function planFragmentInsert(target: FragmentInsertTarget, fragment: SiteF
   const scopeNodeId = (id: string) =>
     nodeIdMap.get(id) ?? [...vcNodeIdMaps.values()].find((map) => map.has(id))?.get(id)
 
-  // ── Rules: only what the landing nodes and added components use ───────────
-  const usedClassIds = new Set<string>()
+  // Shared optional classes travel alongside rules bound to inserted nodes.
+  const usedClassIds = new Set(fragment.optionalClassIds)
   for (const id of nodeIdMap.keys()) for (const classId of fragment.nodes[id]?.classIds ?? []) usedClassIds.add(classId)
   for (const vc of addedVcs) {
     for (const classId of vc.classIds) usedClassIds.add(classId)

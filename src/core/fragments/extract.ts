@@ -49,6 +49,7 @@ export type FragmentSelection =
 
 export interface ExtractFragmentOptions {
   origin?: SiteFragment['origin']
+  optionalClassIds?: readonly string[]
 }
 
 export interface ExtractFragmentResult {
@@ -85,7 +86,7 @@ export async function extractFragment(
   const allNodes = nodeSets.flatMap((set) => Object.values(set))
 
   // ── 3. Class rules ─────────────────────────────────────────────────────────
-  const usedClassIds = new Set<string>()
+  const usedClassIds = new Set(options.optionalClassIds)
   for (const node of allNodes) for (const id of node.classIds) usedClassIds.add(id)
   for (const vc of components) for (const id of vc.classIds) usedClassIds.add(id)
 
@@ -145,6 +146,7 @@ export async function extractFragment(
     version: SITE_FRAGMENT_VERSION,
     kind,
     ...(options.origin ? { origin: options.origin } : {}),
+    ...(options.optionalClassIds?.length ? { optionalClassIds: [...new Set(options.optionalClassIds)] } : {}),
     roots,
     nodes,
     ...(picked.page && kind === 'page' ? { page: {

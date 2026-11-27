@@ -177,6 +177,8 @@ export const SiteFragmentSchema = Type.Object({
    * ambient rule whose selector names a carried class.
    */
   styleRules: Type.Array(StyleRuleSchema),
+  /** Shared classes offered to the editor without assigning them to a node. */
+  optionalClassIds: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { uniqueItems: true })),
   conditions: Type.Array(ConditionDefSchema),
   /** Visual Component closure, nested references included. */
   components: Type.Array(VisualComponentSchema),
@@ -216,6 +218,12 @@ export function parseSiteFragment(value: unknown): SiteFragment {
   assertKindPayload(fragment)
   assertComponentTrees(fragment)
   assertUniqueIds(fragment)
+  if (fragment.optionalClassIds?.length) {
+    const shared = new Set(fragment.styleRules.filter(rule => rule.kind === 'class' && !rule.scope).map(rule => rule.id))
+    for (const id of fragment.optionalClassIds) {
+      if (!shared.has(id)) throw new FragmentParseError('optionalClassIds', `"${id}" must identify a shared class in styleRules`)
+    }
+  }
   return fragment
 }
 
