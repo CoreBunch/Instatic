@@ -134,7 +134,9 @@ const BUDGETS: ChunkBudget[] = [
   },
   {
     prefix: 'AdminCanvasEditorBody-',
-    maxBytes: 780_000,
+    // Raised from 780 KB for the canvas Hand tool (toolbar toggle, H binding,
+    // Spotlight command, frame pan/tap handling; ~+1 KB raw, no new deps).
+    maxBytes: 782_000,
     rationale:
       'post-paint Site editor body (canvas + panels + modules + publisher). ' +
       'Current ~724 KB raw / ~228 KB gzipped after moving Import HTML behind ' +

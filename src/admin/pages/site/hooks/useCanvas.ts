@@ -12,6 +12,8 @@
  * - Ctrl/Cmd + wheel → zoom towards cursor
  * - Plain wheel → pan vertically (and horizontally with shift)
  * - Space + left-drag → pan
+ * - Hand tool (canvasMode 'pan') + left-drag → pan
+ * - Middle-drag → pan
  * - Pinch (touch) → zoom+pan
  * - +/- keys → zoom in/out (committed immediately)
  * - Ctrl/Cmd+0 → reset to 100% zoom
@@ -300,7 +302,7 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
       if (e.code === 'Space' && !e.repeat) {
         const target = e.target as HTMLElement
         // Don't intercept space in inputs/textareas. Inline-edit keystrokes
-        // never reach here: IframeFrameSurface's key forwarding stands down
+        // never reach here: useIframeInputRelay's key forwarding stands down
         // during a session, so no space clone is dispatched on this document.
         if (
           target.tagName === 'INPUT' ||
@@ -489,7 +491,10 @@ export function useCanvas({ canvasRootRef, transformLayerRef, enabled }: UseCanv
         if (first) {
           isDraggingRef.current = isCanvasPointerPanActive(
             { buttons },
-            { spaceHeld: spaceActiveRef.current },
+            {
+              primaryButtonPans:
+                spaceActiveRef.current || useEditorStore.getState().canvasMode === 'pan',
+            },
           )
           if (isDraggingRef.current && isMiddleMousePointerPan({ buttons }) && event.cancelable) {
             event.preventDefault()

@@ -321,3 +321,24 @@ describe('zoomIn / zoomOut', () => {
     expect(canvas().zoom).toBe(MAX_ZOOM)
   })
 })
+
+describe('toggleHandTool', () => {
+  it('switches between the Select tool and the Hand tool', () => {
+    expect(useEditorStore.getState().canvasMode).toBe('select')
+    useEditorStore.getState().toggleHandTool()
+    expect(useEditorStore.getState().canvasMode).toBe('pan')
+    useEditorStore.getState().toggleHandTool()
+    expect(useEditorStore.getState().canvasMode).toBe('select')
+  })
+})
+
+describe('activateSelectTool', () => {
+  it('returns to the Select tool from the Hand tool and stays there', () => {
+    useEditorStore.getState().toggleHandTool()
+    expect(useEditorStore.getState().canvasMode).toBe('pan')
+    useEditorStore.getState().activateSelectTool()
+    expect(useEditorStore.getState().canvasMode).toBe('select')
+    useEditorStore.getState().activateSelectTool()
+    expect(useEditorStore.getState().canvasMode).toBe('select')
+  })
+})

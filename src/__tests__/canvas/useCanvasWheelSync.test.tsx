@@ -63,6 +63,7 @@ beforeEach(() => {
     panY: 0,
     hoveredNodeId: null,
     hoveredBreakpointId: null,
+    canvasMode: 'select',
   } as Parameters<typeof useEditorStore.setState>[0])
 })
 
@@ -252,6 +253,38 @@ describe('useCanvas wheel pan sync', () => {
   })
 })
 
+describe('Hand tool canvas pan', () => {
+  function leftDrag(root: Element) {
+    fireEvent.pointerDown(root, { pointerId: 1, button: 0, buttons: 1, clientX: 100, clientY: 100 })
+    fireEvent.pointerMove(root, { pointerId: 1, button: -1, buttons: 1, clientX: 130, clientY: 140 })
+  }
+
+  it('pans the canvas on a plain left-drag while the Hand tool is active', async () => {
+    useEditorStore.getState().toggleHandTool()
+    render(<TestCanvas />)
+
+    leftDrag(screen.getByTestId('test-canvas-root'))
+    await act(async () => {
+      await nextAnimationFrame()
+    })
+
+    const translate = parseTranslate(screen.getByTestId('test-transform-layer').style.transform)
+    expect(translate.x).toBeGreaterThan(0)
+    expect(translate.y).toBeGreaterThan(0)
+  })
+
+  it('does not pan on a plain left-drag with the Select tool', async () => {
+    render(<TestCanvas />)
+
+    leftDrag(screen.getByTestId('test-canvas-root'))
+    await act(async () => {
+      await nextAnimationFrame()
+    })
+
+    expect(screen.getByTestId('test-transform-layer').style.transform).toBe('translate(0px, 0px) scale(1)')
+  })
+})
+
 describe('canvas mouse pan input policy', () => {
   it('tracks parent and iframe space-pan state independently for iframe pointer relays', () => {
     setCanvasSpacePanActive(document, 'parentDocument', true)
@@ -271,12 +304,12 @@ describe('canvas mouse pan input policy', () => {
   })
 
   it('uses middle-button dragging as a canvas pan gesture', () => {
-    expect(shouldStartCanvasPointerPan({ button: 1 }, { spaceHeld: false })).toBe(true)
-    expect(shouldStartCanvasPointerPan({ button: 1 }, { spaceHeld: true })).toBe(true)
-    expect(shouldStartCanvasPointerPan({ button: 0 }, { spaceHeld: false })).toBe(false)
-    expect(shouldStartCanvasPointerPan({ button: 0 }, { spaceHeld: true })).toBe(true)
-    expect(isCanvasPointerPanActive({ buttons: 4 }, { spaceHeld: false })).toBe(true)
-    expect(isCanvasPointerPanActive({ buttons: 1 }, { spaceHeld: false })).toBe(false)
-    expect(isCanvasPointerPanActive({ buttons: 1 }, { spaceHeld: true })).toBe(true)
+    expect(shouldStartCanvasPointerPan({ button: 1 }, { primaryButtonPans: false })).toBe(true)
+    expect(shouldStartCanvasPointerPan({ button: 1 }, { primaryButtonPans: true })).toBe(true)
+    expect(shouldStartCanvasPointerPan({ button: 0 }, { primaryButtonPans: false })).toBe(false)
+    expect(shouldStartCanvasPointerPan({ button: 0 }, { primaryButtonPans: true })).toBe(true)
+    expect(isCanvasPointerPanActive({ buttons: 4 }, { primaryButtonPans: false })).toBe(true)
+    expect(isCanvasPointerPanActive({ buttons: 1 }, { primaryButtonPans: false })).toBe(false)
+    expect(isCanvasPointerPanActive({ buttons: 1 }, { primaryButtonPans: true })).toBe(true)
   })
 })

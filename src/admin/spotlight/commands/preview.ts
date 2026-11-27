@@ -1,7 +1,7 @@
 /**
  * Preview commands — §4.2 (canvas mode / preview) of the master plan.
  *
- * Toggle preview overlay, switch canvas mode, control zoom.
+ * Toggle preview overlay, switch between the Select and Hand tools, control zoom.
  * All gated to workspace: ['site'] and capability `site.read` — these are
  * pure viewing affordances against the canvas.
  */
@@ -38,44 +38,44 @@ export function getPreviewCommands(): Command[] {
       },
     },
 
-    // ── Select mode ──────────────────────────────────────────────────────────
+    // ── Hand tool ────────────────────────────────────────────────────────────
     {
-      id: 'preview.modeSelect',
-      title: 'Switch to Select mode',
-      subtitle: 'Use the pointer to select and edit layers',
+      id: 'preview.toggleHandTool',
+      title: 'Toggle Hand tool',
+      subtitle: 'Drag to pan the design canvas instead of selecting',
       group: 'preview',
-      iconName: 'pointer-solid',
-      keywords: ['mode', 'select', 'pointer', 'cursor', 'canvas'],
+      iconName: 'hand-grab-solid',
+      keywords: ['hand', 'pan', 'drag', 'move', 'canvas', 'scroll', 'tool', 'pen', 'tablet', 'select'],
       workspaces: ['site'],
       capability: PREVIEW_CAPABILITY,
       run: async (ctx) => {
         ctx.closeSpotlight()
         try {
           const { useEditorStore } = await import('@site/store/store')
-          useEditorStore.getState().setCanvasMode('select')
+          useEditorStore.getState().toggleHandTool()
         } catch (err) {
-          console.error('[spotlight] setCanvasMode select failed:', err)
+          console.error('[spotlight] toggleHandTool failed:', err)
         }
       },
     },
 
-    // ── Pan mode ─────────────────────────────────────────────────────────────
+    // ── Select tool ──────────────────────────────────────────────────────────
     {
-      id: 'preview.modePan',
-      title: 'Switch to Pan mode',
-      subtitle: 'Use the hand tool to pan the canvas',
+      id: 'preview.selectTool',
+      title: 'Select tool',
+      subtitle: 'Click to select elements on the design canvas',
       group: 'preview',
-      iconName: 'hand-grab-solid',
-      keywords: ['mode', 'pan', 'hand', 'drag', 'canvas', 'scroll'],
+      iconName: 'cursor-minimal-solid',
+      keywords: ['select', 'pointer', 'cursor', 'arrow', 'move', 'canvas', 'tool'],
       workspaces: ['site'],
       capability: PREVIEW_CAPABILITY,
       run: async (ctx) => {
         ctx.closeSpotlight()
         try {
           const { useEditorStore } = await import('@site/store/store')
-          useEditorStore.getState().setCanvasMode('pan')
+          useEditorStore.getState().activateSelectTool()
         } catch (err) {
-          console.error('[spotlight] setCanvasMode pan failed:', err)
+          console.error('[spotlight] selectTool failed:', err)
         }
       },
     },

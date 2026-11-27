@@ -12,6 +12,7 @@
  * 500+ line canvas component.
  */
 
+import { useEffect, useEffectEvent, type RefObject } from 'react'
 import { useEditorStore } from '@site/store/store'
 import type { ActiveDocument } from '@site/store/slices/uiSlice'
 import { getKeybindingForCommand } from '@admin/spotlight/keybindings'
@@ -203,4 +204,72 @@ export function useCanvasKeyboardShortcuts(
       pasteNode,
     })
   }
+}
+
+interface CanvasDocumentDeleteShortcutDeps {
+  canvasRef: RefObject<HTMLElement | null>
+  /** False in live view and on read-only canvases. */
+  enabled: boolean
+  requestDeleteNode: (nodeId: string) => void
+  deleteNodes: (nodeIds: string[]) => void
+  clearSelection: () => void
+}
+
+/**
+ * Delete / Backspace as a native `document` listener. Keystrokes from a
+ * focused design frame reach the parent as clones dispatched on `document`
+ * (see `useIframeInputRelay`), which never pass through the canvas root's
+ * React `onKeyDown`, so the delete binding is also handled here whenever the
+ * event target or the focused element sits inside the canvas.
+ */
+export function useCanvasDocumentDeleteShortcut({
+  canvasRef,
+  enabled,
+  requestDeleteNode,
+  deleteNodes,
+  clearSelection,
+}: CanvasDocumentDeleteShortcutDeps): void {
+  const requestDeleteSelection = useEffectEvent((
+    currentSelectedNodeId: string,
+    currentIds: readonly string[],
+  ) => {
+    if (currentIds.length > 1) {
+      deleteNodes([...currentIds])
+      clearSelection()
+    } else {
+      requestDeleteNode(currentSelectedNodeId)
+    }
+  })
+
+  useEffect(() => {
+    if (!enabled) return
+    const deleteBinding = getKeybindingForCommand('layers.delete')
+    if (!deleteBinding) return
+
+    const isCanvasEvent = (event: KeyboardEvent) => {
+      const target = event.target
+      if (target instanceof Element && canvasRef.current?.contains(target)) return true
+      const activeElement = document.activeElement
+      return activeElement instanceof Element && canvasRef.current?.contains(activeElement)
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return
+      if (useEditorStore.getState().activeInlineEdit) return
+      if (!deleteBinding.match(event)) return
+      if (!isCanvasEvent(event)) return
+
+      const state = useEditorStore.getState()
+      const currentSelectedNodeId = state.selectedNodeId
+      if (!currentSelectedNodeId) return
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      requestDeleteSelection(currentSelectedNodeId, state.selectedNodeIds)
+    }
+
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [enabled, canvasRef])
 }

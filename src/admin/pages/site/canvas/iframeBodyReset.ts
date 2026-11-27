@@ -55,11 +55,22 @@ const CANVAS_CHROME_CSS = [
   '  user-select: text !important;',
   '  -webkit-user-select: text !important;',
   '}',
+  // Hand tool (useIframeInputRelay sets the flag): every press pans the canvas.
+  'html[data-instatic-canvas-tool="pan"], html[data-instatic-canvas-tool="pan"] * {',
+  '  cursor: grab !important;',
+  '}',
   '*:focus, *:focus-visible {',
   '  outline: none !important;',
   '}',
   'iframe { pointer-events: none; }',
 ].join('\n')
+
+/** Flag a design frame's `<html>` while the Hand tool is active (grab cursor, see CANVAS_CHROME_CSS). */
+export function setIframeCanvasToolFlag(iframeDoc: Document, handToolActive: boolean): void {
+  const html = iframeDoc.documentElement
+  if (handToolActive) html.dataset.instaticCanvasTool = 'pan'
+  else delete html.dataset.instaticCanvasTool
+}
 
 export function applyIframeBodyReset(
   iframeDoc: Document,
