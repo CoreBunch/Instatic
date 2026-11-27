@@ -3,8 +3,10 @@ import { INTERRUPTED_TOOL_RESULT_ERROR } from '@core/ai'
 import {
   buildMessageHistory,
   NON_VISION_USER_IMAGE_OMITTED,
+  OMITTED_TOOL_RESULT_DATA,
   projectUserImagesForModel,
 } from '../../../server/ai/conversations/history'
+import { mapChatHistory } from '../../../server/ai/drivers/http/chatCompletions'
 import type { MessageRecord } from '../../../server/ai/conversations/types'
 import type { AiContentBlock } from '../../../server/ai/runtime/types'
 
@@ -67,7 +69,7 @@ describe('buildMessageHistory', () => {
       { role: 'user', content: [{ kind: 'text', text: 'hi' }] },
       { role: 'assistant', content: [{ kind: 'text', text: 'ok' }] },
       { role: 'assistant', content: [{ kind: 'toolCall', toolCallId: 't1', toolName: 'site_insert_html', input: { a: 1 } }] },
-      { role: 'tool', toolCallId: 't1', output: { ok: true, error: undefined } },
+      { role: 'tool', toolCallId: 't1', output: { ok: true, data: OMITTED_TOOL_RESULT_DATA } },
       { role: 'assistant', content: [{ kind: 'text', text: 'done' }] },
     ])
   })
@@ -103,7 +105,7 @@ describe('buildMessageHistory', () => {
     expect(toolMsgs[0]).toEqual({
       role: 'tool',
       toolCallId: 'valid-a',
-      output: { ok: true, error: undefined },
+      output: { ok: true, data: OMITTED_TOOL_RESULT_DATA },
     })
     expect(history).toEqual([
       { role: 'user', content: [{ kind: 'text', text: 'duplicate prompt' }] },
@@ -119,7 +121,7 @@ describe('buildMessageHistory', () => {
           },
         ],
       },
-      { role: 'tool', toolCallId: 'valid-a', output: { ok: true, error: undefined } },
+      { role: 'tool', toolCallId: 'valid-a', output: { ok: true, data: OMITTED_TOOL_RESULT_DATA } },
       { role: 'user', content: [{ kind: 'text', text: 'later prompt' }] },
       { role: 'assistant', content: [{ kind: 'text', text: 'recovered' }] },
     ])
@@ -210,6 +212,20 @@ describe('buildMessageHistory', () => {
       toolCallId: 't1',
       output: { ok: false, error: 'boom' },
     })
+  })
+
+  test('replays an earlier successful result as omitted, not a bare {"ok":true}', () => {
+    const history = buildMessageHistory([
+      userText('Read the home page, change nothing yet.'),
+      assistantToolCall('t1', 'site_read_document', { document: 'home' }),
+      toolResult('t1', 'site_read_document'),
+      rec('assistant', [{ kind: 'text', text: 'Found .section.nav' }]),
+      userText('Good, now apply your plan.'),
+    ])
+    const toolMsg = mapChatHistory([], history).flat().find((m) => m.role === 'tool')
+    expect(toolMsg?.content).toBe(JSON.stringify(OMITTED_TOOL_RESULT_DATA))
+    expect(toolMsg?.content).not.toBe('{"ok":true}')
+    expect(toolMsg?.content).toContain('"omitted":true')
   })
 })
 
