@@ -1451,7 +1451,7 @@ Risk levels:
 | `cms.content.delete`        | Server               | High      | Soft-delete entries                                                      |
 | `cms.content.tables.manage` | Server               | Dangerous | Create user-managed tables                                               |
 | `editor.toolbar`            | Editor               | Medium    | Add toolbar buttons                                                     |
-| `editor.commands`           | Editor               | Medium    | Register editor commands + Spotlight palette commands / providers       |
+| `editor.commands`           | Editor               | Medium    | Register editor commands and Spotlight providers. Commands with `showInSiteDock: true` also appear as icon actions in the editable Site dock when their workspace includes Site. Commands with arguments or destructive confirmation use Spotlight. |
 | `editor.store.read`         | Editor               | Medium    | Read editor store state                                                 |
 | `editor.store.write`        | Editor               | High      | Mutate editor store state through a host transaction                    |
 | `editor.fragments`          | Editor               | High      | Insert site fragments into the open document (may add classes, tokens, components, media and data tables) and apply themes (replace the site's design variables) |

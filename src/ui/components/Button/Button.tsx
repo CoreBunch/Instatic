@@ -55,6 +55,8 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
   tooltip?: ReactNode;
   /** Which side the tooltip should prefer. Default: 'auto'. */
   tooltipSide?: TooltipSide;
+  /** Show the tooltip when its trigger receives focus. */
+  tooltipOpenOnFocus?: boolean;
   /** React 19: ref is a regular prop on function components. */
   ref?: Ref<HTMLButtonElement>;
 }
@@ -82,6 +84,7 @@ export function Button(
     "aria-label": ariaLabel,
     tooltip,
     tooltipSide,
+    tooltipOpenOnFocus,
     // Explicitly destructured so we can intercept disabled+tooltip combos
     // and preserve any direct aria-disabled prop passed by callers.
     disabled,
@@ -164,7 +167,7 @@ export function Button(
 
     if (tooltip) {
       return (
-        <Tooltip content={tooltip} side={tooltipSide ?? "auto"} disabled={popupOpen}>
+        <Tooltip content={tooltip} side={tooltipSide ?? "auto"} disabled={popupOpen} openOnFocus={tooltipOpenOnFocus}>
           {button}
         </Tooltip>
       );

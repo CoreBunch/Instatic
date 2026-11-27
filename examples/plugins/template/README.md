@@ -251,4 +251,4 @@ The path is package-relative. Plugins cannot read arbitrary host filesystem path
 
 For optional signed package updates, see the signed plugin updates section in [the plugin system guide](../../../docs/features/plugin-system.md).
 
-Use `showInSiteDock: true` on a direct editor command to open an overlay from the Site dock. The [fragment API](../../../docs/features/plugin-system.md#inserting-site-fragments-and-applying-themes-editorfragments) supports dropping content at a position in the live canvas.
+Use `showInSiteDock: true` on a direct editor command to open an overlay from the Site dock. The button runs the same command as Spotlight and leaves the active sidebar panel in place. The [fragment API](../../../docs/features/plugin-system.md#inserting-site-fragments-and-applying-themes-editorfragments) supports dropping content at a position in the live canvas.

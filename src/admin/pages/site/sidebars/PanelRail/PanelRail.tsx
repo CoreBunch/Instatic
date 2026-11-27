@@ -292,6 +292,7 @@ function RailButton({ item }: { item: RailItem }) {
       aria-label={accessibleName}
       disabled={item.disabled}
       tooltip={title}
+      tooltipOpenOnFocus={!item.open}
       data-testid={`panel-rail-${item.id}`}
       data-icon={item.iconName}
       data-accent={item.accent}

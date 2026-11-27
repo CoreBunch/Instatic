@@ -28,6 +28,13 @@
     align-items: center;
 }
 
+.itemGroup:not(:empty) + .itemGroup::before {
+    content: '';
+    width: 50%;
+    border-top: 1px solid var(--border-muted);
+    margin-bottom: var(--space-3xs);
+}
+
 .globalGroup {
     display: flex;
     flex: 0 0 auto;
