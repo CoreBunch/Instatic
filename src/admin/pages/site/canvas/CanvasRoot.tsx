@@ -65,8 +65,7 @@ import { useCanvasKeyboardShortcuts } from './useCanvasKeyboardShortcuts'
 import { clientPointToEditorDoc } from './canvasDomGeometry'
 import { useConfirmDelete } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { useEditorPreference, readEditorSelectPreference } from '@site/preferences/editorPreferences'
-import { useAppPairPreview } from './useAppPairPreview'
-import { useTemplatePreviewContext } from '@site/hooks/useTemplatePreviewContext'
+import { useCanvasTemplateContext } from '@site/hooks/useCanvasTemplateContext'
 import styles from './CanvasRoot.module.css'
 import { userDisplayLabel } from '@core/users/displayName'
 
@@ -161,10 +160,11 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
   const setActiveDocument = useEditorStore((s) => s.setActiveDocument)
   const activeDocument = useEditorStore((s) => s.activeDocument)
   const {
-    context: pagePreviewContext,
+    templatePreviewContext,
+    canvasTemplateContext,
+    stateControl,
     loading: templatePreviewContextLoading,
-  } = useTemplatePreviewContext(canvasPage)
-  const { templatePreviewContext, stateControl } = useAppPairPreview(canvasPage, pagePreviewContext)
+  } = useCanvasTemplateContext(canvasPage)
   const agentSnapshotBreakpoint = agentSnapshotCaptureRequest
     ? breakpoints.find((breakpoint) => breakpoint.id === agentSnapshotCaptureRequest.breakpointId) ?? null
     : null
@@ -636,7 +636,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
                 previewScale={dockedPreview ? previewScale : undefined}
                 page={canvasPage}
                 activeBreakpoint={activeBreakpoint}
-                templateContext={templatePreviewContext}
+                templateContext={canvasTemplateContext}
                 runtimeScripts={runtimeScripts}
               />
             ) : (
@@ -648,7 +648,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
                 dimInactiveBreakpoints={focusActiveBreakpoint}
                 activationHintEnabled={preserveSelectionWhenActivatingBreakpoint}
                 onBreakpointActivate={setActiveBreakpoint}
-                templateContext={templatePreviewContext}
+                templateContext={canvasTemplateContext}
                 runtimeScripts={runtimeScripts}
               />
             )}
@@ -689,7 +689,7 @@ export function CanvasRoot({ editable = true }: CanvasRootProps) {
               requestId={agentSnapshotCaptureRequest.requestId}
               page={canvasPage}
               breakpoint={agentSnapshotBreakpoint}
-              templateContext={templatePreviewContext}
+              templateContext={canvasTemplateContext}
               templateContextLoading={templatePreviewContextLoading}
             />
           ) : null}
