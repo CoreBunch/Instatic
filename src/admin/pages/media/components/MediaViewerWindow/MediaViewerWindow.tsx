@@ -38,7 +38,12 @@ import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { VideoSolidIcon } from 'pixel-art-icons/icons/video-solid'
 import { PanelHeader } from '@admin/shared/PanelHeader'
 import { useDraggablePanel } from '@admin/shared/FloatingWindow'
-import type { CmsMediaAsset, CmsMediaFolder, UpdateCmsMediaAssetInput } from '@core/persistence/cmsMedia'
+import type {
+  CmsMediaAsset,
+  CmsMediaFolder,
+  CmsMediaUsageRef,
+  UpdateCmsMediaAssetInput,
+} from '@core/persistence/cmsMedia'
 import { bucketForMime } from '../../utils/filters'
 import { useDebouncedSave } from '../../hooks/useDebouncedSave'
 import { TagEditor } from '../TagEditor/TagEditor'
@@ -64,6 +69,7 @@ export interface MediaAssetEditor {
   replaceAssetFile: (id: string, file: File) => Promise<CmsMediaAsset | null>
   restoreAsset: (id: string) => Promise<unknown>
   purgeAsset: (id: string) => Promise<void>
+  lookupUsage: (assetIds: string[]) => Promise<CmsMediaUsageRef[]>
 }
 
 interface MediaViewerWindowProps {
@@ -102,7 +108,7 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
   const currentUser = useCurrentAdminUser()
   const { asset } = editor
   const [replaceOpen, setReplaceOpen] = useState(false)
-  const confirmPurge = useConfirmMediaPurge(editor.purgeAsset)
+  const confirmPurge = useConfirmMediaPurge(editor.purgeAsset, editor.lookupUsage)
   const bucket = bucketForMime(asset.mimeType)
   const canWrite = canWriteMedia(currentUser)
   const canReplace = canReplaceMedia(currentUser)

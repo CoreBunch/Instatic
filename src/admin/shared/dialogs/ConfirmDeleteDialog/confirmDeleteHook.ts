@@ -6,7 +6,7 @@
  * `frameworkChangeConfirmHook.ts`.
  */
 
-import { createContext, use } from 'react'
+import { createContext, use, type ReactNode } from 'react'
 
 export interface ConfirmDeleteRequest {
   /** Short title shown in the dialog header. e.g. "Delete header layer?" */
@@ -15,6 +15,12 @@ export interface ConfirmDeleteRequest {
   description?: string
   /** Confirm button label — defaults to "Delete". */
   confirmLabel?: string
+  /**
+   * Extra content below the description — a caller-owned detail the generic
+   * dialog knows nothing about. Media passes the list of things that still
+   * depend on the files being deleted; most callers pass nothing.
+   */
+  details?: ReactNode
   /**
    * Force this request through the dialog even when the user's
    * `confirmBeforeDelete` preference is off. Use for destructive actions with

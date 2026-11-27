@@ -127,7 +127,7 @@ function folderMatchesQuery(folder: CmsMediaFolder, query: string): boolean {
 
 export function MediaCanvas({ workspace, selectionMode = 'standard', mediaKind = 'any' }: MediaCanvasProps) {
   const currentUser = useCurrentAdminUser()
-  const confirmPurge = useConfirmMediaPurge(workspace.purgeAsset)
+  const confirmPurge = useConfirmMediaPurge(workspace.purgeAsset, workspace.lookupUsage)
   const mobile = useMobileViewport()
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false)
   const viewOptionsId = useId()

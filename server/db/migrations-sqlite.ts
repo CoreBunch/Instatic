@@ -1997,4 +1997,35 @@ export const sqliteMigrations: Migration[] = [
       );
     `,
   },
+  {
+    // Existing avatars predate anything writing `media_usage_refs`, so the
+    // first build that warns before a delete would still have said nothing
+    // about the avatar already set — the one case the feature exists for.
+    //
+    // Idempotent by construction: `not exists` on the same key
+    // `setMediaUsageRef` writes, so re-running inserts nothing and the row a
+    // later avatar change moves is the row this created. Re-running is also
+    // what makes the id itself safe to change: an installation that recorded
+    // it under another number runs it again and inserts nothing.
+    //
+    // `047` follows upstream's `046_disabled_mail_templates`. This migration
+    // shipped under earlier ids (`032_…`, `034_…`, then `041_…`) while
+    // upstream kept claiming them; being idempotent, an installation that
+    // recorded one of those ids runs it again under this one and inserts
+    // nothing.
+    id: '047_backfill_avatar_usage_refs',
+    sql: `
+      insert into media_usage_refs (asset_id, ref_kind, ref_id, ref_path)
+      select u.avatar_media_id, 'user.avatar', u.id, ''
+        from users u
+       where u.avatar_media_id is not null
+         and not exists (
+           select 1 from media_usage_refs r
+            where r.asset_id = u.avatar_media_id
+              and r.ref_kind = 'user.avatar'
+              and r.ref_id = u.id
+              and r.ref_path = ''
+         );
+    `,
+  },
 ]
