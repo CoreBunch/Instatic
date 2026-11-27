@@ -22,14 +22,13 @@ import type {
   SiteSettings,
   PageSeo,
   PageTemplateConfig,
-  ConditionDef,
   StructuralExplorerRowOrder,
   StructuralSiteExplorerSectionId,
 } from '@core/page-tree'
 import type { FontEntry, FontToken } from '@core/fonts'
 import type { AccessRule } from '@core/members'
 import type { ImportFragment } from '@core/htmlImport'
-import type { NewStyleRule, SiteImportTransaction } from '@core/siteImport'
+import type { FragmentInsertOptions, SiteImportTransaction } from '@core/siteImport'
 import type { FrameworkChangeImpact, FrameworkPreset } from '@core/framework'
 import type { EditorStore } from '@site/store/types'
 
@@ -188,7 +187,7 @@ export interface SiteSlice {
   insertImportedNodes: (
     parentId: string,
     fragment: ImportFragment,
-    opts?: { index?: number; styleRules?: NewStyleRule[]; conditions?: ConditionDef[] },
+    opts?: FragmentInsertOptions,
   ) => string[]
 
   /**
@@ -416,7 +415,7 @@ export interface SiteSliceHelpers {
   /** Mutate the site — commits undo history only on real changes. */
   mutateSite: (
     fn: (site: SiteDocument) => SiteMutationResult,
-    opts?: { coalesceKey?: string },
+    opts?: { coalesceKey?: string; trackUndo?: boolean },
   ) => boolean
 
   /** Mutate the site and reconcile Site Explorer organization after a real change. */

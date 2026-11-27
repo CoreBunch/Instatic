@@ -51,6 +51,8 @@ export interface DefinePluginConfig {
   /** SPDX license identifier. */
   license?: string
   /** Marketing / repo URLs. */
+  /** Raw Ed25519 public key for signed package updates, encoded as base64. */
+  updatePublicKey?: string
   homepage?: string
   repository?: string
   /** Discovery keywords. */
@@ -173,6 +175,13 @@ export function definePlugin(config: DefinePluginConfig): PluginDefinition {
       )
     }
   }
+  for (const page of config.pack?.pages ?? []) {
+    if (!page.id.startsWith(`${config.id}/`) && !page.id.startsWith(`${config.id}.`)) {
+      throw new Error(
+        `[plugin-sdk] Pack page id "${page.id}" must be namespaced under the plugin id "${config.id}".`,
+      )
+    }
+  }
   for (const vc of config.pack?.visualComponents ?? []) {
     if (!vc.id.startsWith(`${config.id}/`)) {
       throw new Error(
@@ -218,6 +227,7 @@ export function definePlugin(config: DefinePluginConfig): PluginDefinition {
     ...(config.settings !== undefined ? { settings: config.settings } : {}),
     ...(config.author !== undefined ? { author: config.author } : {}),
     ...(config.license !== undefined ? { license: config.license } : {}),
+    ...(config.updatePublicKey ? { updatePublicKey: config.updatePublicKey } : {}),
     ...(config.homepage !== undefined ? { homepage: config.homepage } : {}),
     ...(config.repository !== undefined ? { repository: config.repository } : {}),
     ...(config.keywords ? { keywords: [...config.keywords] } : {}),

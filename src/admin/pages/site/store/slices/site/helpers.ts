@@ -43,7 +43,7 @@ import {
   findReimportedStyleRule,
   indexStyleRulesByOrigin,
   registerStyleRuleOrigin,
-} from './importLinking'
+} from '@core/siteImport'
 import { addImportedColorTokens, overwriteImportedColorTokens } from './importedColorTokens'
 import { addImportedFonts, addImportedFontTokens, addInstalledFontEntries, overwriteImportedFontTokens } from './importedFonts'
 import type { SiteMutationResult, SiteSliceHelpers, SiteSliceRecipe } from './types'
@@ -185,6 +185,7 @@ export function buildSiteHelpers(
   function runHistoricMutation(
     recipe: (draft: Draft<EditorStore>) => SiteMutationResult,
     coalesceKey: string | null,
+    trackUndo = true,
   ): boolean {
     const cur = get()
     if (!cur.site) return false
@@ -213,7 +214,7 @@ export function buildSiteHelpers(
       .map((p) => ({ ...p, path: p.path.slice(1) }))
 
     if (siteForward.length > 0) {
-      const outcome = applyLocalSitePatches(siteForward, cur.site, next.site!, coalesceKey)
+      const outcome = applyLocalSitePatches(siteForward, cur.site, next.site!, coalesceKey, trackUndo)
       if (!outcome.accepted) {
         // The edit cannot reach the relay, and there is no save path behind
         // it — so it is refused wholesale rather than applied to a store the
@@ -298,9 +299,9 @@ export function buildSiteHelpers(
   /** Mutate the site — auto-records undo history on real changes. */
   function mutateSite(
     fn: (site: SiteDocument) => SiteMutationResult,
-    opts?: { coalesceKey?: string },
+    opts?: { coalesceKey?: string; trackUndo?: boolean },
   ): boolean {
-    return runHistoricMutation((draft) => fn(draft.site!), opts?.coalesceKey ?? null)
+    return runHistoricMutation((draft) => fn(draft.site!), opts?.coalesceKey ?? null, opts?.trackUndo)
   }
 
   const mutateSiteWithExplorerReconcile: SiteSliceHelpers['mutateSiteWithExplorerReconcile'] = (fn) =>

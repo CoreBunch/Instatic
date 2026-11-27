@@ -7,6 +7,7 @@
  * capabilities or HTTP: the cms handler (`server/handlers/cms/members.ts`)
  * decides who may call these, and audits the call.
  */
+import { DIRECTORY_PAGE_SIZE, directoryPageOffset } from '@core/users/directoryPagination'
 import { discardQueuedMailForMember } from '../mail/delivery'
 import type { DbClient } from '../db/client'
 import type {
@@ -39,7 +40,6 @@ import { issueMemberToken, withdrawMemberTokens } from './tokens'
 /** The source recorded on a tag an administrator grants by hand. */
 export const ADMIN_TAG_SOURCE = 'admin'
 
-const PAGE_SIZE = 50
 const NO_REQUEST = { ipAddress: null, userAgent: null }
 
 // ─── Status ────────────────────────────────────────────────────────────────
@@ -169,8 +169,13 @@ export async function listMembersForAdmin(db: DbClient, filter: MemberListFilter
   const condition = where.join(' and ')
   const filterValues = [...params.values]
 
-  const offset = Math.max(0, Math.floor(filter.offset ?? 0))
-  const limit = params.add(PAGE_SIZE)
+  const { rows: matchingRows } = await db.unsafe<{ total: number }>(
+    `select count(*) as total from members m where ${condition}`,
+    filterValues,
+  )
+  const matching = Number(matchingRows[0]?.total ?? 0)
+  const offset = directoryPageOffset(filter.offset ?? 0, matching)
+  const limit = params.add(DIRECTORY_PAGE_SIZE)
   const skip = params.add(offset)
   const { rows } = await db.unsafe<ListRow>(
     `select m.id, m.email, m.status, m.password_hash, m.email_verified_at, m.profile_json,
@@ -181,11 +186,6 @@ export async function listMembersForAdmin(db: DbClient, filter: MemberListFilter
       limit ${limit} offset ${skip}`,
     params.values,
   )
-  const { rows: matchingRows } = await db.unsafe<{ total: number }>(
-    `select count(*) as total from members m where ${condition}`,
-    filterValues,
-  )
-  const matching = Number(matchingRows[0]?.total ?? 0)
 
   const count = async (status?: MemberAdminStatus): Promise<number> => {
     const { rows: counted } = await db.unsafe<{ total: number }>(
@@ -206,7 +206,7 @@ export async function listMembersForAdmin(db: DbClient, filter: MemberListFilter
   return {
     members: rows.map((row) => toListItem(row, tags.get(row.id) ?? [])),
     matching,
-    nextOffset: offset + rows.length < matching ? offset + rows.length : null,
+    offset,
     counts: {
       all: await count(),
       active: await count('active'),

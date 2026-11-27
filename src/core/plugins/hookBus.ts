@@ -19,33 +19,88 @@
  * Plugin registration is keyed by plugin id so `unregisterPlugin(pluginId)`
  * cleanly tears everything down on disable/uninstall.
  *
- * Event-name provenance: only the HOST emits the reserved core events in
- * `CORE_HOOK_EVENTS`. Plugin-emitted events (via `cms.hooks.emit`) are
+ * Event-name provenance: only the HOST emits the reserved core events
+ * (`HostEventName`). Plugin-emitted events (via `cms.hooks.emit`) are
  * force-namespaced to `plugin.<pluginId>.<name>` through
  * `canonicalPluginEventName` before they reach `emit`, so a plugin can never
- * forge a core event or impersonate another plugin. `emit` is typed against
- * exactly those two name spaces — a new host emit site cannot introduce a
- * core event without adding it to `CORE_HOOK_EVENTS` first.
+ * forge a core event or impersonate another plugin.
+ *
+ * Two ways to send, by who may hear:
+ *   • `emit` — the listening plugins, all of them or those a recipient check
+ *     accepts. For `BroadcastHookEvent` names and plugin-namespaced events.
+ *   • `emitTo` — one plugin. The only way to send an `OwnerOnlyHookEvent`,
+ *     news about one plugin's own business (its settings, its email). `emit`
+ *     refuses those names at compile time and at run time, so a broadcast of
+ *     one cannot be written by accident.
+ *
+ * What a plugin needs in order to LISTEN to each host event is one table,
+ * `HOST_EVENT_RULES` in `server/plugins/protocol/hookRules.ts`, keyed by
+ * `HostEventName`: a name added here does not compile until its rule is
+ * written.
  */
 
 /**
- * Reserved host-emitted event names — the single source of truth. Plugins can
- * LISTEN to these freely, but cannot emit them: plugin emits are always
- * canonicalized into the `plugin.<pluginId>.*` namespace.
+ * Host events sent with `emit`. Plugins cannot emit them: plugin emits are
+ * always canonicalized into the `plugin.<pluginId>.*` namespace.
  */
-type CoreHookEvent =
-  | 'settings.changed'
+type BroadcastHookEvent = GuardedHostEvent | PublishHookEvent
+
+/**
+ * Host events whose payload another permission guards (a table's entries,
+ * site members). `emit` REQUIRES a recipient check for these by type: there
+ * is no way to send one to every listener, not through an alias of the bus
+ * and not by passing `undefined`. Must list exactly the names whose rule in
+ * `HOST_EVENT_RULES` is per table or per permission (checked there).
+ */
+export type GuardedHostEvent =
   | 'content.entry.created'
   | 'content.entry.updated'
   | 'content.entry.deleted'
-  | 'publish.before'
-  | 'publish.after'
   | MemberHookEvent
-  | MailHookEvent
+
+/**
+ * The same names at run time. The overloads stop a guarded send without
+ * recipients where the bus is used through its own type; a value typed more
+ * loosely (`{ emit(event: string, …) }`) gets past them, so `emit` and
+ * `applyFilter` check again when they run and refuse.
+ */
+const GUARDED_HOST_EVENTS: ReadonlySet<string> = new Set<GuardedHostEvent>([
+  'content.entry.created',
+  'content.entry.updated',
+  'content.entry.deleted',
+  'member.created',
+  'member.verified',
+  'member.signedIn',
+  'member.tagged',
+  'member.deleted',
+])
+const PUBLISH_HOOK_EVENTS: ReadonlySet<string> = new Set<PublishHookEvent>(['publish.before', 'publish.after'])
+
+/** Refuse a send that does not say who it is for, when the name requires it. */
+function assertRecipientsNamed(
+  what: string,
+  name: string,
+  recipients: HookRecipientCheck | EveryRecipient | undefined,
+  need: 'check' | 'check-or-everyone',
+): void {
+  if (typeof recipients === 'function') return
+  if (need === 'check-or-everyone' && recipients === 'everyone') return
+  throw new Error(
+    need === 'check'
+      ? `[hookBus] ${what} "${name}" carries guarded data: it must be sent with a recipient check.`
+      : `[hookBus] ${what} "${name}" must say who it is for: a recipient check, or 'everyone'.`,
+  )
+}
+
+/**
+ * A page was rendered. Who hears it depends on who the render is for, so the
+ * sender must say: a recipient check, or `'everyone'` for a public page.
+ */
+export type PublishHookEvent = 'publish.before' | 'publish.after'
 
 /**
  * Site member events. Their payloads name members, so only a plugin holding
- * `members.read` may listen (enforced where a plugin subscribes).
+ * `members.read` may listen (`HOST_EVENT_RULES`).
  */
 export type MemberHookEvent =
   | 'member.created'
@@ -54,13 +109,64 @@ export type MemberHookEvent =
   | 'member.tagged'
   | 'member.deleted'
 
-export const MEMBER_HOOK_PREFIX = 'member.'
-
 /**
  * What became of an email a plugin queued. Sent with `emitTo`, so only the
  * plugin that queued the email hears it.
  */
 export type MailHookEvent = 'mail.delivered' | 'mail.failed'
+
+/**
+ * Host events about one plugin's own business. Only that plugin hears them:
+ * they go out through `emitTo`, never `emit`. `settings.changed` tells a
+ * plugin its own settings were saved; another plugin has no right to know
+ * that, let alone to see the values.
+ */
+export const OWNER_ONLY_HOOK_EVENTS = ['settings.changed', 'mail.delivered', 'mail.failed'] as const
+type OwnerOnlyHookEvent = (typeof OWNER_ONLY_HOOK_EVENTS)[number]
+
+function isOwnerOnlyHookEvent(event: string): event is OwnerOnlyHookEvent {
+  return (OWNER_ONLY_HOOK_EVENTS as readonly string[]).includes(event)
+}
+
+/**
+ * The only keys an owner-only payload may carry. `emitTo` refuses anything
+ * else, so a settings record (or any other value) cannot ride along.
+ */
+const OWNER_ONLY_PAYLOAD_KEYS: Record<OwnerOnlyHookEvent, readonly string[]> = {
+  'settings.changed': ['pluginId'],
+  'mail.delivered': ['template', 'to', 'reference'],
+  'mail.failed': ['template', 'to', 'reference', 'reason'],
+}
+
+function assertOwnerOnlyPayload(pluginId: string, event: OwnerOnlyHookEvent, payload: unknown): void {
+  if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+    throw new Error(`[hookBus] "${event}" payload must be an object.`)
+  }
+  const allowed = OWNER_ONLY_PAYLOAD_KEYS[event]
+  const extra = Object.keys(payload).filter((key) => !allowed.includes(key))
+  if (extra.length > 0) {
+    throw new Error(`[hookBus] "${event}" payload may not carry: ${extra.join(', ')}.`)
+  }
+  if (event === 'settings.changed' && (payload as { pluginId?: unknown }).pluginId !== pluginId) {
+    throw new Error(`[hookBus] "settings.changed" names plugin "${pluginId}" and goes to it alone.`)
+  }
+}
+
+/** Every reserved host event name, however it is sent. */
+export type HostEventName = BroadcastHookEvent | OwnerOnlyHookEvent
+
+/**
+ * Every filter pipeline the host applies. What a plugin needs in order to
+ * register a handler for each is `HOST_FILTER_RULES` in
+ * `server/plugins/protocol/hookRules.ts`, keyed by this union.
+ */
+export type HostFilterName = 'publish.html' | 'content.entry.cells' | 'media.url.transform'
+
+/** Decides, per plugin, whether one send or one filter run is for it. */
+export type HookRecipientCheck = (pluginId: string) => boolean
+
+/** The explicit way to say a send is for every registered plugin. */
+export type EveryRecipient = 'everyone'
 
 /** A plugin-emitted event name, always of the form `plugin.<pluginId>.<name>`. */
 type PluginScopedHookEvent = `plugin.${string}`
@@ -133,7 +239,7 @@ class HookBus {
     this.listeners.set(event, entries)
   }
 
-  filter(pluginId: string, name: string, handler: HookFilterHandler): void {
+  filter(pluginId: string, name: HostFilterName, handler: HookFilterHandler): void {
     const entries = this.filters.get(name) ?? []
     entries.push({ pluginId, handler })
     this.filters.set(name, entries)
@@ -158,10 +264,13 @@ class HookBus {
   }
 
   /**
-   * Fire an event for one plugin only: news about something that plugin
-   * did (an email it queued). No other plugin's listener runs.
+   * Fire an event for one plugin only: news about that plugin's own business
+   * (its settings were saved, an email it queued was delivered). No other
+   * plugin's listener runs, and the payload may carry only the keys listed
+   * for the event: `settings.changed` names the plugin and nothing more.
    */
-  async emitTo(pluginId: string, event: MailHookEvent, payload: unknown): Promise<void> {
+  async emitTo(pluginId: string, event: OwnerOnlyHookEvent, payload: unknown): Promise<void> {
+    assertOwnerOnlyPayload(pluginId, event, payload)
     for (const entry of this.listeners.get(event) ?? []) {
       if (entry.pluginId !== pluginId) continue
       try {
@@ -173,18 +282,38 @@ class HookBus {
   }
 
   /**
-   * Fire an event. Listeners run sequentially; an error in one listener is
-   * logged and does not stop the others. Returns when every listener has
-   * resolved or rejected.
+   * Fire an event for every listening plugin. Listeners run sequentially; an
+   * error in one listener is logged and does not stop the others. Returns
+   * when every listener has resolved or rejected.
    *
-   * The name type is the enforcement that `CORE_HOOK_EVENTS` cannot drift:
-   * host emit sites must use a listed core name, and everything else must
-   * already be plugin-namespaced (the output of `canonicalPluginEventName`).
+   * The name type keeps host emit sites to the listed broadcast names;
+   * everything else must already be plugin-namespaced (the output of
+   * `canonicalPluginEventName`). An owner-only event is refused outright,
+   * also at run time: a cast must not be enough to broadcast one.
+   *
+   * Recipients, by the kind of name (the overloads below):
+   *   - a guarded host event: a recipient check, always;
+   *   - a publish event: a recipient check, or `'everyone'`;
+   *   - a plugin's own event (`plugin.*`): every listener, no argument.
    */
-  async emit(event: CoreHookEvent | PluginScopedHookEvent, payload: unknown): Promise<void> {
+  async emit(event: GuardedHostEvent, payload: unknown, mayReceive: HookRecipientCheck): Promise<void>
+  async emit(event: PublishHookEvent, payload: unknown, recipients: HookRecipientCheck | EveryRecipient): Promise<void>
+  async emit(event: PluginScopedHookEvent, payload: unknown): Promise<void>
+  async emit(
+    event: BroadcastHookEvent | PluginScopedHookEvent,
+    payload: unknown,
+    recipients?: HookRecipientCheck | EveryRecipient,
+  ): Promise<void> {
+    if (isOwnerOnlyHookEvent(event)) {
+      throw new Error(`[hookBus] "${event}" is for one plugin only: send it with emitTo(pluginId, …).`)
+    }
+    if (GUARDED_HOST_EVENTS.has(event)) assertRecipientsNamed('event', event, recipients, 'check')
+    else if (PUBLISH_HOOK_EVENTS.has(event)) assertRecipientsNamed('event', event, recipients, 'check-or-everyone')
+    const mayReceive = typeof recipients === 'function' ? recipients : null
     const entries = this.listeners.get(event)
     if (!entries) return
     for (const entry of entries) {
+      if (mayReceive && !mayReceive(entry.pluginId)) continue
       try {
         await entry.listener(payload)
       } catch (err) {
@@ -201,18 +330,35 @@ class HookBus {
    * unchanged.
    *
    * @param contextExtras  Additional context fields forwarded to every
-   *   handler alongside `{ pluginId }`. Used by `publish.html` and
-   *   `publish.headers` to pass `{ siteId, pageId, slug }`.
-   * @param mayReceive  When given, only the plugins it accepts get the value;
-   *   the others are skipped. Used when the value is not for every plugin
-   *   that registered the filter (a members-only page).
+   *   handler alongside `{ pluginId }`. Used by `publish.html` to pass
+   *   `{ siteId, pageId, slug }`.
+   * Recipients, by filter (the overloads below): the entry cells filter takes
+   * a recipient check, always; the HTML filter a recipient check or
+   * `'everyone'`; the media URL chain has its own registration and runs for
+   * every registered transformer.
    */
   async applyFilter<T>(
-    name: string,
+    name: 'content.entry.cells',
+    value: T,
+    contextExtras: Record<string, unknown>,
+    mayReceive: HookRecipientCheck,
+  ): Promise<T>
+  async applyFilter<T>(
+    name: 'publish.html',
+    value: T,
+    contextExtras: Record<string, unknown>,
+    recipients: HookRecipientCheck | EveryRecipient,
+  ): Promise<T>
+  async applyFilter<T>(name: 'media.url.transform', value: T): Promise<T>
+  async applyFilter<T>(
+    name: HostFilterName,
     value: T,
     contextExtras?: Record<string, unknown>,
-    mayReceive?: (pluginId: string) => boolean,
+    recipients?: HookRecipientCheck | EveryRecipient,
   ): Promise<T> {
+    if (name === 'content.entry.cells') assertRecipientsNamed('filter', name, recipients, 'check')
+    else if (name === 'publish.html') assertRecipientsNamed('filter', name, recipients, 'check-or-everyone')
+    const mayReceive = typeof recipients === 'function' ? recipients : null
     const entries = this.filters.get(name)
     if (!entries) return value
     let current = value as unknown

@@ -2,8 +2,7 @@
  * DashboardPage — `/admin/dashboard`.
  *
  * The admin home. Renders:
- *   • A page header with a personal greeting + Publish / Customize / New
- *     page actions.
+ *   • A page header with a personal greeting and a New page action.
  *   • The setup onboarding panel (wired to live CMS state via
  *     `useOnboardingState`). Per-user dismissed / collapsed in
  *     localStorage.
@@ -49,7 +48,6 @@ import {
 } from '@dnd-kit/core'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import { LayoutSolidIcon } from 'pixel-art-icons/icons/layout-solid'
-import { ZapSolidIcon } from 'pixel-art-icons/icons/zap-solid'
 import { ChevronRightIcon } from 'pixel-art-icons/icons/chevron-right'
 import { AdminPageLayout } from '@admin/layouts/AdminPageLayout'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
@@ -499,16 +497,10 @@ export function DashboardPage() {
     <AdminPageLayout
       workspace="dashboard"
       title={greetingFor(currentUser.displayName)}
-      description="Your site at a glance — content, activity, storage and plugins. Configure the grid to surface exactly what you watch."
       actions={(
-        <>
-          <Button variant="ghost" size="sm">
-            <ZapSolidIcon size={11} aria-hidden="true" /> Publish all
-          </Button>
-          <Button variant="primary" onClick={() => navigate('/admin/site')}>
-            <PlusIcon size={12} aria-hidden="true" /> New page
-          </Button>
-        </>
+        <Button variant="primary" onClick={() => navigate('/admin/site')}>
+          <PlusIcon size={12} aria-hidden="true" /> New page
+        </Button>
       )}
     >
       <div className={styles.crumbs}>

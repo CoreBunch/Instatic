@@ -17,21 +17,20 @@ import { AdminWorkspaceCanvasLayout } from '@admin/layouts/AdminWorkspaceCanvasL
 import { useNavigate, useParams } from '@admin/lib/routing'
 import { hasCapability } from '@admin/access'
 import { useAuthenticatedAdminUser } from '@admin/sessionContext'
-import { mergeBranch, refreshBranches, switchBranch, useActiveBranchId, useBranchStore } from '@admin/state/branchStore'
+import { mergeBranch, refreshBranches, switchBranch, undoBranchMerge, useActiveBranchId, useBranchStore } from '@admin/state/branchStore'
 import { StepUpCancelledMessage, useStepUp } from '@admin/shared/StepUp'
 import { DeleteBranchDialog } from '@admin/shared/BranchSwitcher/DeleteBranchDialog'
 import { useConfirmAction } from '@admin/shared/dialogs/ConfirmDeleteDialog'
 import { UserAvatar } from '@admin/shared/UserAvatar/UserAvatar'
 import { Button } from '@ui/components/Button'
-import { Dialog } from '@ui/components/Dialog'
 import { FilterBar } from '@ui/components/FilterBar'
-import { Textarea } from '@ui/components/Input'
 import { Skeleton } from '@ui/components/Skeleton'
 import { TagPill } from '@ui/components/TagPill'
-import { pushToast } from '@ui/components/Toast'
+import { dismissToast, pushToast } from '@ui/components/Toast'
 import { CheckIcon } from 'pixel-art-icons/icons/check'
 import { ReviewChangeCard } from './ReviewChangeCard'
 import { ReviewFooter } from './ReviewFooter'
+import { ReviewNoteDialog } from './ReviewNoteDialog'
 import { ReviewThread } from './ReviewThread'
 import {
   FILTER_LABELS,
@@ -79,10 +78,18 @@ function BranchReviewGate({ branchId }: { branchId: string }) {
   }, [branch, branchesLoaded, navigate])
 
   // Reviewing a branch means being on it: "back to the editor" lands there,
-  // and the toolbar strip names what is being reviewed.
+  // and the toolbar strip names what is being reviewed. Once the merge sends
+  // the tab to main, the review can still be mounted during the route change.
+  const returningToMain = useRef(false)
   useEffect(() => {
-    if (branch && activeBranchId !== branch.id) switchBranch(branch.id)
+    if (!returningToMain.current && branch && activeBranchId !== branch.id) switchBranch(branch.id)
   }, [branch, activeBranchId])
+
+  function returnToMain(): void {
+    returningToMain.current = true
+    switchBranch(MAIN_BRANCH_ID)
+    navigate('/admin/site', { replace: true })
+  }
 
   if (!branchesLoaded || !branch || branch.id === MAIN_BRANCH_ID) {
     return (
@@ -112,14 +119,22 @@ function BranchReviewGate({ branchId }: { branchId: string }) {
       />
     )
   }
-  return <Review key={branch.id} branch={branch} />
+  return <Review key={branch.id} branch={branch} onReturnToMain={returnToMain} />
 }
 
 interface ReviewProps {
   branch: SiteBranch
+  onReturnToMain: () => void
 }
 
-function Review({ branch }: ReviewProps) {
+function reportReviewError(label: string, err: unknown): boolean {
+  if (err instanceof Error && err.message === StepUpCancelledMessage) return false
+  console.error(`[branch-review] ${label} failed:`, err)
+  pushToast({ kind: 'error', title: `Could not ${label}`, body: getErrorMessage(err, 'Unknown review error') })
+  return true
+}
+
+function Review({ branch, onReturnToMain }: ReviewProps) {
   const branchId = branch.id
   const branchName = branch.name
   const user = useAuthenticatedAdminUser()
@@ -184,6 +199,9 @@ function Review({ branch }: ReviewProps) {
   const request = review.request
   const open = request?.status === 'open'
   const stale = open && request.contentHash !== review.contentHash
+  const changeKeys = new Set(plan.changes.map(change => change.key))
+  // Keep threads in the conversation after their original change leaves the merge plan.
+  const conversation = review.comments.filter(comment => !changeKeys.has(comment.entityKey))
   const commentsFor = (key: string) => review.comments.filter((comment) => comment.entityKey === key)
   const unresolved = plan.changes.filter((change) => change.conflicts.length > 0 && !resolutions[change.key])
   const visible = plan.changes.filter((change) => matchesFilter(change, filter, commentsFor(change.key).length))
@@ -195,7 +213,8 @@ function Review({ branch }: ReviewProps) {
     site: plan.changes.filter((change) => change.kind === 'site').length,
   }
   const filterCount = (id: ReviewFilter): number =>
-    plan.changes.filter((change) => matchesFilter(change, id, commentsFor(change.key).length)).length
+    plan.changes.filter((change) => matchesFilter(change, id, commentsFor(change.key).length)).length +
+      (id === 'comments' && conversation.length ? 1 : 0)
 
   async function withBusy(label: string, action: () => Promise<unknown>): Promise<boolean> {
     setBusy(true)
@@ -203,11 +222,8 @@ function Review({ branch }: ReviewProps) {
       await action()
       return true
     } catch (err) {
-      if (err instanceof Error && err.message === StepUpCancelledMessage) return false
-      console.error(`[branch-review] ${label} failed:`, err)
-      pushToast({ kind: 'error', title: `Could not ${label}`, body: getErrorMessage(err, 'Unknown review error') })
       // A request that changed under us is the usual cause: show the truth.
-      void data.reload()
+      if (reportReviewError(label, err)) void data.reload()
       return false
     } finally {
       setBusy(false)
@@ -222,7 +238,7 @@ function Review({ branch }: ReviewProps) {
       title: `Merge ${branchName} into main?`,
       description: deleteAfter
         ? `${lands} in main's draft and the branch is deleted, so this cannot be undone. Nothing is published.`
-        : `${lands} in main's draft. Nothing is published, and the merge can be undone from this page while main stays as merged.`,
+        : `${lands} in main's draft. The success notification offers Undo while main stays as merged.`,
       confirmLabel: 'Merge into main',
       commit: () => { void runMerge() },
     })
@@ -232,27 +248,35 @@ function Review({ branch }: ReviewProps) {
     await withBusy('merge the branch', async () => {
       const result = await runStepUp(() => mergeBranch(branchId, 'merge', { resolutions, deleteBranch: deleteAfter }))
       const count = result.plan.changes.length
-      pushToast({
+      const toastId = pushToast({
         kind: 'success',
         title: `Merged ${branchName} into main`,
         body: `${count} change${count === 1 ? '' : 's'} landed in main's draft. Publish when you're ready.${result.branchDeleted ? ' The branch was deleted.' : ''}`,
-        ...(result.merge ? { action: { label: 'Undo', onSelect: () => { void undo() } } } : {}),
+        ...(result.merge ? {
+          action: {
+            label: 'Undo',
+            onSelect: async () => {
+              try {
+                await undoMerge()
+                dismissToast(toastId)
+              } catch (err) {
+                reportReviewError('undo the merge', err)
+              }
+            },
+          },
+        } : {}),
       })
-      // A deleted branch leaves through the gate above (the store drops it
-      // from the registry at once); only a kept branch has a review to reload.
-      if (!result.branchDeleted) await data.reload()
+      // The gate already redirects when a deleted branch leaves the registry.
+      if (!result.branchDeleted) onReturnToMain()
     })
   }
 
-  async function undo(): Promise<void> {
-    await withBusy('undo the merge', async () => {
-      const result = await runStepUp(() => data.undo())
-      const count = result.restoredCount
-      pushToast({
-        kind: 'success',
-        title: `Undid the merge of ${branchName}`,
-        body: `${count} change${count === 1 ? '' : 's'} put back. Main's draft is as it was before the merge.`,
-      })
+  async function undoMerge(): Promise<void> {
+    const { restoredCount } = await runStepUp(() => undoBranchMerge(branchId, 'merge'))
+    pushToast({
+      kind: 'success',
+      title: `Undid the merge of ${branchName}`,
+      body: `${restoredCount} change${restoredCount === 1 ? '' : 's'} put back. Main's draft is as it was before the merge.`,
     })
   }
 
@@ -310,13 +334,13 @@ function Review({ branch }: ReviewProps) {
               </header>
 
               <div className={styles.timeline}>
-                {filter === 'all' && (
+                {(filter === 'all' || (filter === 'comments' && conversation.length > 0)) && (
                   <TimelineNode
                     id="review-request"
                     left={(
                       <ReviewThread
                         title="Conversation"
-                        comments={commentsFor(REQUEST_ENTITY_KEY)}
+                        comments={conversation}
                         me={me}
                         placeholder="Comment on the request"
                         onPost={(body) => data.comment(REQUEST_ENTITY_KEY, body)}
@@ -536,7 +560,12 @@ function Review({ branch }: ReviewProps) {
               deleteAfter={deleteAfter}
               onDeleteAfterChange={setDeleteAfter}
               onMerge={merge}
-              onUndo={() => { void undo() }}
+              onUndo={() => {
+                void withBusy('undo the merge', async () => {
+                  await undoMerge()
+                  await data.reload()
+                })
+              }}
               onDecline={() => setDialog('decline')}
               canDrop={canDrop}
               onDrop={() => setDialog('drop')}
@@ -547,7 +576,7 @@ function Review({ branch }: ReviewProps) {
 
           {dialog === 'drop' && <DeleteBranchDialog branch={branch} onClose={() => setDialog(null)} />}
           {dialog === 'request' && (
-            <NoteDialog
+            <ReviewNoteDialog
               eyebrow="Request a merge"
               title={`Ask to merge ${branchName} into main`}
               hint="Say what changed and why. A branch manager reads the changes below and merges or declines."
@@ -564,7 +593,7 @@ function Review({ branch }: ReviewProps) {
             />
           )}
           {dialog === 'decline' && request && (
-            <NoteDialog
+            <ReviewNoteDialog
               eyebrow="Decline"
               title={`What should ${request.requestedBy?.displayName ?? 'the requester'} change?`}
               hint="The note is what the requester sees. Say what to fix."
@@ -625,66 +654,5 @@ function TimelineNode({ id, left, right }: TimelineNodeProps) {
       <div className={styles.left}>{left}</div>
       <div className={styles.right}>{right}</div>
     </div>
-  )
-}
-
-interface NoteDialogProps {
-  eyebrow: string
-  title: string
-  hint: string
-  placeholder: string
-  confirmLabel: string
-  required: boolean
-  tone?: 'danger'
-  busy: boolean
-  onClose: () => void
-  onConfirm: (note: string) => Promise<void>
-  testId: string
-}
-
-function NoteDialog({ eyebrow, title, hint, placeholder, confirmLabel, required, tone, busy, onClose, onConfirm, testId }: NoteDialogProps) {
-  const [note, setNote] = useState('')
-  const canConfirm = !busy && (!required || note.trim().length > 0)
-  return (
-    <Dialog
-      open
-      size="md"
-      tone={tone}
-      onClose={busy ? () => {} : onClose}
-      eyebrow={eyebrow}
-      title={title}
-      footer={(
-        <>
-          <Button variant="secondary" size="sm" type="button" onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
-          <Button
-            variant={tone === 'danger' ? 'destructive' : 'primary'}
-            size="sm"
-            type="button"
-            busy={busy}
-            disabled={!canConfirm}
-            onClick={() => { void onConfirm(note) }}
-            data-testid={`${testId}-confirm`}
-          >
-            {confirmLabel}
-          </Button>
-        </>
-      )}
-    >
-      <div className={styles.dialogBody}>
-        <p className={styles.dialogHint}>{hint}</p>
-        <Textarea
-          fieldSize="sm"
-          rows={4}
-          autoFocus
-          placeholder={placeholder}
-          value={note}
-          disabled={busy}
-          onChange={(event) => setNote(event.target.value)}
-          data-testid={`${testId}-note`}
-        />
-      </div>
-    </Dialog>
   )
 }

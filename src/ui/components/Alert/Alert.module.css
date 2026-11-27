@@ -1,39 +1,27 @@
-/* Alert — shared inline message primitive. */
-
 .alert {
-    display: flex;
-    flex-direction: column;
+    display: grid;
     gap: var(--space-3xs);
-    border-radius: var(--radius);
-    padding: var(--space-l) var(--space-xl);
-    border: 1px solid var(--border);
-    background: var(--bg-surface);
+    min-width: 0;
+    padding: var(--space-m) var(--space-l);
+    border-radius: var(--input-radius);
+    background: var(--overlay-5);
     color: var(--text);
-    font-size: var(--text-m);
-    line-height: 1.5;
-}
-
-.alertTitle {
-    font-weight: 700;
     font-size: var(--text-s);
+    line-height: 1.5;
+    overflow-wrap: anywhere;
 }
 
-.alertBody {
-    font-size: var(--text-m);
+.alert[data-tone="success"] {
+    background: var(--success-10);
+    color: var(--success-text);
 }
 
-.alertInfo {
-    border-color: var(--border);
+.alert[data-tone="warning"] {
+    background: var(--warning-10);
+    color: var(--warning-text);
 }
 
-.alertSuccess {
-    border-color: var(--success-30);
-}
-
-.alertWarning {
-    border-color: var(--warning);
-}
-
-.alertDanger {
-    border-color: var(--danger);
+.alert[data-tone="danger"] {
+    background: var(--danger-10);
+    color: var(--danger-text);
 }

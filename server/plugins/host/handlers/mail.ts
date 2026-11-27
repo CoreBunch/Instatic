@@ -64,7 +64,7 @@ function checkedVariables(entry: HostPluginRecord, template: string, variables: 
   return checked
 }
 
-async function queuePluginMail(db: DbClient, entry: HostPluginRecord, mail: PluginMail): Promise<'queued' | 'captured'> {
+async function queuePluginMail(db: DbClient, entry: HostPluginRecord, mail: PluginMail) {
   try {
     return await queueTemplateMail(db, {
       key: pluginMailTemplateKey(entry.manifest.id, mail.template),

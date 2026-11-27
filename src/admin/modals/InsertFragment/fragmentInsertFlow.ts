@@ -7,6 +7,7 @@
  * insert path.
  */
 
+import type { EditorFragmentPlacement } from '@site/store/slices/fragmentsSlice'
 import {
   FragmentParseError,
   commitFragmentPlan,
@@ -14,7 +15,6 @@ import {
   planFragmentInsert,
   readFragmentPackage,
   type CommitFragmentPlanOptions,
-  type FragmentInsertPlacement,
   type FragmentInsertPlan,
   type FragmentInsertResult,
   type FragmentMedia,
@@ -75,10 +75,10 @@ export async function planFragmentForEditor(
   assertCurrentTarget = captureFragmentTarget(),
 ): Promise<EditorFragmentPlan> {
   assertCurrentTarget()
-  const state = useEditorStore.getState()
-  if (!state.site) throw new Error('The site is still loading.')
   const tables = fragment.tables.length > 0 ? await listCmsDataTables() : []
   assertCurrentTarget()
+  const state = useEditorStore.getState()
+  if (!state.site) throw new Error('The site is still loading.')
   return {
     ...planFragmentInsert({ site: state.site, tables, document: fragmentInsertDocument(state) ?? undefined }, fragment, options),
     assertCurrentTarget,
@@ -89,7 +89,7 @@ export interface CommitFragmentRequest extends CommitFragmentPlanOptions {
   /** The admin shell's step-up runner: table writes may need a recent password. */
   runStepUp: RunStepUp
   /** Default `after-selection`. */
-  placement?: FragmentInsertPlacement
+  placement?: EditorFragmentPlacement
 }
 
 /** Media, fonts, tables, then ONE store transaction. */

@@ -35,6 +35,16 @@ export interface PluginBuildResult {
   zipPath: string
 }
 
+// The build writes these facades into the plugin source while it runs and
+// removes them afterwards. `instatic-plugin dev` must not treat them as edits.
+const MODULES_FACADE_FILE = '__modules-facade.ts'
+const SANDBOX_FACADE_PREFIX = '__sandbox-facade-'
+
+export function isBuildScratchFile(fileName: string): boolean {
+  return fileName === MODULES_FACADE_FILE
+    || (fileName.startsWith(SANDBOX_FACADE_PREFIX) && fileName.endsWith('.ts'))
+}
+
 export async function readPluginDefinition(sourceDir: string): Promise<PluginDefinition> {
   // The config may call definePack({ layouts }) which compiles HTML — give it
   // a DOM + the base module registry before it is evaluated.
@@ -227,7 +237,7 @@ async function bundleEntrypoint(
   let facadeCleanup: string | null = null
   if (options.sandbox) {
     const facade = generateSandboxFacade(resolve(sourcePath), options.sandbox)
-    const facadePath = join(dirname(sourcePath), `__sandbox-facade-${Date.now()}.ts`)
+    const facadePath = join(dirname(sourcePath), `${SANDBOX_FACADE_PREFIX}${Date.now()}.ts`)
     await writeFile(facadePath, facade, 'utf-8')
     entryToBundle = facadePath
     facadeCleanup = facadePath
@@ -407,7 +417,7 @@ export async function buildPlugin(
   //    of `./modules/<file>` resolve correctly.
   if (definition.modules.length > 0) {
     const modulesFacade = generateModulesFacade(absoluteSource)
-    const modulesFacadePath = join(absoluteSource, '__modules-facade.ts')
+    const modulesFacadePath = join(absoluteSource, MODULES_FACADE_FILE)
     await writeFile(modulesFacadePath, modulesFacade, 'utf-8')
     try {
       // Module packs are loaded by BOTH the browser editor (as an ES

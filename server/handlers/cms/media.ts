@@ -90,7 +90,7 @@ function readQueryFlag(url: URL, key: string): boolean {
   return value === '1' || value === 'true'
 }
 
-const UpdateMediaMetadataBodySchema = Type.Object({
+export const UpdateMediaMetadataBodySchema = Type.Object({
   filename: Type.Optional(Type.String()),
   altText: Type.Optional(Type.String()),
   caption: Type.Optional(Type.String()),
@@ -120,6 +120,11 @@ function buildMetadataPatch(body: { filename?: string; altText?: string; caption
 // ─────────────────────────────────────────────────────────────────────────────
 // Per-route handlers
 // ─────────────────────────────────────────────────────────────────────────────
+
+export const AssignFoldersBodySchema = Type.Object({
+  add: Type.Optional(Type.Array(Type.String())),
+  remove: Type.Optional(Type.Array(Type.String())),
+})
 
 async function handleListMedia(req: Request, db: DbClient): Promise<Response> {
   const user = await requireCapability(req, db, 'media.read')
@@ -233,10 +238,6 @@ async function handleAssignMediaFolders(
   const user = await requireCapability(req, db, 'media.write')
   if (user instanceof Response) return user
 
-  const AssignFoldersBodySchema = Type.Object({
-    add: Type.Optional(Type.Array(Type.String())),
-    remove: Type.Optional(Type.Array(Type.String())),
-  })
   const body = await readValidatedBody(req, AssignFoldersBodySchema)
   if (!body) return badRequest('Invalid request body')
   const add = body.add ?? []
@@ -305,7 +306,7 @@ async function handleDeleteMedia(
 
 const ID_PATTERN = '(?<id>[^/]+)'
 
-const MEDIA_ROUTES: readonly Route<[]>[] = [
+export const MEDIA_ROUTES: readonly Route<[]>[] = [
   { method: 'GET', pattern: MEDIA_PREFIX, handler: handleListMedia },
   { method: 'POST', pattern: MEDIA_PREFIX, handler: handleUploadMedia },
   { method: 'POST', pattern: `${MEDIA_PREFIX}/lookup`, handler: handleLookupMedia },

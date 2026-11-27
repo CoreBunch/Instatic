@@ -16,7 +16,8 @@
  * outright; the per-request check after resolution is the one that decides.
  */
 import type { DbClient } from '../db/client'
-import { accessAllows, parseAccessRule, type AccessRule, type CurrentMember } from '@core/members'
+import { accessAllows, LOCKED_ACCESS, parseAccessRule, type AccessRule, type CurrentMember } from '@core/members'
+import type { DataTable } from '@core/data/schemas'
 import type { Page } from '@core/page-tree'
 import {
   buildMemberFrame,
@@ -25,13 +26,14 @@ import {
   type MemberAppRequestFrame,
   type MemberFrame,
 } from '@core/templates'
-import { resolveSignedInMember } from '../members/handlers'
+import { resolveSignedInMember } from '../members/sessions'
 import { getMemberPagePaths } from '../members/pages'
 import { toCurrentMember } from '../members/repository'
-import { listProtectedTables } from '../repositories/data/tableAccess'
+import { listProtectedTables, listTableIdsBySlug, type ProtectedTable } from '../repositories/data/tableAccess'
 import { listPublishedPageAccess } from '../repositories/publish'
 import type { ClosedContent } from '@core/loops/types'
 import { createVersionedSingleFlight } from './publishState'
+import { pageArtefactUrlPath } from './staticArtefact'
 
 interface AccessIndex {
   /** Published page slug → rule, protected pages only. */
@@ -42,32 +44,58 @@ interface AccessIndex {
    * letter case: neither rule may replace the other.
    */
   routeBases: Map<string, AccessRule[]>
-  /** Table slug → rule, protected tables only. */
-  tableSlugs: Map<string, AccessRule>
   /** Table logical id → rule, protected tables only (routable or not). */
   tableIds: Map<string, AccessRule>
+  /**
+   * Slug → id of EVERY live table. Entry-template targets name tables by
+   * slug; they are resolved to ids here, and every rule is then looked up by
+   * id. A slug that resolves to no table fails closed.
+   */
+  tableIdsBySlug: Map<string, string>
 }
 
 const indexMemo = createVersionedSingleFlight<AccessIndex>()
 
-async function loadAccessIndex(db: DbClient): Promise<AccessIndex> {
+/**
+ * The protected routes as the database holds them right now, uncached. For
+ * the publish bake, which runs between a publish's writes and the version
+ * bump that the cached index is keyed by.
+ */
+export async function loadAccessIndex(db: DbClient): Promise<AccessIndex> {
+  const [pages, tables, tableIdsBySlug] = await Promise.all([
+    listPublishedPageAccess(db), listProtectedTables(db), listTableIdsBySlug(db),
+  ])
+  return buildAccessIndex(pages, tables, tableIdsBySlug)
+}
+
+/** Draft routes and page rules come from the branch. Table protection is a live setting keyed by logical ID. */
+export async function draftAccessIndex(db: DbClient, pages: Page[], tables: DataTable[]): Promise<AccessIndex> {
+  const live = new Map((await listProtectedTables(db)).map(table => [table.id, table.rule]))
+  const protectedTables = tables.flatMap(table => {
+    const rule = live.get(table.id)
+    return rule ? [{ id: table.id, routeBase: table.routeBase ? normalizeRouteBase(table.routeBase) : null, rule }] : []
+  })
+  return buildAccessIndex(pages.filter(page => !isTemplatePage(page)), protectedTables,
+    new Map(tables.map(table => [table.slug, table.id])))
+}
+
+function buildAccessIndex(pageRows: { slug: string; access?: unknown }[],
+  tables: Pick<ProtectedTable, 'id' | 'routeBase' | 'rule'>[], tableIdsBySlug: Map<string, string>): AccessIndex {
   const pages = new Map<string, AccessRule>()
-  for (const row of await listPublishedPageAccess(db)) {
+  for (const row of pageRows) {
     const rule = parseAccessRule(row.access)
     if (rule.level !== 'public') pages.set(row.slug, rule)
   }
   const routeBases = new Map<string, AccessRule[]>()
-  const tableSlugs = new Map<string, AccessRule>()
   const tableIds = new Map<string, AccessRule>()
-  for (const table of await listProtectedTables(db)) {
+  for (const table of tables) {
     if (table.routeBase !== null) {
       const key = table.routeBase.toLowerCase()
       routeBases.set(key, [...(routeBases.get(key) ?? []), table.rule])
     }
-    tableSlugs.set(table.slug, table.rule)
     tableIds.set(table.id, table.rule)
   }
-  return { pages, routeBases, tableSlugs, tableIds }
+  return { pages, routeBases, tableIds, tableIdsBySlug }
 }
 
 /**
@@ -110,8 +138,45 @@ export function indexedRulesForPath(index: AccessIndex, pathname: string): Acces
   return rules
 }
 
-export function tableRulesForRouteBase(index: AccessIndex, routeBase: string): AccessRule[] {
-  return index.routeBases.get(normalizeRouteBase(routeBase).toLowerCase()) ?? []
+/**
+ * Every rule that applies to an entry of `tableId` served at `pathname`: the
+ * table's own rule, found by the table's ID, and whatever the index holds for
+ * the path as it is spelled. By id, never by route base or slug: those are
+ * strings the owner can change while this index is cached, and a rule looked
+ * up by a string that has moved on is a rule not found.
+ */
+export function rowRouteRules(index: AccessIndex, tableId: string, pathname: string): AccessRule[] {
+  const rule = index.tableIds.get(tableId)
+  return [...(rule ? [rule] : []), ...indexedRulesForPath(index, pathname)]
+}
+
+/**
+ * Who the HTML of a render under these rules is for: `member` as soon as any
+ * rule protects it. The one place this is decided, for the public router and
+ * for background re-renders alike.
+ */
+export function audienceForRules(rules: readonly AccessRule[]): 'public' | 'member' {
+  return rules.length > 0 ? 'member' : 'public'
+}
+
+/**
+ * Every rule that applies to a page served at `pathname`: the page's own
+ * (`pageRules`; a page that cannot be found is locked) AND whatever the index
+ * holds for the path as it is spelled (a page at that slug, a protected
+ * table whose route base the path sits under). The full rule set of a page
+ * route, in one place: the public router decides access from it, and a
+ * background re-render takes its audience from it.
+ */
+export function pageRouteRules(index: AccessIndex, page: Page | undefined, pathname: string): AccessRule[] {
+  return [...(page ? pageRules(index, page) : [LOCKED_ACCESS]), ...indexedRulesForPath(index, pathname)]
+}
+
+/**
+ * The audience of a published page rendered outside a request (a background
+ * re-render), from the same rules as a request for the page's own address.
+ */
+export function pageAudience(index: AccessIndex, page: Page | undefined): 'public' | 'member' {
+  return audienceForRules(pageRouteRules(index, page, page ? pageArtefactUrlPath(page.slug) : '/'))
 }
 
 /**
@@ -119,8 +184,9 @@ export function tableRulesForRouteBase(index: AccessIndex, routeBase: string): A
  * served on its behalf (hole and loop fragments).
  *
  * A routable page: its own rule. An entry template: the rule of every table
- * it renders, so a fragment of a protected table's template is protected
- * whatever route the caller claims to be on. Any other template (a layout,
+ * it renders, found by table id, so a fragment of a protected table's
+ * template is protected whatever route the caller claims to be on; a target
+ * that names no live table is locked. Any other template (a layout,
  * the 404 page) only wraps and has no rule of its own.
  */
 export function pageRules(index: AccessIndex, page: Page): AccessRule[] {
@@ -130,7 +196,14 @@ export function pageRules(index: AccessIndex, page: Page): AccessRule[] {
   }
   const target = page.template?.target
   if (target?.kind !== 'postTypes') return []
-  return target.tableSlugs.flatMap((slug) => index.tableSlugs.get(slug) ?? [])
+  return target.tableSlugs.flatMap((slug) => {
+    const tableId = index.tableIdsBySlug.get(slug)
+    // A target naming a table that is not there (renamed, deleted): nothing
+    // tells whose entries this template was made for, so it is locked.
+    if (tableId === undefined) return [LOCKED_ACCESS]
+    const rule = index.tableIds.get(tableId)
+    return rule ? [rule] : []
+  })
 }
 
 /**

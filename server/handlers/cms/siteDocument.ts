@@ -42,10 +42,11 @@
  *      queued behind the transaction chain). This is also the emission point
  *      for the multi-admin live-sync plan's site events.
  *
- * Response: `{ ok: true, seq }` — the save's site-global sequence number,
+ * Response includes the saved page revisions and the site-global sequence number,
  * stamped on the shell and every written/deleted row (conflict detection and
  * delta reconciliation substrate for the live-sync plan).
  */
+import type { AuthUser } from '../../repositories/users'
 import type { DbClient } from '../../db/client'
 import { isMainScope, type BranchScope } from '../../branches/scope'
 import { SITE_SHELL_LOGICAL_ID } from '@core/branches'
@@ -75,9 +76,10 @@ import {
   validateVisualComponentsForPartialWrite,
 } from '@core/persistence/validate'
 import { validateSavedLayoutsForPartialWrite } from '@core/persistence/validateLayouts'
-import { VisualComponentSchema, vcSlugFromName, type VisualComponent } from '@core/visualComponents'
-import { SavedLayoutSchema, layoutSlugFromName, type SavedLayout } from '@core/layouts'
+import { vcSlugFromName, type VisualComponent } from '@core/visualComponents'
+import { layoutSlugFromName, type SavedLayout } from '@core/layouts'
 import type { Page } from '@core/page-tree'
+import { canvasRevision } from '../../canvas/revision'
 import { SaveConflictError, type SaveConflict } from '@core/persistence/saveConflict'
 import { shellsEqual } from '@core/persistence/shellsEqual'
 import {
@@ -88,48 +90,17 @@ import {
 } from '../../repositories/rowWriteEvents'
 import { badRequest, jsonResponse, methodNotAllowed, readValidatedBody } from '../../http'
 import { bumpPublishVersionSerialized } from '../../publish/publishState'
-import { Type, type Static } from '@core/utils/typeboxHelpers'
+import { SiteDocumentBodySchema, type SiteDocumentBody } from '@core/persistence/siteDocumentBody'
 import { CMS_API_PREFIX } from './shared'
 import { ForbiddenSiteChangeError, validateSiteWriteDiff } from '../../writePolicy/siteDiff'
 import { validatePageWriteDiff } from '../../writePolicy/pageDiff'
 
-const SITE_WRITE_CAPABILITIES = [
+export const SITE_WRITE_CAPABILITIES = [
   'site.structure.edit',
   'site.content.edit',
   'site.style.edit',
 ] satisfies CoreCapability[]
 
-const SiteDocumentBodySchema = Type.Object({
-  mode: Type.Union([Type.Literal('incremental'), Type.Literal('replace')]),
-  // The shell — validated structurally by validateSite in phase 1.
-  site: Type.Unknown(),
-  // Pages are parsed/validated by validatePagesForPartialSave.
-  changedPages: Type.Array(Type.Unknown()),
-  deletedPageIds: Type.Array(Type.String()),
-  changedComponents: Type.Array(VisualComponentSchema),
-  deletedComponentIds: Type.Array(Type.String()),
-  changedLayouts: Type.Array(SavedLayoutSchema),
-  deletedLayoutIds: Type.Array(Type.String()),
-  /**
-   * Conflict detection (incremental mode): rowId → the stored seq the client
-   * last synchronized with, for every changed AND deleted row. Inside the
-   * save transaction, a stored row that is NEWER than its base — or that has
-   * no base entry at all — 409s the whole save with a conflicts payload
-   * (see @core/persistence/saveConflict). Client-created rows have no stored
-   * counterpart and pass by construction. Ignored in replace mode (imports
-   * are deliberate replace-everything operations).
-   */
-  baseSeqs: Type.Record(Type.String(), Type.Number()),
-  /**
-   * The shell seq the client last synchronized with. Checked only when the
-   * incoming shell content actually differs from the stored shell — the
-   * shell is shipped with every save, so an unconditional check would 409
-   * every concurrent save pair. Ignored in replace mode.
-   */
-  shellBaseSeq: Type.Number(),
-}, { additionalProperties: false })
-
-type SiteDocumentBody = Static<typeof SiteDocumentBodySchema>
 
 /**
  * Resolve one collection's deletion set for the requested mode:
@@ -196,7 +167,10 @@ export async function handleSiteDocumentRoutes(
 
   const body = await readValidatedBody(req, SiteDocumentBodySchema)
   if (!body) return badRequest('Invalid request body')
+  return saveSiteDocument(db, scope, user, body)
+}
 
+export async function saveSiteDocument(db: DbClient, scope: BranchScope, user: AuthUser, body: SiteDocumentBody, checkShellRevision = false): Promise<Response> {
   if (
     body.mode === 'replace' &&
     (body.deletedPageIds.length > 0 || body.deletedComponentIds.length > 0 || body.deletedLayoutIds.length > 0)
@@ -354,6 +328,7 @@ export async function handleSiteDocumentRoutes(
       slug: page.slug,
     }))
 
+    let shellSeq = 0
     let seq = 0
     let deletedPublishedPage = false
     await serializeCollabAwareWrite(async () => {
@@ -370,7 +345,7 @@ export async function handleSiteDocumentRoutes(
       // Throwing rolls the transaction back, so nothing is written on 409.
       if (body.mode === 'incremental') {
         const conflicts: SaveConflict[] = []
-        if (shellChanged) {
+        if (shellChanged || checkShellRevision) {
           const storedShellSeq = await getDraftSiteSeq(tx, scope)
           if (storedShellSeq > body.shellBaseSeq) {
             conflicts.push({ table: 'site', rowId: SITE_SHELL_LOGICAL_ID, seq: storedShellSeq })
@@ -402,6 +377,7 @@ export async function handleSiteDocumentRoutes(
         await saveDraftSite(tx, scope, shell, user.id, { collabInternal: true })
         await stampDraftSiteSeq(tx, scope, seq)
       }
+      if (pages.length) shellSeq = shellChanged ? seq : await getDraftSiteSeq(tx, scope)
       // Empty change sets skip their table entirely — a shell-only save
       // issues no row queries inside the transaction.
       if (componentWrites.length > 0 || componentDeleteIds.size > 0) {
@@ -449,7 +425,9 @@ export async function handleSiteDocumentRoutes(
     // Only main's routes are served, so only main's deletions evict the cache.
     if (deletedPublishedPage && isMainScope(scope)) await bumpPublishVersionSerialized()
 
-    return jsonResponse({ ok: true, seq })
+    return jsonResponse({ ok: true, seq, pages: pages.map(({ id, slug, rootNodeId }) => ({
+      id, slug, rootNodeId, revision: canvasRevision(scope.branchId, id, seq, shellSeq),
+    })) })
   } catch (err) {
     if (err instanceof SiteValidationError) return badRequest(err.message)
     if (err instanceof ForbiddenSiteChangeError) {

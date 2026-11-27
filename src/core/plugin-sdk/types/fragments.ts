@@ -20,13 +20,15 @@ export interface FragmentInsertProgress {
 }
 
 export interface FragmentInsertInput {
+  /** Place the layout first, then import assets while editing, or skip asset imports. */
+  assets?: 'background' | 'layout-only'
   /** A fragment object (`fragment.json`, parsed). Checked with `parseSiteFragment`. */
   fragment: unknown
   /**
    * The bytes of one media item the insert adds. Only called for media the
    * plan adds that the media library does not already hold. Return null when
-   * the bytes are unavailable; the insert then stops before touching the
-   * document.
+   * the bytes are unavailable. A blocking insert stops before touching the
+   * document. A background import keeps the layout and reports the missing file.
    */
   readMediaBytes: (media: FragmentMedia) => Uint8Array | null | Promise<Uint8Array | null>
   /** Where a section or component lands. Default `after-selection`. */
@@ -35,6 +37,7 @@ export interface FragmentInsertInput {
   colorSources?: Record<string, string>
   /** Aborts at the next step boundary; never after the store write started. */
   signal?: AbortSignal
+  /** Background asset progress can arrive after the layout insertion resolves. */
   onProgress?: (progress: FragmentInsertProgress) => void
   /** Skip the editor's result toast (the plugin shows its own). */
   silent?: boolean
@@ -123,7 +126,15 @@ export type ThemePlanOutcome =
   | { ok: true; report: ThemeApplyReport }
   | { ok: false; message: string }
 
+export interface FragmentCanvasDrop {
+  preview: { left: number; top: number; width: number; height: number; position: 'before' | 'after' | 'inside' }
+  /** Uses the document and position captured at hit testing. */
+  insert: (input: FragmentInsertInput) => Promise<FragmentInsertOutcome>
+}
+
 export interface EditorFragmentsApi {
+  /** Hit test an editor viewport point using the canvas insertion rules. */
+  canvasDropAt: (clientX: number, clientY: number) => FragmentCanvasDrop | null
   /**
    * Observe the destination's saved styles for a preview. Emits null when the
    * site editor is unavailable. Call the returned function to unsubscribe.

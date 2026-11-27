@@ -44,6 +44,19 @@ const FOLDERS_PATH = `${CMS_API_PREFIX}/media/folders`
 // Per-route handlers
 // ---------------------------------------------------------------------------
 
+export const CreateFolderBodySchema = Type.Object({
+  name: Type.String(),
+  parentId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+})
+
+export const PatchFolderBodySchema = Type.Object({
+  name: Type.Optional(Type.String()),
+  // Three states: undefined = keep existing parent, null = move to root,
+  // string = reparent to that folder id.
+  parentId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+  sortOrder: Type.Optional(Type.Number()),
+})
+
 async function handleListFolders(req: Request, db: DbClient): Promise<Response> {
   const user = await requireCapability(req, db, 'media.read')
   if (user instanceof Response) return user
@@ -54,10 +67,6 @@ async function handleCreateFolder(req: Request, db: DbClient): Promise<Response>
   const user = await requireCapability(req, db, 'media.write')
   if (user instanceof Response) return user
 
-  const CreateFolderBodySchema = Type.Object({
-    name: Type.String(),
-    parentId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-  })
   const body = await readValidatedBody(req, CreateFolderBodySchema)
   if (!body) return badRequest('Invalid request body')
   const name = body.name.trim()
@@ -94,13 +103,6 @@ async function handleUpdateFolder(
 
   const folderId = params.id
 
-  const PatchFolderBodySchema = Type.Object({
-    name: Type.Optional(Type.String()),
-    // Three states: undefined = keep existing parent, null = move to root,
-    // string = reparent to that folder id.
-    parentId: Type.Optional(Type.Union([Type.String(), Type.Null()])),
-    sortOrder: Type.Optional(Type.Number()),
-  })
   const body = await readValidatedBody(req, PatchFolderBodySchema)
   if (!body) return badRequest('Invalid request body')
   const existing = await getMediaFolder(db, folderId)
@@ -172,7 +174,7 @@ async function handleDeleteFolder(
 // Route table + dispatcher
 // ---------------------------------------------------------------------------
 
-const MEDIA_FOLDER_ROUTES: readonly Route<[]>[] = [
+export const MEDIA_FOLDER_ROUTES: readonly Route<[]>[] = [
   { method: 'GET', pattern: FOLDERS_PATH, handler: handleListFolders },
   { method: 'POST', pattern: FOLDERS_PATH, handler: handleCreateFolder },
   {

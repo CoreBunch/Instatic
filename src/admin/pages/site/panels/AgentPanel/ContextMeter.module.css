@@ -153,7 +153,7 @@
 
 .billingHeader {
   padding-top: var(--space-m);
-  border-top: 1px solid var(--overlay-10);
+  border-top: 1px solid var(--divider);
 }
 
 .billingHeader strong {

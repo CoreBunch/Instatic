@@ -164,7 +164,7 @@ describe('base form primitive modules', () => {
       formId: 'newsletter',
       kind: 'success',
       text: 'Thanks',
-    }, []).html).toBe('<div data-instatic-form-message="success" data-instatic-form-id="newsletter" role="status">Thanks</div>')
+    }, []).html).toBe('<div data-instatic-form-message="success" data-instatic-form-id="newsletter" role="status" hidden>Thanks</div>')
   })
 
   it('escapes authored form text and attributes through the publisher boundary', () => {

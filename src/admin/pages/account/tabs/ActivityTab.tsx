@@ -15,8 +15,9 @@
  *
  * The "suspicious activity" banner surfaces whenever there's a `locked` or
  * `rate_limited` event in the last 24 h — a low-cost nudge for the user to
- * change their password (when that flow ships in C.4).
+ * review the attempt and change their password in Security.
  */
+import { Alert } from '@ui/components/Alert'
 import { useState } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import {
@@ -28,12 +29,14 @@ import {
   DataTableRow,
 } from '@ui/components/DataTable'
 import { SkeletonRows } from '@ui/components/Skeleton'
-import { CircleAlertSolidIcon } from 'pixel-art-icons/icons/circle-alert-solid'
 import {
   listCmsLoginActivity,
   type CmsLoginActivityEvent,
   type CmsLoginActivityResult,
 } from '@core/persistence'
+import { cn } from '@ui/cn'
+import auditTable from '@admin/shared/AuditTable/AuditTable.module.css'
+import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
 import styles from '../AccountPage.module.css'
 import { EmptyState } from '@ui/components/EmptyState'
 import { LockSolidIcon } from 'pixel-art-icons/icons/lock-solid'
@@ -99,32 +102,25 @@ export function ActivityTab() {
   ).length
 
   return (
-    <section className={styles.section} aria-labelledby="account-activity-title">
-      <div className={styles.sectionHeader}>
-        <div>
-          <h2 id="account-activity-title">Sign-in history</h2>
-          <p>Recent sign-in attempts on your account, including failures and lockouts. To revoke a current session, use Active devices.</p>
-        </div>
-        {failedIn24h > 0 && (
-          <span
-            className={`${styles.badge} ${styles.activityFailureBadge}`}
-            data-testid="account-activity-failed-count"
-          >
-            {failedIn24h} failed in last 24h
-          </span>
-        )}
-      </div>
-
+    <WorkspaceSection title="Sign-in history" actions={
+      failedIn24h > 0 && (
+        <span
+          className={`${styles.badge} ${styles.activityFailureBadge}`}
+          data-testid="account-activity-failed-count"
+        >
+          {failedIn24h} failed in last 24h
+        </span>
+      )
+    }>
       {error && <p className={styles.error} role="alert">{error}</p>}
 
       {showSuspiciousBanner && (
-        <div className={styles.suspiciousBanner} role="status" data-testid="account-activity-suspicious">
-          <CircleAlertSolidIcon size={14} aria-hidden="true" />
+        <Alert tone="warning" role="status" data-testid="account-activity-suspicious">
           <span>
             Suspicious activity in the last 24 hours. Review the entries below — if any are unfamiliar,
-            consider changing your password once that lands.
+            change your password in Security.
           </span>
-        </div>
+        </Alert>
       )}
 
       {loading ? (
@@ -137,12 +133,12 @@ export function ActivityTab() {
           description="Sign-ins to your account appear here."
         />
       ) : (
-        <DataTable aria-label="Login activity" density="compact">
+        <DataTable className={cn(auditTable.table, styles.recordTable)} aria-label="Login activity" density="compact">
           <DataTableHead>
             <DataTableRow>
               <DataTableHeader scope="col">When</DataTableHeader>
-              <DataTableHeader scope="col">Device</DataTableHeader>
-              <DataTableHeader scope="col">IP</DataTableHeader>
+              <DataTableHeader scope="col" className={styles.wideColumn}>Device</DataTableHeader>
+              <DataTableHeader scope="col" className={styles.wideColumn}>IP</DataTableHeader>
               <DataTableHeader scope="col">Outcome</DataTableHeader>
             </DataTableRow>
           </DataTableHead>
@@ -150,12 +146,15 @@ export function ActivityTab() {
             {events.map((event) => (
               <DataTableRow key={event.id} aria-label={`Activity ${event.result}`}>
                 <DataTableCell>
-                  <span className={styles.secondaryText}>{formatDateTime(event.attemptedAt)}</span>
+                  <time dateTime={event.attemptedAt} className={styles.secondaryText}>{formatDateTime(event.attemptedAt)}</time>
+                  <span className={styles.mobileMeta}>
+                    {event.deviceLabel || 'Unknown device'} · IP {event.ipAddress ?? 'unknown'}
+                  </span>
                 </DataTableCell>
-                <DataTableCell>
+                <DataTableCell className={styles.wideColumn}>
                   <span className={styles.secondaryText}>{event.deviceLabel || 'Unknown device'}</span>
                 </DataTableCell>
-                <DataTableCell>
+                <DataTableCell className={styles.wideColumn}>
                   <span className={styles.secondaryText}>{event.ipAddress ?? 'unknown'}</span>
                 </DataTableCell>
                 <DataTableCell>
@@ -170,6 +169,6 @@ export function ActivityTab() {
           </DataTableBody>
         </DataTable>
       )}
-    </section>
+    </WorkspaceSection>
   )
 }

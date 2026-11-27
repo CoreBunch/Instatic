@@ -20,6 +20,9 @@ import { isValidEmail } from '@core/utils/email'
 import { useAdminSessionSetter } from '@admin/sessionContext'
 import { useStepUp } from '@admin/shared/StepUp'
 import { UserAvatar } from '@admin/shared/UserAvatar'
+import { WorkspaceSection } from '@admin/shared/SettingsWorkspace/WorkspaceSection'
+import layout from '@admin/shared/SettingsWorkspace/WorkspaceSection.module.css'
+import { cn } from '@ui/cn'
 import styles from '../AccountPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { isStepUpCancelled } from './securityErrors'
@@ -153,124 +156,117 @@ export function ProfileTab({ user }: ProfileTabProps) {
   }
 
   return (
-    <section className={styles.section} aria-labelledby="account-profile-title">
-      <div className={styles.sectionHeader}>
-        <div>
-          <h2 id="account-profile-title">Profile</h2>
-          <p>Your name, email, and role across the install.</p>
-        </div>
-      </div>
-
-      <div className={styles.card}>
-        <div className={styles.profileGrid}>
-          <div className={styles.avatarColumn}>
-            <UserAvatar user={user} size={96} alt={`Avatar for ${displayName}`} />
-            <div className={styles.avatarActions}>
+    <WorkspaceSection title="Profile">
+      <div className={styles.profileGrid}>
+        <div className={cn(layout.detailCard, styles.avatarColumn)}>
+          <div className={styles.profileIdentity}>
+            <UserAvatar user={user} size={64} alt={`Avatar for ${displayName}`} />
+            <div>
+              <h2>{displayName}</h2>
+              <span className={styles.secondaryText}>{user.role.name}</span>
+            </div>
+          </div>
+          <div className={styles.avatarActions}>
+            <Button
+              variant="secondary"
+              size="sm"
+              type="button"
+              onClick={openFilePicker}
+              disabled={busy !== null}
+              aria-busy={busy === 'upload'}
+              data-testid="profile-avatar-upload"
+            >
+              <span>
+                {busy === 'upload'
+                  ? 'Uploading…'
+                  : hasUploadedAvatar
+                    ? 'Change picture'
+                    : 'Upload picture'}
+              </span>
+            </Button>
+            {hasUploadedAvatar && (
               <Button
-                variant="secondary"
+                variant="ghost"
                 size="sm"
                 type="button"
-                onClick={openFilePicker}
+                tone="danger"
+                onClick={() => void handleRemove()}
                 disabled={busy !== null}
-                aria-busy={busy === 'upload'}
-                data-testid="profile-avatar-upload"
+                aria-busy={busy === 'remove'}
+                data-testid="profile-avatar-remove"
               >
-                <span>
-                  {busy === 'upload'
-                    ? 'Uploading…'
-                    : hasUploadedAvatar
-                      ? 'Change picture'
-                      : 'Upload picture'}
-                </span>
+                <span>{busy === 'remove' ? 'Removing…' : 'Remove'}</span>
               </Button>
-              {hasUploadedAvatar && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  type="button"
-                  tone="danger"
-                  onClick={() => void handleRemove()}
-                  disabled={busy !== null}
-                  aria-busy={busy === 'remove'}
-                  data-testid="profile-avatar-remove"
-                >
-                  <span>{busy === 'remove' ? 'Removing…' : 'Remove'}</span>
-                </Button>
-              )}
-            </div>
-            <p className={styles.avatarHint}>JPEG, PNG, GIF, or WebP, 5 MB maximum.</p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp"
-              className={styles.hiddenFileInput}
-              tabIndex={-1}
-              aria-hidden="true"
-              onChange={(event) => void handleFileChange(event)}
-              data-testid="profile-avatar-file"
-            />
+            )}
           </div>
-          <form className={styles.profileForm} onSubmit={(event) => void handleProfileSubmit(event)}>
-            <div className={styles.profileFields}>
-              <div className={styles.profileField}>
-                <label className={styles.profileFieldLabel} htmlFor={displayNameId}>Name</label>
-                <Input
-                  id={displayNameId}
-                  value={profileForm.displayName}
-                  name="current-user-display-name"
-                  autoComplete="name"
-                  data-testid="profile-display-name"
-                  disabled={busy !== null}
-                  onChange={(event) => {
-                    setProfileForm({ ...profileForm, displayName: event.currentTarget.value })
-                  }}
-                />
-              </div>
-              <div className={styles.profileField}>
-                <label className={styles.profileFieldLabel} htmlFor={emailId}>Email</label>
-                <Input
-                  id={emailId}
-                  type="email"
-                  value={profileForm.email}
-                  name="current-user-email-address"
-                  autoComplete="email"
-                  data-testid="profile-email"
-                  required
-                  disabled={busy !== null}
-                  onChange={(event) => {
-                    setProfileForm({ ...profileForm, email: event.currentTarget.value })
-                  }}
-                />
-              </div>
-              <div className={styles.profileField}>
-                <span className={styles.profileFieldLabel}>Role</span>
-                <span className={styles.profileFieldValue}>{user.role.name}</span>
-              </div>
-            </div>
-            <div className={styles.profileActions}>
-              <Button
-                variant="primary"
-                size="sm"
-                type="submit"
-                disabled={busy !== null || !profileDirty}
-                aria-busy={busy === 'profile'}
-                data-testid="profile-save"
-              >
-                <span>{busy === 'profile' ? 'Saving…' : 'Save profile'}</span>
-              </Button>
-            </div>
-          </form>
+          <p className={styles.avatarHint}>JPEG, PNG, GIF, or WebP, 5 MB maximum.</p>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            className={styles.hiddenFileInput}
+            tabIndex={-1}
+            aria-hidden="true"
+            onChange={(event) => void handleFileChange(event)}
+            data-testid="profile-avatar-file"
+          />
         </div>
-        {status && (
-          <p
-            className={status.tone === 'error' ? styles.error : styles.cardStatus}
-            role={status.tone === 'error' ? 'alert' : 'status'}
-            data-testid="profile-status"
-          >
-            {status.message}
-          </p>
-        )}
+        <form className={cn(layout.detailCard, styles.profileForm)} onSubmit={(event) => void handleProfileSubmit(event)}>
+          <div className={styles.profileFields}>
+            <div className={styles.profileField}>
+              <label className={styles.profileFieldLabel} htmlFor={displayNameId}>Name</label>
+              <Input
+                id={displayNameId}
+                value={profileForm.displayName}
+                name="current-user-display-name"
+                autoComplete="name"
+                data-testid="profile-display-name"
+                disabled={busy !== null}
+                onChange={(event) => {
+                  setProfileForm({ ...profileForm, displayName: event.currentTarget.value })
+                }}
+              />
+            </div>
+            <div className={styles.profileField}>
+              <label className={styles.profileFieldLabel} htmlFor={emailId}>Email</label>
+              <Input
+                id={emailId}
+                type="email"
+                value={profileForm.email}
+                name="current-user-email-address"
+                autoComplete="email"
+                data-testid="profile-email"
+                required
+                disabled={busy !== null}
+                onChange={(event) => {
+                  setProfileForm({ ...profileForm, email: event.currentTarget.value })
+                }}
+              />
+            </div>
+          </div>
+          <div className={styles.profileActions}>
+            <Button
+              variant="primary"
+              size="sm"
+              type="submit"
+              disabled={busy !== null || !profileDirty}
+              aria-busy={busy === 'profile'}
+              data-testid="profile-save"
+            >
+              <span>{busy === 'profile' ? 'Saving…' : 'Save profile'}</span>
+            </Button>
+          </div>
+        </form>
       </div>
-    </section>
+      {status && (
+        <p
+          className={status.tone === 'error' ? styles.error : styles.cardStatus}
+          role={status.tone === 'error' ? 'alert' : 'status'}
+          data-testid="profile-status"
+        >
+          {status.message}
+        </p>
+      )}
+    </WorkspaceSection>
   )
 }

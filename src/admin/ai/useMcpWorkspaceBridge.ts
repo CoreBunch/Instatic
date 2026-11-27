@@ -8,7 +8,7 @@ import { useEffect } from 'react'
 import { Type } from '@core/utils/typeboxHelpers'
 import type { AiToolOutput } from '@core/ai'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { withAmbientHeaders } from '@core/http'
+import { apiRequest, withAmbientHeaders } from '@core/http'
 import { readNdjsonStream } from './ndjsonStream'
 import { postToolResult } from './toolResultApi'
 
@@ -17,15 +17,14 @@ const RECONNECT_DELAY_MS = 3000
 // Auth failures (logged out / brief blip during a server restart) back off
 // longer but still retry so the bridge self-heals once the session is valid.
 const AUTH_RETRY_DELAY_MS = 15000
-// A stream that lived at least this long ended because the server recycled
-// its idle lease, not because anything is wrong — reconnect immediately.
-// This matters in background/hidden webviews (a browser tab in the
-// background, a minimized window): timers there are throttled to minutes, but the
-// stream-end network event still fires, so a timerless reconnect is what
-// keeps the bridge alive without the window being focused.
+const STANDBY_RETRY_DELAY_MS = 15_000
+// Retry a previously healthy connection immediately, even in hidden tabs
+// where browsers throttle timers. Short failures still back off.
 const HEALTHY_STREAM_MIN_UPTIME_MS = 30_000
 
+const RenewalAckSchema = Type.Object({ ok: Type.Literal(true) })
 const BridgeEventSchema = Type.Union([
+  Type.Object({ type: Type.Literal('bridgePing') }),
   Type.Object({ type: Type.Literal('bridgeReady'), bridgeId: Type.String() }),
   Type.Object({
     type: Type.Literal('toolRequest'),
@@ -63,7 +62,7 @@ export async function executeMcpBridgeRequest(
   }
 }
 
-type McpBridgeConnectionOutcome = 'auth' | 'transient'
+type McpBridgeConnectionOutcome = 'auth' | 'transient' | 'occupied'
 
 /**
  * Run one editor-bridge connection. Every attempt owns a fresh controller;
@@ -83,7 +82,8 @@ export async function runMcpWorkspaceBridgeConnection(
   let bridgeId = ''
 
   try {
-    const res = await fetch(`${MCP_BRIDGE_PATH}?scope=${scope}`, withAmbientHeaders({
+    const path = `${MCP_BRIDGE_PATH}?scope=${scope}`
+    const res = await fetch(path, withAmbientHeaders({
       method: 'GET',
       credentials: 'same-origin',
       // The bridge body stays newline-delimited JSON, but the event-stream
@@ -91,6 +91,7 @@ export async function runMcpWorkspaceBridgeConnection(
       headers: { Accept: 'text/event-stream' },
       signal,
     }))
+    if (res.status === 204) return 'occupied'
     if (res.status === 401 || res.status === 403) return 'auth'
     if (!res.ok || !res.body) return 'transient'
 
@@ -99,6 +100,11 @@ export async function runMcpWorkspaceBridgeConnection(
       if (event.type === 'bridgeReady') {
         bridgeId = event.bridgeId
         console.info(`[mcp-workspace-bridge:${scope}] connected`)
+        continue
+      }
+
+      if (event.type === 'bridgePing') {
+        await apiRequest(path, { method: 'POST', body: { bridgeId }, schema: RenewalAckSchema, signal })
         continue
       }
 
@@ -133,19 +139,6 @@ export function useMcpWorkspaceBridge(
 
     const lifecycleController = new AbortController()
     let stopped = false
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null
-
-    // Returns 'auth' when the server rejected on auth (back off longer, but
-    // keep retrying). Returns 'transient' when the stream ended or was not
-    // ready. Unmount is the only permanent stop condition.
-    async function connectOnce(): Promise<McpBridgeConnectionOutcome> {
-      return runMcpWorkspaceBridgeConnection(
-        scope,
-        dispatchTool,
-        afterSuccessfulTool,
-        lifecycleController.signal,
-      )
-    }
 
     /**
      * Delay the next attempt — but let the tab becoming visible cut the wait
@@ -157,15 +150,16 @@ export function useMcpWorkspaceBridge(
     function reconnectDelay(delay: number): Promise<void> {
       return new Promise<void>((resolve) => {
         const settle = (): void => {
-          if (reconnectTimer) clearTimeout(reconnectTimer)
-          reconnectTimer = null
+          clearTimeout(timer)
+          lifecycleController.signal.removeEventListener('abort', settle)
           document.removeEventListener('visibilitychange', onVisible)
           resolve()
         }
         const onVisible = (): void => {
           if (document.visibilityState === 'visible') settle()
         }
-        reconnectTimer = setTimeout(settle, delay)
+        const timer = setTimeout(settle, delay)
+        lifecycleController.signal.addEventListener('abort', settle, { once: true })
         document.addEventListener('visibilitychange', onVisible)
       })
     }
@@ -175,11 +169,12 @@ export function useMcpWorkspaceBridge(
         const startedAt = Date.now()
         let delay = RECONNECT_DELAY_MS
         try {
-          const outcome = await connectOnce()
+          const outcome = await runMcpWorkspaceBridgeConnection(
+            scope, dispatchTool, afterSuccessfulTool, lifecycleController.signal,
+          )
           if (outcome === 'auth') delay = AUTH_RETRY_DELAY_MS
+          else if (outcome === 'occupied') delay = STANDBY_RETRY_DELAY_MS
           else if (Date.now() - startedAt >= HEALTHY_STREAM_MIN_UPTIME_MS) {
-            // The server recycled a healthy stream's idle lease — go
-            // straight back, no timer involved (see the constant's note).
             delay = 0
           }
         } catch (err) {
@@ -195,7 +190,6 @@ export function useMcpWorkspaceBridge(
 
     return () => {
       stopped = true
-      if (reconnectTimer) clearTimeout(reconnectTimer)
       lifecycleController.abort()
     }
   }, [scope, dispatchTool, afterSuccessfulTool, enabled])

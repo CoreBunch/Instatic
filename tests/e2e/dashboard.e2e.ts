@@ -41,6 +41,8 @@ test.describe('dashboard', () => {
       await expect(page.getByText('Admin').first()).toBeVisible()
       await expect(page.getByText('Dashboard', { exact: true }).first()).toBeVisible()
       await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'New page', exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Publish all', exact: true })).toHaveCount(0)
       await expect(page.getByText('09 blocks')).toBeVisible()
 
       const rangeTabs = page.getByRole('tablist', { name: 'Time range' })

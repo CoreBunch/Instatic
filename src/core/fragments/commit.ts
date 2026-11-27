@@ -98,6 +98,7 @@ export async function resolveMedia(
   items: FragmentMedia[],
   adapter: FragmentAssetAdapter,
   options: CommitFragmentPlanOptions,
+  onFailure?: (item: FragmentMedia, error: FragmentCommitError) => void,
 ): Promise<ResolvedMedia> {
   const out: ResolvedMedia = { urlByPath: new Map(), idById: new Map(), uploaded: 0, reused: 0 }
   const byKey = new Map<string, FragmentMediaRef>()
@@ -112,6 +113,7 @@ export async function resolveMedia(
         if (ref) out.reused += 1
         else {
           const bytes = await options.readMediaBytes(item)
+          options.signal?.throwIfAborted()
           if (!bytes) throw new Error(`no bytes for ${item.src}`)
           ref = await adapter.uploadMedia({
             filename: item.filename,
@@ -124,7 +126,11 @@ export async function resolveMedia(
         }
       } catch (err) {
         if (isAbortError(err)) throw err
-        throw new FragmentCommitError('media', `Could not add ${item.filename} to the media library: ${getErrorMessage(err, String(err))}`, { cause: err })
+        const error = new FragmentCommitError('media', `Could not add ${item.filename} to the media library: ${getErrorMessage(err, String(err))}`, { cause: err })
+        if (!onFailure) throw error
+        onFailure(item, error)
+        done += 1
+        continue
       }
       if (item.key) byKey.set(item.key, ref)
     }
@@ -183,15 +189,15 @@ export async function installFonts(
 // C. Tables
 // ---------------------------------------------------------------------------
 
-async function writeTables(
+export async function writeTables(
   plan: FragmentInsertPlan,
   media: ResolvedMedia,
   adapter: FragmentInsertAdapter,
   options: CommitFragmentPlanOptions,
+  includeRows = true,
 ): Promise<Map<string, string>> {
   const tableIdMap = new Map<string, string>()
   for (const table of plan.tables) if (table.action === 'reuse') tableIdMap.set(table.fragmentTableId, table.tableId)
-  const replacePaths = createPathReplacer(media.urlByPath)
   const total = plan.tables.length
   let done = 0
 
@@ -209,13 +215,7 @@ async function writeTables(
       if (ready.length !== table.input.fields.length) {
         deferred.push({ tableId: created.id, fields: table.input.fields.filter(field => !ready.includes(field)) })
       }
-      for (const row of table.rows) {
-        options.signal?.throwIfAborted()
-        await adapter.createRow(created.id, {
-          status: row.status,
-          cells: rewriteCells(table.input.fields, row.cells, media.idById, replacePaths),
-        })
-      }
+      if (includeRows) await writeRows(created.id, table, media, adapter, options)
       done += 1
     }
     for (const item of deferred) {
@@ -234,6 +234,23 @@ async function writeTables(
     throw new FragmentCommitError('tables', `Could not write the fragment's tables: ${getErrorMessage(err, String(err))}`, { cause: err })
   }
   return tableIdMap
+}
+
+export async function writeTableRows(plan: FragmentInsertPlan, tableIdMap: Map<string, string>, media: ResolvedMedia, adapter: FragmentInsertAdapter, options: CommitFragmentPlanOptions) {
+  for (const table of plan.tables) {
+    if (table.action === 'create') await writeRows(tableIdMap.get(table.fragmentTableId)!, table, media, adapter, options)
+  }
+}
+
+async function writeRows(id: string, table: Extract<FragmentInsertPlan['tables'][number], { action: 'create' }>, media: ResolvedMedia, adapter: FragmentInsertAdapter, options: CommitFragmentPlanOptions) {
+  const replacePaths = createPathReplacer(media.urlByPath)
+  for (const row of table.rows) {
+    options.signal?.throwIfAborted()
+    await adapter.createRow(id, {
+      status: row.status,
+      cells: rewriteCells(table.input.fields, row.cells, media.idById, replacePaths),
+    })
+  }
 }
 
 function withTableIds(field: DataField, tableIdMap: Map<string, string>): DataField {

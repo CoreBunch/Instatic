@@ -485,6 +485,7 @@ describe('site mail', () => {
         ['GET', '/admin/api/cms/mail/activity', undefined],
         ['POST', '/admin/api/cms/mail/connectors', SMTP],
         ['PUT', '/admin/api/cms/mail/defaults', { defaultConnectorId: null, fromAddress: '', fromName: '', replyTo: '' }],
+        ['PUT', '/admin/api/cms/mail/templates/test.welcome/sending', { sendingEnabled: false }],
         ['PUT', '/admin/api/cms/mail/templates/test.welcome', { subject: 'S', body: 'B' }],
       ] as const) {
         await expectForbidden(await h.cms(path, { method, cookie: editor.cookie, ...(json ? { json } : {}) }))
@@ -497,6 +498,9 @@ describe('site mail', () => {
         method: 'PUT', cookie, json: { subject: 'S', body: 'B' },
       })
       expect(edit.status).toBe(401)
+      expect((await h.cms('/admin/api/cms/mail/templates/test.welcome/sending', {
+        method: 'PUT', cookie, json: { sendingEnabled: false },
+      })).status).toBe(401)
       expect((await h.cms('/admin/api/cms/mail/templates/test.welcome', { method: 'DELETE', cookie })).status).toBe(401)
       const add = await h.cms('/admin/api/cms/mail/connectors', { method: 'POST', cookie, json: SMTP })
       expect(add.status).toBe(401)

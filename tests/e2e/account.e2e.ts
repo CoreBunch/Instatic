@@ -606,7 +606,10 @@ test.describe('account', () => {
         await expect(
           sessionsTable.getByRole('button', { name: 'Sign out' }).first(),
         ).toBeVisible()
-        await expectContainedHorizontalScroller(sessionsTable)
+        await expect(sessionsTable.getByText(/^IP /).first()).toBeInViewport()
+        await expect(sessionsTable.getByRole('button', { name: 'Sign out' }).first()).toBeInViewport()
+        expect(await sessionsTable.evaluate((table) => table.getBoundingClientRect().right))
+          .toBeLessThanOrEqual(390)
       } finally {
         await otherContext.close()
       }
@@ -1001,65 +1004,20 @@ test.describe('account', () => {
   })
 })
 
-async function expectContainedHorizontalScroller(table: Locator): Promise<void> {
-  const metrics = await table.evaluate((element) => {
-    const wrapper = element.parentElement
-    const documentElement = document.documentElement
-    if (!wrapper) {
-      return {
-        hasWrapper: false,
-        pageOverflow: documentElement.scrollWidth - documentElement.clientWidth,
-        wrapperContained: false,
-        canScrollTable: false,
-        reachesTableEnd: false,
-      }
-    }
-
-    const initialScrollLeft = wrapper.scrollLeft
-    wrapper.scrollLeft = wrapper.scrollWidth
-    const maxScrollLeft = wrapper.scrollWidth - wrapper.clientWidth
-    const wrapperRect = wrapper.getBoundingClientRect()
-    const pageOverflow = documentElement.scrollWidth - documentElement.clientWidth
-    const tableRect = element.getBoundingClientRect()
-    const reachesTableEnd = Math.ceil(wrapper.scrollLeft + wrapper.clientWidth)
-      >= Math.floor(element.scrollWidth)
-
-    wrapper.scrollLeft = initialScrollLeft
-
-    return {
-      hasWrapper: true,
-      pageOverflow,
-      wrapperContained:
-        wrapperRect.left >= -1 && wrapperRect.right <= documentElement.clientWidth + 1,
-      canScrollTable: maxScrollLeft > 0,
-      reachesTableEnd: reachesTableEnd || tableRect.width <= wrapper.clientWidth,
-    }
-  })
-
-  expect(metrics.hasWrapper).toBe(true)
-  expect(metrics.pageOverflow).toBeLessThanOrEqual(1)
-  expect(metrics.wrapperContained).toBe(true)
-  expect(metrics.canScrollTable).toBe(true)
-  expect(metrics.reachesTableEnd).toBe(true)
-}
-
 async function expectProfileMobileLayout(page: Page): Promise<void> {
-  const metrics = await page.getByRole('main').evaluate((element) => {
+  const metrics = await page.getByRole('region', { name: 'Profile', exact: true }).evaluate((profileSection) => {
     const documentElement = document.documentElement
     const viewportWidth = documentElement.clientWidth
-    const profileSection = Array.from(element.querySelectorAll('section')).find((section) =>
-      section.querySelector('#account-profile-title')
-    )
-    const sectionRect = profileSection?.getBoundingClientRect()
-    const uploadButton = profileSection?.querySelector('[data-testid="profile-avatar-upload"]')
-    const removeButton = profileSection?.querySelector('[data-testid="profile-avatar-remove"]')
-    const hint = Array.from(profileSection?.querySelectorAll('p') ?? []).find((paragraph) =>
+    const sectionRect = profileSection.getBoundingClientRect()
+    const uploadButton = profileSection.querySelector('[data-testid="profile-avatar-upload"]')
+    const removeButton = profileSection.querySelector('[data-testid="profile-avatar-remove"]')
+    const hint = Array.from(profileSection.querySelectorAll('p')).find((paragraph) =>
       paragraph.textContent?.includes('5 MB')
     )
-    const displayName = profileSection?.querySelector('[data-testid="profile-display-name"]')
-    const email = profileSection?.querySelector('[data-testid="profile-email"]')
-    const saveButton = profileSection?.querySelector('[data-testid="profile-save"]')
-    const status = profileSection?.querySelector('[data-testid="profile-status"]')
+    const displayName = profileSection.querySelector('[data-testid="profile-display-name"]')
+    const email = profileSection.querySelector('[data-testid="profile-email"]')
+    const saveButton = profileSection.querySelector('[data-testid="profile-save"]')
+    const status = profileSection.querySelector('[data-testid="profile-status"]')
     const requiredControls = [
       uploadButton,
       hint,
@@ -1077,22 +1035,15 @@ async function expectProfileMobileLayout(page: Page): Promise<void> {
 
     return {
       pageOverflow: documentElement.scrollWidth - viewportWidth,
-      sectionPresent: Boolean(sectionRect),
-      sectionContained: sectionRect
-        ? sectionRect.left >= -1 && sectionRect.right <= viewportWidth + 1
-        : false,
+      sectionContained: sectionRect.left >= -1 && sectionRect.right <= viewportWidth + 1,
       requiredControlsPresent: requiredControls.every(Boolean),
-      controlsContained: Boolean(
-        sectionRect
-        && controlRects.every(
-          (rect) => rect.left >= sectionRect.left - 1 && rect.right <= sectionRect.right + 1,
-        ),
+      controlsContained: controlRects.every(
+        (rect) => rect.left >= sectionRect.left - 1 && rect.right <= sectionRect.right + 1,
       ),
     }
   })
 
   expect(metrics.pageOverflow).toBeLessThanOrEqual(1)
-  expect(metrics.sectionPresent).toBe(true)
   expect(metrics.sectionContained).toBe(true)
   expect(metrics.requiredControlsPresent).toBe(true)
   expect(metrics.controlsContained).toBe(true)

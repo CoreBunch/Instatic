@@ -13,6 +13,7 @@
  * Achromatic palette (Constraint #376). CSS Modules only (Constraint #402).
  */
 
+import { Alert } from '@ui/components/Alert'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { useEditorStore } from '@site/store/store'
 import { loopSourceLabel, useLoopSourceMissing, useLoopSources } from '@site/hooks/useLoopSources'
@@ -31,7 +32,6 @@ import { getAncestors, type Page } from '@core/page-tree'
 import { PropertyControlRenderer } from '@site/property-controls/PropertyControlRenderer'
 import { CUSTOM_HTML_TAG_VALUE } from '@core/htmlAttributes'
 import { customHtmlTagControl, htmlTagControl } from '@modules/base/utils/htmlTag'
-import styles from './LoopPropertiesView.module.css'
 
 interface LoopPropertiesViewProps {
   nodeId: string
@@ -266,10 +266,10 @@ export function LoopPropertiesView({ nodeId, props, activePage }: LoopProperties
         onChange={handleSourceChange}
       />
       {sourceUnavailable ? (
-        <p role="status" className={styles.sourceUnavailable}>
+        <Alert tone="warning" role="status">
           No source named “{sourceId}” is available, so this loop publishes nothing. The plugin
           that provides it may be disabled or removed. Enable it again, or pick another source.
-        </p>
+        </Alert>
       ) : null}
 
       {source

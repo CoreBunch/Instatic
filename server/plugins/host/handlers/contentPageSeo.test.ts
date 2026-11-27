@@ -11,6 +11,9 @@ import type { DbClient } from '../../../db/client'
 import { getDataRowBySlug } from '../../../repositories/data'
 import { MAIN_SCOPE } from '../../../branches/scope'
 import { parsePluginManifest } from '@core/plugins/manifest'
+import { hookBus } from '@core/plugins/hookBus'
+import { applyContentEntryCellsFilter } from '../../../publish/contentEvents'
+import { hostPlugins } from '../registry'
 import type { HostPluginRecord } from '../types'
 import { PluginRateLimitStore } from '../pluginRateLimit'
 import { handleContentEntriesCreate, handleContentEntriesCreateMany } from './content'
@@ -19,16 +22,17 @@ const PLUGIN = 'acme.pages'
 const SEO = { description: 'From a plugin', robots: 'noindex' }
 
 function pluginRecord(): HostPluginRecord {
+  const manifest = parsePluginManifest({
+    id: PLUGIN,
+    name: 'Pages fixture',
+    version: '1.0.0',
+    apiVersion: 1,
+    description: 'writes pages',
+    permissions: ['cms.content.read', 'cms.content.write'],
+    contentAccess: [{ table: 'pages', modes: ['read', 'write'] }],
+  })
   return {
-    manifest: parsePluginManifest({
-      id: PLUGIN,
-      name: 'Pages fixture',
-      version: '1.0.0',
-      apiVersion: 1,
-      description: 'writes pages',
-      permissions: ['cms.content.read', 'cms.content.write'],
-      contentAccess: [{ table: 'pages', modes: ['read', 'write'] }],
-    }),
+    manifest: { ...manifest, grantedPermissions: manifest.permissions },
     routes: new Map(),
     hookListeners: [],
     hookFilters: [],
@@ -70,4 +74,22 @@ describe('plugin page creation', () => {
     expect(await getDataRowBySlug(db, MAIN_SCOPE, 'pages', 'one')).not.toBeNull()
     expect(await storedSeo('one')).toBeUndefined()
   })
+})
+
+it('keeps the page structure supplied by the owner when a content filter returns replacement cells', async () => {
+  hostPlugins.set(PLUGIN, pluginRecord())
+  hookBus.filter(PLUGIN, 'content.entry.cells', () => ({ title: 'Edited title' }))
+  try {
+    const cells = { title: 'Original title', seo: SEO, access: { level: 'members', onDeny: 'hide' } }
+    const filtered = await applyContentEntryCellsFilter(cells, {
+      scope: MAIN_SCOPE,
+      table: { id: 'pages', slug: 'pages', createdByPluginId: null },
+      entryId: 'new',
+      actor: { kind: 'user', userId: 'owner' },
+    })
+    expect(filtered).toEqual({ ...cells, title: 'Edited title' })
+  } finally {
+    hookBus.unregisterPlugin(PLUGIN)
+    hostPlugins.delete(PLUGIN)
+  }
 })

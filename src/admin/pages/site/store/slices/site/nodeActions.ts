@@ -29,9 +29,6 @@ import {
   duplicateNode,
   wrapNode,
   wrapNodes,
-  reindexNodeParents,
-  addMissingConditions,
-  createStyleRuleOrderAllocator,
 } from '@core/page-tree'
 import type { NodeTree, PageNode, SiteDocument } from '@core/page-tree'
 import { subtreeHasOutlet, treeHasOutlet } from '@core/templates'
@@ -39,7 +36,7 @@ import { wouldCreateCycle, syncSlotInstances, applySlotSyncResult } from '@core/
 import { pushToast } from '@ui/components/Toast'
 import { depthInTree, resolveActiveTreeTarget } from './helpers'
 import { pruneCanvasSelectionDraft } from '../selectionSlice'
-import { indexStyleRulesByName, linkImportedClassNames, mergeImportedStyleRules } from './importLinking'
+import { insertImportedFragment } from '@core/siteImport'
 import type { SiteSlice, SiteSliceHelpers } from './types'
 
 type NodeActions = Pick<
@@ -192,71 +189,12 @@ export function createNodeActions(helpers: SiteSliceHelpers): NodeActions {
     },
 
     insertImportedNodes: (parentId, fragment, opts) => {
-      if (fragment.rootIds.length === 0) return []
-      const insertedRootIds: string[] = []
+      let inserted = false
       mutateActiveTreeAndSite((tree, site) => {
-        const parent = tree.nodes[parentId]
-        if (!parent) return false
-        const isRoot = tree.rootNodeId === parentId
-        const definition = registry.get(parent.moduleId)
-        const acceptsChildren = isRoot || definition?.canHaveChildren === true
-        if (!acceptsChildren) return false
-
-        // The HTML importer stamps class *names* onto each fragment node's
-        // classIds (`walkAndMap` copies el.classList verbatim). The engine
-        // keys classes by id and resolves styles by id, so link every imported
-        // name to a real registry class — reusing an existing same-named class
-        // or auto-creating a bare one — as the nodes enter the live tree.
-        // Without this step the names never resolve and styles never apply.
-        //
-        // Nodes already carry fresh nanoid IDs from createNode — no collision
-        // risk on the node map.
-        const classesByName = indexStyleRulesByName(site.styleRules)
-        const allocateStyleRuleOrder = createStyleRuleOrderAllocator(site.styleRules)
-
-        // Commit rules parsed from <style> blocks BEFORE linking class names so
-        // a node's `class="foo"` token binds to the just-added `.foo {}` rule
-        // (rather than auto-creating a bare class). These show in the Selectors
-        // panel like any other rule.
-        if (opts?.styleRules?.length) {
-          mergeImportedStyleRules(
-            opts.styleRules,
-            site.styleRules,
-            classesByName,
-            allocateStyleRuleOrder,
-          )
-        }
-        // Register any reusable conditions (custom @media / @container /
-        // @supports) the <style> rules reference via contextStyles keys.
-        addMissingConditions(site, opts?.conditions ?? [])
-
-        for (const [id, node] of Object.entries(fragment.nodes)) {
-          // `node.inlineStyles` (imported inline `style="…"`) rides along on
-          // the `...node` spread — it is a first-class node field.
-          tree.nodes[id] = {
-            ...node,
-            classIds: linkImportedClassNames(
-              node.classIds,
-              site.styleRules,
-              classesByName,
-              allocateStyleRuleOrder,
-            ),
-          }
-        }
-
-        // Wire the imported root nodes as children of the target parent.
-        const insertAt = opts?.index ?? parent.children.length
-        parent.children.splice(insertAt, 0, ...fragment.rootIds)
-        insertedRootIds.push(...fragment.rootIds)
-        // The fragment was bulk-merged into tree.nodes (not via insertNode), so
-        // derive the parentId index across the active tree to keep the inserted
-        // subtree's pointers consistent. Deliberately O(active-tree), not a
-        // targeted O(fragment) update: import is an infrequent path, and a full
-        // reindex is the simplest bulletproof way to stay consistent.
-        reindexNodeParents(tree.nodes)
-        return true
+        inserted = insertImportedFragment(tree, site, parentId, fragment, opts)
+        return inserted
       })
-      return insertedRootIds
+      return inserted ? [...fragment.rootIds] : []
     },
 
     insertComponentRef: (parentId, componentId, index) => {

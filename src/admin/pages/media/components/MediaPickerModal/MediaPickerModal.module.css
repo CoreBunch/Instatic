@@ -48,7 +48,7 @@
     justify-content: space-between;
     gap: var(--space-2xl);
     padding: var(--space-m) var(--space-2xl);
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--divider);
     background: var(--bg-body);
 }
 

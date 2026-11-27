@@ -63,7 +63,8 @@ test.describe('member pages in the editor', () => {
     await test.step('build a sign-up form from the Members mode', async () => {
       await openPage(page, join)
       await insertModuleViaPicker(page, 'base.form')
-      await page.getByTestId('form-mode').getByRole('button', { name: 'Members' }).click()
+      await page.getByRole('button', { name: 'Edit form settings' }).click()
+      await page.getByRole('radio', { name: 'Member action' }).check()
       await pickOption(page, page.getByTestId('member-form-action'), 'Sign up')
 
       // One click adds everything the action needs.
@@ -73,6 +74,8 @@ test.describe('member pages in the editor', () => {
       await expect(canvas.locator('form button')).toHaveCount(1)
       await expect(page.getByRole('button', { name: /^Add name/ })).toHaveCount(0)
       await page.screenshot({ path: '.tmp/evidence/members-form-setup.png' })
+
+      await page.getByRole('button', { name: 'Done' }).click()
 
       // Only signed-out visitors need a sign-up form.
       await openLayersPanel(page)
@@ -90,11 +93,13 @@ test.describe('member pages in the editor', () => {
     await test.step('build the page the confirmation link opens', async () => {
       await openPage(page, welcome)
       await insertModuleViaPicker(page, 'base.form')
-      await page.getByTestId('form-mode').getByRole('button', { name: 'Members' }).click()
+      await page.getByRole('button', { name: 'Edit form settings' }).click()
+      await page.getByRole('radio', { name: 'Member action' }).check()
       await pickOption(page, page.getByTestId('member-form-action'), 'Confirm email address')
       await page.getByRole('button', { name: /^Add messages/ }).click()
       await expect(canvasFrame(page).locator('form button')).toHaveCount(1)
 
+      await page.getByRole('button', { name: 'Done' }).click()
       await publishDraft(page)
     })
 
@@ -169,7 +174,7 @@ test.describe('member pages in the editor', () => {
         // The confirmation email was produced (captured on this development server).
         await page.goto('/admin/email')
         await page.getByTestId('email-nav-activity').click()
-        const activity = page.getByRole('list', { name: 'Email activity' })
+        const activity = page.getByRole('table', { name: 'Email activity' })
         await expect(activity.getByText(email).first()).toBeVisible()
 
         // The link in that email finishes the sign-up, in the browser that started it.

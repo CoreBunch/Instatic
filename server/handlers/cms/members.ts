@@ -53,6 +53,7 @@ import {
 import { memberLinkOrigin, memberMailAvailable } from '../../members/mail'
 import { createMemberApp, deleteMemberApp, findMemberApp, listMemberApps } from '../../members/apps/store'
 import { isAvailableMemberAppScope, listAvailableMemberAppScopes } from '../../members/apps/scopes'
+import { memberSettingsView } from '../../members/settingsView'
 import { listMemberPageOptions } from '../../members/pages'
 import {
   findMemberById,
@@ -290,19 +291,10 @@ async function handleRevokeTag(req: Request, db: DbClient, params: RouteParams):
 
 // ─── Settings ──────────────────────────────────────────────────────────────
 
-async function settingsResponse(req: Request, db: DbClient, settings: MemberSettings): Promise<Response> {
-  return jsonResponse({
-    settings,
-    pageOptions: await listMemberPageOptions(db),
-    mailAvailable: await memberMailAvailable(db, req),
-    linkAvailable: memberLinkOrigin(req) !== null,
-  })
-}
-
 async function handleGetSettings(req: Request, db: DbClient): Promise<Response> {
   const user = await reader(req, db)
   if (user instanceof Response) return user
-  return settingsResponse(req, db, await getMemberSettings(db))
+  return jsonResponse(await memberSettingsView(req, db, await getMemberSettings(db)))
 }
 
 /** Field ids are binding keys and form field names: each must be one field. */
@@ -327,7 +319,7 @@ async function handleSaveSettings(req: Request, db: DbClient): Promise<Response>
   }
   await saveMemberSettings(db, settings)
   await audit(db, req, user, 'member.settings.update', null, { signupMode: settings.signupMode })
-  return settingsResponse(req, db, settings)
+  return jsonResponse(await memberSettingsView(req, db, settings))
 }
 
 // ─── Sign-in for apps ──────────────────────────────────────────────────────
@@ -393,7 +385,7 @@ const MEMBER_APP = new RegExp(`^${MEMBERS_PREFIX}/(?<id>[^/]+)/apps/(?<grantId>[
 const action = (name: string) => new RegExp(`^${MEMBERS_PREFIX}/(?<id>[^/]+)/${name}$`)
 
 // The fixed paths come first: `invite`, `settings` and `apps` would otherwise match `:id`.
-const ROUTES: Route<[]>[] = [
+export const MEMBER_ROUTES: Route<[]>[] = [
   { method: 'GET', pattern: MEMBERS_PREFIX, handler: handleList },
   { method: 'POST', pattern: `${MEMBERS_PREFIX}/invite`, handler: handleInvite },
   { method: 'GET', pattern: `${MEMBERS_PREFIX}/settings`, handler: handleGetSettings },
@@ -413,5 +405,5 @@ const ROUTES: Route<[]>[] = [
 ]
 
 export function handleMembersRoutes(req: Request, db: DbClient): Promise<Response | null> {
-  return runRouteTable(req, db, ROUTES)
+  return runRouteTable(req, db, MEMBER_ROUTES)
 }

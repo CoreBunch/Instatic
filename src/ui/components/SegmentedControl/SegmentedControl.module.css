@@ -4,7 +4,7 @@
  * Composes the shared Button primitive: each segment is a Button with
  * `variant="secondary"` and `pressed` to surface the active state.
  *
- * The visual "track" is a 2px-padded overlay around the segments. Active
+ * The track keeps a whole-pixel vertical inset around the segments. Active
  * segments use overlay states instead of surface steps so light theme controls
  * still have visible contrast on pale panels.
  */
@@ -16,7 +16,7 @@
     align-items: stretch;
     gap: var(--space-4xs);
     border-radius: var(--segment-track-radius);
-    padding: var(--space-4xs);
+    padding: var(--segment-track-padding-block) var(--space-4xs);
     border: var(--space-px) solid var(--overlay-20);
     background: var(--overlay-5);
 }

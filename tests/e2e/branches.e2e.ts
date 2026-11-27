@@ -206,7 +206,7 @@ test('share a preview link and open it as a visitor (BRANCH-004)', async ({ page
   await expect(page.getByTestId('branch-strip')).toHaveCount(0)
 })
 
-test('merge a branch into main from the review page (BRANCH-005)', async ({ page }) => {
+test('return to main after merging a kept branch and undo from main (BRANCH-005)', async ({ page }) => {
   await login(page)
   await openSiteEditor(page)
   await page.getByTestId('branch-chip').click()
@@ -231,18 +231,27 @@ test('merge a branch into main from the review page (BRANCH-005)', async ({ page
   await page.waitForTimeout(400)
   await shot(page, '8-merge-review', 'full')
 
-  // Deleting after the merge is opt-in (a merge that keeps the branch can be undone).
-  await page.getByTestId('review-delete-toggle').click()
+  await expect(page.getByTestId('review-delete-toggle')).not.toBeChecked()
   await page.getByTestId('review-merge').click()
   // Merging asks first, then steps up.
   await page.getByRole('button', { name: 'Merge into main' }).click()
   await completeStepUp(page)
   await expect(page).toHaveURL(/\/admin\/site/)
-  // The branch was deleted after merging, so the tab is back on main …
   await expect(page.getByTestId('branch-strip')).toHaveCount(0)
-  // … where the page now exists.
+  const mergedToast = page.getByRole('status').filter({ hasText: `Merged ${branch.name} into main` })
+  const undo = mergedToast.getByRole('button', { name: 'Undo', exact: true })
   await openSitePanel(page)
-  await expect(page.getByRole('treeitem', { name: 'Open page Branch Page' })).toBeVisible()
+  const mergedPage = page.getByRole('treeitem', { name: 'Open page Branch Page' })
+  await expect(mergedPage).toBeVisible()
+  await undo.hover()
+  await shot(page, '8-merged-on-main', 'full')
+  await undo.click()
+  await expect(page.getByText(`Undid the merge of ${branch.name}`, { exact: true })).toBeVisible()
+  await openSitePanel(page)
+  await expect(mergedPage).toHaveCount(0)
+  await expect(page.getByTestId('branch-strip')).toHaveCount(0)
+  await page.getByTestId('branch-chip').click()
+  await expect(page.getByTestId(`branch-row-${branch.slug}`)).toBeVisible()
 })
 test('a post written on a branch in the Content workspace stays off main until merged (BRANCH-006)', async ({ page }) => {
   await login(page)

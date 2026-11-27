@@ -290,7 +290,7 @@ For workspace-level gating, `canAccessWorkspace(user, section)` is the single so
    const user = await requireCapability(req, db, 'analytics.read')
    if (user instanceof Response) return user
    ```
-5. Add a `CAPABILITY_META` entry + a `CAPABILITY_GROUPS` section in `src/admin/pages/users/utils/capabilities.ts` so the role-edit dialog renders a checkbox for it. The picker-coverage test fails until you do.
+5. Add a `CAPABILITY_META` entry + a `CAPABILITY_GROUPS` section in `src/admin/shared/CapabilityPicker/` so the role-edit dialog renders a checkbox for it. The picker-coverage test fails until you do.
 6. Existing **custom roles** will NOT have the new capability until users grant it through the Roles admin page.
 7. Update this doc (table + adjacent docs) so agents and humans can find the new capability.
 
@@ -345,6 +345,6 @@ if (userHasAnyCapability(user, SITE_WRITE_CAPABILITIES)) { /* allow save */ }
   - `server/auth/authz.ts` — `requireCapability`, `requireAnyCapability`, `userHasCapability`, `requireStepUp`
   - `server/repositories/roles.ts` — role persistence + `syncSystemRoles`
   - `src/admin/access.ts` — `canAccessWorkspace`, `firstAccessibleWorkspace`, per-workspace helpers
-  - `src/admin/pages/users/utils/capabilities.ts` — `CAPABILITY_META`, `CAPABILITY_GROUPS`
+  - `src/admin/shared/CapabilityPicker/` — `CAPABILITY_META`, `CAPABILITY_GROUPS`
   - `server/handlers/cms/roles.ts` — `/admin/api/cms/roles` (gated by `roles.manage`)
   - Architecture tests: `src/__tests__/architecture/capability-picker-coverage.test.ts`, `src/__tests__/architecture/cms-handlers-capability-gated.test.ts`

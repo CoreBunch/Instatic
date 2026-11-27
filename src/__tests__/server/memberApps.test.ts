@@ -23,6 +23,13 @@ import { createMemberSession } from '../../../server/members/sessions'
 import { issueMemberToken } from '../../../server/members/tokens'
 import { pkceChallengeForVerifier } from '../../../server/oauth/secrets'
 import { sourceRequestFor } from '../../../server/publish/loopSourceRequest'
+import '@modules/base'
+import { createSite, newSiteShellStorage } from '../../../server/repositories/setup'
+import { publishDraftSite } from '../../../server/publish/publishSite'
+import { MAIN_SCOPE } from '../../../server/branches/scope'
+import { saveDataRowDraft } from '../../../server/repositories/data'
+import { pageToCells } from '../../core/data/pageFromRow'
+import { buildMembersDemoPages } from '../../../scripts/lib/membersDemoSite'
 import { publishMemberPages } from '../helpers/memberPages'
 import { createDeviceKey, type DeviceKey } from '../helpers/deviceKey'
 import { resetDpopReplayCache } from '../../../server/oauth/dpop'
@@ -157,6 +164,69 @@ describe('sign-in for apps', () => {
   function userinfo(accessToken: string): Promise<Response> {
     return call('/_instatic/members/oauth/userinfo', { headers: { authorization: `Bearer ${accessToken}` } })
   }
+
+  describe('paired approvals', () => {
+    beforeEach(async () => {
+      const page = buildMembersDemoPages().find(page => page.slug === 'connect-app')!
+      const pages = await publishMemberPages(t.db, { appPair: '/connect-app' })
+      await createSite(t.db, 'Pairing tests', newSiteShellStorage())
+      await t.db`insert into users (id, email, email_normalized, display_name, password_hash, role_id)
+        values ('pair_owner', 'owner@example.test', 'owner@example.test', 'Owner', 'x', 'admin') on conflict (id) do nothing`
+      await saveDataRowDraft(t.db, MAIN_SCOPE, pages.appPair!, { slug: page.slug, cells: pageToCells(page) })
+      await publishDraftSite(t.db, 'pair_owner')
+      await saveMemberSettings(t.db, { ...DEFAULT_MEMBER_SETTINGS, pages })
+    })
+    const endpoint = '/_instatic/members/oauth/pair'
+    function post(path: string, fields: URLSearchParams, headers: Record<string, string> = {}) {
+      return call(path, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded', origin: ORIGIN, ...headers }, body: fields.toString() })
+    }
+    async function begin() {
+      const response = await post(endpoint, new URL(await authorizeUrl(), ORIGIN).searchParams)
+      expect(response.status).toBe(200)
+      return await response.json() as { verification_uri: string; user_code: string; device_code: string }
+    }
+    async function emailLink(approval: string) {
+      expect((await post(approval, new URLSearchParams({ action: 'email', email: 'ada@example.com' }))).status).toBe(200)
+      await flushMemberMail()
+      const { rows } = await t.db<{ body_text: string }>`select body_text from mail_outbox where kind = 'member.app_pair' order by created_at desc limit 1`
+      return rows[0]!.body_text.match(/https?:\/\/[^\s<>]*token=[\w-]+/)![0]
+    }
+
+    it('uses the identity proved by this email and consumes the approval exactly once', async () => {
+      const pair = await begin()
+      const other = await begin()
+      const link = new URL(await emailLink(pair.verification_uri))
+      const different = new URL(other.verification_uri)
+      different.searchParams.set('token', link.searchParams.get('token')!)
+      expect((await call(different.href)).status).toBe(410)
+      const visitor = await createMember(t.db, { email: 'other@example.com', profile: {}, passwordHash: null, verified: true })
+      const session = await createMemberSession(t.db, visitor!.id, { ipAddress: null, userAgent: null })
+      const headers = { cookie: `instatic_member=${session.token}` }
+      const form = new URLSearchParams({ action: 'allow', account: memberId })
+      expect(await (await call(link.href, { headers })).text()).toContain('ada@example.com')
+      expect((await post(link.href, form, { ...headers, origin: 'https://other.example' })).status).toBe(403)
+      const decisions = await Promise.all([post(link.href, form, headers), post(link.href, form, headers)])
+      expect(decisions.map(r => r.status).sort()).toEqual([200, 410])
+      const fields = { grant_type: 'authorization_code', redirect_uri: LISTENING, code_verifier: VERIFIER }
+      expect((await tokenRequest({ ...fields, code: pair.user_code })).status).toBe(400)
+      const exchange = await tokenRequest({ ...fields, code: pair.device_code })
+      expect(exchange.status).toBe(200)
+      const account = await userinfo((await exchange.json()).access_token)
+      expect((await account.json()).email).toBe('ada@example.com')
+    })
+
+    it('closes expired requests and invalidates an outstanding approval email on account suspension', async () => {
+      const pair = await begin()
+      const link = await emailLink(pair.verification_uri)
+      await setMemberSuspended(t.db, memberId, true)
+      await setMemberSuspended(t.db, memberId, false)
+      expect((await call(link)).status).toBe(410)
+      await t.db`update member_app_requests set expires_at = ${new Date(0).toISOString()}`
+      expect((await call(pair.verification_uri)).status).toBe(410)
+      const status = await post(endpoint + '/status', new URLSearchParams({ device_code: pair.device_code, client_id: app.id }))
+      expect(await status.json()).toEqual({ status: 'closed' })
+    })
+  })
 
   describe('the authorize address', () => {
     it('sends a signed-in member to the approval page with a stored request', async () => {

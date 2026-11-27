@@ -7,6 +7,8 @@
  * matches before `/credentials/:id`.
  */
 
+import { recordServiceResponse } from '../../serviceAccounts/activity'
+import { tryAuthorizeServiceRequest } from '../../serviceAccounts/access'
 import type { DbClient } from '../../db/client'
 import { jsonResponse } from '../../http'
 import { isStateChangingMethod, originAllowed } from '../../auth/security'
@@ -36,6 +38,19 @@ export function tryHandleAi(
     return Promise.resolve(jsonResponse({ error: 'Forbidden: invalid origin' }, { status: 403 }))
   }
 
+  const serviceRequest = tryAuthorizeServiceRequest(req, db)
+  if (serviceRequest) {
+    return serviceRequest.then(async authorized => {
+      if (authorized instanceof Response) return authorized
+      const response = await dispatchAi(authorized, db, url) ?? jsonResponse({ error: 'Not found' }, { status: 404 })
+      return recordServiceResponse(authorized, db, response)
+    })
+  }
+  return dispatchAi(req, db, url)
+}
+
+function dispatchAi(req: Request, db: DbClient, url: URL): Promise<Response> | null {
+  const pathname = url.pathname
   // Test endpoints under credentials/:id/test must match BEFORE the
   // generic credentials/:id route — both live inside the credentials
   // handler so the order is handled there.

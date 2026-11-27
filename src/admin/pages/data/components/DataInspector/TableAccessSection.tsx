@@ -5,6 +5,7 @@
  * change takes effect on the live site at once, so it is made deliberately
  * with a Save button, behind the password prompt.
  */
+import { Alert } from '@ui/components/Alert'
 import { useState, type ReactElement } from 'react'
 import { useAsyncResource } from '@admin/lib/useAsyncResource'
 import { AccessRuleEditor, isCompleteAccessRule } from '@admin/shared/AccessRuleEditor'
@@ -53,7 +54,7 @@ export function TableAccessSection({ table, canEdit }: { table: DataTable; canEd
   return (
     <Section title="Access" icon={LockSolidIcon}>
       <div className={sectionStyles.sectionBody}>
-        {error && <p role="alert" className={styles.errorBanner}>{error}</p>}
+        {error && <Alert tone="danger">{error}</Alert>}
         {draft && (
           <>
             <AccessRuleEditor

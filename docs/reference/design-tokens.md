@@ -224,9 +224,9 @@ creating a second tag-specific tint scale. A `tone` (`success`, `warning`, `dang
 | `--success-bright`      | `#4ade80`                          | Agent tool success                    |
 | `--success-text`        | `#d1fae5`                          | Success badge text                    |
 | `--success-text-muted`   | `#a7f3d0`                          | Success hint text                     |
-| `--success-10`          | `rgba(52, 211, 153, 0.1)`          | Success pill surface                  |
+| `--success-10`          | `rgba(52, 211, 153, 0.1)`          | Success pill / notice surface                  |
 | `--success-20`          | `rgba(52, 211, 153, 0.2)`          | Success wash / match highlight        |
-| `--success-30`      | `rgba(52, 211, 153, 0.3)`          | Success pill / alert border           |
+| `--success-30`      | `rgba(52, 211, 153, 0.3)`          | Success pill border           |
 | `--success-40`          | `rgba(52, 211, 153, 0.4)`          | Highest success alpha fill            |
 
 ### Info

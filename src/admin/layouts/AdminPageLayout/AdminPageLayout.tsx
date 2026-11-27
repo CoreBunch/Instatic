@@ -81,6 +81,8 @@ interface AdminPageLayoutProps {
    * canvas for a self-contained settings workspace with its own navigation.
    */
   mode?: 'page' | 'workspace'
+  /** Persistent controls below the scrollable page body. */
+  footer?: ReactNode
   /** Page body. */
   children?: ReactNode
 }
@@ -95,6 +97,7 @@ export function AdminPageLayout({
   titleId,
   loading = false,
   mode = 'page',
+  footer,
   children,
 }: AdminPageLayoutProps) {
   const currentUser = useCurrentAdminUser()
@@ -154,6 +157,8 @@ export function AdminPageLayout({
           {loading ? <SkeletonCards count={3} /> : children}
         </div>
       </main>
+
+      {footer}
 
       {settingsOpen && (
         <Suspense fallback={null}>

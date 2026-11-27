@@ -150,6 +150,7 @@ export function BreakpointFrame({
   return (
     <div
       className={cn(styles.frameWrapper, isDimmed && styles.frameWrapperDimmed)}
+      data-active-breakpoint={isActive}
       data-breakpoint-dimmed={isDimmed ? 'true' : undefined}
       data-testid={`canvas-frame-${breakpoint.id}`}
       style={bpStyle}

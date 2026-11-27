@@ -12,7 +12,7 @@
     gap: var(--space-2xs);
     height: 36px;
     padding: 0 var(--space-xs) 0 var(--space-2xs);
-    border-bottom: 1px solid var(--overlay-10);
+    border-bottom: 1px solid var(--divider);
 }
 
 .barTitle {
@@ -122,7 +122,7 @@
     display: flex;
     align-items: center;
     padding: var(--space-s) var(--space-m);
-    border-top: 1px solid var(--overlay-10);
+    border-top: 1px solid var(--divider);
 }
 
 /* ── Tab content ────────────────────────────────────────────────────────── */
