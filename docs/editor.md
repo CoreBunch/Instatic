@@ -561,6 +561,7 @@ Every built-in left-rail panel, including AI, can be undocked independently;
 the active plugin panel follows the same host contract. An undocked panel stays open as its own draggable canvas window
 while another rail item can open normally in the left sidebar. Its rail icon is
 muted while detached, and the panel header can dock it back into the sidebar.
+The shared `PanelModeButton` uses a picture-in-picture icon for **Undock to canvas**.
 Each floating window has its own keyboard-accessible bottom-right resize handle
 (arrow keys resize by 10px; Shift+arrow by 40px). Built-in panel modes, open
 state, positions, and dimensions are persisted through
