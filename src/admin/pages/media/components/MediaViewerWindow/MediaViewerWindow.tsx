@@ -37,7 +37,7 @@ import { ReloadIcon } from 'pixel-art-icons/icons/reload'
 import { TrashSolidIcon } from 'pixel-art-icons/icons/trash-solid'
 import { VideoSolidIcon } from 'pixel-art-icons/icons/video-solid'
 import { PanelHeader } from '@admin/shared/PanelHeader'
-import { useDraggablePanel } from '@admin/shared/FloatingWindow'
+import { useDraggablePanel, useTopmostEscape } from '@admin/shared/FloatingWindow'
 import type { CmsMediaAsset, CmsMediaFolder, UpdateCmsMediaAssetInput } from '@core/persistence/cmsMedia'
 import { bucketForMime } from '../../utils/filters'
 import { useDebouncedSave } from '../../hooks/useDebouncedSave'
@@ -110,10 +110,15 @@ function ViewerForAsset({ editor, onClose }: ViewerForAssetProps) {
 
   // Persistent window position — same key the old detached inspector used,
   // so saved positions carry over for users who already moved it.
-  const { setPanelRef, headerDragProps, panelPositionStyle } = useDraggablePanel(
+  const { panelRef, setPanelRef, headerDragProps, panelPositionStyle } = useDraggablePanel(
     'mediaDetachedInspector',
     () => ({ x: window.innerWidth - 880, y: 80 }),
   )
+
+  // This window renders its own shell rather than `FloatingWindow`, so it
+  // needs the same Escape rule wired up directly. The stacking check is what
+  // keeps the purge confirmation below owning Escape until it closes.
+  useTopmostEscape(true, panelRef, onClose)
 
   // ── Save callbacks ────────────────────────────────────────────────────────
   const saveTitle = async (next: string) => {

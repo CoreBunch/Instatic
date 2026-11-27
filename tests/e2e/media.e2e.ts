@@ -372,7 +372,7 @@ test.describe('media', () => {
     await expect(page.getByRole('button', { name: `Open ${replacementFilename}` })).toBeVisible()
     await openAssetMenu(page.getByRole('button', { name: `Open ${replacementFilename}` }), page)
     // Purging cannot be undone, so the Trash menu asks before it happens.
-    await page.getByRole('menu', { name: 'Media item options' }).getByRole('menuitem', { name: 'Delete' }).click()
+    await page.getByRole('menu', { name: 'Media item options' }).getByRole('menuitem', { name: 'Delete permanently' }).click()
     const purgeConfirm = page.getByRole('alertdialog', { name: `Delete "${replacementFilename}" permanently?` })
     await expect(purgeConfirm).toBeVisible()
     await Promise.all([
@@ -441,7 +441,7 @@ test.describe('media', () => {
     await openAssetKeyboardMenu(replacedAsset, page)
     await Promise.all([
       waitForMediaDelete(page),
-      page.getByRole('menu', { name: 'Media item options' }).getByRole('menuitem', { name: 'Delete' }).click(),
+      page.getByRole('menu', { name: 'Media item options' }).getByRole('menuitem', { name: 'Move to Trash' }).click(),
     ])
     await expect(page.getByRole('button', { name: `Open ${replacementFilename}` })).toHaveCount(0)
 
@@ -706,7 +706,7 @@ async function deleteVisibleAsset(page: Page, filename: string): Promise<void> {
   await openAssetMenu(page.getByRole('button', { name: `Open ${filename}` }), page)
   await Promise.all([
     waitForMediaDelete(page),
-    page.getByRole('menu', { name: 'Media item options' }).getByRole('menuitem', { name: 'Delete' }).click(),
+    page.getByRole('menu', { name: 'Media item options' }).getByRole('menuitem', { name: 'Move to Trash' }).click(),
   ])
 }
 
