@@ -24,7 +24,7 @@ export const FORM_RUNTIME_JS = `(() => {
   if (window.__instaticFormRuntimeLoaded) return;
   window.__instaticFormRuntimeLoaded = true;
 
-  const FORM_SELECTOR = 'form[data-instatic-form-mode="cms"][data-instatic-form-id], form[data-instatic-form-mode="member"][data-instatic-form-id]';
+  const FORM_SELECTOR = 'form[data-instatic-form-mode="cms"][data-instatic-form-id], form[data-instatic-form-mode="member"][data-instatic-form-id]:not([data-instatic-pair-form])';
 
   for (const form of document.querySelectorAll(FORM_SELECTOR)) attachForm(form);
 

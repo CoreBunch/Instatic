@@ -7,7 +7,7 @@
   height: 100%;
   padding: var(--space-m);
   overflow-y: auto;
-  border-right: 1px solid var(--overlay-10);
+  border-right: 1px solid var(--divider);
   background: var(--overlay-5);
 }
 
@@ -62,7 +62,7 @@
   gap: var(--space-2xs);
   margin-top: var(--space-4xs);
   padding-top: var(--space-s);
-  border-top: 1px solid var(--overlay-10);
+  border-top: 1px solid var(--divider);
 }
 
 .importList {
@@ -107,6 +107,6 @@
     height: auto;
     max-height: 220px;
     border-right: 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
   }
 }

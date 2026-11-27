@@ -44,7 +44,7 @@ const ProviderId = Type.Union([
   Type.Literal('openai-compatible'),
 ])
 
-const CreateBodySchema = Type.Union([
+export const CreateBodySchema = Type.Union([
   Type.Object({
     providerId: ProviderId,
     authMode: Type.Literal('apiKey'),
@@ -60,7 +60,7 @@ const CreateBodySchema = Type.Union([
   }),
 ])
 
-const UpdateBodySchema = Type.Object({
+export const UpdateBodySchema = Type.Object({
   displayLabel: Type.Optional(Type.String({ minLength: 1 })),
   apiKey: Type.Optional(Type.String()),
   baseUrl: Type.Optional(Type.String()),

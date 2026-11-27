@@ -13,12 +13,12 @@
  * `errorMessage` prop — the MODAL catches them from ingestInput() and passes
  * them back here so the drop zone can display them inline.
  */
+import { Alert } from '@ui/components/Alert'
 import { useRef, useState, type DragEvent, type ChangeEvent } from 'react'
 import { Button } from '@ui/components/Button'
 import { UploadIcon } from 'pixel-art-icons/icons/upload'
 import { FilePlusSolidIcon } from 'pixel-art-icons/icons/file-plus-solid'
 import { FolderGlyphIcon } from 'pixel-art-icons/icons/folder-glyph'
-import { PackageSolidIcon } from 'pixel-art-icons/icons/package-solid'
 import styles from './DropStep.module.css'
 
 /** A plugin package (root `plugin.json`) the owner dropped into the importer. */
@@ -152,34 +152,26 @@ export function DropStep({
       )}
 
       {pluginPackage && (
-        <div className={styles.pluginNotice} role="status">
-          <PackageSolidIcon size={18} aria-hidden="true" className={styles.pluginNoticeIcon} />
-          <div className={styles.pluginNoticeText}>
-            <p className={styles.pluginNoticeTitle}>
-              {pluginPackage.name ?? pluginPackage.fileName ?? 'This folder'} is a plugin, not a site
-            </p>
-            <p className={styles.pluginNoticeBody}>
-              {canInstallPlugins
-                ? 'Nothing was imported. Plugins are installed from the Plugins page.'
-                : 'Nothing was imported. Plugins are installed from the Plugins page, and your role can’t install them. Ask an administrator.'}
-            </p>
-          </div>
-          <Button
-            variant="primary"
-            size="sm"
-            type="button"
-            disabled={!canInstallPlugins}
-            onClick={onOpenPlugins}
-          >
-            Go to Plugins
-          </Button>
-        </div>
+        <Alert
+          role="status"
+          tone="warning"
+          title={`${pluginPackage.name ?? pluginPackage.fileName ?? 'This folder'} is a plugin, not a site`}
+          action={
+            <Button variant="primary" size="sm" disabled={!canInstallPlugins} onClick={onOpenPlugins}>
+              Go to Plugins
+            </Button>
+          }
+        >
+          {canInstallPlugins
+            ? 'Nothing was imported. Plugins are installed from the Plugins page.'
+            : 'Nothing was imported. Plugins are installed from the Plugins page, and your role can’t install them. Ask an administrator.'}
+        </Alert>
       )}
 
       {errorMessage && (
-        <p className={styles.error} role="alert">
+        <Alert tone="danger">
           {errorMessage}
-        </p>
+        </Alert>
       )}
 
       {/* Hidden file inputs — not interactive UI controls, purely mechanism. */}

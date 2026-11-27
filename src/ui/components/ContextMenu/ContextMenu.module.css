@@ -126,7 +126,6 @@
 .separator {
     width: auto;
     margin: var(--space-3xs) var(--space-xs);
-    background: var(--bg-surface-2);
 }
 
 /* ── ContextMenuSubmenu ──────────────────────────────────────────────────── */

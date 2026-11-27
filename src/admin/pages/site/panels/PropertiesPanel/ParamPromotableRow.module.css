@@ -57,7 +57,7 @@
 
 .exposeMenuDivider {
   height: 1px;
-  background: var(--border);
+  background: var(--divider);
   margin: var(--space-4xs) 0;
 }
 

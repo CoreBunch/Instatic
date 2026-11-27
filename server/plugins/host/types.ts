@@ -4,6 +4,7 @@
  * (plugin manifests, SDK API shapes) which live in src/core/plugin-sdk/.
  */
 
+import type { PluginRouteDocumentation } from '@core/plugins/routeDocumentation'
 import type { CoreCapability } from '../../auth/capabilities'
 import type { PluginRateLimitStore } from './pluginRateLimit'
 import type { PluginManifest } from '@core/plugin-sdk'
@@ -28,6 +29,7 @@ export type HostRouteAccess =
   | { kind: 'member'; tag: string | null; appScope: string | null }
 
 interface HostRouteEntry {
+  documentation?: PluginRouteDocumentation
   pluginId: string
   method: string
   path: string

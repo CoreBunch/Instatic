@@ -56,7 +56,7 @@ import { exportMemberDataWithPlugins } from '../plugins/host/memberExport'
 import { MEMBER_OAUTH_PATH_PREFIX } from './apps/protocol'
 import { memberLimits } from './limits'
 import { memberLinkOrigin, memberMailAvailable } from './mail'
-import { findMemberById, toCurrentMember } from './repository'
+import { toCurrentMember } from './repository'
 import {
   changePassword,
   confirmEmail,
@@ -73,15 +73,13 @@ import {
   updateProfile,
   type MemberActionContext,
   type MemberOutcome,
-  type SignedInMember,
 } from './service'
 import {
   clearMemberSessionCookie,
   clearSignupNonceCookie,
-  findMemberSession,
+  resolveSignedInMember,
   memberSessionCookie,
   readAppRequestMarker,
-  readMemberSessionToken,
   readSignupNonce,
   signupNonceCookie,
 } from './sessions'
@@ -136,16 +134,6 @@ export function originOk(req: Request): boolean {
   if (!req.headers.get('origin')) return false
   if (!originAllowed(req)) return false
   return !isCrossSiteFetch(req)
-}
-
-/** The signed-in member behind this request, or null. */
-export async function resolveSignedInMember(db: DbClient, req: Request): Promise<SignedInMember | null> {
-  const token = readMemberSessionToken(req)
-  if (!token) return null
-  const session = await findMemberSession(db, token)
-  if (!session) return null
-  const member = await findMemberById(db, session.memberId)
-  return member ? { member, session } : null
 }
 
 // ─── Redirect targets ──────────────────────────────────────────────────────

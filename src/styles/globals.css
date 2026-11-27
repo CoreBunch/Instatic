@@ -81,6 +81,7 @@
     --bg-surface-5: #605f5f;
 
     /* Borders */
+    --divider: var(--overlay-10);
     --border-subtle: #1f1f1f;
     --border-muted: #2e2e2e;
     --border: #333333;
@@ -228,6 +229,7 @@
     --panel-radius: 12px;
     --input-radius: 1em;
     --segment-track-radius: var(--panel-radius);
+    --segment-track-padding-block: 3px;
     --segment-radius: calc(var(--segment-track-radius) - var(--space-4xs));
     --radius-pill: 999px;
     --tooltip-radius: 6px;
@@ -414,6 +416,7 @@
     --bg-surface-5: #d3d9e1;
 
     /* Borders */
+    --divider: var(--overlay-10);
     --border-subtle: #eef0f3;
     --border-muted: #dce1e7;
     --border: #cbd3dc;

@@ -39,7 +39,7 @@ import { Type } from '@core/utils/typeboxHelpers'
 import { CMS_API_PREFIX, type CmsHandlerOptions } from './shared'
 import { runRouteTable, type Route, type RouteParams } from './routeTable'
 
-const GoogleFontSelectionBodySchema = Type.Object({
+export const GoogleFontSelectionBodySchema = Type.Object({
   family: Type.String(),
   variants: Type.Array(Type.String()),
   subsets: Type.Array(Type.String()),
@@ -50,6 +50,14 @@ interface GoogleFontSelection {
   variants: string[]
   subsets: string[]
 }
+
+export const CustomFontBodySchema = Type.Object({
+  family: Type.String(),
+  files: Type.Array(Type.Object({
+    mediaAssetId: Type.String(),
+    variant: Type.String(),
+  })),
+})
 
 /**
  * Validate the JSON body shared by `/fonts/estimate` and `/fonts/install`. The
@@ -100,13 +108,6 @@ async function handleCustomFont(req: Request, db: DbClient): Promise<Response> {
   const user = await requireCapability(req, db, 'site.style.edit')
   if (user instanceof Response) return user
 
-  const CustomFontBodySchema = Type.Object({
-    family: Type.String(),
-    files: Type.Array(Type.Object({
-      mediaAssetId: Type.String(),
-      variant: Type.String(),
-    })),
-  })
   const body = await readValidatedBody(req, CustomFontBodySchema)
   if (!body) return badRequest('Invalid request body')
   const family = body.family.trim()
@@ -195,7 +196,7 @@ async function handleDeleteFontFamily(
 // Route table + dispatcher
 // ---------------------------------------------------------------------------
 
-const FONTS_ROUTES: readonly Route<[CmsHandlerOptions]>[] = [
+export const FONTS_ROUTES: readonly Route<[CmsHandlerOptions]>[] = [
   { method: 'GET', pattern: `${CMS_API_PREFIX}/fonts/google`, handler: handleGoogleFontsDirectory },
   { method: 'POST', pattern: `${CMS_API_PREFIX}/fonts/estimate`, handler: handleEstimateFont },
   { method: 'POST', pattern: `${CMS_API_PREFIX}/fonts/custom`, handler: handleCustomFont },

@@ -127,20 +127,6 @@
     gap: var(--space-xs);
 }
 
-.warning {
-    border-radius: var(--radius);
-    background: var(--warning-10);
-    color: var(--warning);
-    font-size: var(--text-xs);
-    line-height: 1.4;
-    padding: var(--space-s);
-}
-
-.danger {
-    background: var(--danger-10);
-    color: var(--danger);
-}
-
 .inlineStatus {
     color: var(--text-subtle);
     font-size: var(--text-xs);

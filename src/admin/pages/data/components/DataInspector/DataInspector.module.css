@@ -106,18 +106,6 @@
     color: var(--danger);
 }
 
-/* ── Error banner ────────────────────────────────────────────────────────── */
-
-.errorBanner {
-    font-size: var(--text-xs);
-    color: var(--danger);
-    padding: var(--space-xs) var(--space-s);
-    background: var(--danger-10);
-    border: 1px solid var(--danger-20);
-    border-radius: var(--radius-sm);
-    line-height: 1.4;
-}
-
 /* ── Row header card (postType / page / component) ───────────────────────── */
 
 .rowHeaderCard {
@@ -215,7 +203,7 @@
     gap: var(--space-2xs);
     min-height: 40px;
     padding: var(--space-xs) var(--space-s);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
     background: transparent;
     user-select: none;
 }
@@ -322,7 +310,7 @@
     justify-content: space-between;
     gap: var(--space-l);
     padding: var(--space-3xs) var(--space-s);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
 }
 
 .draftStatus {

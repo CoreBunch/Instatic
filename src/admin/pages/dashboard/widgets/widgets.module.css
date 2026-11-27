@@ -26,7 +26,7 @@
 }
 
 .lineupList li + li {
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--divider);
 }
 
 .lineupRow {
@@ -93,7 +93,7 @@
     align-items: center;
     gap: var(--space-m);
     padding: var(--space-m) 0;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--divider);
 }
 
 .feedRow:first-child {
@@ -158,7 +158,7 @@
     gap: var(--space-m);
     align-items: center;
     padding: var(--space-m) 0;
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--divider);
     font-size: var(--text-s);
 }
 

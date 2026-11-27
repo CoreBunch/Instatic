@@ -577,7 +577,7 @@ async function handleRowVersionRestore(
 
 const ROW_ITEM = `${CMS_API_PREFIX}/data/rows/(?<id>[^/]+)`
 
-const DATA_ROW_ROUTES: readonly Route<[BranchScope, CmsHandlerOptions]>[] = [
+export const DATA_ROW_ROUTES: readonly Route<[BranchScope, CmsHandlerOptions]>[] = [
   { method: 'GET', pattern: `${CMS_API_PREFIX}/data/authors`, handler: handleListAuthors },
   { method: 'POST', pattern: new RegExp(`^${ROW_ITEM}/publish$`), handler: handleRowPublish },
   { method: 'POST', pattern: new RegExp(`^${ROW_ITEM}/schedule$`), handler: handleRowSchedulePost },

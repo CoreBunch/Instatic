@@ -62,6 +62,7 @@
  *     falls through so Layer A never serves stale pagination output.
  */
 
+import type { ApprovalView } from '@core/members'
 import type { DbClient } from '../db/client'
 import type { AccessRule, CurrentMember } from '@core/members'
 import {
@@ -259,6 +260,7 @@ export async function renderPublicResolution(
   url: URL,
   uploadsDir?: string,
   visitor?: Visitor,
+  approval?: ApprovalView,
 ): Promise<Response | null> {
   // Access first: a path the publish-time index knows to be protected skips
   // both cache layers. Neither ever holds a protected page (they are not
@@ -266,7 +268,7 @@ export async function renderPublicResolution(
   // is the check on the resolved route below.
   const accessIndex = await getAccessIndex(db, getPublishVersion())
   const indexedRules = indexedRulesForPath(accessIndex, url.pathname)
-  const mayUseCaches = indexedRules.length === 0
+  const mayUseCaches = !approval && indexedRules.length === 0
 
   // Canonicalise the query to the loop-pagination params the renderer actually
   // consumes. Junk params collapse to '' (so they never mint cache slots), and
@@ -317,7 +319,7 @@ export async function renderPublicResolution(
 
   // `forVisitor` is passed only on a protected route; a shared render leaves it out.
   const render = async (audience: 'public' | 'member', forVisitor?: CurrentMember | null): Promise<string | null> => {
-    const context = forVisitor === undefined ? { db, url } : { db, url, visitor: forVisitor }
+    const context = forVisitor === undefined ? { db, url } : { db, url, visitor: forVisitor, approval }
     const rendered = resolution.kind === 'page'
       ? await renderPublishedSnapshot(resolution.snapshot, context)
       : await renderPublishedDataRowTemplate(resolution.snapshot, resolution.row, context)
@@ -328,7 +330,7 @@ export async function renderPublicResolution(
   // Every rule that applies must pass: the resolved route's own, and whatever
   // the index holds for the path as it was spelled.
   const rules = resolvedRouteRules(accessIndex, resolution, url.pathname)
-  if (rules.length > 0) {
+  if (rules.length > 0 || approval) {
     const decision = await decideAccess(rules, visitor)
     if (decision === 'hide') return null // answered exactly like a route that does not exist
     if (decision !== 'allow') return denyResponse(db, url, decision)

@@ -174,7 +174,7 @@
     align-items: center;
     justify-content: space-between;
     padding: var(--space-2xs) var(--space-xl) max(var(--space-s), env(safe-area-inset-bottom));
-    border-top: 1px solid var(--border);
+    border-top: 1px solid var(--divider);
 }
 
 .tools button {

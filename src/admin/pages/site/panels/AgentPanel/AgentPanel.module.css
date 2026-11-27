@@ -100,20 +100,10 @@
   min-height: 0;
 }
 
-.errorBanner {
-  padding: var(--space-s) var(--space-m);
-  background: var(--danger-10);
-  border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);
-  border-radius: 6px;
-  color: var(--danger-light);
-  font-size: var(--text-xs);
-  line-height: 1.5;
-}
-
 /* ── Input bar ───────────────────────────────────────────────────────────── */
 .inputBar {
   padding: var(--space-l);
-  border-top: 1px solid var(--overlay-10);
+  border-top: 1px solid var(--divider);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -518,23 +508,6 @@
 
 
 /* ── Credential setup state ──────────────────────────────────────────────── */
-
-.credentialAlert {
-  display: grid;
-  gap: var(--space-s);
-  padding: var(--space-l);
-  margin: 0 0 var(--space-4xs);
-  background: var(--warning-10);
-  border: 1px solid var(--warning-30);
-  border-radius: var(--radius);
-  color: var(--warning-text);
-}
-
-.credentialAlertText {
-  margin: 0;
-  font-size: var(--text-xs);
-  line-height: 1.45;
-}
 
 .credentialSettingsButton {
   display: inline-flex;

@@ -37,6 +37,21 @@ function nodeByModule(plan: FragmentInsertPlan, moduleId: string): PageNode {
 }
 
 describe('planFragmentInsert — classes and rules', () => {
+  it('installs optional classes with their tokens once and leaves them unassigned', async () => {
+    const { fragment: section } = await extractFragment(
+      sourceWithBytes(), { pageId: 'page-home', rootNodeIds: ['hero'] }, { optionalClassIds: ['cls-unrelated'] },
+    )
+    expect(section.tokens.colors.map(color => color.slug)).toContain('unused')
+    const { plan, target } = planIntoTarget(makeTargetSite(), section)
+    const optional = plan.styleRules.find(rule => rule.name === 'unrelated')!
+    expect(optional.kind).toBe('class')
+    expect(Object.values(plan.nodes).some(node => node.classIds.includes(optional.id))).toBe(false)
+    target.styleRules[optional.id] = { ...optional, styles: { padding: '12px' } }
+    const repeat = planIntoTarget(target, section).plan
+    expect(repeat.report.rules.reused).toContain('unrelated')
+    expect(repeat.styleRules.some(rule => rule.name === 'unrelated')).toBe(false)
+  })
+
   it('mints fresh node ids for everything', () => {
     const { plan } = planIntoTarget()
     for (const id of Object.keys(plan.nodes)) expect(fragment.nodes[id]).toBeUndefined()

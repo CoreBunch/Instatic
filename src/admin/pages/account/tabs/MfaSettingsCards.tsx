@@ -1,5 +1,4 @@
-import { useEffect, useId, useReducer, type Dispatch, type FormEvent } from 'react'
-import type { CmsCurrentUser } from '@core/persistence'
+import { useEffect, useId, useReducer, useState, type Dispatch, type FormEvent } from 'react'
 import {
   disableCurrentUserTotp,
   enableCurrentUserTotp,
@@ -10,21 +9,12 @@ import { Button } from '@ui/components/Button'
 import { Dialog } from '@ui/components/Dialog'
 import { Input } from '@ui/components/Input'
 import { CopySolidIcon } from 'pixel-art-icons/icons/copy-solid'
-import { SecurityCard } from './SecurityCard'
+import { AccountRow } from './AccountRow'
+import { type AccountSecurityProps, reportSecurityError, reportSecuritySuccess } from './securityFeedback'
 import { isStepUpCancelled } from './securityErrors'
-import { formatDateTime } from './securityFormat'
+import { formatSecurityDate } from './securityFormat'
 import styles from '../AccountPage.module.css'
 import { getErrorMessage } from '@core/utils/errorMessage'
-
-interface MfaSettingsCardsProps {
-  user: CmsCurrentUser
-  busy: string | null
-  runStepUp: <T>(fn: () => Promise<T>) => Promise<T>
-  setSessionUser: (user: CmsCurrentUser) => void
-  setBusy: (v: string | null) => void
-  setError: (v: string | null) => void
-  setStatus: (v: string | null) => void
-}
 
 interface TotpSetup {
   secret: string
@@ -311,19 +301,15 @@ export function MfaSettingsCards({
   runStepUp,
   setSessionUser,
   setBusy,
-  setError,
-  setStatus,
-}: MfaSettingsCardsProps) {
+}: AccountSecurityProps) {
   const [state, dispatch] = useReducer(mfaReducer, initialMfaState)
   const totpCodeId = useId()
 
-  const mfaStatus = user.mfaEnabled
-    ? `On${user.mfaEnabledAt ? ` since ${formatDateTime(user.mfaEnabledAt)}` : ''}`
-    : 'Off'
+  const [managing, setManaging] = useState(false)
 
   const recoveryStatus = user.mfaEnabled
     ? `${user.mfaRecoveryCodesRemaining} recovery ${user.mfaRecoveryCodesRemaining === 1 ? 'code' : 'codes'} remaining.`
-    : 'Enable two-factor authentication before generating recovery codes.'
+    : 'Available with two-factor authentication'
 
   useEffect(() => {
     if (!state.totpSetup) return undefined
@@ -355,15 +341,13 @@ export function MfaSettingsCards({
   async function handleStartMfa(): Promise<void> {
     if (busy) return
     setBusy('mfa-start')
-    setError(null)
     dispatch({ type: 'setMfaError', message: null })
-    setStatus(null)
     try {
       const setup = await runStepUp(() => startCurrentUserTotpSetup())
       dispatch({ type: 'setupStarted', setup })
     } catch (err) {
       if (!isStepUpCancelled(err)) {
-        setError(getErrorMessage(err, 'Could not start MFA setup.'))
+        reportSecurityError(getErrorMessage(err, 'Could not start MFA setup.'))
       }
     } finally {
       setBusy(null)
@@ -376,14 +360,12 @@ export function MfaSettingsCards({
     if (busy || !setup) return
     setBusy('mfa-enable')
     dispatch({ type: 'setMfaError', message: null })
-    setError(null)
-    setStatus(null)
     try {
       const result = await runStepUp(() => enableCurrentUserTotp({ secret: setup.secret, code: state.totpCode }))
       setSessionUser(result.user)
       dispatch({ type: 'resetSetup' })
       dispatch({ type: 'setRecoveryCodes', recoveryCodes: result.recoveryCodes })
-      setStatus('Two-factor authentication enabled.')
+      reportSecuritySuccess('Two-factor authentication enabled.')
     } catch (err) {
       if (!isStepUpCancelled(err)) {
         dispatch({ type: 'setMfaError', message: getErrorMessage(err, 'Could not enable MFA.') })
@@ -396,16 +378,15 @@ export function MfaSettingsCards({
   async function handleDisableMfa(): Promise<void> {
     if (busy) return
     setBusy('mfa-disable')
-    setError(null)
-    setStatus(null)
     try {
       const updated = await runStepUp(() => disableCurrentUserTotp())
       setSessionUser(updated)
       dispatch({ type: 'clearRecoveryCodes' })
-      setStatus('Two-factor authentication disabled.')
+      setManaging(false)
+      reportSecuritySuccess('Two-factor authentication disabled.')
     } catch (err) {
       if (!isStepUpCancelled(err)) {
-        setError(getErrorMessage(err, 'Could not disable MFA.'))
+        reportSecurityError(getErrorMessage(err, 'Could not disable MFA.'))
       }
     } finally {
       setBusy(null)
@@ -415,16 +396,14 @@ export function MfaSettingsCards({
   async function handleRegenerateRecoveryCodes(): Promise<void> {
     if (busy || !user.mfaEnabled) return
     setBusy('recovery')
-    setError(null)
-    setStatus(null)
     try {
       const result = await runStepUp(() => regenerateCurrentUserRecoveryCodes())
       setSessionUser(result.user)
       dispatch({ type: 'setRecoveryCodes', recoveryCodes: result.recoveryCodes })
-      setStatus('Recovery codes regenerated.')
+      reportSecuritySuccess('Recovery codes regenerated.')
     } catch (err) {
       if (!isStepUpCancelled(err)) {
-        setError(getErrorMessage(err, 'Could not regenerate recovery codes.'))
+        reportSecurityError(getErrorMessage(err, 'Could not regenerate recovery codes.'))
       }
     } finally {
       setBusy(null)
@@ -433,29 +412,28 @@ export function MfaSettingsCards({
 
   return (
     <>
-      <SecurityCard
+      <AccountRow
         testId="security-mfa-card"
         title="Two-factor authentication"
-        description="Use a TOTP authenticator app as a second factor when signing in."
-        status={mfaStatus}
+        status={user.mfaEnabled ? 'On' : 'Off'}
         statusActive={user.mfaEnabled}
         action={
           user.mfaEnabled ? (
             <Button
               type="button"
               variant="secondary"
-              size="sm"
+              size="md"
               disabled={busy !== null}
-              onClick={() => void handleDisableMfa()}
-              data-testid="security-mfa-disable"
+              aria-label="Manage two-factor authentication"
+              onClick={() => setManaging(true)}
             >
-              <span>{busy === 'mfa-disable' ? 'Disabling...' : 'Disable'}</span>
+              Manage
             </Button>
           ) : (
             <Button
               type="button"
               variant="secondary"
-              size="sm"
+              size="md"
               disabled={busy !== null}
               onClick={() => void handleStartMfa()}
               data-testid="security-mfa-enable"
@@ -465,17 +443,15 @@ export function MfaSettingsCards({
           )
         }
       />
-      <SecurityCard
+      <AccountRow
         testId="security-recovery-card"
         title="Recovery codes"
-        description="One-time codes you can use if you lose access to your authenticator app."
         status={recoveryStatus}
-        statusActive={user.mfaEnabled && user.mfaRecoveryCodesRemaining > 0}
         action={
           <Button
             type="button"
             variant="secondary"
-            size="sm"
+            size="md"
             disabled={busy !== null || !user.mfaEnabled}
             onClick={() => void handleRegenerateRecoveryCodes()}
             data-testid="security-recovery-regenerate"
@@ -485,6 +461,24 @@ export function MfaSettingsCards({
         }
       />
 
+      <Dialog
+        open={managing}
+        title="Two-factor authentication"
+        onClose={() => { if (!busy) setManaging(false) }}
+        footer={
+          <>
+            <Button variant="secondary" size="sm" disabled={busy !== null} onClick={() => setManaging(false)}>Close</Button>
+            <Button variant="secondary" tone="danger" size="sm" disabled={busy !== null} onClick={() => void handleDisableMfa()} data-testid="security-mfa-disable">
+              {busy === 'mfa-disable' ? 'Disabling…' : 'Disable two-factor authentication'}
+            </Button>
+          </>
+        }
+      >
+        <p className={styles.secondaryText}>
+          {user.mfaEnabledAt ? `Enabled on ${formatSecurityDate(user.mfaEnabledAt)}. ` : ''}
+          Signing in requires a code from your authenticator app. Disabling this also invalidates your recovery codes.
+        </p>
+      </Dialog>
       <TotpSetupDialog
         state={state}
         busy={busy}

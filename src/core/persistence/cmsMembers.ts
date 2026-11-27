@@ -31,7 +31,7 @@ export interface CmsMemberListQuery {
   search: string
   status: MemberAdminStatus | null
   tag: string | null
-  /** Where the next page starts, from the previous page's `nextOffset`. */
+  /** Zero-based offset of the requested page. */
   offset?: number
 }
 

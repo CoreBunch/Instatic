@@ -5,10 +5,11 @@
 import { SITE_SHELL_LOGICAL_ID, physicalId } from '@core/branches'
 import { siteDocId } from '@core/collab'
 import type { SiteShell } from '@core/page-tree'
+import { isRecord } from '@core/utils/isRecord'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import { getDraftSite, saveDraftSite } from '../../repositories/site'
 import { parseContent } from '../contentHash'
-import { fieldChanges } from '../changeDetail'
+import { fieldChanges } from '../fieldChanges'
 import type { BranchEntityAdapter, BranchEntityOf } from './adapter'
 import { validateMergedShell } from './shell'
 
@@ -33,6 +34,34 @@ const SITE_LABELS: Record<string, string> = {
   explorer: 'Explorer organization',
   packageJson: 'package.json',
   runtime: 'Runtime',
+}
+
+function contextNames(...sides: Array<SiteContent | null>): Map<string, string> {
+  const names = new Map<string, string>()
+  for (const side of sides) {
+    for (const entries of [side?.shell.breakpoints, side?.shell.conditions]) {
+      if (!Array.isArray(entries)) continue
+      for (const entry of entries) {
+        if (isRecord(entry) && typeof entry.id === 'string' && typeof entry.label === 'string') {
+          names.set(entry.id, entry.label)
+        }
+      }
+    }
+  }
+  return names
+}
+
+function styleSegmentLabel(path: readonly string[], contexts: ReadonlyMap<string, string>): string | undefined {
+  const [group, , bag, context] = path
+  if (group !== 'styleRules') return
+  const contextual = bag === 'contextStyles' || bag === 'contextStylePriorities'
+  if (!contextual && bag !== 'styles' && bag !== 'stylePriorities') return
+  if (path.length === 3) return bag.endsWith('Priorities') ? 'Priority' : ''
+  if (contextual && path.length === 4 && context) return contexts.get(context) ?? context
+  if (path.length === (contextual ? 5 : 4)) {
+    const property = path[path.length - 1]!
+    return property.startsWith('--') ? property : property.replace(/[A-Z]/g, c => '-' + c.toLowerCase())
+  }
 }
 
 export const siteAdapter: BranchEntityAdapter<'site', SiteContent> = {
@@ -60,12 +89,18 @@ export const siteAdapter: BranchEntityAdapter<'site', SiteContent> = {
     for (const path of conflicts) {
       shellConflicts.add(path.startsWith('shell.') ? path.slice('shell.'.length) : path)
     }
+    const contexts = contextNames(before, after)
     return {
       kind: 'site',
       fields: fieldChanges(
         { name: before?.name, ...(before?.shell ?? {}) },
         { name: after?.name, ...(after?.shell ?? {}) },
-        { prefix: '', conflicts: shellConflicts, labels: SITE_LABELS },
+        {
+          prefix: '',
+          conflicts: shellConflicts,
+          labels: SITE_LABELS,
+          segmentLabel: path => styleSegmentLabel(path, contexts),
+        },
       ),
     }
   },

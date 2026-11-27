@@ -126,12 +126,16 @@ All tokens live in `src/styles/globals.css`. Anywhere you need a color, radius, 
 
 ### Color tokens
 
+Use `--divider` for one-pixel rules between admin rows, sections, and toolbar groups. Its translucent tone follows the local surface in each theme. Use the border tokens for control outlines.
+
+Audit tables use a single `--overlay-5` rule below the column headings. Spacing separates records and the metadata rows in directory inspectors.
+
 ```text
 Base surfaces (achromatic):
   --bg-body, --bg-surface-3
   --bg-surface, --bg-surface-2..5
   --border, --border-muted
-  --border-subtle
+  --border-subtle, --divider
   --scrollbar-track, --scrollbar-thumb,
   --scrollbar-thumb-hover
 
@@ -409,7 +413,7 @@ Every interactive control in the admin and editor goes through a primitive from 
 | `TagPill`            | Compact tinted labels, selector chips, removable tag pills. It derives a token-backed tint from the first meaningful alphanumeric character. |
 | `FloatingActionBar`  | Multi-select bulk-action bar.                                               |
 | `EmptyState`         | Empty-list / empty-page placeholder.                                        |
-| `Alert`              | Inline non-blocking status/error message.                                   |
+| `Alert`              | Borderless inline notice with the default button radius and a neutral, success, warning, or danger fill. |
 | `Dialog`             | Modal dialog with a title and content.                                      |
 | `Tooltip`            | Hover and cursor-anchored tooltips. Replaces the native `title` attribute (gated). |
 | `Toast`              | Borderless notification cards use `--bg-surface-2`, `--card-radius`, and `--shadow-panel-drop`. Only the status icon carries semantic color. The stack sits at the bottom right by default and at the top center while a modal is open to keep footer actions reachable. |

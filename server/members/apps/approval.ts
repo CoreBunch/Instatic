@@ -8,7 +8,8 @@ import type { MemberAppRequestFrame } from '@core/templates'
 import type { DbClient } from '../../db/client'
 import { oauthRedirect, isLoopbackHostname } from '../../oauth/protocol'
 import { recordMemberEvent } from '../repository'
-import type { MemberActionContext, MemberOutcome, SignedInMember } from '../service'
+import type { MemberActionContext, MemberOutcome } from '../service'
+import type { SignedInMember } from '../sessions'
 import { parseMemberAppScope } from './protocol'
 import { isAvailableMemberAppScope, memberAppScopeText } from './scopes'
 import { queueMemberMail } from '../mail'
@@ -61,7 +62,7 @@ export async function answerAppSignIn(
 }
 
 /** Every scope a waiting request names is still one the app may ask for and the site offers. */
-async function requestIsStillOffered(db: DbClient, requestId: string): Promise<boolean> {
+export async function requestIsStillOffered(db: DbClient, requestId: string): Promise<boolean> {
   const request = await findPendingMemberAppRequest(db, requestId)
   const app = request ? await findMemberApp(db, request.appId) : null
   if (!request || !app) return false

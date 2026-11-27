@@ -2,6 +2,7 @@
  * Shapes of the members admin API (`/admin/api/cms/members`): what the
  * Site members tab lists, shows and sends.
  */
+import { directoryPageFields } from '@core/users/directoryPagination'
 import { Type, type Static } from '@core/utils/typeboxHelpers'
 import {
   MEMBER_EMAIL_MAX_LENGTH,
@@ -39,10 +40,7 @@ export type MemberListItem = Static<typeof MemberListItemSchema>
 
 export const MemberListResponseSchema = Type.Object({
   members: Type.Array(MemberListItemSchema),
-  /** How many members match the search and filters. */
-  matching: Type.Integer(),
-  /** Pass as `offset` to read the next page. Null on the last one. */
-  nextOffset: Type.Union([Type.Integer(), Type.Null()]),
+  ...directoryPageFields,
   /** Every member, whatever the filters. */
   counts: Type.Object({
     all: Type.Integer(),

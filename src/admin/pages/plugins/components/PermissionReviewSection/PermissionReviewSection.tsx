@@ -47,6 +47,7 @@
  * wording of one flags it, because approving a plugin's email is approving
  * what it says in the site's name.
  */
+import { Alert } from '@ui/components/Alert'
 import { lt as semverLt } from 'semver'
 import { Button } from '@ui/components/Button'
 import {
@@ -308,11 +309,7 @@ export function PermissionReviewSection({
       </div>
 
       {runsUnsandboxedCode && (
-        <div
-          className={`${styles.alert} ${styles.alertDanger}`}
-          role="alert"
-          data-testid="unsandboxed-code-alert"
-        >
+        <Alert tone="danger" data-testid="unsandboxed-code-alert">
           <span>
             This plugin runs its own JavaScript <strong>directly in the admin
             window, outside the plugin sandbox</strong>
@@ -325,18 +322,18 @@ export function PermissionReviewSection({
             admin session, every admin API, and this browser tab. Only
             continue if you trust the plugin author.
           </span>
-        </div>
+        </Alert>
       )}
 
       {isUpgrade && newCount > 0 && (
-        <div className={styles.alert} role="alert" data-testid="permission-diff-alert">
+        <Alert tone="warning" data-testid="permission-diff-alert">
           This update requests <strong>{newCount} new permission{newCount === 1 ? '' : 's'}</strong>.
           Review the highlighted rows below before continuing.
-        </div>
+        </Alert>
       )}
 
       {withdrawnAppScopeCount > 0 && (
-        <div className={styles.alert} role="alert" data-testid="app-scope-diff-alert">
+        <Alert tone="warning" data-testid="app-scope-diff-alert">
           This {isReinstall ? 'reinstall' : 'update'} rewords or removes{' '}
           <strong>
             {withdrawnAppScopeCount} thing{withdrawnAppScopeCount === 1 ? '' : 's'} apps were allowed to do
@@ -344,20 +341,20 @@ export function PermissionReviewSection({
           through the plugin. Members who allowed an app one of them are signed out of that app and will be
           asked again, and it is taken off your registered apps until you give it back under Users, Site
           members, Apps.
-        </div>
+        </Alert>
       )}
 
       {isUpgrade && newCount === 0 && rows.length > 0 && !appScopesDiffer && (
-        <div className={styles.alert} role="status" data-testid="permission-diff-noop">
+        <Alert data-testid="permission-diff-noop">
           No new permissions in this update.
-        </div>
+        </Alert>
       )}
 
       {rows.length === 0 && (
-        <div className={styles.empty} role="status" data-testid="permission-review-empty">
+        <Alert data-testid="permission-review-empty">
           No permissions requested — this plugin is purely declarative and
           gets no access to CMS data, editor state, or the network.
-        </div>
+        </Alert>
       )}
 
       {rows.length > 0 && (
@@ -478,10 +475,10 @@ export function PermissionReviewSection({
             </span>
           </div>
           {isUpgrade && newOriginCount > 0 && (
-            <div className={styles.alert} role="alert" data-testid="frontend-origins-diff-alert">
+            <Alert tone="warning" data-testid="frontend-origins-diff-alert">
               This update adds <strong>{newOriginCount} new third-party host{newOriginCount === 1 ? '' : 's'}</strong> on
               published pages.
-            </div>
+            </Alert>
           )}
           <ul className={styles.list}>
             {originGroups.flatMap((group) =>
@@ -528,13 +525,13 @@ export function PermissionReviewSection({
             </span>
           </div>
           {changedMailCount > 0 && (
-            <div className={styles.alert} role="alert" data-testid="mail-templates-diff-alert">
+            <Alert tone="warning" data-testid="mail-templates-diff-alert">
               <span>
                 This update adds or changes{' '}
                 <strong>{changedMailCount} email template{changedMailCount === 1 ? '' : 's'}</strong>. Read the
                 highlighted ones before continuing.
               </span>
-            </div>
+            </Alert>
           )}
           <ul className={styles.list}>
             {mailTemplates.map(({ template, status, preview }) => (

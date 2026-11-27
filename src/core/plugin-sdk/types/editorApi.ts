@@ -49,6 +49,8 @@ export interface EditorPluginApi {
       register: (panel: PluginEditorPanel) => void
     }
     canvas: {
+      /** Show the editable Live surface with breakpoint controls until released. */
+      requestLivePreview: () => () => void
       /**
        * Register a canvas overlay React component that mounts on top of
        * the rendered canvas. Requires the `editor.canvas` permission.

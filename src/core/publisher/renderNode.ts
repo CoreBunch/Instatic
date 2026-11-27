@@ -35,7 +35,7 @@ import { renderVisualComponentRef } from './renderVisualComponentRef'
 import { renderLoop } from './renderLoop'
 import { resolveAutoSizes } from './sizesResolver'
 import { RICHTEXT_CONTENT_CONFIG, sanitizeRichtext } from '@core/sanitize'
-import { readShowWhen, showWhenAllows } from '@core/members'
+import { approvalGroup, readShowWhen, showWhenAllows } from '@core/members'
 import { readShowIf, showIfAllows } from '@core/templates'
 import type {
   RenderConfig,
@@ -314,6 +314,8 @@ export function renderNode(
   const node = config.page.nodes[nodeId]
   if (!node) return ''
   if (isHiddenFromRender(node)) return ''
+  const group = approvalGroup(node.props)
+  if (group && group !== (config.templateContext?.approval?.state ?? 'closed')) return ''
 
   const def = config.registry.get(node.moduleId)
   if (!def) {

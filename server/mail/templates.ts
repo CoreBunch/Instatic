@@ -45,6 +45,7 @@ function toTemplate(
   definition: MailTemplateDefinition,
   row: TemplateRow | undefined,
   site: Record<string, string>,
+  sendingEnabled: boolean,
 ): MailTemplate {
   return {
     key: definition.key,
@@ -56,6 +57,7 @@ function toTemplate(
     ),
     subject: row?.subject ?? definition.defaultSubject,
     body: row?.body_markdown ?? definition.defaultBody,
+    sendingEnabled,
     customised: row !== undefined,
     wordingProblem: row
       ? mailWordingProblem(definition, { subject: row.subject, body: row.body_markdown })
@@ -102,9 +104,11 @@ export async function listUnusableTemplateEdits(db: DbClient): Promise<Array<{ k
 
 export async function listMailTemplates(db: DbClient): Promise<MailTemplate[]> {
   const { rows } = await db<TemplateRow>`select template_key, subject, body_markdown from mail_templates`
+  const disabled = await db<{ template_key: string }>`select template_key from disabled_mail_templates`
+  const disabledKeys = new Set(disabled.rows.map((row) => row.template_key))
   const byKey = new Map(rows.map((row) => [row.template_key, row]))
   const site = await siteMailVariables(db)
-  return listMailTemplateDefinitions().map((definition) => toTemplate(definition, byKey.get(definition.key), site))
+  return listMailTemplateDefinitions().map((definition) => toTemplate(definition, byKey.get(definition.key), site, !disabledKeys.has(definition.key)))
 }
 
 /** A template by key, with the owner's edits applied. Null for a key not in the catalogue. */
@@ -114,7 +118,8 @@ export async function getMailTemplate(db: DbClient, key: string): Promise<MailTe
   const { rows } = await db<TemplateRow>`
     select template_key, subject, body_markdown from mail_templates where template_key = ${key}
   `
-  return toTemplate(definition, rows[0], await siteMailVariables(db))
+  const disabled = await db`select template_key from disabled_mail_templates where template_key = ${key}`
+  return toTemplate(definition, rows[0], await siteMailVariables(db), disabled.rows.length === 0)
 }
 
 export async function saveMailTemplate(

@@ -1,7 +1,7 @@
 /**
  * UserAvatar — circular avatar with `<img>` rendering and an initials
  * fallback. Used everywhere a user identity surfaces in the admin shell
- * (toolbar trigger, Account → Profile, account dropdown header).
+ * (toolbar trigger, Account → Overview, account dropdown header).
  *
  * Rendering precedence:
  *   1. Uploaded avatar image (`user.avatarUrl`)

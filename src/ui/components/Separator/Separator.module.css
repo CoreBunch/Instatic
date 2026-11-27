@@ -2,7 +2,7 @@
 
 .separator {
     flex-shrink: 0;
-    background: var(--bg-surface-4);
+    background: var(--divider);
 }
 
 .separator[data-orientation="horizontal"] {

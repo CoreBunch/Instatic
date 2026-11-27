@@ -67,6 +67,7 @@ export async function handleRoutesRegister(
     path: arg.path,
     access,
     routeKey: arg.routeKey,
+    documentation: arg.documentation,
   })
   replyApiOk(msg.pluginId, msg.correlationId)
 }

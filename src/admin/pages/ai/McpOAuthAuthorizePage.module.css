@@ -80,7 +80,7 @@
   padding: var(--space-l) var(--space-6xl);
   padding-bottom: max(var(--space-l), env(safe-area-inset-bottom));
   background: var(--bg-surface);
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--divider);
 }
 
 .footerContent,

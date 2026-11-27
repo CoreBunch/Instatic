@@ -157,7 +157,7 @@
     height: 34px;
     padding: 0 var(--space-s) 0 var(--space-m);
     flex-shrink: 0;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--divider);
     background: var(--bg-surface-2);
     color: var(--text);
     font-size: var(--text-xs);

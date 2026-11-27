@@ -1,7 +1,7 @@
 /**
  * SegmentedControl — connected button group for picking one value from a fixed set.
  *
- * Renders a row of pressable Buttons (fused via a 2px-padded track) where
+ * Renders a row of pressable Buttons in a shared track where
  * exactly one segment is active when it matches `value`. When `value` is
  * `undefined` no segment appears active — useful for layout pickers where
  * "nothing chosen" is a meaningful state that hides downstream fields.

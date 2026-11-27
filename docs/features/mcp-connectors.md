@@ -2,7 +2,7 @@
 
 MCP connections let external AI clients operate an Instatic instance through the [Model Context Protocol](https://modelcontextprotocol.io). Instatic is the MCP server: clients list its capability-filtered tools, run headless reads, relay editing tools to the connection owner's open workspace, and explicitly publish completed drafts.
 
-This is the inverse of the **Providers** tab. Providers let Instatic call model APIs; MCP connections let outside clients call Instatic.
+In the AI workspace, **API** configures the model providers Instatic calls. **MCP** manages external clients that connect to Instatic.
 
 The wire server uses the stable split `@modelcontextprotocol/server` v2 package. That dependency remains allowed only under `server/ai/mcp/`; provider drivers continue to use their direct REST implementations.
 

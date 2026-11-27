@@ -158,7 +158,7 @@ function ensureManaged(docId: string, doc: Y.Doc): ManagedDoc {
   const updateHandler = (_update: Uint8Array, origin: unknown) => {
     // Local mutations already applied to the store directly; seeds mirror
     // what the store just loaded. Everything else projects back.
-    if (origin === LOCAL_ORIGIN || origin === SEED_ORIGIN) return
+    if (origin === LOCAL_ORIGIN || origin === ASSET_COMPLETION || origin === SEED_ORIGIN) return
     scheduleProjection(docId)
   }
   doc.on('update', updateHandler)
@@ -219,11 +219,14 @@ export function notifyCollabBlocked(reason: BlockedReason): void {
   if (collabBlockToast(reason)) storeApi?.getState().endInlineEdit()
 }
 
+const ASSET_COMPLETION = Symbol('fragment asset completion')
+
 export function applyLocalSitePatches(
   patches: Patches,
   preSite: SiteDocument,
   nextSite: SiteDocument,
   coalesceKey: string | null,
+  trackUndo = true,
 ): LocalPatchOutcome {
   const blocked = transportBlockReason(provider)
   if (blocked) return { accepted: false, reason: blocked }
@@ -269,7 +272,7 @@ export function applyLocalSitePatches(
   for (const [docId, entry] of managed) before.set(docId, entry.manager.undoStack.length)
 
   const touched = applySitePatchesToDocs(
-    patches, preSite, nextSite, decidingDocSet, LOCAL_ORIGIN, collabBranchId(),
+    patches, preSite, nextSite, decidingDocSet, trackUndo ? LOCAL_ORIGIN : ASSET_COMPLETION, collabBranchId(),
   )
   alignedSiteRef = nextSite
   if (touched.length === 0) return { accepted: true }

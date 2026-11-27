@@ -90,3 +90,25 @@
     pointer-events: none;
     user-select: none;
 }
+
+/* Reserve the displayed footprint for scrolling while the iframe's internal
+   viewport continues to evaluate media queries at the full breakpoint width. */
+.surface[data-scaled] {
+    justify-content: flex-start;
+    overflow-x: auto;
+}
+
+.surface[data-scaled] .frame {
+    flex: none;
+    margin-inline: auto;
+    overflow: clip;
+}
+
+.surface[data-scaled] .iframeViewport {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: var(--live-layout-width);
+    height: calc(100% / var(--live-scale));
+    transform: scale(var(--live-scale));
+    transform-origin: top left;
+}

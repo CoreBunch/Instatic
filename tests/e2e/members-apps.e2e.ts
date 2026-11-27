@@ -22,6 +22,7 @@ const PASSWORD = 'a-long-member-password'
 
 interface Discovery {
   issuer: string
+  app_pairing_endpoint: string
   authorization_endpoint: string
   token_endpoint: string
   revocation_endpoint: string
@@ -121,7 +122,7 @@ test('an app signs a member in and reads their access (MEMBER-005)', async ({ pa
       const created = await admin.post('/admin/api/cms/members/apps', {
         headers,
         // Registered without a port: a native app listens on whichever one it gets.
-        data: { name: `E2E app ${suffix}`, redirectUris: ['http://127.0.0.1/callback'], scopes: ['profile', 'access'] },
+        data: { name: 'Instatic PRO Library', redirectUris: ['http://127.0.0.1/callback'], scopes: ['profile', 'access'] },
       })
       expect(created.status(), await created.text()).toBe(201)
       appId = ((await created.json()) as { id: string }).id
@@ -147,11 +148,88 @@ test('an app signs a member in and reads their access (MEMBER-005)', async ({ pa
         await expect(visitor).toHaveURL(new RegExp(`/${prefix}account$`))
       })
 
+      await test.step('an email opened on another device connects only the matching instance', async () => {
+        const initiating = await browser.newContext()
+        const inbox = await browser.newContext()
+        try {
+          const start = async () => {
+            const { authorize, verifier } = signInAddress(oauth, appId, app.redirectUri)
+            const response = await initiating.request.post(oauth.app_pairing_endpoint, { form: Object.fromEntries(authorize.searchParams) })
+            expect(response.ok()).toBe(true)
+            return { ...await response.json(), verifier }
+          }
+          const first = await start()
+          const other = await start()
+          const progress = async (pair: typeof first) => {
+            const response = await initiating.request.post(oauth.app_pairing_endpoint + '/status', { form: { client_id: appId, device_code: pair.device_code } })
+            return (await response.json()).status
+          }
+          const signIn = await initiating.newPage()
+          await signIn.setViewportSize({ width: 960, height: 720 })
+          await signIn.goto(first.verification_uri)
+          await expect(signIn.getByText(first.user_code)).toBeVisible()
+          await signIn.screenshot({ path: '.tmp/evidence/approval-email.png' })
+          await signIn.getByLabel('Email address').fill(email)
+          await signIn.getByRole('button', { name: 'Send approval link' }).click()
+          await expect(signIn.getByRole('heading', { name: 'Check your email' })).toBeVisible()
+          await signIn.screenshot({ path: '.tmp/evidence/approval-sent.png' })
+          const review = await inbox.newPage()
+          await review.setViewportSize({ width: 390, height: 844 })
+          const link = await emailedLink(email)
+          await review.goto(link)
+          await expect(review.getByText(email, { exact: true })).toBeVisible()
+          await expect(review.getByText(first.user_code)).toBeVisible()
+          await review.screenshot({ path: '.tmp/evidence/approval-review.png' })
+          expect(await progress(first)).toBe('pending')
+          await review.getByRole('button', { name: 'Allow access', exact: true }).click()
+          await expect(review.getByRole('heading', { name: 'App connected' })).toBeVisible()
+          await review.screenshot({ path: '.tmp/evidence/approval-connected.png' })
+          expect(await progress(first)).toBe('approved')
+          expect(await progress(other)).toBe('pending')
+          const exchange = await initiating.request.post(oauth.token_endpoint, { form: {
+            client_id: appId, grant_type: 'authorization_code', code: first.device_code,
+            redirect_uri: app.redirectUri, code_verifier: first.verifier, resource: oauth.issuer,
+          } })
+          expect(exchange.ok()).toBe(true)
+          const info = await initiating.request.get(oauth.userinfo_endpoint, {
+            headers: { authorization: 'Bearer ' + (await exchange.json()).access_token },
+          })
+          expect((await info.json()).email).toBe(email)
+          expect((await review.goto(link))?.status()).toBe(410)
+          await review.screenshot({ path: '.tmp/evidence/approval-closed.png' })
+          const decline = await context.newPage()
+          await decline.goto(other.verification_uri)
+          await decline.getByRole('button', { name: 'Decline' }).click()
+          expect(await progress(other)).toBe('denied')
+          await decline.screenshot({ path: '.tmp/evidence/approval-denied.png' })
+          const editor = await page.context().newPage()
+          try {
+            await editor.goto('/admin/site?page=' + prefix + 'connect-app')
+            const statePicker = editor.getByRole('combobox', { name: 'Approval preview state' })
+            await statePicker.click()
+            await editor.getByRole('option', { name: 'Review connection' }).click()
+            await expect.poll(async () => {
+              for (const frame of editor.frames().slice(1)) {
+                if (await frame.getByText('7C2A-8F14', { exact: true }).first().isVisible()
+                  && await frame.getByRole('button', { name: 'Allow access', exact: true }).first().isVisible()) return true
+              }
+              return false
+            }).toBe(true)
+            await editor.screenshot({ path: '.tmp/evidence/approval-canvas.png' })
+          } finally {
+            await editor.close()
+          }
+        } finally {
+          await initiating.close()
+          await inbox.close()
+        }
+      })
+
       await test.step('the member approves the app on the owner\'s page', async () => {
         await visitor.goto(authorize.toString())
         await expect(visitor).toHaveURL(new RegExp(`/${prefix}approve-app\\?request=`))
         // The page names the app from the stored request.
-        await expect(visitor.getByRole('heading', { name: `Sign in to E2E app ${suffix}?` })).toBeVisible()
+        await expect(visitor.getByRole('heading', { name: 'Sign in to Instatic PRO Library?' })).toBeVisible()
         await expect(visitor.getByText('Your name and email address')).toBeVisible()
         await visitor.screenshot({ path: '.tmp/evidence/members-approve-app.png' })
         await visitor.getByRole('button', { name: 'Allow', exact: true }).click()

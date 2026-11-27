@@ -185,7 +185,7 @@ import { Button } from '@ui/components/Button'
 
 ### Sizes
 
-Use the same size on adjacent controls. `Button` and `SegmentedControl` use `size`. `Input` and `Select` use `fieldSize`. All four share the `xs`, `sm`, and `md` height tokens and default to `md`. A segmented control's size includes its track border and padding. Pair a `SearchBar` with `sm` controls.
+Use the same size on adjacent controls. `Button` and `SegmentedControl` use `size`. `Input` and `Select` use `fieldSize`. All four share the `xs`, `sm`, and `md` height tokens and default to `md`. A segmented control's size includes its track border and padding. Pass `fullWidth` to distribute the options evenly across the track. Pair a `SearchBar` with `sm` controls.
 
 | Size    | Height | Use for                                                            |
 |---------|--------|--------------------------------------------------------------------|
@@ -379,6 +379,21 @@ pushToast({
 Toasts auto-dismiss after a few seconds. Errors stay longer. Each kind picks the matching semantic token (`--success-*`, `--danger-*`, etc.).
 
 For inline page-level errors, prefer `role="alert"` content over a toast — toasts are for **transient** feedback.
+
+---
+
+## `Alert`
+
+Persistent inline notices use `Alert`. All four tones share the default button radius (`--input-radius`) and text size (`--text-s`). The background carries the tone.
+
+| Tone | Surface | Use |
+| --- | --- | --- |
+| `info` (default) | Neutral overlay | Context or instructions |
+| `success` | Green tint | A confirmed result or ready state |
+| `warning` | Amber tint | A consequence, limitation, or condition needing attention |
+| `danger` | Red tint | A failure or serious risk |
+
+Use `title` for an optional heading and `action` for a related control. Warning and danger default to `role="alert"`. Use `role="status"` for a previously recorded condition that can be announced politely. Keep component-local styling to placement.
 
 ---
 

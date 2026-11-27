@@ -197,10 +197,7 @@ export function RolesTab({ data, canManageRoles }: RolesTabProps) {
   return (
     <section className={styles.section} aria-labelledby="roles-list-title">
       <div className={styles.sectionHeader}>
-        <div>
-          <h1 id="roles-list-title">Roles</h1>
-          <p>System roles are fixed. Custom roles can be edited.</p>
-        </div>
+        <h1 id="roles-list-title">Roles</h1>
         {canManageRoles && (
           <Button type="button" variant="primary" size="sm" onClick={openCreate}>
             <PlusIcon size={14} aria-hidden="true" />

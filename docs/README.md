@@ -157,6 +157,7 @@ Three categories, three voices:
 | [features/dashboard.md](features/dashboard.md)                   | Dashboard workspace, widgets, grid, customize mode                  |
 | [features/spotlight.md](features/spotlight.md)                   | Cmd+K command palette                                                |
 | [features/agent.md](features/agent.md)                           | AI agent integration and provider-agnostic runtime                   |
+| [features/service-accounts.md](features/service-accounts.md) | CLI setup, external agent permissions and branch editing |
 | [features/mcp-connectors.md](features/mcp-connectors.md)         | Instatic as an MCP server — external AI clients drive the CMS over MCP |
 | [features/templates.md](features/templates.md)                   | Entry templates + dynamic bindings + token interpolation             |
 | [features/loops.md](features/loops.md)                           | `base.loop` + loop entity sources                                    |

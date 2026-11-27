@@ -22,6 +22,7 @@
  * card — same borderless-tile vibe as the dashboard widgets.
  */
 
+import { Alert } from '@ui/components/Alert'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@ui/components/Button'
 import { Select } from '@ui/components/Select'
@@ -274,7 +275,7 @@ export function MediaStoragePanel() {
   return (
     <div className={styles.root}>
       {error && (
-        <div className={styles.errorBanner} role="alert">{error}</div>
+        <Alert tone="danger" className={styles.noticeInset}>{error}</Alert>
       )}
 
       {state && (

@@ -89,14 +89,14 @@ export function useOnboardingState(): OnboardingStateResult {
       cmsAdapter.loadSite('default'),
       fetchDashboardEndpoint('pages', DashboardPagesStatsSchema, signal),
       listCmsPlugins(),
-      listCmsUsers(),
+      listCmsUsers({ signal }),
     ])
 
     return deriveOnboardingFacts({
       site: siteResult.status === 'fulfilled' ? siteResult.value?.site : undefined,
       pagesStats: pagesResult.status === 'fulfilled' ? pagesResult.value : undefined,
       pluginCount: pluginsResult.status === 'fulfilled' ? pluginsResult.value.plugins.length : undefined,
-      userCount: usersResult.status === 'fulfilled' ? usersResult.value.length : undefined,
+      userCount: usersResult.status === 'fulfilled' ? usersResult.value.matching : undefined,
     })
   }, [])
 

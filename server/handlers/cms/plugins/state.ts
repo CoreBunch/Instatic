@@ -50,6 +50,8 @@ import {
 import { runPluginLifecycleHook } from './lifecycle'
 import type { InstalledPlugin } from '@core/plugin-sdk'
 
+export const PluginEnabledBodySchema = Type.Object({ enabled: Type.Boolean() })
+
 /**
  * PATCH `enabled` on a single plugin. Both branches flip the enabled flag,
  * run the matching lifecycle hook, re-bind the runtime registry, and emit
@@ -114,7 +116,6 @@ export async function handlePluginItem(
   pluginId: string,
 ): Promise<Response> {
   if (req.method === 'PATCH') {
-    const PluginEnabledBodySchema = Type.Object({ enabled: Type.Boolean() })
     const body = await readValidatedBody(req, PluginEnabledBodySchema)
     if (!body) return badRequest('Plugin enabled must be a boolean')
 
