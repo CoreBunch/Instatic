@@ -497,8 +497,8 @@ export function PermissionReviewSection({
       )}
 
       {appScopeRows.length > 0 && (
-        <div className={styles.networkSection} data-testid="permission-review-app-scopes">
-          <div className={styles.networkHeader}>
+        <div className={styles.allowlistSection} data-testid="permission-review-app-scopes">
+          <div className={styles.allowlistHeader}>
             <strong>Access for apps</strong>
             <span className={styles.description}>
               An app a site member signs in to can be allowed to do these through the plugin. Nothing is
@@ -586,8 +586,8 @@ export function PermissionReviewSection({
       )}
 
       {mailTemplates.length > 0 && (
-        <div className={styles.networkSection} data-testid="permission-review-mail-templates">
-          <div className={styles.networkHeader}>
+        <div className={styles.allowlistSection} data-testid="permission-review-mail-templates">
+          <div className={styles.allowlistHeader}>
             <strong>
               Adds {mailTemplates.length} email template{mailTemplates.length === 1 ? '' : 's'}
             </strong>
