@@ -149,16 +149,28 @@ async function resolvePreview(
 
 /**
  * Bundle the page's runtime scripts, reusing a build whose inputs are
- * unchanged. The build id hashes the site runtime config plus the page, so
- * editing a script on the branch mints a new build on the next view.
+ * unchanged. The build id hashes everything the bundle is made from: the
+ * site runtime config, the page, the dependency lock and manifest, and the
+ * source of every script file (any of them can be imported by an entry
+ * script). Editing a script on the branch mints a new build on the next
+ * view; editing a stylesheet or a doc does not.
  */
-async function buildPreviewRuntime(site: SiteDocument, page: Page) {
+export async function buildPreviewRuntime(site: SiteDocument, page: Page) {
   const runtime = normalizeSiteRuntimeConfig(site.runtime)
   const dependencyCache = Object.keys(runtime.dependencyLock.packages).length > 0
     ? await ensureRuntimeDependencyCache(runtime.dependencyLock)
     : undefined
+  const scriptSources = site.files
+    .filter((file) => file.type === 'script')
+    .map((file) => ({ id: file.id, path: file.path, content: file.content ?? null }))
   const buildId = createHash('sha256')
-    .update(canonicalJson({ runtime: site.runtime, page, lock: dependencyCache?.hash ?? null }))
+    .update(canonicalJson({
+      runtime: site.runtime,
+      page,
+      lock: dependencyCache?.hash ?? null,
+      packageJson: site.packageJson ?? null,
+      scriptSources,
+    }))
     .digest('hex')
     .slice(0, 24)
   const assetBasePath = previewAssetBasePath(buildId)
