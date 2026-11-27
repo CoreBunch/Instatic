@@ -14,6 +14,10 @@
  *                                                  permitted on already-trashed
  *                                                  assets) and removes the file
  *                                                  (`media.delete`)
+ *   POST   /admin/api/cms/media/usage          — which of these assets are still
+ *                                                  depended on, and by what
+ *                                                  body: { assetIds: string[] }
+ *                                                  (`media.read`)
  *   POST   /admin/api/cms/media/lookup         — which content hashes the library
  *                                                  already holds (Site Import
  *                                                  reuses those files)
@@ -54,6 +58,7 @@ import {
   updateMediaAssetMetadata,
   type UpdateMediaAssetMetadataInput,
 } from '../../repositories/media'
+import { listMediaUsageRefs } from '../../repositories/mediaUsageRefs'
 import { badRequest, jsonResponse, readValidatedBody } from '../../http'
 import { Type } from '@core/utils/typeboxHelpers'
 import { CMS_API_PREFIX } from './shared'
@@ -306,7 +311,32 @@ async function handleDeleteMedia(
 
 const ID_PATTERN = '(?<id>[^/]+)'
 
+/**
+ * Which of the given assets something still depends on.
+ *
+ * A POST because the id list is a selection and can be long — a query string
+ * of a hundred ids is the wrong shape for a read this cheap.
+ *
+ * The UI calls this before a destructive action so it can name what is about
+ * to break instead of warning in the abstract. Requires `media.read`: the
+ * response reveals nothing beyond what the library already lists.
+ */
+async function handleMediaUsage(req: Request, db: DbClient): Promise<Response> {
+  const user = await requireCapability(req, db, 'media.read')
+  if (user instanceof Response) return user
+
+  const body = await readValidatedBody(req, MediaUsageQuerySchema)
+  if (!body) return badRequest('Invalid request body')
+
+  return jsonResponse({ usage: await listMediaUsageRefs(db, body.assetIds) })
+}
+
+export const MediaUsageQuerySchema = Type.Object({
+  assetIds: Type.Array(Type.String(), { maxItems: 500 }),
+}, { additionalProperties: false })
+
 export const MEDIA_ROUTES: readonly Route<[]>[] = [
+  { method: 'POST', pattern: `${MEDIA_PREFIX}/usage`, handler: handleMediaUsage },
   { method: 'GET', pattern: MEDIA_PREFIX, handler: handleListMedia },
   { method: 'POST', pattern: MEDIA_PREFIX, handler: handleUploadMedia },
   { method: 'POST', pattern: `${MEDIA_PREFIX}/lookup`, handler: handleLookupMedia },

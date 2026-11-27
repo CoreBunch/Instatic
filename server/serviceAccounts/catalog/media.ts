@@ -1,6 +1,6 @@
 import { Type } from '@core/utils/typeboxHelpers'
 import { CmsMediaLookupRequestSchema } from '@core/persistence/responseSchemas'
-import { AssignFoldersBodySchema, UpdateMediaMetadataBodySchema } from '../../handlers/cms/media'
+import { AssignFoldersBodySchema, MediaUsageQuerySchema, UpdateMediaMetadataBodySchema } from '../../handlers/cms/media'
 import { CreateFolderBodySchema, PatchFolderBodySchema } from '../../handlers/cms/mediaFolders'
 import { ElectAdapterBodySchema, ElectDelegateBodySchema } from '../../handlers/cms/mediaStorageAdmin'
 import { MigrateBodySchema } from '../../handlers/cms/mediaStorageMigration'
@@ -10,6 +10,7 @@ export const mediaOperations = [
   op('GET', 'media', 'media.read', 'List media assets', { querySchema: Type.Partial(Type.Object({ query: Type.String(), limit: Type.Integer(), trash: Type.Literal('1') })) }),
   op('POST', 'media', 'media.write', 'Upload an image, video or font', { multipart: { file: 'Required media file', altText: 'Optional text alternative' } }),
   op('POST', 'media/lookup', 'media.read', 'Resolve media references', { bodySchema: CmsMediaLookupRequestSchema }),
+  op('POST', 'media/usage', 'media.read', 'List what still depends on the given assets', { bodySchema: MediaUsageQuerySchema }),
   op('PATCH', 'media/:id', 'media.write', 'Update asset metadata', { bodySchema: UpdateMediaMetadataBodySchema }),
   op('DELETE', 'media/:id', 'media.delete', 'Trash an asset. Set purge=1 to permanently remove an already trashed asset.', { querySchema: Type.Object({ purge: Type.Optional(Type.Literal('1')) }) }),
   op('POST', 'media/:id/restore', 'media.write', 'Restore a trashed asset'),

@@ -255,6 +255,7 @@ Folder routes (`/admin/api/cms/media/folders/...`) are matched **before** asset 
 | `server/repositories/mediaAssetMapping.ts`        | Single source of truth for the `media_assets` DB projection: `MEDIA_ASSET_COLUMNS`, `MEDIA_ASSET_INSERT_COLUMNS`, `MediaAssetRow`, `mapMediaAssetRow()`, `parseVariants()`, `parseTags()`. Shared by both the admin repository and the publisher's prefetch — ensures both layers see an identical asset shape. |
 | `server/repositories/media.ts`                    | `MediaAsset` + `MediaVariant` domain types; all `media_assets` CRUD queries   |
 | `server/repositories/mediaFolders.ts`             | `media_folders` + `media_asset_folders`                                        |
+| `server/repositories/mediaUsageRefs.ts`           | `media_usage_refs`: `setMediaUsageRef()` moves a dependency, `listMediaUsageRefs()` names what still depends on a selection |
 | `server/repositories/mediaMigration.ts`           | Migrating assets between storage adapters                                      |
 | `server/repositories/mediaStorageAdapters.ts`     | Adapter registry persistence                                                   |
 
