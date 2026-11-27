@@ -83,5 +83,14 @@ test.describe('canvas Hand tool', () => {
     await expect(handTool).toHaveAttribute('aria-pressed', 'false')
     await expect(page.getByTestId('canvas-root')).not.toHaveAttribute('data-canvas-tool', 'pan')
     await expect(frame.locator('html')).not.toHaveAttribute('data-instatic-canvas-tool', 'pan')
+
+    // V returns to the Select tool, and stays there if pressed again.
+    await page.keyboard.press('h')
+    await expect(handTool).toHaveAttribute('aria-pressed', 'true')
+    await page.keyboard.press('v')
+    await expect(handTool).toHaveAttribute('aria-pressed', 'false')
+    await expect(page.getByTestId('canvas-root')).not.toHaveAttribute('data-canvas-tool', 'pan')
+    await page.keyboard.press('v')
+    await expect(handTool).toHaveAttribute('aria-pressed', 'false')
   })
 })

@@ -70,6 +70,8 @@ export function CanvasModeToggle({ scriptStatus, onRefreshScripts, scaleControl,
   const toggleHandTool = useEditorStore((s) => s.toggleHandTool)
   const handToolBinding = getKeybindingForCommand('preview.toggleHandTool')
   const handToolShortcut = handToolBinding ? formatShortcut(handToolBinding.shortcut) : 'H'
+  const selectToolBinding = getKeybindingForCommand('preview.selectTool')
+  const selectToolShortcut = selectToolBinding ? formatShortcut(selectToolBinding.shortcut) : 'V'
 
   // The toggle lives inside the canvas surface, which has its own click /
   // keyboard handlers (deselect, shortcuts, etc.). Stop propagation so the
@@ -125,7 +127,7 @@ export function CanvasModeToggle({ scriptStatus, onRefreshScripts, scaleControl,
       {view === 'design' && (
         <>
           <span className={styles.divider} aria-hidden="true" />
-          <Tooltip content={`Hand tool: drag to pan the canvas (${handToolShortcut})`}>
+          <Tooltip content={`Hand tool: drag to pan the canvas (${handToolShortcut}; ${selectToolShortcut} returns to Select)`}>
             <button
               type="button"
               aria-pressed={handToolActive}

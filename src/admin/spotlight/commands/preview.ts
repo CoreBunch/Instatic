@@ -1,7 +1,7 @@
 /**
  * Preview commands — §4.2 (canvas mode / preview) of the master plan.
  *
- * Toggle preview overlay, toggle the Hand tool, control zoom.
+ * Toggle preview overlay, switch between the Select and Hand tools, control zoom.
  * All gated to workspace: ['site'] and capability `site.read` — these are
  * pure viewing affordances against the canvas.
  */
@@ -55,6 +55,27 @@ export function getPreviewCommands(): Command[] {
           useEditorStore.getState().toggleHandTool()
         } catch (err) {
           console.error('[spotlight] toggleHandTool failed:', err)
+        }
+      },
+    },
+
+    // ── Select tool ──────────────────────────────────────────────────────────
+    {
+      id: 'preview.selectTool',
+      title: 'Select tool',
+      subtitle: 'Click to select elements on the design canvas',
+      group: 'preview',
+      iconName: 'cursor-minimal-solid',
+      keywords: ['select', 'pointer', 'cursor', 'arrow', 'move', 'canvas', 'tool'],
+      workspaces: ['site'],
+      capability: PREVIEW_CAPABILITY,
+      run: async (ctx) => {
+        ctx.closeSpotlight()
+        try {
+          const { useEditorStore } = await import('@site/store/store')
+          useEditorStore.getState().activateSelectTool()
+        } catch (err) {
+          console.error('[spotlight] selectTool failed:', err)
         }
       },
     },

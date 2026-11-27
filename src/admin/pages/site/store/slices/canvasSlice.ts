@@ -93,6 +93,8 @@ interface CanvasSlice {
   setActivePage: (pageId: string) => void
   /** Switch between the Select tool and the Hand tool. */
   toggleHandTool: () => void
+  /** Return to the Select tool (a no-op when it's already active). */
+  activateSelectTool: () => void
   setCanvasView: (view: CanvasView) => void
   /** Toggle (or set) whether runtime scripts run inside the editable iframes. */
   setRunScripts: (run: boolean) => void
@@ -154,6 +156,8 @@ export const createCanvasSlice: EditorStoreSliceCreator<CanvasSlice> = (set, get
   toggleHandTool: () => set((s) => {
     s.canvasMode = s.canvasMode === 'pan' ? 'select' : 'pan'
   }),
+
+  activateSelectTool: () => set({ canvasMode: 'select' }),
 
   setCanvasView: (view) => set({ canvasView: view }),
 

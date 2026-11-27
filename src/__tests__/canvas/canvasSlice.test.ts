@@ -331,3 +331,14 @@ describe('toggleHandTool', () => {
     expect(useEditorStore.getState().canvasMode).toBe('select')
   })
 })
+
+describe('activateSelectTool', () => {
+  it('returns to the Select tool from the Hand tool and stays there', () => {
+    useEditorStore.getState().toggleHandTool()
+    expect(useEditorStore.getState().canvasMode).toBe('pan')
+    useEditorStore.getState().activateSelectTool()
+    expect(useEditorStore.getState().canvasMode).toBe('select')
+    useEditorStore.getState().activateSelectTool()
+    expect(useEditorStore.getState().canvasMode).toBe('select')
+  })
+})

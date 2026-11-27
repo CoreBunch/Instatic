@@ -182,6 +182,15 @@ export const KEYBINDINGS: ReadonlyArray<KeybindingDefinition> = [
   },
 
   {
+    commandId: 'preview.selectTool',
+    shortcut: { mac: 'V', win: 'V' },
+    ariaKeyshortcuts: 'V',
+    match: (e) => !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'v',
+    scope: 'canvas',
+    ignoreInEditableField: true,
+  },
+
+  {
     commandId: 'layers.duplicate',
     shortcut: { mac: '⌘D', win: 'Ctrl+D' },
     match: (e) => (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd',

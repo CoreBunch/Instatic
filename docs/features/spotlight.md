@@ -155,7 +155,7 @@ The subscription is **dropped on close** to avoid spurious re-renders.
 | Group              | Examples                                                             |
 |--------------------|----------------------------------------------------------------------|
 | `editor`           | Publish, Save, Undo, Redo, Wrap in container, Import HTML, Insert fragment from file… (`commands/fragments.ts`, see [fragments.md](fragments.md)) |
-| `preview`          | Toggle preview, Toggle Hand tool, Zoom in / out / reset (`commands/preview.ts`) |
+| `preview`          | Toggle preview, Toggle Hand tool, Select tool, Zoom in / out / reset (`commands/preview.ts`) |
 | `pages`            | Add page, Open page settings                                         |
 | `content`          | New post, Edit post                                                  |
 | `navigation`       | Go to dashboard, Go to site, Go to media, Go to plugins, …           |
@@ -310,7 +310,7 @@ Used by destructive commands: delete user, sign out all devices, revoke session,
 | ?                    | Show all keybindings                                  |
 | Custom command shortcuts | Per-command entry in `keybindings.ts`             |
 
-Selected-layer shortcuts are command shortcuts too. `⌘C` / `Ctrl+C`, `⌘X` / `Ctrl+X`, `⌘V` / `Ctrl+V`, and `⌘D` / `Ctrl+D` run when focus is on the canvas or the Layers tree. `⌘⌫` / `Ctrl+Backspace` deletes the selected layer from either surface through the normal delete confirmation flow; plain Delete / Backspace remains accepted by the canvas handler for selected canvas nodes. A bare `H` on the same surfaces runs `preview.toggleHandTool`, which switches the design canvas between the Select tool and the Hand tool (left-drag pans, taps never select).
+Selected-layer shortcuts are command shortcuts too. `⌘C` / `Ctrl+C`, `⌘X` / `Ctrl+X`, `⌘V` / `Ctrl+V`, and `⌘D` / `Ctrl+D` run when focus is on the canvas or the Layers tree. `⌘⌫` / `Ctrl+Backspace` deletes the selected layer from either surface through the normal delete confirmation flow; plain Delete / Backspace remains accepted by the canvas handler for selected canvas nodes. A bare `H` on the same surfaces runs `preview.toggleHandTool`, which switches the design canvas between the Select tool and the Hand tool (left-drag pans, taps never select). A bare `V` runs `preview.selectTool`, which always returns to the Select tool; `⌘V` / `Ctrl+V` stays paste.
 
 The keybindings registry is **the single source of truth** for shortcuts — gated by `keybindings-registry-single-source.test.ts`. Register each command shortcut in `keybindings.ts`; component-owned handlers may consume those registered bindings when a surface needs local selection or confirmation behavior, but they must not hard-code a second shortcut definition.
 
