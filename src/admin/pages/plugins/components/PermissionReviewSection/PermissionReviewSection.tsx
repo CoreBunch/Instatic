@@ -20,6 +20,29 @@
  * banner ("No new permissions in this update") so the user can confirm
  * with confidence.
  *
+ * Also displays the manifest's allowlists, each in its own section:
+ *
+ *   • `contentAccess` — the CMS tables whose entries the plugin can touch,
+ *     with per-table modes. The `@own-created` marker renders as the
+ *     human-readable "Tables this plugin creates".
+ *   • `networkAllowedHosts` — the concrete remote origins the plugin's
+ *     code will talk to (e.g. `threejs.org`, `*.cdn.example.com`).
+ *   • `frontend.origins` — each host a plugin may load scripts or embed
+ *     frames from on published pages, listed in plain words.
+ *   • `mail.templates` — each email the plugin can send, with its subject
+ *     and body, shown in the same script-less frame the Email workspace
+ *     previews with. Approving a plugin's email is approving what it says
+ *     in the site's name.
+ *
+ * Permissions describe broad CMS capabilities ("inject scripts", "write
+ * content"); the allowlists describe the concrete tables, origins and
+ * messages those capabilities apply to. All of them are security-relevant:
+ * a plugin with `frontend.assets` plus an unexpected host entry can
+ * exfiltrate visitor data, and an upgrade adding `write` mode on an
+ * already-approved table is a silent privilege expansion. Each section
+ * diffs new/existing/dropped rows on upgrade so nothing slips in
+ * unreviewed.
+ *
  * Also lists the manifest's `appScopes`: what an app a site member signed in
  * to may later be allowed to do through the plugin. Over an existing install
  * each is marked new, reworded, unchanged or removed (`diffPluginAppScopes`):
@@ -27,31 +50,14 @@
  * withdraws the reworded and removed ones at the update, and the owner is
  * told before confirming. The "no new permissions" reassurance is withheld
  * whenever the scopes differ.
- *
- * Also displays `networkAllowedHosts` from the manifest in its own section.
- * Permissions describe broad CMS capabilities ("inject scripts"); the
- * host list describes the concrete remote origins those scripts will talk
- * to (e.g. `threejs.org`, `*.cdn.example.com`). Both dimensions are
- * security-relevant: a plugin with `frontend.assets` plus an unexpected
- * allowlist entry can exfiltrate visitor data to that host. Showing both
- * before activation is the only way the operator can make an informed
- * decision.
- *
- * `frontend.origins` gets the same treatment in a third section: each host a
- * plugin may load scripts or embed frames from on published pages is listed
- * in plain words, and an upgrade that adds one flags it as new.
- *
- * `mail.templates` is the fourth: each email the plugin can send is listed
- * with its subject and body, shown in the same script-less frame the Email
- * workspace previews with. An upgrade that adds a template or changes the
- * wording of one flags it, because approving a plugin's email is approving
- * what it says in the site's name.
  */
 import { Alert } from '@ui/components/Alert'
 import { lt as semverLt } from 'semver'
 import { Button } from '@ui/components/Button'
 import {
   permissionDescription,
+  type ContentAccessEntry,
+  type ContentAccessMode,
   type PluginAppScope,
   type PluginFrontendOrigins,
   type PluginMailTemplateDeclaration,
@@ -67,6 +73,10 @@ import {
   type PermissionDiffRow,
   type PermissionDiffStatus,
 } from './computePermissionDiff'
+import {
+  computeContentAccessDiff,
+  isOwnCreatedContentTable,
+} from './computeContentAccessDiff'
 import styles from './PermissionReviewSection.module.css'
 
 interface PermissionReviewPending {
@@ -80,6 +90,12 @@ interface PermissionReviewPending {
    * exactly the kind of supply-chain attack the consent screen should catch.
    */
   previousNetworkAllowedHosts?: string[]
+  /**
+   * The previously-installed manifest's `contentAccess` allowlist (when this
+   * is an upgrade). Used to flag tables — and modes on already-approved
+   * tables — that the upgrade adds, the same way hosts are diffed above.
+   */
+  previousContentAccess?: ContentAccessEntry[]
   /**
    * The previously-installed manifest's `appScopes`. A scope the new
    * manifest removes or rewords is withdrawn at the update, so the review
@@ -173,6 +189,12 @@ function statusBadgeLabel(status: PermissionDiffStatus): string {
   if (status === 'new') return 'New'
   if (status === 'existing') return 'Already approved'
   return 'No longer requested'
+}
+
+/** "read, write" → "Read, write" — modes stay lowercase manifest literals. */
+function formatContentAccessModes(modes: readonly ContentAccessMode[]): string {
+  const joined = modes.join(', ')
+  return joined.charAt(0).toUpperCase() + joined.slice(1)
 }
 
 const APP_SCOPE_BADGE: Record<PluginAppScopeChange, { label: string; className: string }> = {
@@ -280,6 +302,17 @@ export function PermissionReviewSection({
   const hasAppPages = pending.manifest.adminPages.some((page) => page.content.kind === 'app')
   const hasEditorEntrypoint = Boolean(pending.manifest.entrypoints?.editor)
 
+  const contentAccessRows = computeContentAccessDiff(
+    pending.manifest.contentAccess ?? [],
+    pending.previousContentAccess,
+    isUpgrade,
+  )
+  const hostRows = diffHostList(
+    pending.manifest.networkAllowedHosts ?? [],
+    pending.previousNetworkAllowedHosts,
+    isUpgrade,
+  )
+
   return (
     <section
       className={styles.review}
@@ -382,51 +415,87 @@ export function PermissionReviewSection({
         </ul>
       )}
 
-      {(() => {
-        const hostRows = diffHostList(
-          pending.manifest.networkAllowedHosts ?? [],
-          pending.previousNetworkAllowedHosts,
-          isUpgrade,
-        )
-        if (hostRows.length === 0) return null
-        return (
-          <div
-            className={styles.networkSection}
-            data-testid="permission-review-network-hosts"
-          >
-            <div className={styles.networkHeader}>
-              <strong>External hosts</strong>
-              <span className={styles.description}>
-                The plugin will connect to these hosts from the server and
-                from published pages. Hosts not listed here are blocked.
-              </span>
-            </div>
-            <ul className={styles.list}>
-              {hostRows.map((row) => (
-                <li
-                  key={`${row.host}:${row.status}`}
-                  className={styles.row}
-                  data-status={row.status}
-                  data-network-host={row.host}
-                >
-                  <div className={styles.label}>
-                    <code>{row.host}</code>
-                    {isUpgrade && (
-                      <span className={`${styles.badge} ${statusBadgeClass(row.status)}`}>
-                        {statusBadgeLabel(row.status)}
-                      </span>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+      {contentAccessRows.length > 0 && (
+        <div
+          className={styles.allowlistSection}
+          data-testid="permission-review-content-tables"
+        >
+          <div className={styles.allowlistHeader}>
+            <strong>Content tables</strong>
+            <span className={styles.description}>
+              The plugin's access to CMS content is limited to these tables
+              and modes. Tables not listed here are blocked.
+            </span>
           </div>
-        )
-      })()}
+          <ul className={styles.list}>
+            {contentAccessRows.map((row) => (
+              <li
+                key={`${row.table}:${row.status}`}
+                className={styles.row}
+                data-status={row.status}
+                data-content-table={row.table}
+              >
+                <div className={styles.label}>
+                  {isOwnCreatedContentTable(row.table) ? (
+                    <strong>Tables this plugin creates</strong>
+                  ) : (
+                    <code>{row.table}</code>
+                  )}
+                  {isUpgrade && (
+                    <span className={`${styles.badge} ${statusBadgeClass(row.status)}`}>
+                      {statusBadgeLabel(row.status)}
+                    </span>
+                  )}
+                </div>
+                <span className={styles.description}>
+                  {formatContentAccessModes(row.modes)}
+                  {isUpgrade && row.addedModes.length > 0 && (
+                    <> — newly requested: {row.addedModes.join(', ')}</>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {hostRows.length > 0 && (
+        <div
+          className={styles.allowlistSection}
+          data-testid="permission-review-network-hosts"
+        >
+          <div className={styles.allowlistHeader}>
+            <strong>External hosts</strong>
+            <span className={styles.description}>
+              The plugin will connect to these hosts from the server and
+              from published pages. Hosts not listed here are blocked.
+            </span>
+          </div>
+          <ul className={styles.list}>
+            {hostRows.map((row) => (
+              <li
+                key={`${row.host}:${row.status}`}
+                className={styles.row}
+                data-status={row.status}
+                data-network-host={row.host}
+              >
+                <div className={styles.label}>
+                  <code>{row.host}</code>
+                  {isUpgrade && (
+                    <span className={`${styles.badge} ${statusBadgeClass(row.status)}`}>
+                      {statusBadgeLabel(row.status)}
+                    </span>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {appScopeRows.length > 0 && (
-        <div className={styles.networkSection} data-testid="permission-review-app-scopes">
-          <div className={styles.networkHeader}>
+        <div className={styles.allowlistSection} data-testid="permission-review-app-scopes">
+          <div className={styles.allowlistHeader}>
             <strong>Access for apps</strong>
             <span className={styles.description}>
               An app a site member signs in to can be allowed to do these through the plugin. Nothing is
@@ -464,10 +533,10 @@ export function PermissionReviewSection({
 
       {originRowCount > 0 && (
         <div
-          className={styles.networkSection}
+          className={styles.allowlistSection}
           data-testid="permission-review-frontend-origins"
         >
-          <div className={styles.networkHeader}>
+          <div className={styles.allowlistHeader}>
             <strong>Third-party code on published pages</strong>
             <span className={styles.description}>
               Visitors' browsers may load code or frames from these hosts on
@@ -514,8 +583,8 @@ export function PermissionReviewSection({
       )}
 
       {mailTemplates.length > 0 && (
-        <div className={styles.networkSection} data-testid="permission-review-mail-templates">
-          <div className={styles.networkHeader}>
+        <div className={styles.allowlistSection} data-testid="permission-review-mail-templates">
+          <div className={styles.allowlistHeader}>
             <strong>
               Adds {mailTemplates.length} email template{mailTemplates.length === 1 ? '' : 's'}
             </strong>

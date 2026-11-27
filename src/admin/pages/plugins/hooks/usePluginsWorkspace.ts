@@ -18,6 +18,7 @@ import {
 } from '@core/plugins/manifest'
 import type {
   CmsPluginsPayload,
+  ContentAccessEntry,
   InstalledPlugin,
   PluginManifest,
   PluginAppScope,
@@ -64,6 +65,13 @@ interface PendingInstall {
    * value so an upgrade adding new external hosts shows them as "New".
    */
   previousNetworkAllowedHosts?: string[]
+  /**
+   * `contentAccess` from the manifest of the existing install (when this is
+   * an upgrade). The dialog diffs it against the new manifest's value so an
+   * upgrade adding tables — or new modes on already-approved tables — shows
+   * them as "New".
+   */
+  previousContentAccess?: ContentAccessEntry[]
   /**
    * `appScopes` from the manifest of the existing install. The dialog diffs
    * it against the new manifest's, since a scope that is removed or
@@ -337,6 +345,7 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         ? existing.grantedPermissions
         : undefined
       const previousNetworkAllowedHosts = existing?.manifest.networkAllowedHosts
+      const previousContentAccess = existing?.manifest.contentAccess
       const previousFrontendOrigins = existing?.manifest.frontend?.origins
 
       // EVERY install and upgrade goes through the review dialog — including
@@ -351,6 +360,7 @@ export function usePluginsWorkspace(): PluginsWorkspaceVM {
         ...(previousNetworkAllowedHosts !== undefined
           ? { previousNetworkAllowedHosts }
           : {}),
+        ...(previousContentAccess !== undefined ? { previousContentAccess } : {}),
         ...(existing?.manifest.appScopes !== undefined
           ? { previousAppScopes: existing.manifest.appScopes }
           : {}),
