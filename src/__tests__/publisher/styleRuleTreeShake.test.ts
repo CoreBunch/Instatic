@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'bun:test'
-import { treeShakeStyleRules } from '@core/publisher'
+import { treeShakeStyleRules, treeShakeStyleRulesBySignature } from '@core/publisher'
 import type { StyleRule } from '@core/page-tree'
 
 const cls = (id: string, name: string): StyleRule =>
@@ -65,6 +65,20 @@ const rules: Record<string, StyleRule> = {
 const used = new Set(['header', 'nav', 'p1'])
 const shaken = treeShakeStyleRules(rules, used)
 const kept = (id: string) => shaken[id] !== undefined
+
+describe('framework utility classes', () => {
+  const id = 'framework:spacing:gap-m'
+  const utility = { ...cls(id, 'gap-m'), generated: { origin: 'framework', locked: true } } as unknown as StyleRule
+
+  it('leaves them to framework.css at publish, even when used', () => {
+    expect(treeShakeStyleRules({ [id]: utility }, new Set([id]))).toEqual({})
+  })
+
+  it('keeps the used ones for the canvas, which has no framework.css', () => {
+    expect(treeShakeStyleRulesBySignature({ [id]: utility }, id)).toEqual({ [id]: utility })
+    expect(treeShakeStyleRulesBySignature({ [id]: utility }, 'another-class')).toEqual({})
+  })
+})
 
 describe('treeShakeStyleRules — negation and alternation semantics', () => {
   it('does not treat a negated class as a dependency', () => {

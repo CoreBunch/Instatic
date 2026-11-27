@@ -411,7 +411,7 @@ Nodes that reference the rule by id keep working — only the rendered CSS outpu
   - `src/core/publisher/cssCollector.ts` — `collectClassCSS`
   - `src/admin/pages/site/cssStatePseudo.ts` — `SUPPORTED_PSEUDO_STATES`, `selectorStatePseudo`, `stripStatePseudos`, `splitSelectorList`; shared helpers for reasoning about state pseudo-classes in the editor
   - `src/admin/pages/site/panels/PropertiesPanel/selectorPickerModel.ts` — `deriveSelectorPickerModel`, `SelectorMatch`, `SelectorPillItem`, `SelectorSuggestionItem`; pure derivation layer for the unified selector picker including specificity sorting and inactive-pseudo logic
-  - `src/admin/pages/site/canvas/canvasClassCss.ts` — `generateCanvasClassCSS`, `generatePreviewClassCSS`, `generateForcedStateCSS`; thin canvas wrappers over the publisher's `generateClassCSS` / `createStyleRuleCssEmitter` (reset + fonts + framework preamble, forced-state selectors, identity memo)
+  - `src/admin/pages/site/canvas/canvasClassCss.ts` — `generateCanvasClassCSS`, `generatePreviewClassCSS`, `generateForcedStateCSS`; thin canvas wrappers over the publisher's `generateClassCSS` / `createStyleRuleCssEmitter` (reset + fonts + framework preamble, used framework utilities ahead of authored classes, forced-state selectors, identity memo)
   - `src/admin/pages/site/canvas/ClassStyleInjector.tsx` — manages three `<style>` elements per iframe: `mc-classes`, `mc-classes-preview`, `mc-classes-force-state`
   - `src/core/page-tree/styleRule.ts` — `classifySelectorCreateInput`; the shared classifier for selector creation surfaces
   - `src/admin/pages/site/store/styleRuleRename.ts` — `renameStyleRule`, `isValidCssSelector`; rename logic for both class-kind and ambient rules

@@ -387,6 +387,10 @@ let lastTreeShakenRules: Record<string, StyleRule> = {}
  * Identity/signature-memoized entry for the multi-frame editor canvas. Every
  * frame sees the same immutable registry snapshot, so a 40k-rule Tailwind
  * registry is filtered once per change rather than once per iframe.
+ *
+ * Unlike `treeShakeStyleRules`, it keeps the framework utility classes the
+ * site uses: a published page gets them from `framework.css`, but the canvas
+ * has no such file, so without them no utility would show while editing.
  */
 export function treeShakeStyleRulesBySignature(
   styleRules: Record<string, StyleRule>,
@@ -402,6 +406,9 @@ export function treeShakeStyleRulesBySignature(
     ? new Set(usedIdSignature.split('\0'))
     : new Set<string>()
   lastTreeShakenRules = treeShakeStyleRules(styleRules, usedIds)
+  for (const rule of Object.values(styleRules)) {
+    if (isGeneratedClass(rule) && usedIds.has(rule.id)) lastTreeShakenRules[rule.id] = rule
+  }
   lastStyleRules = styleRules
   lastUsedIdSignature = usedIdSignature
   return lastTreeShakenRules

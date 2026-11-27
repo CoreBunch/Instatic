@@ -5,9 +5,13 @@ import {
   generateCanvasClassCSS,
   generateForcedStateCSS,
 } from '@site/canvas/canvasClassCss'
-import { generateFrameworkColorUtilityClasses } from '@core/framework'
+import {
+  buildCoreFrameworkSettings,
+  generateFrameworkColorUtilityClasses,
+  generateFrameworkUtilityClasses,
+} from '@core/framework'
 import { classKindSelector, type StyleRule } from '@core/page-tree'
-import type { RenderResolvedMedia } from '@core/publisher'
+import { treeShakeStyleRulesBySignature, type RenderResolvedMedia } from '@core/publisher'
 
 function makeClass(
   id: string,
@@ -218,6 +222,54 @@ describe('generateCanvasClassCSS', () => {
     expect(css).toContain('--primary: hsla(238, 100%, 62%, 1);')
     expect(css).toContain('.text-primary')
     expect(css).toContain('color: var(--primary);')
+  })
+})
+
+// The canvas has no framework.css, so the framework utilities a page uses must
+// reach the canvas stylesheet through the class registry (#807, #564).
+describe('framework utility classes on the canvas', () => {
+  const framework = buildCoreFrameworkSettings({ includeUtilities: true })
+  const frameworkClasses = generateFrameworkUtilityClasses(framework)
+  const utility = (name: string): StyleRule => {
+    const rule = Object.values(frameworkClasses).find((candidate) => candidate.name === name)
+    if (!rule) throw new Error(`Core Framework has no ${name} utility`)
+    return rule
+  }
+  /** The canvas path: the injector's tree-shake, then the canvas generator. */
+  const canvasCss = (styleRules: Record<string, StyleRule>, usedIds: string[]) =>
+    generateCanvasClassCSS(
+      treeShakeStyleRulesBySignature(styleRules, [...usedIds].sort().join('\0')),
+      [],
+      [],
+      framework.colors,
+      framework.typography,
+      framework.spacing,
+      framework.preferences,
+    )
+
+  it('draws a framework utility class assigned on the page', () => {
+    const css = canvasCss(frameworkClasses, [utility('gap-m').id])
+
+    expect(css).toContain('--space-m:')
+    expect(css).toMatch(/\.gap-m \{\s*gap: var\(--space-m\);/)
+  })
+
+  it('leaves out the framework utilities nothing uses', () => {
+    const css = canvasCss(frameworkClasses, [utility('gap-m').id])
+
+    expect(css).not.toContain('.gap-l ')
+    expect(css).not.toContain('.padding-m ')
+  })
+
+  it('emits framework utilities before authored classes, as framework.css comes before style.css', () => {
+    // Same `order` as the utility and first in the registry: only the block
+    // order can put the utility first.
+    const card = makeClass('card', { gap: '0' })
+    const gapM = utility('gap-m')
+    const css = canvasCss({ card, [gapM.id]: gapM }, [card.id, gapM.id])
+
+    expect(css.indexOf('.gap-m ')).toBeGreaterThan(-1)
+    expect(css.indexOf('.gap-m ')).toBeLessThan(css.indexOf('.card '))
   })
 })
 
