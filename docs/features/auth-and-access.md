@@ -12,7 +12,7 @@ Admin requests resolve the session cookie and check the required capability. Ope
 - **Capabilities** are the access model. 43 `CoreCapability` strings defined in `src/core/capabilities.ts` (`@core/capabilities`). Roles are sets of capabilities. Handlers gate on capability, not role.
 - **`requireCapability(req, db, 'site.read')`** is the canonical handler entrypoint. Returns the `AuthUser` or a 401/403 `Response`.
 - **MFA (TOTP)** is per-user opt-in. TOTP seeds are encrypted at rest with `INSTATIC_SECRET_KEY`; recovery codes are one-way hashes. Sessions for MFA-enrolled users are `pending_mfa` until verified, then become `active`. Failed MFA codes go through `mfaRateLimit` AND increment the per-account lockout counter — the same counter the password step uses. A locked account is rejected at the MFA step before any code is checked.
-- **Step-up auth** gates sensitive actions (delete user, revoke another device, sign out all) unless the user disables it on Account -> Security. The default window is 15 minutes; users can configure 5, 15, 30, or 60 minutes.
+- **Step-up auth** gates sensitive actions (delete user, revoke another device, sign out all) unless the user disables it in Account → Overview → Confirm sensitive actions. The default window is 15 minutes; users can configure 5, 15, 30, or 60 minutes.
 - **Lockout** kicks in after 5 failed logins. Exponential backoff capped at 24 hours.
 - **CSRF defense in depth.** State-changing methods must come from a matching `Origin`. `SameSite=Lax` covers the rest.
 - **CORS** is dev-only. Production is same-origin behind Caddy.
@@ -243,9 +243,9 @@ if (stepUp) return stepUp
 
 ## Step-up auth
 
-Sensitive actions (delete user, revoke another device, sign out all devices, change owner email, regenerate MFA, mutate Data table schemas, replace-import a site bundle) call `requireStepUp(req, db, user)` in `server/auth/authz.ts`, passing the user the handler already resolved. When `users.step_up_auth_mode = 'required'`, the current session must have `sessions.step_up_expires_at > now()`. The default policy is required with a 15-minute window; Account -> Security can change the mode to `disabled` or set `users.step_up_window_minutes` to 5, 15, 30, or 60.
+Sensitive actions (delete user, revoke another device, sign out all devices, change owner email, regenerate MFA, mutate Data table schemas, replace-import a site bundle) call `requireStepUp(req, db, user)` in `server/auth/authz.ts`, passing the user the handler already resolved. When `users.step_up_auth_mode = 'required'`, the current session must have `sessions.step_up_expires_at > now()`. The default policy is required with a 15-minute window; Confirm sensitive actions on the account overview can change the mode to `disabled` or set `users.step_up_window_minutes` to 5, 15, 30, or 60.
 
-The Account -> Security policy endpoint (`PATCH /admin/api/cms/me/security/step-up`) calls `requireStepUp(req, db, user, { policy: 'always' })`, so changing the policy itself still requires a fresh password even when normal sensitive-action step-up is disabled.
+The account confirmation policy endpoint (`PATCH /admin/api/cms/me/security/step-up`) calls `requireStepUp(req, db, user, { policy: 'always' })`, so changing the policy itself still requires a fresh password even when normal sensitive-action step-up is disabled.
 
 ```text
 User clicks "Delete user X"
@@ -296,7 +296,7 @@ findMatchingRecoveryCodeHash(code, hashes) → matchingHash | null
 
 ### Enrollment flow
 
-1. User visits `/admin/account` → "Enable MFA".
+1. User opens Account → Overview and selects Enable in the Two-factor authentication row.
 2. Server: `generateTotpSecret()`, stores it temporarily, returns `{ secret, otpauthUrl }`. Client renders the provisioning URI as a QR code (SVG) in the browser.
 3. User scans the QR code or enters the manual setup key in their authenticator, then enters the first 6-digit code.
 4. Server: `verifyTotpCode` → on success, persist secret on user row, mark `mfa_enabled = true`, generate 10 recovery codes.

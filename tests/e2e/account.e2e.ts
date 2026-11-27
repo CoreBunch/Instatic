@@ -102,7 +102,7 @@ async function expectRecoveryCodesDialog(page: Page): Promise<string[]> {
   return recoveryCodes
 }
 
-async function enableMfaFromSecurityTab(
+async function enableMfaFromOverview(
   page: Page,
 ): Promise<{ secret: string; recoveryCodes: string[] }> {
   await page.getByTestId('security-mfa-enable').click()
@@ -161,7 +161,7 @@ async function submitLoginAttempt(
 async function clearUploadedAvatarIfPresent(page: Page): Promise<void> {
   if (!(await page.getByTestId('profile-avatar-remove').isVisible())) return
   await page.getByTestId('profile-avatar-remove').click()
-  await expect(page.getByTestId('profile-status')).toHaveText(/removed/i, {
+  await expect(page.getByText('Profile picture removed.', { exact: true }).last()).toBeVisible({
     timeout: 20_000,
   })
 }
@@ -180,17 +180,17 @@ test.describe('account', () => {
 
       await login(page)
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-profile').click()
+      await page.getByRole('button', { name: 'Edit profile' }).click()
 
       await page.getByTestId('profile-display-name').fill(displayName)
       await page.getByTestId('profile-save').click()
       await completeStepUp(page)
-      await expect(page.getByTestId('profile-status')).toHaveText(/profile saved/i, {
+      await expect(page.getByText('Profile saved.', { exact: true }).last()).toBeVisible({
         timeout: 20_000,
       })
 
       await page.reload()
-      await page.getByTestId('account-tab-profile').click()
+      await page.getByRole('button', { name: 'Edit profile' }).click()
       await expect(page.getByTestId('profile-display-name')).toHaveValue(displayName)
     })
 
@@ -200,10 +200,9 @@ test.describe('account', () => {
       await page.setViewportSize({ width: 390, height: 844 })
       await login(page)
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-profile').click()
+      await page.getByRole('button', { name: 'Edit profile' }).click()
 
       const originalDisplayName = await page.getByTestId('profile-display-name').inputValue()
-      const originalEmail = await page.getByTestId('profile-email').inputValue()
       const draftDisplayName = `Account Persona mobile ${Date.now().toString(36)}`
 
       await page.getByTestId('profile-display-name').fill(draftDisplayName)
@@ -216,14 +215,13 @@ test.describe('account', () => {
 
       await stepUpDialog.getByTestId('step-up-cancel').click()
       await expect(stepUpDialog).toBeHidden()
-      await expect(page.getByTestId('profile-status')).toHaveCount(0)
+      await expect(page.getByText('Profile saved.', { exact: true })).toHaveCount(0)
       await expect(page.getByTestId('profile-display-name')).toHaveValue(draftDisplayName)
       await expectProfileMobileLayout(page)
 
       await page.reload()
-      await page.getByTestId('account-tab-profile').click()
+      await page.getByRole('button', { name: 'Edit profile' }).click()
       await expect(page.getByTestId('profile-display-name')).toHaveValue(originalDisplayName)
-      await expect(page.getByTestId('profile-email')).toHaveValue(originalEmail)
       await expectProfileMobileLayout(page)
     })
   })
@@ -231,19 +229,19 @@ test.describe('account', () => {
   test('uploads a profile picture that persists (ADMIN-002 / ACCOUNT-002)', async ({ page }) => {
     await login(page)
     await page.goto('/admin/account')
-    await page.getByTestId('account-tab-profile').click()
+    await page.getByRole('button', { name: 'Edit profile' }).click()
 
     // The file input is hidden behind the upload button; set files on it directly.
     await page
       .getByTestId('profile-avatar-file')
       .setInputFiles({ name: 'avatar.png', mimeType: 'image/png', buffer: PNG_1X1 })
-    await expect(page.getByTestId('profile-status')).toHaveText(/updated/i, {
+    await expect(page.getByText('Profile picture updated.', { exact: true }).last()).toBeVisible({
       timeout: 20_000,
     })
 
     // After reload the avatar is still set — the Remove action is available.
     await page.reload()
-    await page.getByTestId('account-tab-profile').click()
+    await page.getByRole('button', { name: 'Edit profile' }).click()
     await expect(page.getByTestId('profile-avatar-remove')).toBeVisible()
   })
 
@@ -252,35 +250,35 @@ test.describe('account', () => {
   }) => {
     await login(page)
     await page.goto('/admin/account')
-    await page.getByTestId('account-tab-profile').click()
+    await page.getByRole('button', { name: 'Edit profile' }).click()
 
     await page
       .getByTestId('profile-avatar-file')
       .setInputFiles({ name: 'avatar-remove.png', mimeType: 'image/png', buffer: PNG_1X1 })
-    await expect(page.getByTestId('profile-status')).toHaveText(/updated/i, {
+    await expect(page.getByText('Profile picture updated.', { exact: true }).last()).toBeVisible({
       timeout: 20_000,
     })
     await expect(page.getByTestId('profile-avatar-remove')).toBeVisible()
 
     await page.getByTestId('profile-avatar-remove').click()
-    await expect(page.getByTestId('profile-status')).toHaveText(/removed/i, {
+    await expect(page.getByText('Profile picture removed.', { exact: true }).last()).toBeVisible({
       timeout: 20_000,
     })
     await expect(page.getByTestId('profile-avatar-remove')).toHaveCount(0)
     await expect(page.getByTestId('profile-avatar-upload')).toHaveText(/upload picture/i)
 
     await page.reload()
-    await page.getByTestId('account-tab-profile').click()
+    await page.getByRole('button', { name: 'Edit profile' }).click()
     await expect(page.getByTestId('profile-avatar-remove')).toHaveCount(0)
     await expect(page.getByTestId('profile-avatar-upload')).toHaveText(/upload picture/i)
   })
 
-  test('rejects an unsupported profile picture with inline feedback (ACCOUNT-002)', async ({
+  test('rejects an unsupported profile picture with error feedback (ACCOUNT-002)', async ({
     page,
   }) => {
     await login(page)
     await page.goto('/admin/account')
-    await page.getByTestId('account-tab-profile').click()
+    await page.getByRole('button', { name: 'Edit profile' }).click()
 
     await clearUploadedAvatarIfPresent(page)
 
@@ -295,12 +293,12 @@ test.describe('account', () => {
     await expect(page.getByTestId('profile-avatar-upload')).toHaveText(/upload picture/i)
   })
 
-  test('rejects an oversized profile picture with inline feedback (ACCOUNT-002)', async ({
+  test('rejects an oversized profile picture with error feedback (ACCOUNT-002)', async ({
     page,
   }) => {
     await login(page)
     await page.goto('/admin/account')
-    await page.getByTestId('account-tab-profile').click()
+    await page.getByRole('button', { name: 'Edit profile' }).click()
 
     await clearUploadedAvatarIfPresent(page)
 
@@ -320,7 +318,7 @@ test.describe('account', () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await login(page)
     await page.goto('/admin/account')
-    await page.getByTestId('account-tab-profile').click()
+    await page.getByRole('button', { name: 'Edit profile' }).click()
 
     await clearUploadedAvatarIfPresent(page)
     await expect(page.getByTestId('profile-avatar-upload')).toHaveText(/upload picture/i)
@@ -330,7 +328,7 @@ test.describe('account', () => {
     await page
       .getByTestId('profile-avatar-file')
       .setInputFiles({ name: 'avatar-mobile.png', mimeType: 'image/png', buffer: PNG_1X1 })
-    await expect(page.getByTestId('profile-status')).toHaveText(/updated/i, {
+    await expect(page.getByText('Profile picture updated.', { exact: true }).last()).toBeVisible({
       timeout: 20_000,
     })
     await expect(page.getByTestId('profile-avatar-upload')).toHaveText(/change picture/i)
@@ -338,7 +336,7 @@ test.describe('account', () => {
     await expectProfileMobileLayout(page)
 
     await page.getByTestId('profile-avatar-remove').click()
-    await expect(page.getByTestId('profile-status')).toHaveText(/removed/i, {
+    await expect(page.getByText('Profile picture removed.', { exact: true }).last()).toBeVisible({
       timeout: 20_000,
     })
     await expect(page.getByTestId('profile-avatar-remove')).toHaveCount(0)
@@ -352,7 +350,6 @@ test.describe('account', () => {
     }) => {
       await login(page)
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
 
       const mfaCard = page.getByTestId('security-mfa-card')
       await expect(mfaCard).toContainText('Off')
@@ -377,7 +374,6 @@ test.describe('account', () => {
       await expect(page.getByTestId('security-recovery-regenerate')).toBeDisabled()
 
       await page.reload()
-      await page.getByTestId('account-tab-security').click()
       await expect(page.getByTestId('security-mfa-card')).toContainText('Off')
       await expect(page.getByTestId('security-recovery-regenerate')).toBeDisabled()
     })
@@ -387,23 +383,23 @@ test.describe('account', () => {
     }) => {
       await login(page)
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
 
+      await page.getByRole('button', { name: 'Edit sensitive action confirmation' }).click()
       const stepUpCard = page.getByTestId('security-step-up-card')
-      await expect(stepUpCard).toContainText('On - sensitive actions ask again after 15 minutes.')
+      await expect(stepUpCard).toContainText('Ask for your password again after 15 minutes.')
       await expect(page.getByTestId('security-step-up-toggle')).toBeChecked()
 
       await page.getByTestId('security-step-up-window').click()
       await page.getByRole('option', { name: '30 minutes' }).click()
       await completeStepUp(page)
       await expect(page.getByText('Step-up authentication updated to 30 minutes.')).toBeVisible()
-      await expect(stepUpCard).toContainText('On - sensitive actions ask again after 30 minutes.')
+      await expect(stepUpCard).toContainText('Ask for your password again after 30 minutes.')
       await expect(page.getByTestId('security-step-up-window')).toHaveValue('30 minutes')
 
       await page.reload()
-      await page.getByTestId('account-tab-security').click()
+      await page.getByRole('button', { name: 'Edit sensitive action confirmation' }).click()
       await expect(page.getByTestId('security-step-up-card')).toContainText(
-        'On - sensitive actions ask again after 30 minutes.',
+        'Ask for your password again after 30 minutes.',
       )
       await expect(page.getByTestId('security-step-up-window')).toHaveValue('30 minutes')
 
@@ -420,10 +416,10 @@ test.describe('account', () => {
       await page.setViewportSize({ width: 390, height: 844 })
       await login(page)
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
 
+      await page.getByRole('button', { name: 'Edit sensitive action confirmation' }).click()
       const stepUpCard = page.getByTestId('security-step-up-card')
-      await expect(stepUpCard).toContainText('On - sensitive actions ask again after 15 minutes.')
+      await expect(stepUpCard).toContainText('Ask for your password again after 15 minutes.')
       await expect(page.getByTestId('security-step-up-toggle')).toBeChecked()
       await expect(page.getByTestId('security-step-up-window')).toHaveValue('15 minutes')
       await expectStepUpPolicyMobileLayout(stepUpCard)
@@ -621,7 +617,6 @@ test.describe('account', () => {
       await page.setViewportSize({ width: 390, height: 844 })
       await login(page)
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
 
       const mfaCard = page.getByTestId('security-mfa-card')
       await expect(mfaCard).toContainText('Off')
@@ -658,7 +653,6 @@ test.describe('account', () => {
     }) => {
       await login(page)
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
 
       const mfaCard = page.getByTestId('security-mfa-card')
       await expect(mfaCard).toContainText('Off')
@@ -689,7 +683,6 @@ test.describe('account', () => {
       await expect(setupDialog).toBeHidden()
 
       await page.reload()
-      await page.getByTestId('account-tab-security').click()
       await expect(page.getByTestId('security-mfa-card')).toContainText('Off')
       await expect(page.getByTestId('security-recovery-regenerate')).toBeDisabled()
     })
@@ -699,12 +692,11 @@ test.describe('account', () => {
     }) => {
       await login(page)
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
 
       await expect(page.getByTestId('security-mfa-card')).toContainText('Off')
       await expect(page.getByTestId('security-recovery-regenerate')).toBeDisabled()
 
-      const { secret } = await enableMfaFromSecurityTab(page)
+      const { secret } = await enableMfaFromOverview(page)
       await expect(page.getByTestId('security-mfa-card')).toContainText('On')
       await expect(page.getByTestId('security-recovery-card')).toContainText(
         '10 recovery codes remaining',
@@ -749,13 +741,13 @@ test.describe('account', () => {
       await expectLoggedIn(page)
 
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
       await expect(page.getByTestId('security-mfa-card')).toContainText('On')
 
       await page.getByTestId('security-recovery-regenerate').click()
       await completeStepUpWithMfa(page, secret)
       await expectRecoveryCodesDialog(page)
 
+      await page.getByRole('button', { name: 'Manage two-factor authentication' }).click()
       await page.getByTestId('security-mfa-disable').click()
       await completeStepUpWithMfaIfOpened(page, secret)
       await expect(page.getByTestId('security-mfa-card')).toContainText('Off')
@@ -767,10 +759,9 @@ test.describe('account', () => {
     }) => {
       await login(page)
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
 
       await expect(page.getByTestId('security-mfa-card')).toContainText('Off')
-      const { secret } = await enableMfaFromSecurityTab(page)
+      const { secret } = await enableMfaFromOverview(page)
       await expect(page.getByTestId('security-mfa-card')).toContainText('On')
 
       await logout(page)
@@ -812,7 +803,7 @@ test.describe('account', () => {
       await expect(page.getByText(email)).toBeVisible()
 
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
+      await page.getByRole('button', { name: 'Manage two-factor authentication' }).click()
       await page.getByTestId('security-mfa-disable').click()
       await completeStepUpWithMfaIfOpened(page, secret)
       await expect(page.getByTestId('security-mfa-card')).toContainText('Off')
@@ -822,10 +813,9 @@ test.describe('account', () => {
     test('keeps MFA login challenge usable at mobile width (AUTH-002)', async ({ page }) => {
       await login(page)
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
 
       await expect(page.getByTestId('security-mfa-card')).toContainText('Off')
-      const { secret } = await enableMfaFromSecurityTab(page)
+      const { secret } = await enableMfaFromOverview(page)
       await expect(page.getByTestId('security-mfa-card')).toContainText('On')
 
       await logout(page)
@@ -852,7 +842,7 @@ test.describe('account', () => {
       await expectLoggedIn(page)
 
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
+      await page.getByRole('button', { name: 'Manage two-factor authentication' }).click()
       await page.getByTestId('security-mfa-disable').click()
       await completeStepUpWithMfaIfOpened(page, secret)
       await expect(page.getByTestId('security-mfa-card')).toContainText('Off')
@@ -862,11 +852,10 @@ test.describe('account', () => {
     test('uses a recovery code once and rejects reuse on MFA login (AUTH-002)', async ({ page }) => {
       await login(page)
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
 
       await expect(page.getByTestId('security-mfa-card')).toContainText('Off')
 
-      const { secret, recoveryCodes } = await enableMfaFromSecurityTab(page)
+      const { secret, recoveryCodes } = await enableMfaFromOverview(page)
       const recoveryCode = recoveryCodes[0]
       if (!recoveryCode) throw new Error('MFA setup did not render a recovery code')
 
@@ -882,7 +871,6 @@ test.describe('account', () => {
       await expectLoggedIn(page)
 
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
       await expect(page.getByTestId('security-mfa-card')).toContainText('On')
       await expect(page.getByTestId('security-recovery-card')).toContainText(
         '9 recovery codes remaining',
@@ -904,7 +892,7 @@ test.describe('account', () => {
       await expectLoggedIn(page)
 
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
+      await page.getByRole('button', { name: 'Manage two-factor authentication' }).click()
       await page.getByTestId('security-mfa-disable').click()
       await completeStepUpWithMfaIfOpened(page, secret)
       await expect(page.getByTestId('security-mfa-card')).toContainText('Off')
@@ -912,38 +900,82 @@ test.describe('account', () => {
     })
   })
 
+  test('changes the sign-in email inline and signs in with the new address (ACCOUNT-001)', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 })
+    const newEmail = 'updated-account-persona@example.test'
+    await login(page)
+    await page.goto('/admin/account')
+    const trigger = page.getByRole('button', { name: 'Change email' })
+    await trigger.click()
+    const form = page.getByRole('form', { name: 'Change email' })
+    await expect(form.getByLabel('New email address', { exact: true })).toBeFocused()
+    await form.getByLabel('New email address', { exact: true }).fill(newEmail)
+    await expectSignInFormMobileLayout(form)
+    const emailInput = form.getByLabel('New email address', { exact: true })
+    await emailInput.dispatchEvent('keydown', { key: 'Escape', isComposing: true })
+    await expect(emailInput).toHaveValue(newEmail)
+    await emailInput.press('Escape')
+    await expect(trigger).toBeFocused()
+    await trigger.click()
+    const address = form.getByLabel('New email address', { exact: true })
+    const confirmation = form.getByLabel('Confirm new email address')
+    const save = form.getByRole('button', { name: 'Save email' })
+    await expect(address).toHaveValue(ACCOUNT_PERSONA.email)
+    await expect(confirmation).toHaveValue('')
+    await address.fill(newEmail)
+    await save.click()
+    await expect(confirmation).toBeFocused()
+    await expect(confirmation).toHaveAttribute('aria-invalid', 'true')
+    await confirmation.fill('mistyped@example.test')
+    await save.click()
+    await expect(form.getByRole('alert')).toHaveText('Email addresses do not match.')
+    await expect(page.getByTestId('step-up-dialog')).toBeHidden()
+    await confirmation.fill(newEmail)
+    await save.click()
+    await completeStepUp(page)
+    await expect(page.getByText(newEmail, { exact: true })).toBeVisible()
+    await logout(page)
+    await loginAs(page, newEmail, ACCOUNT_PERSONA.password)
+    await page.goto('/admin/account')
+    await trigger.click()
+    await address.fill(ACCOUNT_PERSONA.email)
+    await confirmation.fill(ACCOUNT_PERSONA.email)
+    await save.click()
+    await completeStepUp(page)
+    await expect(page.getByText(ACCOUNT_PERSONA.email, { exact: true })).toBeVisible()
+  })
+
   test.describe('password', () => {
     test('keeps password change usable at mobile width (ACCOUNT-003)', async ({ page }) => {
       await page.setViewportSize({ width: 390, height: 844 })
       await login(page)
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
 
       const passwordCard = page.getByTestId('security-password-card')
       await expect(passwordCard).toBeVisible()
       await expectPasswordCardMobileLayout(passwordCard)
 
       await page.getByTestId('security-change-password').click()
-      const dialog = page.getByRole('dialog', { name: 'Change password' })
-      await expect(dialog).toBeVisible()
-      await expect(dialog.getByTestId('security-password-new')).toBeVisible()
-      await expect(dialog.getByTestId('security-password-confirm')).toBeVisible()
-      await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeVisible()
-      await expect(dialog.getByRole('button', { name: 'Save password' })).toBeVisible()
+      const form = page.getByRole('form', { name: 'Change password' })
+      await expect(form).toBeVisible()
+      await expect(form.getByTestId('security-password-new')).toBeVisible()
+      await expect(form.getByTestId('security-password-confirm')).toBeVisible()
+      await expect(form.getByRole('button', { name: 'Cancel' })).toBeVisible()
+      await expect(form.getByRole('button', { name: 'Save password' })).toBeVisible()
 
-      await dialog.getByTestId('security-password-new').fill('short')
-      await dialog.getByTestId('security-password-confirm').fill('short')
-      await dialog.getByTestId('security-password-submit').click()
-      await expect(dialog.getByRole('alert')).toHaveText(/at least 12 characters/i)
+      await form.getByTestId('security-password-new').fill('short')
+      await form.getByTestId('security-password-confirm').fill('short')
+      await form.getByTestId('security-password-submit').click()
+      await expect(form.getByRole('alert')).toHaveText(/at least 12 characters/i)
 
-      await dialog.getByTestId('security-password-new').fill('abcdefghijkl')
-      await dialog.getByTestId('security-password-confirm').fill('abcdefghijkm')
-      await dialog.getByTestId('security-password-submit').click()
-      await expect(dialog.getByRole('alert')).toHaveText(/passwords do not match/i)
-      await expectPasswordDialogMobileLayout(dialog)
+      await form.getByTestId('security-password-new').fill('abcdefghijkl')
+      await form.getByTestId('security-password-confirm').fill('abcdefghijkm')
+      await form.getByTestId('security-password-submit').click()
+      await expect(form.getByRole('alert')).toHaveText(/passwords do not match/i)
+      await expectSignInFormMobileLayout(form)
 
-      await dialog.getByRole('button', { name: 'Cancel' }).click()
-      await expect(dialog).toBeHidden()
+      await form.getByRole('button', { name: 'Cancel' }).click()
+      await expect(form).toBeHidden()
     })
 
     test('changes password, rejects invalid form input, and restores the persona credential (ACCOUNT-003)', async ({
@@ -953,26 +985,25 @@ test.describe('account', () => {
 
       await login(page)
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
 
       await page.getByTestId('security-change-password').click()
-      const dialog = page.getByRole('dialog', { name: 'Change password' })
-      await expect(dialog).toBeVisible()
+      const form = page.getByRole('form', { name: 'Change password' })
+      await expect(form).toBeVisible()
 
       await page.getByTestId('security-password-new').fill('short')
       await page.getByTestId('security-password-confirm').fill('short')
       await page.getByTestId('security-password-submit').click()
-      await expect(dialog.getByRole('alert')).toHaveText(/at least 12 characters/i)
+      await expect(form.getByRole('alert')).toHaveText(/at least 12 characters/i)
 
       await page.getByTestId('security-password-new').fill(temporaryPassword)
       await page.getByTestId('security-password-confirm').fill(`${temporaryPassword}-mismatch`)
       await page.getByTestId('security-password-submit').click()
-      await expect(dialog.getByRole('alert')).toHaveText(/passwords do not match/i)
+      await expect(form.getByRole('alert')).toHaveText(/passwords do not match/i)
 
       await page.getByTestId('security-password-confirm').fill(temporaryPassword)
       await page.getByTestId('security-password-submit').click()
       await completeStepUp(page)
-      await expect(dialog).toBeHidden({ timeout: 20_000 })
+      await expect(form).toBeHidden({ timeout: 20_000 })
       await expect(page.getByText('Password updated. Other devices were signed out.')).toBeVisible()
 
       await logout(page)
@@ -986,26 +1017,24 @@ test.describe('account', () => {
       await expectLoggedIn(page)
 
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
       await page.getByTestId('security-change-password').click()
-      await expect(dialog).toBeVisible()
+      await expect(form).toBeVisible()
       await page.getByTestId('security-password-new').fill(ACCOUNT_PERSONA.password)
       await page.getByTestId('security-password-confirm').fill(ACCOUNT_PERSONA.password)
       await page.getByTestId('security-password-submit').click()
       await completeStepUp(page, temporaryPassword)
-      await expect(dialog).toBeHidden({ timeout: 20_000 })
+      await expect(form).toBeHidden({ timeout: 20_000 })
 
       await logout(page)
       await login(page)
       await page.goto('/admin/account')
-      await page.getByTestId('account-tab-security').click()
       await expect(page.getByTestId('security-password-card')).toContainText('Last changed:')
     })
   })
 })
 
 async function expectProfileMobileLayout(page: Page): Promise<void> {
-  const metrics = await page.getByRole('region', { name: 'Profile', exact: true }).evaluate((profileSection) => {
+  const metrics = await page.getByRole('dialog', { name: 'Edit profile', exact: true }).evaluate((profileSection) => {
     const documentElement = document.documentElement
     const viewportWidth = documentElement.clientWidth
     const sectionRect = profileSection.getBoundingClientRect()
@@ -1015,20 +1044,16 @@ async function expectProfileMobileLayout(page: Page): Promise<void> {
       paragraph.textContent?.includes('5 MB')
     )
     const displayName = profileSection.querySelector('[data-testid="profile-display-name"]')
-    const email = profileSection.querySelector('[data-testid="profile-email"]')
     const saveButton = profileSection.querySelector('[data-testid="profile-save"]')
-    const status = profileSection.querySelector('[data-testid="profile-status"]')
     const requiredControls = [
       uploadButton,
       hint,
       displayName,
-      email,
       saveButton,
     ]
     const visibleControls = [
       ...requiredControls,
       removeButton,
-      status,
     ].filter((item): item is Element => item !== null && item !== undefined)
 
     const controlRects = visibleControls.map((item) => item.getBoundingClientRect())
@@ -1273,34 +1298,34 @@ async function expectMfaLoginMobileLayout(page: Page): Promise<void> {
   expect(metrics.verifyButtonReachable).toBe(true)
 }
 
-async function expectPasswordDialogMobileLayout(dialog: Locator): Promise<void> {
-  const metrics = await dialog.evaluate((element) => {
+async function expectSignInFormMobileLayout(form: Locator): Promise<void> {
+  const metrics = await form.evaluate((element) => {
     const documentElement = document.documentElement
     const viewportWidth = documentElement.clientWidth
     const viewportHeight = window.innerHeight
-    const dialogRect = element.getBoundingClientRect()
+    const formRect = element.getBoundingClientRect()
     const controls = Array.from(element.querySelectorAll('input, button'))
     const controlRects = controls.map((control) => control.getBoundingClientRect())
     const alertRect = element.querySelector('[role="alert"]')?.getBoundingClientRect()
 
     return {
       pageOverflow: documentElement.scrollWidth - viewportWidth,
-      dialogContainedHorizontally:
-        dialogRect.left >= -1 && dialogRect.right <= viewportWidth + 1,
-      dialogContainedVertically:
-        dialogRect.top >= -1 && dialogRect.bottom <= viewportHeight + 1,
+      formContainedHorizontally:
+        formRect.left >= -1 && formRect.right <= viewportWidth + 1,
+      formContainedVertically:
+        formRect.top >= -1 && formRect.bottom <= viewportHeight + 1,
       controlsContained: controlRects.every(
-        (rect) => rect.left >= dialogRect.left - 1 && rect.right <= dialogRect.right + 1,
+        (rect) => rect.left >= formRect.left - 1 && rect.right <= formRect.right + 1,
       ),
       alertContained: alertRect
-        ? alertRect.left >= dialogRect.left - 1 && alertRect.right <= dialogRect.right + 1
+        ? alertRect.left >= formRect.left - 1 && alertRect.right <= formRect.right + 1
         : true,
     }
   })
 
   expect(metrics.pageOverflow).toBeLessThanOrEqual(1)
-  expect(metrics.dialogContainedHorizontally).toBe(true)
-  expect(metrics.dialogContainedVertically).toBe(true)
+  expect(metrics.formContainedHorizontally).toBe(true)
+  expect(metrics.formContainedVertically).toBe(true)
   expect(metrics.controlsContained).toBe(true)
   expect(metrics.alertContained).toBe(true)
 }
