@@ -346,6 +346,48 @@ describe('publisher loop renderer', () => {
       expect(html).not.toContain('Project 1/p2-a')
       expect(html).not.toContain('Project 2/p1-a')
     })
+
+    it('iterates a multi-value sub-field of each repeater item', () => {
+      const page = makePage({
+        root: { moduleId: 'base.body', children: ['blocks'] },
+        blocks: {
+          moduleId: 'base.loop',
+          children: ['images'],
+          props: { sourceId: 'entry.field', filters: { fieldId: 'blocks' }, limit: 10 },
+        },
+        images: {
+          moduleId: 'base.loop',
+          children: ['card'],
+          props: { sourceId: 'entry.field', filters: { fieldId: 'images' }, limit: 10 },
+        },
+        card: {
+          moduleId: 'test.pair',
+          props: { parent: '', current: '' },
+          dynamicBindings: {
+            parent: { source: 'parentEntry', field: 'layout' },
+            current: { source: 'currentEntry', field: 'value' },
+          },
+        },
+      })
+      const caseStudy: LoopItem = {
+        id: 'case-study',
+        fields: {
+          title: 'Case study',
+          blocks: [
+            { id: 'b1', cells: { layout: 'Full-width', images: ['hero'] } },
+            { id: 'b2', cells: { layout: '2-col', images: ['left', 'right'] } },
+          ],
+        },
+      }
+      const html = publishPage(page, makeSite(), baseRegistry, {
+        templateContext: { entryStack: [caseStudy] },
+      }).html
+
+      expect(html).toContain('<p>Full-width/hero</p>')
+      expect(html).toContain('<p>2-col/left</p>')
+      expect(html).toContain('<p>2-col/right</p>')
+      expect(html).not.toContain('Full-width/left')
+    })
   })
 
   it('attaches data attrs and registers infinite mode', () => {

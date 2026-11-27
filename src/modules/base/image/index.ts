@@ -173,7 +173,12 @@ export const ImageModule: ModuleDefinition<ImageProps> = {
   htmlTag: 'img',
 
   render: (props) => {
-    const src = safeUrl(props.src)
+    // A `src` bound to a media field holds the asset id, not a URL, so the
+    // resolved asset's `publicPath` wins whenever the publisher found one.
+    // Authored URLs resolve to an asset with the same path, so they render
+    // unchanged.
+    const media = props._resolvedMediaByKey?.src
+    const src = safeUrl(media?.publicPath ?? props.src)
     if (!src) return { html: '' }
     const htmlAttrs = htmlAttributesAttr(props.htmlAttributes)
 
@@ -183,7 +188,6 @@ export const ImageModule: ModuleDefinition<ImageProps> = {
     //
     // The resolved-media payload is raw (not run through the publisher's
     // `escapeProps`), so we HTML-escape here at the boundary.
-    const media = props._resolvedMediaByKey?.src
     const alt = escapeHtml(media?.altText?.trim() ?? '')
 
     const loading = props.loading === 'eager' ? 'eager' : 'lazy'

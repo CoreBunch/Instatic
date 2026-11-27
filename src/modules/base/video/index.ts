@@ -127,14 +127,15 @@ export const VideoModule: ModuleDefinition<VideoProps> = {
       })
     }
 
-    const videoSrc = safeUrl(rawUrl)
-    if (!videoSrc) return { html: '<video></video>' }
-
     // Resolved video asset gives us intrinsic dimensions — emits
     // `width` / `height` attrs so the browser reserves layout space
     // before the metadata downloads. Same CLS-avoidance trick as the
-    // image module.
+    // image module. Its `publicPath` is also the URL when `videoUrl` is
+    // bound to a media field and so holds the asset id.
     const videoMedia = props._resolvedMediaByKey?.videoUrl ?? null
+    const videoSrc = safeUrl(videoMedia?.publicPath ?? rawUrl)
+    if (!videoSrc) return { html: '<video></video>' }
+
     const posterMedia = props._resolvedMediaByKey?.poster ?? null
 
     // Poster picks the smallest variant that's still ≥ the video's
