@@ -234,7 +234,7 @@ interface ImportScript {
 
 `priority` is one number per script, so it is derived from every page's document order at once (`scriptOrder.ts`): each page contributes "a before b" edges between neighbouring scripts, the merged order is a topological sort with first-seen order as the tie-break, and a script shared by two pages therefore sorts after whatever either page loads before it. Pages that genuinely contradict each other keep the first page's order and emit a `script-order-conflict` warning.
 
-Inline classic scripts in `<head>` run immediately, including those with `async` or `defer`. External classic head scripts also block parsing when neither attribute is present. Both import with `placement: 'head'` and `timing: 'immediate'` to preserve pre-paint behavior. Body scripts, modules, and deferred or asynchronous external scripts use the publisher's `'body-end'` placement. A script shared by several pages uses `'head'` only when all of those pages run it there.
+Inline classic scripts in `<head>` run immediately, including those with `async` or `defer`. External classic head scripts also block parsing when neither attribute is present. Both import with `placement: 'head'` and `timing: 'immediate'` to preserve pre-paint behavior. Body scripts, modules, and deferred or asynchronous external scripts use the publisher's `'body-end'` placement. External classic scripts retain the native `defer` attribute through import, re-import and publish. A shared file is deferred only when every occurrence uses `defer`. A script shared by several pages uses `'head'` only when all of those pages run it there.
 
 ---
 

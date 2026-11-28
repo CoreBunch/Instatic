@@ -356,7 +356,7 @@ describe('commitImportPlan — scripts and media arriving again', () => {
     const html = deferred.files['about.html']!
     html.bytes = enc.encode(new TextDecoder().decode(html.bytes).replace('<script src=', '<script defer src='))
     await importBundle(deferred, withPageResolution('overwrite'))
-    expect(runtime()).toMatchObject({ placement: 'body-end', timing: 'dom-ready' })
+    expect(runtime()).toMatchObject({ placement: 'body-end', timing: 'dom-ready', defer: true })
 
     await importBundle(bundleWithFiles(), withPageResolution('overwrite'))
     expect(runtime()).toMatchObject({ placement: 'head', timing: 'immediate' })
