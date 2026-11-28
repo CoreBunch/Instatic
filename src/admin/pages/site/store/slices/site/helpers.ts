@@ -8,6 +8,8 @@
  * it lives here so it sits next to the active tree code that uses it.
  */
 
+import { sha256Hex } from '@core/utils/sha256'
+import { LLMS_DOCUMENT_PATH } from '@core/files/llmsDocument'
 import { nanoid } from 'nanoid'
 import type { StoreApi } from 'zustand'
 import type { NodeTree, PageNode, PageSeo, StyleRule, SiteDocument } from '@core/page-tree'
@@ -542,6 +544,32 @@ export function buildSiteHelpers(
             didMutate = true
           }
           return committed
+        },
+
+        importLlmsDocument(content) {
+          const file = site.files.find((candidate) => candidate.path === LLMS_DOCUMENT_PATH)
+          if (file?.type === 'doc' && file.content === content) return
+          const hash = sha256Hex(content)
+          if (file) {
+            if (file.type !== 'doc' || !file.importRecord || file.importRecord.contentHash !== sha256Hex(file.content ?? '')) {
+              return {
+                kind: 'site-document-kept',
+                path: LLMS_DOCUMENT_PATH,
+                message: 'Kept the existing llms.txt because it was created or edited locally.',
+              }
+            }
+            file.content = content
+            file.importRecord = { sourceHash: hash, contentHash: hash }
+            file.updatedAt = Date.now()
+          } else {
+            const now = Date.now()
+            site.files.push({
+              id: nanoid(), type: 'doc', path: LLMS_DOCUMENT_PATH, content,
+              importRecord: { sourceHash: hash, contentHash: hash },
+              createdAt: now, updatedAt: now,
+            })
+          }
+          didMutate = true
         },
 
         addScripts(scripts): { id: string; path: string }[] {

@@ -478,7 +478,8 @@ On success the same step switches to its **complete** state — a success mark, 
 | `external-font` | An `@font-face` with no bundled file (all `src` entries are external URLs) — skipped |
 | `unresolved-asset` | An HTML/CSS reference to a media file the archive does not contain under that path — one warning per distinct path |
 | `head-tag-dropped` | A `<head>` tag the page's SEO settings cannot hold: `http-equiv` (other than `content-type` / `x-ua-compatible`), a script preload or `modulepreload`, an unknown link `rel`, a reserved meta name, JSON-LD that is not JSON, or values past the schema's length / count limits |
-| `head-file-not-hosted` | A head link points at a file the media library cannot store (`llms.txt`, a web manifest, a stylesheet), or at a non-media file the archive does not contain; the link is kept, pointing at the file's root-relative path (`/bake/llms.txt`) |
+| `site-document-kept` | The archive supplied a root `llms.txt` that conflicts with a locally created or edited file. The local copy stays in the site files. Otherwise, import creates or updates the document and publishing serves it at `/llms.txt` as UTF-8 plain text. |
+| `head-file-not-hosted` | A head link points at a file the media library cannot store (a nested `llms.txt`, a web manifest, a stylesheet), or at a non-media file the archive does not contain; the link is kept, pointing at the file's root-relative path (`/bake/llms.txt`) |
 
 ### Cache-busted URLs
 
