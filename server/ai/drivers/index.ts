@@ -10,6 +10,7 @@ import type { AiProvider } from './types'
 import type { AiProviderId } from '../runtime/types'
 import { anthropicDriver } from './anthropic'
 import { openaiDriver } from './openai'
+import { minimaxDriver } from './minimax'
 import { ollamaDriver } from './ollama'
 import { openrouterDriver } from './openrouter'
 import { openaiCompatibleDriver } from './openaiCompatible'
@@ -17,6 +18,7 @@ import { openaiCompatibleDriver } from './openaiCompatible'
 const DRIVERS: Record<AiProviderId, AiProvider> = {
   anthropic: anthropicDriver,
   openai: openaiDriver,
+  minimax: minimaxDriver,
   ollama: ollamaDriver,
   openrouter: openrouterDriver,
   'openai-compatible': openaiCompatibleDriver,
@@ -30,4 +32,3 @@ export function resolveDriver(providerId: AiProviderId): AiProvider {
   }
   return driver
 }
-

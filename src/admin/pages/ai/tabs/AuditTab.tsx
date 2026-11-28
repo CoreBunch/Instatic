@@ -107,6 +107,7 @@ export function AuditTab() {
 const PROVIDER_LABEL: Record<string, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
+  minimax: 'MiniMax',
   ollama: 'Ollama',
   openrouter: 'OpenRouter',
   'openai-compatible': 'Custom endpoint',

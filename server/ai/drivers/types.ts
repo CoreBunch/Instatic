@@ -49,6 +49,8 @@ export interface AiProviderCapabilities {
   readonly toolCalling: boolean
   /** Model accepts image content blocks. */
   readonly visionInput: boolean
+  /** Model advertises support for video input. */
+  readonly videoInput?: boolean
   /** Provider wire format can deliver native images inside tool results. */
   readonly toolResultImages: boolean
   /** Provider supports Anthropic-style cache_control on the static prefix. */
@@ -79,6 +81,8 @@ export interface AiProviderModel {
   readonly pricing?: {
     readonly inputPerMTok: number
     readonly outputPerMTok: number
+    readonly cacheReadPerMTok?: number | null
+    readonly cacheWritePerMTok?: number | null
   }
   /**
    * Max context window (total input+output tokens) for the model, from the same
