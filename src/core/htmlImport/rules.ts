@@ -159,12 +159,13 @@ function submitLabel(el: Element): string {
 
 function mapLoopProps(el: Element): Record<string, unknown> {
   const tableId = attr(el, 'data-table-id')
+  const fieldId = attr(el, 'data-field-id')
   const customTag = attr(el, 'data-custom-tag')
   const tag = attr(el, 'data-tag')
   const direction = normalizedAttr(el, 'data-direction')
   return {
     sourceId: attr(el, 'data-source-id'),
-    filters: tableId ? { tableId } : {},
+    filters: { ...(tableId ? { tableId } : {}), ...(fieldId ? { fieldId } : {}) },
     orderBy: attr(el, 'data-order-by'),
     // No `data-direction`: the loop follows its source's default order.
     ...(direction === 'asc' || direction === 'desc' ? { direction } : {}),

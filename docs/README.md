@@ -42,6 +42,7 @@ docs/
 │   ├── audit-log.md                ← audit_events catalog
 │   ├── site-transfer.md            ← export / import CMS bundles
 │   ├── manager-api.md              ← token-gated push / pull / snapshot API for managers
+│   ├── wordpress-migration.md        ← WordPress exporter, offline converter and portfolio pilot
 │   ├── site-import.md              ← Super Import (static sites → CMS)
 │   ├── html-import.md              ← paste / import HTML into the page tree
 │   ├── fragments.md                ← portable sections/pages/components and themes: extract, plan, insert/apply

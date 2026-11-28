@@ -412,6 +412,8 @@ The site-scope AI agent stays on the HTML-native edit surface. It calls `list_lo
 </instatic-loop>
 ```
 
+For an array field on the current entry, use `data-source-id="entry.field" data-field-id="gallery"`.
+
 The HTML importer maps the marker to a real `base.loop` node, preserving classes and styles the same way it does for ordinary imported HTML. Token syntax is single-brace `{currentEntry.field}`; `{{post.title}}` and other alias-style tokens are not valid.
 
 ### Register a plugin loop source
