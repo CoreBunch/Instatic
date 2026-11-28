@@ -55,9 +55,10 @@ const roles = [
   },
 ]
 
-function userFixture(overrides: Partial<CmsCurrentUser>): CmsCurrentUser {
+function userFixture(overrides: Partial<CmsCurrentUser>): CmsCurrentUser & { invitationPending: boolean } {
   return {
     id: 'user',
+    invitationPending: false,
     email: 'user@example.com',
     displayName: 'User',
     status: 'active',
@@ -254,9 +255,9 @@ beforeEach(() => {
     if (url.startsWith('/admin/api/cms/users?q=')) {
       const query = new URL(url, 'http://localhost').searchParams.get('q')!.toLowerCase()
       const matches = users.filter((user) => user.email.toLowerCase().includes(query))
-      return json({ users: matches, offset: 0, matching: matches.length })
+      return json({ users: matches, inviteByEmail: false, offset: 0, matching: matches.length })
     }
-    if (url === '/admin/api/cms/users' && init?.method === 'GET') return json({ users, offset: 0, matching: users.length })
+    if (url === '/admin/api/cms/users' && init?.method === 'GET') return json({ users, inviteByEmail: false, offset: 0, matching: users.length })
     if (url === '/admin/api/cms/roles' && init?.method === 'GET') return json({ roles })
     if (url === '/admin/api/cms/audit' && init?.method === 'GET') return json({ events: auditEvents })
     const ambient = ambientFetchFallback(url)
@@ -276,7 +277,7 @@ describe('UsersPage', () => {
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       calls.push(`${init?.method ?? 'GET'} ${url}`)
-      if (url === '/admin/api/cms/users' && init?.method === 'GET') return json({ users, offset: 0, matching: users.length })
+      if (url === '/admin/api/cms/users' && init?.method === 'GET') return json({ users, inviteByEmail: false, offset: 0, matching: users.length })
       if (url === '/admin/api/cms/roles' && init?.method === 'GET') return json({ roles })
       if (url === '/admin/api/cms/audit' && init?.method === 'GET') return json({ events: auditEvents })
       const ambient = ambientFetchFallback(url)
@@ -305,7 +306,7 @@ describe('UsersPage', () => {
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       calls.push(`${init?.method ?? 'GET'} ${url}`)
-      if (url === '/admin/api/cms/users' && init?.method === 'GET') return json({ users, offset: 0, matching: users.length })
+      if (url === '/admin/api/cms/users' && init?.method === 'GET') return json({ users, inviteByEmail: false, offset: 0, matching: users.length })
       if (url === '/admin/api/cms/roles' && init?.method === 'GET') return json({ roles })
       if (url === '/admin/api/cms/audit' && init?.method === 'GET') return json({ events: auditEvents })
       const ambient = ambientFetchFallback(url)
@@ -334,7 +335,7 @@ describe('UsersPage', () => {
     globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       calls.push(`${init?.method ?? 'GET'} ${url}`)
-      if (url === '/admin/api/cms/users' && init?.method === 'GET') return json({ users, offset: 0, matching: users.length })
+      if (url === '/admin/api/cms/users' && init?.method === 'GET') return json({ users, inviteByEmail: false, offset: 0, matching: users.length })
       if (url === '/admin/api/cms/roles' && init?.method === 'GET') return json({ roles })
       if (url === '/admin/api/cms/audit' && init?.method === 'GET') return json({ events: auditEvents })
       const ambient = ambientFetchFallback(url)

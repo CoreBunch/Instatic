@@ -17,7 +17,7 @@ import type { DbClient } from '../db/client'
 import type { MemberPageKey, MemberPagePaths } from '@core/members'
 import type { PluginMemberEmailBlocker } from '@core/plugin-sdk'
 import { getErrorMessage } from '@core/utils/errorMessage'
-import { clientIp, configuredPublicOrigin } from '../auth/security'
+import { accountLinkOrigin, configuredPublicOrigin } from '../auth/security'
 import { getMailDefaults } from '../mail/defaults'
 import { recordMail } from '../mail/activity'
 import { queueTemplateMail } from '../mail/delivery'
@@ -26,25 +26,9 @@ import { MEMBER_MAIL_KEYS, type MemberMailKind } from './mailTemplates'
 import { getMemberPagePaths } from './pages'
 import { TOKEN_LIFETIME_MS, type MemberTokenKind } from './tokens'
 
-const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
-const LOOPBACK_PEERS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
-
-/** The origin links in emails use, or null when none can be trusted. */
-export function memberLinkOrigin(req: Request): string | null {
-  const configured = configuredPublicOrigin()
-  if (configured) return configured
-  // No configured origin: only a request that really came from this machine
-  // may use its own address. A remote caller sending `Host: localhost` must
-  // not get links built at all.
-  const peer = clientIp(req)
-  if (peer !== null && !LOOPBACK_PEERS.has(peer)) return null
-  const url = new URL(req.url)
-  return LOOPBACK_HOSTS.has(url.hostname) ? url.origin : null
-}
-
 /** Can this server get an email with a link to a member right now? */
 export async function memberMailAvailable(db: DbClient, req: Request): Promise<boolean> {
-  if (!memberLinkOrigin(req)) return false
+  if (!accountLinkOrigin(req)) return false
   return mailDeliveryMode(await getMailDefaults(db)) !== 'off'
 }
 

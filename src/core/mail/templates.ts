@@ -1,7 +1,6 @@
 /**
- * Email templates: the catalogue of emails the site can send, and the one
- * renderer that turns a template plus values into a subject, a plain-text
- * body and an HTML body.
+ * Renders an email template and its values into a subject, a plain-text body
+ * and an HTML body.
  *
  * A template is a subject line and a Markdown body. Both may contain
  * `{name}` variables. The same renderer runs on the server (to send) and in
@@ -18,67 +17,6 @@ import { escapeHtml, isSafeUrl } from '@core/publisher'
 import { renderMarkdownToHtml } from '@core/markdown/renderMarkdown'
 import { sanitizeToFragment, type SanitizerConfig } from '@core/sanitize'
 import type { MailTemplateVariable } from './schemas'
-
-// ─── Catalogue ─────────────────────────────────────────────────────────────
-
-export interface MailTemplateDefinition {
-  /** Stable id, also the `kind` recorded in the activity log. */
-  key: string
-  label: string
-  /** When this email is sent, in a sentence. */
-  description: string
-  /** Heading the template is listed under in the admin. */
-  group: string
-  variables: readonly MailTemplateVariable[]
-  defaultSubject: string
-  defaultBody: string
-}
-
-/**
- * Variables every template can use. They carry no made-up sample: the server
- * fills `sample` with the site's real name and address when it hands a
- * template to the admin.
- */
-export const COMMON_MAIL_VARIABLES: readonly MailTemplateVariable[] = [
-  { name: 'site.name', label: 'Site name', sample: '' },
-  { name: 'site.url', label: 'Site address', sample: '' },
-]
-
-const definitions = new Map<string, MailTemplateDefinition>()
-
-/** Add a template to the catalogue. Features register theirs at module load. */
-export function registerMailTemplate(definition: MailTemplateDefinition): void {
-  definitions.set(definition.key, {
-    ...definition,
-    variables: [...definition.variables, ...COMMON_MAIL_VARIABLES],
-  })
-}
-
-/** Take a template out of the catalogue: its feature (a plugin) is no longer loaded. */
-export function unregisterMailTemplate(key: string): void {
-  definitions.delete(key)
-}
-
-export function getMailTemplateDefinition(key: string): MailTemplateDefinition | undefined {
-  return definitions.get(key)
-}
-
-export function listMailTemplateDefinitions(): MailTemplateDefinition[] {
-  return [...definitions.values()]
-}
-
-export const TEST_MAIL_TEMPLATE_KEY = 'mail.test'
-
-registerMailTemplate({
-  key: TEST_MAIL_TEMPLATE_KEY,
-  label: 'Test email',
-  description: 'Sent when you press "Send test email" on a connector or a template.',
-  group: 'General',
-  variables: [],
-  defaultSubject: 'Test email from {site.name}',
-  defaultBody:
-    'This is a test email from **{site.name}**.\n\nIf you are reading it, outgoing email works.',
-})
 
 // ─── Rendering ─────────────────────────────────────────────────────────────
 

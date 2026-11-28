@@ -3,6 +3,7 @@
  *
  *   GET    /admin/api/cms/users      — list every user with their role
  *   POST   /admin/api/cms/users      — create a user (rejects role=owner)
+ *   POST   /admin/api/cms/users/invite — invite a user by email or link
  *   PATCH  /admin/api/cms/users/:id  — update fields, change password, change role
  *   DELETE /admin/api/cms/users/:id  — soft delete a user
  *
@@ -14,16 +15,19 @@
  * owns its own method-routing, body-parsing, and audit emission.
  */
 import type { DbClient } from '../../db/client'
+import { handleInviteUser } from './userInvitations'
+import { getMailDefaults } from '../../mail/defaults'
+import { readyToSend } from '../../mail/send'
 import { hashPassword } from '../../auth/tokens'
 import {
   capabilitiesUserCannotGrant,
   getSessionHash,
   requireCapability,
   requireStepUp,
+  rejectsRoleAssignment,
 } from '../../auth/authz'
 import type { AuthUser } from '../../repositories/users'
 import { createAuditEvent } from '../../repositories/audit'
-import { findRoleById } from '../../repositories/roles'
 import { revokeAllOtherSessions } from '../../repositories/sessions'
 import {
   countActiveOwners,
@@ -78,29 +82,6 @@ async function rejectsLastOwnerRemoval(
   return (removesOwnerRole || deactivatesOwner) && await countActiveOwners(db) <= 1
 }
 
-function rejectsOwnerRoleAssignment(roleId: string | undefined): Response | null {
-  return roleId === 'owner'
-    ? jsonResponse({ error: 'Owner role is setup-only' }, { status: 400 })
-    : null
-}
-
-async function rejectsRoleCapabilityEscalation(
-  db: DbClient,
-  actor: AuthUser,
-  roleId: string,
-): Promise<Response | null> {
-  const role = await findRoleById(db, roleId)
-  if (!role) return jsonResponse({ error: 'Role not found' }, { status: 404 })
-
-  const overreach = capabilitiesUserCannotGrant(actor, role.capabilities)
-  return overreach.length > 0
-    ? jsonResponse(
-      { error: `You cannot assign capabilities you don't hold: ${overreach.join(', ')}` },
-      { status: 403 },
-    )
-    : null
-}
-
 const USER_NOT_FOUND_BODY = { error: 'User not found' }
 
 function userNotFound(): Response {
@@ -120,7 +101,8 @@ function rejectsShortPassword(password: string | undefined): Response | null {
 
 async function handleListUsers(req: Request, db: DbClient): Promise<Response> {
   const query = new URL(req.url).searchParams
-  return jsonResponse(await listUsers(db, query.get('q') ?? '', Number(query.get('offset'))))
+  const directory = await listUsers(db, query.get('q') ?? '', Number(query.get('offset')))
+  return jsonResponse({ ...directory, inviteByEmail: readyToSend(await getMailDefaults(db)) })
 }
 
 async function handleCreateUser(
@@ -136,9 +118,7 @@ async function handleCreateUser(
   if (!body) return badRequest('Invalid user payload')
   const passwordError = rejectsShortPassword(body.password)
   if (passwordError) return passwordError
-  const ownerRoleError = rejectsOwnerRoleAssignment(body.roleId)
-  if (ownerRoleError) return ownerRoleError
-  const roleCapabilityError = await rejectsRoleCapabilityEscalation(db, actor, body.roleId)
+  const roleCapabilityError = await rejectsRoleAssignment(db, actor, body.roleId)
   if (roleCapabilityError) return roleCapabilityError
 
   try {
@@ -195,10 +175,8 @@ async function handleUserPatch(
     return jsonResponse({ error: 'Cannot change login credentials for a more privileged account' }, { status: 403 })
   }
 
-  const ownerRoleError = rejectsOwnerRoleAssignment(body.roleId)
-  if (ownerRoleError) return ownerRoleError
   if (body.roleId !== undefined) {
-    const roleCapabilityError = await rejectsRoleCapabilityEscalation(db, actor, body.roleId)
+    const roleCapabilityError = await rejectsRoleAssignment(db, actor, body.roleId)
     if (roleCapabilityError) return roleCapabilityError
   }
 
@@ -332,6 +310,7 @@ const USER_ITEM_PATTERN = /^\/admin\/api\/cms\/users\/([^/]+)$/
 export const USERS_ROUTES: readonly Route<[AuthUser]>[] = [
   { method: 'GET', pattern: USERS_PATH, handler: handleListUsers },
   { method: 'POST', pattern: USERS_PATH, handler: handleCreateUser },
+  { method: 'POST', pattern: `${USERS_PATH}/invite`, handler: handleInviteUser },
   {
     method: 'PATCH',
     pattern: new RegExp(`^${USERS_PATH}/(?<id>[^/]+)$`),

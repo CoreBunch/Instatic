@@ -84,6 +84,10 @@ export function auditTitle(
       return email ? `Login rate limit hit for ${email}` : 'Login rate limit hit'
     case 'logout':
       return `${event.actorUserId ? (event.actorLabel ?? event.actorUserId) : 'User'} logged out`
+    case 'user.invite':
+      return `${targetUser} was invited`
+    case 'user.invite.accept':
+      return `${targetUser} accepted the invitation`
     case 'user.create':
       return `${targetUser} was created`
     case 'user.update':

@@ -34,7 +34,7 @@
  */
 import { announceOutcome, type MailFailureReason } from './outcomes'
 import type { DbClient } from '../db/client'
-import { getMailTemplateDefinition } from '@core/mail'
+import { ADMIN_INVITE_TEMPLATE_KEY, getMailTemplateDefinition } from '@core/mail'
 import { getErrorMessage } from '@core/utils/errorMessage'
 import { CORE_MAIL_SOURCE, markMailSent, recordMail, updateMailProgress } from './activity'
 import { connectorPauseReason, pauseConnectorDelivery, takeConnectorProbe } from './connectors'
@@ -63,6 +63,7 @@ import {
   removeQueuedMail,
   rescheduleQueuedMail,
   type QueuedMail,
+  type QueueTemplateMailInput,
 } from './queue'
 import {
   assertSendable,
@@ -92,32 +93,6 @@ const RETRY_DELAYS_MS = [30_000, 2 * 60_000, 10 * 60_000, 30 * 60_000, 3_600_000
 /** Each wait is moved by up to this share either way, so retries do not arrive in step. */
 const RETRY_JITTER = 0.2
 
-export interface QueueTemplateMailInput {
-  key: string
-  to: string
-  variables: Record<string, string>
-  /**
-   * After this moment (milliseconds since the epoch) the email is not sent
-   * any more. Pass the expiry of the link it carries. Without one the email
-   * has a day.
-   */
-  deliverBefore?: number
-  /** Who asks: omitted for the core's own mail, a plugin's id otherwise. */
-  source?: string
-  /** The asking plugin's name, kept in the activity log. */
-  sourceLabel?: string
-  /** The sender's own name for this email, handed back with the outcome. */
-  reference?: string
-  /**
-   * The site member the email is for, when the sender named a member and
-   * the host looked the address up. The outcome then names the member, never
-   * the address: a sender that was not given the address does not learn it.
-   */
-  memberId?: string
-  /** The sending plugin's install; its outcome is told to that install only. */
-  installId?: string
-}
-
 /**
  * Accept an email for delivery. Resolves `queued` once it is safely stored,
  * `captured` on a development server with no connector, or `disabled` when
@@ -129,7 +104,10 @@ export interface QueueTemplateMailInput {
 export async function queueTemplateMail(
   db: DbClient,
   input: QueueTemplateMailInput,
-  deps: Pick<SendDeps, 'env'> = {},
+  deps: Pick<SendDeps, 'env'> & {
+    /** Commit together with real delivery. Capture is unavailable because it exposes the body in Activity. */
+    onQueued?: (tx: DbClient) => Promise<void>
+  } = {},
 ): Promise<'queued' | 'captured' | 'disabled'> {
   // Rendering now proves the template exists and gives the log its subject.
   // The email is rendered again when it is sent, with the wording of then.
@@ -144,7 +122,10 @@ export async function queueTemplateMail(
   const log = {
     kind: mail.kind,
     to: mail.to,
-    subject: mail.subject,
+    // A customised subject can include the invitation URL. Activity must never expose that credential.
+    subject: input.key === ADMIN_INVITE_TEMPLATE_KEY && input.variables.link
+      ? mail.subject.replaceAll(input.variables.link, '[invitation link]')
+      : mail.subject,
     source: input.source,
     sourceLabel: input.sourceLabel,
   }
@@ -157,7 +138,7 @@ export async function queueTemplateMail(
   const recipient = input.memberId !== undefined ? { member: input.memberId } : { address: input.to }
   const defaults = await getMailDefaults(db)
   if (!readyToSend(defaults)) {
-    if (!captureAllowed(deps.env ?? process.env)) throw new MailNotConfiguredError()
+    if (deps.onQueued || !captureAllowed(deps.env ?? process.env)) throw new MailNotConfiguredError()
     await db.transaction(async (tx) => {
       if (limited) await reserveRecipientSlot(tx, limited, recipient)
       await recordMail(tx, { ...log, status: 'captured', body: mail.text, error: mail.note })
@@ -177,6 +158,7 @@ export async function queueTemplateMail(
       await reserveRecipientSlot(tx, limited, recipient)
       await reserveBacklogSlot(tx, limited)
     }
+    await deps.onQueued?.(tx)
     const outboxId = await recordMail(tx, { ...log, status: 'queued', error: waitingFor })
     await enqueueMail(tx, {
       outboxId,

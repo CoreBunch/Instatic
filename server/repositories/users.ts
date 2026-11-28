@@ -60,6 +60,7 @@ export interface AuthUser extends CmsUser {
 }
 
 export interface JoinedUserRow extends UserRow {
+  invitation_pending: boolean | number
   role_slug: string
   role_name: string
   role_description: string
@@ -78,6 +79,7 @@ export interface JoinedUserRow extends UserRow {
  * `sessions`) — splice the constant directly.
  */
 export const USER_JOINED_COLUMNS = `users.id,
+       (users.invitation_hash is not null) as invitation_pending,
        users.email,
        users.email_normalized,
        users.display_name,
@@ -263,7 +265,7 @@ export async function listUsers(db: DbClient, search: string, requestedOffset: n
      limit ${placeholder(db.dialect, values.length + 1)} offset ${placeholder(db.dialect, values.length + 2)}`,
     [...values, DIRECTORY_PAGE_SIZE, offset],
   )
-  return { users: rows.map((row) => toPublicUser(rowToUser(row))), matching, offset }
+  return { users: rows.map((row) => ({ ...toPublicUser(rowToUser(row)), invitationPending: Boolean(row.invitation_pending) })), matching, offset }
 }
 
 export async function findUserById(db: DbClient, userId: string): Promise<AuthUser | null> {
@@ -358,6 +360,8 @@ export async function updateUser(
         email_normalized = ${emailNormalized},
         display_name = ${displayName},
         password_hash = ${passwordHash},
+        invitation_hash = null,
+        invitation_expires_at = null,
         password_updated_at = ${passwordUpdatedAt},
         status = ${status},
         role_id = ${roleId},

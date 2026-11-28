@@ -42,6 +42,11 @@ Handler endpoints: `server/handlers/cms/auth.ts`, `server/handlers/cms/me.ts`, `
 
 The Admin users directory reads `GET /admin/api/cms/users?q=&offset=`. The response contains up to 50 `users`, the filtered total `matching`, and the starting `offset`. Search matches the display name or email. Results use creation order with the user ID as a tie-breaker.
 
+**Invite user** in Admin users or Spotlight asks for an email and an assignable role. `POST /admin/api/cms/users/invite` enforces the same capability, step-up and role ceiling as creating a user. With a configured sender, the inviter can queue an email or copy the link. Without one, they can copy the link. Both use the configured public origin or a local loopback origin.
+
+An invitation appears as Pending in the directory. The suspended user row stores a token hash and a seven-day expiry. Inviting the same address for the same role replaces the link. Deleting the pending user revokes it. The recipient opens `/admin/invitation`, chooses a password, and signs in normally. `server/repositories/userInvitations.ts` consumes the token and activates the account in one conditional update.
+
+
 ---
 
 ## The session lifecycle

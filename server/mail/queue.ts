@@ -123,6 +123,32 @@ export async function encryptQueuedVariables(variables: Record<string, string>):
   return encryptSecret(await loadMasterKey(), JSON.stringify(payload))
 }
 
+export interface QueueTemplateMailInput {
+  key: string
+  to: string
+  variables: Record<string, string>
+  /**
+   * After this moment (milliseconds since the epoch) the email is not sent
+   * any more. Pass the expiry of the link it carries. Without one the email
+   * has a day.
+   */
+  deliverBefore?: number
+  /** Who asks: omitted for the core's own mail, a plugin's id otherwise. */
+  source?: string
+  /** The asking plugin's name, kept in the activity log. */
+  sourceLabel?: string
+  /** The sender's own name for this email, handed back with the outcome. */
+  reference?: string
+  /**
+   * The site member the email is for, when the sender named a member and
+   * the host looked the address up. The outcome then names the member, never
+   * the address: a sender that was not given the address does not learn it.
+   */
+  memberId?: string
+  /** The sending plugin's install; its outcome is told to that install only. */
+  installId?: string
+}
+
 export interface EnqueueMailInput {
   outboxId: string
   kind: string

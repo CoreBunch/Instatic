@@ -2,6 +2,7 @@ import { Type } from '@core/utils/typeboxHelpers'
 import { MailConnectorInputSchema, MailConnectorSecretInputSchema, MailDefaultsSchema, MailTemplateInputSchema, MailTemplateSendingSchema, MailTestInputSchema } from '@core/mail'
 import { CreateMemberAppBodySchema, MemberInviteInputSchema, MemberSettingsSchema, MemberTagInputSchema, MemberTagRemoveInputSchema } from '@core/members'
 import { UserCreateBodySchema, UserPatchBodySchema } from '../../handlers/cms/users'
+import { UserInviteBodySchema } from '../../handlers/cms/userInvitations'
 import { DASHBOARD_READERS } from '../../handlers/cms/dashboard'
 import { operation as op } from './operation'
 
@@ -16,6 +17,7 @@ export const adminOperations = [
     })),
   op('GET', 'users', users, 'List CMS users', { querySchema: Type.Partial(Type.Object({ q: Type.String(), offset: Type.Integer() })) }),
   op('POST', 'users', users, 'Create a user with a role you can assign', { bodySchema: UserCreateBodySchema }),
+  op('POST', 'users/invite', users, 'Invite an admin user with a role you can assign', { bodySchema: UserInviteBodySchema }),
   op('PATCH', 'users/:id', users, 'Update user profile, password, role or status within your grant', { bodySchema: UserPatchBodySchema }),
   op('DELETE', 'users/:id', users, 'Soft-delete a user'),
   op('GET', 'roles', ['roles.manage', users], 'List roles and their grants'),

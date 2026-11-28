@@ -65,6 +65,7 @@ import { findMatchingRecoveryCodeHash } from '../../auth/mfa'
 import { totpSecretErrorResponse, verifyEncryptedTotpCode } from '../../auth/totpSecrets'
 import { jsonResponse, readValidatedBody, setCookieHeader } from '../../http'
 import { Type } from '@core/utils/typeboxHelpers'
+import { handleAcceptInvitation } from './userInvitations'
 import { CMS_API_PREFIX, requestAuditContext } from './shared'
 import { clearSessionCookie, getDummyPasswordHash, sessionCookie } from './session'
 import { runRouteTable, type Route } from './routeTable'
@@ -821,6 +822,7 @@ async function handleActivity(req: Request, db: DbClient): Promise<Response> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const AUTH_ROUTES: readonly Route<[]>[] = [
+  { method: 'POST', pattern: `${CMS_API_PREFIX}/auth/invitations/accept`, handler: handleAcceptInvitation },
   { method: 'POST', pattern: `${CMS_API_PREFIX}/login`, handler: handleLogin },
   { method: 'POST', pattern: `${CMS_API_PREFIX}/auth/mfa/verify`, handler: handleMfaVerify },
   { method: 'POST', pattern: `${CMS_API_PREFIX}/logout`, handler: handleLogout },

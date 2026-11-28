@@ -11,8 +11,7 @@
  * has no fresh window. Cancelling the step-up dialog resolves silently
  * (we match on `StepUpCancelledMessage`).
  */
-import { useEffect, useEffectEvent, useState, type FormEvent } from 'react'
-import { consumePendingAction } from '@admin/spotlight/pendingAction'
+import { useId, useState, type FormEvent } from 'react'
 import { Button } from '@ui/components/Button'
 import { SearchBar } from '@ui/components/SearchBar'
 import { useDebouncedValue } from '@admin/lib/useDebouncedValue'
@@ -24,6 +23,7 @@ import { EditSolidIcon } from 'pixel-art-icons/icons/edit-solid'
 import { PlusIcon } from 'pixel-art-icons/icons/plus'
 import {
   listCmsUsers,
+  inviteCmsUser,
   createCmsUser,
   deleteCmsUser,
   updateCmsUser,
@@ -47,9 +47,19 @@ import { getErrorMessage } from '@core/utils/errorMessage'
 import { EmptyState } from '@ui/components/EmptyState'
 import { UsersSolidIcon } from 'pixel-art-icons/icons/users-solid'
 
+import { InvitationLinkDialog } from '../components/InvitationLinkDialog'
+import { InviteAccountDialog } from '../components/InviteAccountDialog'
+import { Select } from '@ui/components/Select'
+import { pushToast } from '@ui/components/Toast'
+import { useCurrentAdminUser } from '@admin/sessionContext'
+import dialogStyles from '@admin/shared/dialogs/SiteCreateDialog/SiteCreateDialog.module.css'
+
 interface UsersTabProps {
   data: UsersPageData
   canManageUsers: boolean
+  inviting: boolean
+  onOpenInvite: () => void
+  onCloseInvite: () => void
 }
 
 const STATUS_OPTIONS = [
@@ -143,7 +153,7 @@ async function deleteUser(
   }
 }
 
-export function UsersTab({ data, canManageUsers }: UsersTabProps) {
+export function UsersTab({ data, canManageUsers, inviting, onOpenInvite, onCloseInvite }: UsersTabProps) {
   const { roles, defaultAssignableRoleId, setError, error } = data
   const { runStepUp } = useStepUp()
   const confirmDelete = useConfirmDelete()
@@ -154,6 +164,15 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
   }))
   const [dialogMode, setDialogMode] = useState<UserDialogMode | null>(null)
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
+
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState('')
+  const [invitationLink, setInvitationLink] = useState<{ email: string; link: string } | null>(null)
+  const roleFieldId = useId()
+  const currentUser = useCurrentAdminUser()
+  const inviteRoles = roles.filter((role) => role.id !== 'owner' &&
+    (!currentUser || role.capabilities.every((cap) => currentUser.capabilities.includes(cap))))
+  const roleId = inviteRole || (inviteRoles.length === 1 ? inviteRoles[0].id : '')
 
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -167,7 +186,7 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
     email: user.email,
     avatar: <UserAvatar className={directory.avatar} user={user} size={32} alt={null} />,
     access: <Badge label={user.role.name} muted />,
-    status: user.status,
+    status: user.invitationPending ? 'pending' as const : user.status,
     lastLogin: user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleDateString(undefined, { dateStyle: 'medium' }) : 'Never',
   }))
 
@@ -189,27 +208,33 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
     setError(null)
   }
 
-  // Auto-open the invite dialog when the spotlight queued a `users.invite`
-  // action while the user was on a different workspace. Only consume the
-  // action once `canManageUsers` is true — otherwise openCreate's capability
-  // guard would swallow the action and we'd have spent it for nothing.
-  // We use queueMicrotask (not setTimeout) so the setState fires on the same
-  // task: setTimeout(0) cleanup can race the timer when a fast navigation
-  // tears the tab back down before the macrotask runs, which would lose
-  // the dialog.
-  // useEffectEvent reads the latest openCreate without putting it in the
-  // effect's dep array — openCreate is recreated each render, but the
-  // effect should only fire when canManageUsers flips on.
-  const consumeInvitePending = useEffectEvent(() => {
-    const pending = consumePendingAction('users.invite')
-    if (!pending) return
-    queueMicrotask(() => openCreate())
-  })
+  function openInvite(email = '', role = '') {
+    setInviteRole(role)
+    setInviteEmail(email)
+    onOpenInvite()
+  }
 
-  useEffect(() => {
-    if (!canManageUsers) return
-    consumeInvitePending()
-  }, [canManageUsers])
+  function closeInvite() {
+    setInviteEmail('')
+    setInviteRole('')
+    onCloseInvite()
+  }
+
+  async function invite(email: string, delivery: 'email' | 'link') {
+    setBusy(true)
+    try {
+      const result = await runStepUp(() => inviteCmsUser({ email, roleId, delivery }))
+      closeInvite()
+      list.refresh()
+      if ('link' in result) setInvitationLink({ email, link: result.link })
+      else pushToast({ kind: 'success', title: 'Invitation queued', body: `To ${email}.` })
+    } catch (err) {
+      if (err instanceof Error && err.message === StepUpCancelledMessage) return
+      pushToast({ kind: 'error', title: 'Could not invite user', body: getErrorMessage(err, 'Unknown invitation error') })
+    } finally {
+      setBusy(false)
+    }
+  }
 
   function openEdit(user: CmsCurrentUser) {
     if (!canManageUsers || isOwnerUser(user)) return
@@ -270,10 +295,13 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
       <div className={styles.sectionHeader}>
         <h1 id="all-users-title">Admin users</h1>
         {canManageUsers && (
-          <Button type="button" variant="primary" size="md" onClick={openCreate}>
-            <PlusIcon size={14} aria-hidden="true" />
-            <span>Create User</span>
-          </Button>
+          <div className={styles.groupActions}>
+            <Button type="button" variant="secondary" size="md" onClick={() => openInvite()}>Invite user</Button>
+            <Button type="button" variant="primary" size="md" onClick={openCreate}>
+              <PlusIcon size={14} aria-hidden="true" />
+              <span>Create User</span>
+            </Button>
+          </div>
         )}
       </div>
       {list.error && <p className={styles.error} role="alert">{list.error}</p>}
@@ -302,15 +330,22 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
             </section>
             {isOwnerUser(selected) ? <p className={styles.secondaryText}>Owner account</p> : canManageUsers && (
               <div className={directory.actions} role="group" aria-label="User actions">
-                <Button variant="secondary" size="md" disabled={busy} onClick={() => openEdit(selected)}>
-                  <EditSolidIcon size={14} aria-hidden="true" /> Edit user
-                </Button>
-                <Button variant="secondary" size="md" disabled={busy} onClick={() => openResetPassword(selected)}>
-                  Reset password
-                </Button>
-                <Button variant="ghost" size="md" disabled={busy} onClick={() => void toggleStatus(selected)}>
-                  {selected.status === 'active' ? 'Suspend' : 'Activate'}
-                </Button>
+                {selected.invitationPending ? (
+                  <Button variant="secondary" size="md" disabled={busy || !inviteRoles.some((role) => role.id === selected.role.id)}
+                    onClick={() => openInvite(selected.email, selected.role.id)}>Invite again</Button>
+                ) : (
+                  <>
+                    <Button variant="secondary" size="md" disabled={busy} onClick={() => openEdit(selected)}>
+                      <EditSolidIcon size={14} aria-hidden="true" /> Edit user
+                    </Button>
+                    <Button variant="secondary" size="md" disabled={busy} onClick={() => openResetPassword(selected)}>
+                      Reset password
+                    </Button>
+                    <Button variant="ghost" size="md" disabled={busy} onClick={() => void toggleStatus(selected)}>
+                      {selected.status === 'active' ? 'Suspend' : 'Activate'}
+                    </Button>
+                  </>
+                )}
                 <Button variant="ghost" size="md" tone="danger" disabled={busy} onClick={() => remove(selected)}>
                   <TrashSolidIcon size={14} aria-hidden="true" /> Delete user
                 </Button>
@@ -319,6 +354,20 @@ export function UsersTab({ data, canManageUsers }: UsersTabProps) {
           </>
         )}
       </AccountDirectory>
+
+      {inviting && (
+        <InviteAccountDialog title="Invite user" initialEmail={inviteEmail} busy={busy} canInvite={Boolean(roleId && list.data)}
+          mailAvailable={Boolean(list.data?.inviteByEmail)} onClose={closeInvite} onInvite={invite}>
+          <div className={dialogStyles.field}>
+            <label className={dialogStyles.label} htmlFor={roleFieldId}>Role</label>
+            <Select id={roleFieldId} value={roleId} disabled={busy}
+              options={[{ value: '', label: 'Choose a role', textValue: 'Choose a role' },
+                ...inviteRoles.map((role) => ({ value: role.id, label: role.name, textValue: role.name }))]}
+              onChange={(event) => setInviteRole(event.currentTarget.value)} />
+          </div>
+        </InviteAccountDialog>
+      )}
+      {invitationLink && <InvitationLinkDialog {...invitationLink} onClose={() => setInvitationLink(null)} />}
 
       {canManageUsers && dialogMode && (
         <UserDialog

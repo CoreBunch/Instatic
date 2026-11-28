@@ -111,6 +111,22 @@ export function configuredPublicOrigin(): string | null {
   return publicOrigins[0] ?? null
 }
 
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]'])
+const LOOPBACK_PEERS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
+
+/** The origin links in emails use, or null when none can be trusted. */
+export function accountLinkOrigin(req: Request): string | null {
+  const configured = configuredPublicOrigin()
+  if (configured) return configured
+  // No configured origin: only a request that really came from this machine
+  // may use its own address. A remote caller sending `Host: localhost` must
+  // not get links built at all.
+  const peer = clientIp(req)
+  if (peer !== null && !LOOPBACK_PEERS.has(peer)) return null
+  const url = new URL(req.url)
+  return LOOPBACK_HOSTS.has(url.hostname) ? url.origin : null
+}
+
 /** True when the canonical configured public origin uses https. */
 export function publicOriginIsHttps(): boolean {
   return configuredPublicOrigin()?.startsWith('https://') ?? false

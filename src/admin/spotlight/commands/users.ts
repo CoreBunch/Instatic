@@ -18,8 +18,7 @@ export function getUsersCommands(): Command[] {
       workspaces: ['any'],
       capability: 'users.manage',
       run: (ctx) => {
-        queuePendingAction('users.invite')
-        ctx.navigate('/admin/users')
+        ctx.navigate('/admin/users?invite')
       },
     },
 
