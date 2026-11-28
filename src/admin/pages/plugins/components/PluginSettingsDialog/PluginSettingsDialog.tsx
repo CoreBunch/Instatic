@@ -119,7 +119,14 @@ export function PluginSettingsDialog({
     // `updateCmsPluginSettings` rejects with `Error('step_up_required')`
     // when the session has no fresh step-up window. `runStepUp` catches
     // that rejection, prompts for the password, then retries the save.
-    await savePluginSettings(pluginId, values, runStepUp, onSaved, onClose, setSaving, setSaveError)
+    // A blank field in this snapshot may have been populated by another save since the dialog opened.
+    const next = { ...values }
+    for (const field of schema ?? []) {
+      if (field.secret && !field.required && values[field.id] === data?.settings[field.id]) {
+        delete next[field.id]
+      }
+    }
+    await savePluginSettings(pluginId, next, runStepUp, onSaved, onClose, setSaving, setSaveError)
   }
 
   return (
